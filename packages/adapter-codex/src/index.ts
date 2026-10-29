@@ -1,19 +1,14 @@
-import type { AgentCapabilities, RunnerId } from "@crewyard/core";
-
-// codex app-server JSON-RPC over stdio: turn/*, item/*, requestApproval, requestUserInput (experimental), turn/interrupt, thread/resume, account/rateLimits/updated.
-// Verified against official sources on 2026-10-29 (PLAN.md §5.2). Change only with conformance evidence.
+import type { AgentAdapter, RunnerId } from "@crewyard/core";
+import { CodexAdapter } from "./adapter.ts";
+import type { Launcher } from "./appserver.ts";
 
 export const runner: RunnerId = "codex";
 
-export const capabilities: AgentCapabilities = {
-  launch: true,
-  stream: true,
-  answerQuestions: true,
-  approveTools: true,
-  interrupt: true,
-  resume: true,
-  setModel: true,
-  usage: true,
-  reportedLimits: true,
-  readOnlyMode: true
-};
+export { capabilities, CodexAdapter, compareVersions, MIN_CODEX_VERSION, type CodexStartRequest } from "./adapter.ts";
+export { startLogin, type LoginMode, type LoginOptions, type LoginSession } from "./login.ts";
+export type { Launcher } from "./appserver.ts";
+
+/** The launcher is for tests and for a non-PATH install; the default finds `codex` on PATH. */
+export function createAdapter(launcher?: Launcher): AgentAdapter {
+  return new CodexAdapter(launcher);
+}
