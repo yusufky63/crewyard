@@ -1,0 +1,123 @@
+import type { AgentEvent, Answer, RolePolicy } from "@crewyard/core";
+import type { PermissionResult, PermissionUpdate } from "@anthropic-ai/claude-agent-sdk";
+import type { AskUserQuestionInput } from "@anthropic-ai/claude-agent-sdk/sdk-tools";
+
+// Tool names come from BUILTIN_TOOL_NAMES in the SDK's sdk.d.ts (0.3.312). MCP tools are "mcp__*".
+
+type ToolKind = Extract<AgentEvent, { type: "tool.call" }>["kind"];
+type Question = Extract<AgentEvent, { type: "request.question" }>["questions"][number];
+
+/** Tools that change files. Denied outright for read-only roles. */
+export const WRITE_TOOLS = ["Edit", "MultiEdit", "Write", "NotebookEdit"];
+const SHELL_TOOLS = ["Bash", "PowerShell"];
+const NETWORK_TOOLS = ["WebFetch", "WebSearch"];
+
+const KINDS: Record<string, ToolKind> = {
+  Read: "read",
+  NotebookRead: "read",
+  Edit: "edit",
+  MultiEdit: "edit",
+  Write: "edit",
+  NotebookEdit: "edit",
+  Bash: "execute",
+  PowerShell: "execute",
+  Monitor: "execute",
+  Glob: "search",
+  Grep: "search",
+  ToolSearch: "search",
+  WebFetch: "fetch",
+  WebSearch: "fetch",
+};
+
+export function toolKind(name: string): ToolKind {
+  return KINDS[name] ?? "other";
+}
+
+const str = (v: unknown): string | null => (typeof v === "string" && v.length > 0 ? v : null);
+const rec = (v: unknown): Record<string, unknown> => (v && typeof v === "object" ? (v as Record<string, unknown>) : {});
+
+/** Short human title for a tool call, e.g. "Bash: pnpm test" or "Read src/index.ts". */
+export function toolTitle(name: string, input: unknown): string {
+  const i = rec(input);
+  const detail = str(i.description) ?? str(i.command) ?? str(i.file_path) ?? str(i.notebook_path) ?? str(i.pattern) ?? str(i.url) ?? str(i.query);
+  if (!detail) return name;
+  const oneLine = detail.replace(/\s+/g, " ").trim();
+  return `${name}: ${oneLine.length > 120 ? `${oneLine.slice(0, 117)}...` : oneLine}`;
+}
+
+/** The fields of request.approval that describe what the tool will touch. */
+export function approvalScope(name: string, input: unknown, blockedPath: string | undefined): { command: string | null; paths: string[]; network: boolean } {
+  const i = rec(input);
+  const paths = [str(i.file_path), str(i.notebook_path), str(i.path), str(blockedPath)].filter((p): p is string => p !== null);
+  return {
+    command: SHELL_TOOLS.includes(name) ? str(i.command) : null,
+    paths: [...new Set(paths)],
+    network: NETWORK_TOOLS.includes(name),
+  };
+}
+
+/**
+ * Decisions the role policy makes without asking anyone. Read-only roles are enforced here and
+ * by disallowedTools, never by the prompt. Returns null when the user has to decide.
+ */
+export function policyDecision(name: string, policy: RolePolicy): PermissionResult | null {
+  if (policy.writes === "none" && WRITE_TOOLS.includes(name)) {
+    return { behavior: "deny", message: `${name} is not allowed: this role is read-only.` };
+  }
+  if (policy.network === "denied" && NETWORK_TOOLS.includes(name)) {
+    return { behavior: "deny", message: `${name} is not allowed: network access is off for this role.` };
+  }
+  return null;
+}
+
+/** Tools the CLI should never offer to the model for this policy. */
+export function disallowedFor(policy: RolePolicy): string[] {
+  return [...(policy.writes === "none" ? WRITE_TOOLS : []), ...(policy.network === "denied" ? NETWORK_TOOLS : [])];
+}
+
+/**
+ * "Allow always" keeps the CLI's suggested rules for this session only. Suggestions can point
+ * at localSettings, which would write into the user's repository; we never want that.
+ */
+function sessionOnly(suggestions: PermissionUpdate[] | undefined): PermissionUpdate[] | undefined {
+  return suggestions?.map((s) => ({ ...s, destination: "session" }) as PermissionUpdate);
+}
+
+export function approvalResult(answer: Answer, input: Record<string, unknown>, opts: { suggestions?: PermissionUpdate[]; suppressAlwaysAllowRule?: boolean }): PermissionResult {
+  if (answer.kind === "cancel") return { behavior: "deny", message: "The user cancelled this request.", interrupt: true };
+  if (answer.kind !== "approval") return { behavior: "deny", message: "The answer did not match the request." };
+  if (answer.decision === "deny") return { behavior: "deny", message: answer.message?.trim() || "The user denied this tool call." };
+  const updatedPermissions = answer.decision === "allow_always" && !opts.suppressAlwaysAllowRule ? sessionOnly(opts.suggestions) : undefined;
+  return { behavior: "allow", updatedInput: input, ...(updatedPermissions?.length ? { updatedPermissions } : {}) };
+}
+
+export function questionsFrom(input: Record<string, unknown>): Question[] {
+  const qs = (input as Partial<AskUserQuestionInput>).questions ?? [];
+  return qs.map((q) => ({
+    prompt: q.question,
+    options: q.options.map((o) => ({ label: o.label, ...(o.description ? { description: o.description } : {}) })),
+    // AskUserQuestion always offers a free-text "Other" (see its schema: "There should be no 'Other' option").
+    allowFreeText: true,
+  }));
+}
+
+/**
+ * AskUserQuestion is answered by allowing the tool with `answers` filled in, keyed by question
+ * text. Several selected labels are joined with ", " (the form the CLI's own picker sends).
+ */
+export function questionResult(answer: Answer, input: Record<string, unknown>): PermissionResult {
+  if (answer.kind === "cancel") return { behavior: "deny", message: "The user dismissed the question." };
+  if (answer.kind !== "question") return { behavior: "deny", message: "The answer did not match the request." };
+  const qs = (input as Partial<AskUserQuestionInput>).questions ?? [];
+  const answers: Record<string, string> = {};
+  const annotations: Record<string, { notes: string }> = {};
+  qs.forEach((q, i) => {
+    const a = answer.answers[i];
+    if (!a) return;
+    const text = a.text?.trim();
+    const picked = a.selected.join(", ");
+    answers[q.question] = picked || text || "";
+    if (picked && text) annotations[q.question] = { notes: text };
+  });
+  return { behavior: "allow", updatedInput: { ...input, answers, ...(Object.keys(annotations).length ? { annotations } : {}) } };
+}
