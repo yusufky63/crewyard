@@ -163,6 +163,16 @@ const MIGRATIONS: string[] = [
      delivered_run_id text
    );
    create index outbox_pending on outbox(member_id, delivered_at);
+   create table native_usage (
+     runner text not null,
+     session_id text not null,
+     tokens_in integer not null,
+     tokens_out integer not null,
+     cache_read integer not null,
+     cost_usd real,
+     updated_at text not null,
+     primary key (runner, session_id)
+   );
    create table allow_rules (
      project_id text not null references projects(id),
      command text not null,

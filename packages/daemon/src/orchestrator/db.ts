@@ -304,6 +304,26 @@ export class OrchestratorDb {
     return this.all<{ id: string; text: string }>("select id, text from outbox where member_id = ? and delivered_at is null order by created_at, id", memberId);
   }
 
+  /** Last running totals a runner reported for one native session (they survive resume). */
+  nativeUsage(runner: RunnerId, sessionId: string): { tokensIn: number; tokensOut: number; cacheRead: number; costUsd: number | null } | null {
+    const r = this.one<{ tokens_in: number; tokens_out: number; cache_read: number; cost_usd: number | null }>("select * from native_usage where runner = ? and session_id = ?", runner, sessionId);
+    return r ? { tokensIn: r.tokens_in, tokensOut: r.tokens_out, cacheRead: r.cache_read, costUsd: r.cost_usd } : null;
+  }
+
+  setNativeUsage(runner: RunnerId, sessionId: string, u: { tokensIn: number; tokensOut: number; cacheRead: number; costUsd: number | null }, at: string): void {
+    this.exec(
+      `insert into native_usage (runner, session_id, tokens_in, tokens_out, cache_read, cost_usd, updated_at) values (?, ?, ?, ?, ?, ?, ?)
+       on conflict (runner, session_id) do update set tokens_in = excluded.tokens_in, tokens_out = excluded.tokens_out, cache_read = excluded.cache_read, cost_usd = excluded.cost_usd, updated_at = excluded.updated_at`,
+      runner,
+      sessionId,
+      u.tokensIn,
+      u.tokensOut,
+      u.cacheRead,
+      u.costUsd,
+      at,
+    );
+  }
+
   allowRules(projectId: string): string[] {
     return this.all<{ command: string }>("select command from allow_rules where project_id = ? order by command", projectId).map((r) => r.command);
   }

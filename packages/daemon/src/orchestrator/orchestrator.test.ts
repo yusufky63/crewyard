@@ -9,7 +9,7 @@ import { AdapterRegistry } from "./adapters.ts";
 import type { Candidate } from "./directory.ts";
 import { orchestratorFor } from "./index.ts";
 import { Orchestrator, type OrchestratorOptions } from "./orchestrator.ts";
-import { CANDIDATES, cleanTemps, git, ScriptedAdapter, tempDir, tempRepo, waitFor } from "./testing.ts";
+import { CANDIDATES, candidate, cleanTemps, git, ScriptedAdapter, tempDir, tempRepo, waitFor } from "./testing.ts";
 
 // Git on Windows is slow enough that a whole crew can take a few seconds.
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
@@ -367,6 +367,44 @@ describe("handoff", () => {
     expect(q.payload).toMatchObject({ kind: "handoff", trigger: "budget", window: "budget-task", proposedTarget: null });
     expect(o.get(t.id).spend.provenance).toBe("estimated");
     expect(o.get(t.id).handoffs).toEqual([]);
+  });
+});
+
+describe("usage and cost", () => {
+  const usage = (tokensIn: number, tokensOut: number, costUsd: number | null): FakeStep => ({
+    emit: { type: "usage.update", tokensIn, tokensOut, cacheRead: 0, cacheWrite: 0, reasoning: 0, contextUsed: null, contextSize: null, costUsd, costProvenance: costUsd === null ? "unknown" : "reported" },
+  });
+
+  it("counts only the growth of a resumed native session's running totals for the new run", async () => {
+    const pick: Picker = (_role, _req, resumed) => (resumed ? [running, usage(1_500, 150, 0.015), say("back")] : [running, usage(1_000, 100, 0.01), ...question("hold")]);
+    const { o, project } = await setup({ pick });
+    const t = await o.propose({ projectId: project.id, title: "Research A" });
+    await o.approve({ taskId: t.id });
+    await waitFor(() => o.requests({ taskId: t.id })[0]);
+    const first = (await o.stop(o.get(t.id).runs[0]!.id)).id;
+    const second = (await o.resume(first)).id;
+    await waitFor(() => o.get(t.id).status === "done");
+    const runs = o.get(t.id).runs;
+    const r1 = runs.find((r) => r.id === first)!;
+    const r2 = runs.find((r) => r.id === second)!;
+    expect(r2.nativeSessionId).toBe(r1.nativeSessionId);
+    expect([r1.tokensIn, r1.tokensOut, r1.cost.usd]).toEqual([1_000, 100, 0.01]);
+    expect([r2.tokensIn, r2.tokensOut, r2.cost.usd, r2.cost.provenance]).toEqual([500, 50, 0.005, "reported"]);
+    expect(o.get(t.id).spend.usd).toBeCloseTo(0.015, 6);
+  });
+
+  it("prices tokens the runner could not price from the catalog, and keeps them Unknown without a price", async () => {
+    const pick: Picker = () => [running, usage(1_000_000, 0, null), usage(2_000_000, 0, null), say("done")];
+    const { o, project } = await setup({ pick, candidates: [...CANDIDATES(), candidate("no-price", "custom", null)] });
+    const priced = await o.propose({ projectId: project.id, title: "Research A", pins: { researcher: "deepseek-key" } });
+    const unpriced = await o.propose({ projectId: project.id, title: "Research B", pins: { researcher: "no-price" } });
+    await o.approve({ taskId: priced.id });
+    await o.approve({ taskId: unpriced.id });
+    await waitFor(() => o.get(priced.id).status === "done" && o.get(unpriced.id).status === "done");
+    // deepseek-chat input is $0.27 per million; two cumulative reports add up to 2M tokens, not 3M.
+    expect(o.get(priced.id).runs[0]!.cost).toEqual({ usd: 0.54, provenance: "estimated" });
+    expect(o.get(unpriced.id).runs[0]!.cost).toEqual({ usd: null, provenance: "unknown" });
+    expect(o.get(unpriced.id).spend.provenance).toBe("unknown");
   });
 });
 

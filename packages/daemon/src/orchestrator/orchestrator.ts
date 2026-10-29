@@ -18,6 +18,7 @@ import {
   type HandoffTrigger,
   type LimitWindow,
   type NativeSessionRef,
+  type Provenance,
   type Reason,
   type RequestAnswer,
   type RequestPayload,
@@ -801,17 +802,43 @@ export class Orchestrator {
   // ---------------------------------------------------------------- usage and limits
 
   private async onUsage(run: RunRow, task: TaskRow, ev: Extract<AgentEvent, { type: "usage.update" }>): Promise<void> {
-    // Runners report running totals for the session, so the latest numbers replace the old ones.
-    const model = this.live.get(run.id)?.candidate.model ?? null;
-    const plan = this.live.get(run.id)?.candidate.profile.credential.kind !== "api_key";
-    let cost = ev.costUsd;
-    let provenance = ev.costProvenance;
-    if (cost === null && plan) [cost, provenance] = [0, "estimated"];
-    else if (cost === null && model) {
-      cost = estimateCost(model, ev.tokensIn, ev.tokensOut, ev.cacheRead);
-      provenance = cost === null ? "unknown" : "estimated";
+    // Runners report running totals for the native session, and a resumed session starts from the
+    // totals of the run before it. So a run adds only the growth since the last total seen for
+    // that session; a total that went down means the session counter restarted.
+    const session = run.native_session_id ?? `run:${run.id}`;
+    const seen = this.db.nativeUsage(run.runner, session) ?? { tokensIn: 0, tokensOut: 0, cacheRead: 0, costUsd: null };
+    const restarted = ev.tokensIn < seen.tokensIn || ev.tokensOut < seen.tokensOut;
+    const grow = (now: number, before: number) => (restarted ? now : Math.max(0, now - before));
+    const dIn = grow(ev.tokensIn, seen.tokensIn);
+    const dOut = grow(ev.tokensOut, seen.tokensOut);
+    const dCache = grow(ev.cacheRead, seen.cacheRead);
+    this.db.setNativeUsage(run.runner, session, { tokensIn: ev.tokensIn, tokensOut: ev.tokensOut, cacheRead: ev.cacheRead, costUsd: ev.costUsd }, ev.at);
+
+    const live = this.live.get(run.id);
+    const model = live?.candidate.model ?? null;
+    let dCost: number | null;
+    let provenance: Provenance;
+    if (ev.costUsd !== null) {
+      dCost = restarted ? ev.costUsd : Math.max(0, ev.costUsd - (seen.costUsd ?? 0));
+      provenance = ev.costProvenance;
+    } else if (live && live.candidate.profile.credential.kind !== "api_key") {
+      [dCost, provenance] = [0, "estimated"];
+    } else {
+      // The runner could not price these tokens (e.g. Claude Code on DeepSeek): price them from the catalog.
+      dCost = model ? estimateCost(model, dIn, dOut, dCache) : null;
+      provenance = dCost === null ? "unknown" : "estimated";
     }
-    this.db.exec("update runs set tokens_in = ?, tokens_out = ?, cost_usd = ?, cost_provenance = ? where id = ?", ev.tokensIn, ev.tokensOut, cost, provenance, run.id);
+    const fresh = run.tokens_in + run.tokens_out === 0;
+    const cost = dCost !== null && (fresh || run.cost_usd !== null) ? (run.cost_usd ?? 0) + dCost : null;
+    const label: Provenance = cost === null ? "unknown" : fresh ? provenance : weakest(run.cost_provenance, provenance);
+    this.db.exec(
+      "update runs set tokens_in = ?, tokens_out = ?, cost_usd = ?, cost_provenance = ? where id = ?",
+      run.tokens_in + dIn,
+      run.tokens_out + dOut,
+      cost === null ? null : Math.round(cost * 1_000_000) / 1_000_000,
+      label,
+      run.id,
+    );
     if (ev.contextUsed !== null && ev.contextSize !== null) {
       this.limits.ingest(
         { profileId: run.profile_id, window: "context", usedPct: Math.min(100, (100 * ev.contextUsed) / ev.contextSize), resetsAt: null, provenance: "reported", observedAt: ev.at },
@@ -1241,6 +1268,9 @@ export class Orchestrator {
     return this.now().toISOString();
   }
 }
+
+const RANK: Record<Provenance, number> = { reported: 2, estimated: 1, unknown: 0 };
+const weakest = (a: Provenance, b: Provenance): Provenance => (RANK[a] <= RANK[b] ? a : b);
 
 function toCoreAnswer(a: RequestAnswer): Answer {
   switch (a.kind) {

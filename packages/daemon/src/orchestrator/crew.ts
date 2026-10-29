@@ -1,6 +1,6 @@
 import { estimateCost, type CandidateView, type CostEstimate, type Headroom, type Reason, type RoleId, type RunnerId, type TaskKind, type TaskSize } from "@crewyard/core";
 import type { Candidate } from "./directory.ts";
-import { planFor, ROLES, TOKENS_BY_SIZE } from "./roles.ts";
+import { planFor, ROLES, TOKENS_BY_SIZE, TURN_OVERHEAD_TOKENS } from "./roles.ts";
 
 // Crew proposal v1 (PLAN.md §9): rule-based and deterministic. Same inputs, same crew. It learns
 // only from the user's own history (completed runs and crew edits), never from a hidden model call.
@@ -53,7 +53,9 @@ export function estimateFor(c: Candidate, role: RoleId, size: TaskSize): CostEst
   if (!c.model) return { usd: null, provenance: "unknown" };
   const t = TOKENS_BY_SIZE[size];
   const share = ROLES[role].tokenShare;
-  const usd = estimateCost(c.model, Math.round(t.tokensIn * share), Math.round(t.tokensOut * share));
+  const turns = Math.max(1, Math.round(t.turns * share));
+  const overhead = (TURN_OVERHEAD_TOKENS[c.profile.runner] ?? 0) * turns;
+  const usd = estimateCost(c.model, Math.round(t.tokensIn * share) + overhead, Math.round(t.tokensOut * share));
   return usd === null ? { usd: null, provenance: "unknown" } : { usd: Math.round(usd * 10_000) / 10_000, provenance: "estimated" };
 }
 

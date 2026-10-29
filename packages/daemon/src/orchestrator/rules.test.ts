@@ -78,6 +78,14 @@ describe("crew scoring", () => {
     expect(at(10, "reported").reasons.map((r) => r.code)).toContain("headroom.low");
   });
 
+  it("adds Codex's per-turn system prompt overhead to its estimate", () => {
+    const m = model("gpt-5", { cost: { input: 1, output: 10, cacheRead: 0.1 } });
+    const plain = scoreCandidate(candidate("fake-key", "openai", m), "implementer", ctx()).estimate.usd!;
+    const codex = { ...candidate("codex-key", "openai", m), profile: { ...candidate("codex-key", "openai", m).profile, runner: "codex" as const } };
+    // M: 25 turns, implementer share 0.45 -> 11 turns x 14,800 tokens at $1 per million.
+    expect(scoreCandidate(codex, "implementer", ctx()).estimate.usd! - plain).toBeCloseTo((11 * 14_800) / 1_000_000, 4);
+  });
+
   it("labels plan profiles as costing nothing per token and unknown models as unknown", () => {
     expect(scoreCandidate(candidate("codex-plan", "openai", model("gpt-5"), "plan_signin"), "implementer", ctx()).estimate).toEqual({ usd: 0, provenance: "estimated" });
     expect(scoreCandidate(candidate("mystery", "x", null), "implementer", ctx()).estimate).toEqual({ usd: null, provenance: "unknown" });

@@ -1,4 +1,4 @@
-import type { RoleId, RolePolicy, TaskKind, TaskSize } from "@crewyard/core";
+import type { RoleId, RolePolicy, RunnerId, TaskKind, TaskSize } from "@crewyard/core";
 
 // Built-in role templates (PLAN.md §9.1). Permissions are enforced by the approval layer in
 // requests.ts, never by the prompt: a read-only role's write request is denied before anyone sees it.
@@ -137,11 +137,17 @@ export function planFor(kind: TaskKind, size: TaskSize, security: boolean): Plan
 }
 
 /** Expected tokens for a whole task, before the role share. Heuristic, labelled Estimated. */
-export const TOKENS_BY_SIZE: Record<TaskSize, { tokensIn: number; tokensOut: number; context: number }> = {
-  S: { tokensIn: 80_000, tokensOut: 10_000, context: 32_000 },
-  M: { tokensIn: 300_000, tokensOut: 40_000, context: 128_000 },
-  L: { tokensIn: 1_000_000, tokensOut: 120_000, context: 200_000 },
+export const TOKENS_BY_SIZE: Record<TaskSize, { tokensIn: number; tokensOut: number; context: number; turns: number }> = {
+  S: { tokensIn: 80_000, tokensOut: 10_000, context: 32_000, turns: 8 },
+  M: { tokensIn: 300_000, tokensOut: 40_000, context: 128_000, turns: 25 },
+  L: { tokensIn: 1_000_000, tokensOut: 120_000, context: 200_000, turns: 60 },
 };
+
+/**
+ * Input tokens a runner sends on every turn before any task text (its own system prompt).
+ * Codex: about 14.8k per turn, measured by the Codex adapter work on 2026-10-30.
+ */
+export const TURN_OVERHEAD_TOKENS: Partial<Record<RunnerId, number>> = { codex: 14_800 };
 
 const DOC_PATH = /(^|[\\/])(docs?|documentation)([\\/]|$)|\.(md|mdx|txt|rst)$|(^|[\\/])(README|CHANGELOG|LICENSE|NOTICE)[^\\/]*$/i;
 
