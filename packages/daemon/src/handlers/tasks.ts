@@ -16,6 +16,8 @@ export function createTasksHandlers(ctx: HandlerContext, overrides?: Partial<Orc
     "runs.resume": ({ runId }) => o.resume(runId),
     "runs.stop": ({ runId }) => o.stop(runId),
     "runs.message": ({ runId, text }) => o.message(runId, text),
+    "runs.handoff": ({ runId, targetProfileId }) => o.handoff(runId, targetProfileId),
+    "runs.retry": ({ runId }) => o.retry(runId),
     "requests.list": (params) => o.requests(params),
     "requests.answer": ({ requestId, answer }) => o.answer(requestId, answer),
   };
