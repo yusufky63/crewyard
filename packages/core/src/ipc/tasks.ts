@@ -82,6 +82,9 @@ export type OrchestratorErrorCode =
   | "request.no_target" // a handoff answer without a target
   | "request.no_reset" // wait for reset without a known reset time
   | "git.failed" // { command, detail }
+  | "worktree.branch_elsewhere" // { branch, path }: the task's branch is checked out in another worktree
+  | "worktree.locked" // { path }: registered, folder missing, and locked with `git worktree lock`
+  | "worktree.path_taken" // { path }: a folder that git does not know is already there; never deleted
   | "adapter.failed"; // { detail }
 
 export interface CostEstimate {
@@ -164,6 +167,8 @@ export interface RunView {
   handoffId: string | null;
   resumedFrom: string | null;
   nativeSessionId: string | null;
+  /** Messages for this step that wait for a live run (see runs.message). */
+  queuedMessages: number;
   tokensIn: number;
   tokensOut: number;
   cost: CostEstimate & { provenance: Provenance };
@@ -184,6 +189,12 @@ export interface WorktreeView {
 export type HandoffTrigger = "limit" | "budget" | "crashed";
 export type HandoffOutcome = "completed" | "failed" | "cancelled" | "interrupted";
 
+/**
+ * Durable checkpoints of PLAN.md §8.2, written before each step starts. An interrupted handoff
+ * keeps the phase it died in as its `detail`.
+ */
+export type HandoffPhase = "stopping_source" | "checkpoint" | "starting_target" | "confirming" | "closed";
+
 export interface HandoffView {
   id: string;
   fromRunId: string;
@@ -193,6 +204,7 @@ export interface HandoffView {
   /** `native_resume` for the same runner and profile, otherwise a new session fed the package. */
   kind: "native_resume" | "new_session" | null;
   trigger: HandoffTrigger;
+  phase: HandoffPhase;
   /** Markdown handoff package under the task folder (PLAN.md §8.2 step 5). */
   packagePath: string | null;
   checkpointSha: string | null;
@@ -352,7 +364,11 @@ export interface TasksIpc {
   "runs.resume": { params: { runId: string }; result: RunView };
   /** Ends the run and its process tree. Closing a panel never calls this. */
   "runs.stop": { params: { runId: string }; result: RunView };
-  /** Sends a message to a live run. */
+  /**
+   * Sends a message to a live run. While the step has no live process (paused, limited, handing
+   * off, interrupted) the message waits in the step's outbox and goes to whichever run continues
+   * the step: a resume, a reset or a handoff target. Fails with `run.ended` for a completed run.
+   */
   "runs.message": { params: { runId: string; text: string }; result: RunView };
   /** Open requests by default, oldest first. */
   "requests.list": { params: { projectId?: string; taskId?: string; includeAnswered?: boolean }; result: RequestView[] };

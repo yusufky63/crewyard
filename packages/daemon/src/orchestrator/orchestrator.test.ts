@@ -282,7 +282,7 @@ describe("handoff", () => {
   async function expectHandedOff(env: Awaited<ReturnType<typeof startLimited>>, mode: FallbackMode) {
     const { o, t, adapter } = env;
     const h = await waitFor(() => o.get(t.id).handoffs.find((x) => x.outcome === "completed"));
-    expect(h.mode).toBe(mode);
+    expect([h.mode, h.phase]).toEqual([mode, "closed"]);
     expect(h.kind).toBe("new_session");
     expect(h.trigger).toBe("limit");
     const detail = o.get(t.id);
@@ -404,6 +404,47 @@ describe("recovery", () => {
     expect(o2.get(t.id).resumableRunIds).toEqual([]);
   });
 
+  it("holds messages for a step without a process and delivers them to the run that continues it", async () => {
+    const pick: Picker = (_role, _req, resumed) => (resumed ? [running, { wait: 50 }, say("back")] : [running, ...question("hold")]);
+    const { o, project, adapter } = await setup({ pick });
+    const t = await o.propose({ projectId: project.id, title: "Research A" });
+    await o.approve({ taskId: t.id });
+    await waitFor(() => o.requests({ taskId: t.id })[0]);
+    const run = o.get(t.id).runs[0]!;
+    await o.pause(run.id);
+    await waitFor(() => o.get(t.id).runs[0]!.state === "paused");
+
+    const queued = await o.message(run.id, "Use the OS keychain, not a file.");
+    expect(queued.queuedMessages).toBe(1);
+    expect(adapter.inspect(adapter.started[0]!.runId).inputs).toEqual([]);
+
+    await o.resume(run.id);
+    await waitFor(() => o.get(t.id).status === "done");
+    expect(o.get(t.id).runs[0]!.queuedMessages).toBe(0);
+    expect(adapter.inspect(adapter.started[1]!.runId).inputs.map((i) => i.text)).toEqual(["Use the OS keychain, not a file."]);
+    await expect(o.message(run.id, "late")).rejects.toThrow("run.ended");
+  });
+
+  it("closes a handoff interrupted by a restart with the phase it reached, and allows one open handoff per run", async () => {
+    const env = await setup({ pick: () => [running, ...question("hold")] });
+    const t = await env.o.propose({ projectId: env.project.id, title: "Research A" });
+    await env.o.approve({ taskId: t.id });
+    await waitFor(() => env.o.requests({ taskId: t.id })[0]);
+    const run = env.o.get(t.id).runs[0]!;
+    const insert = env.store.db.prepare(
+      "insert into handoffs (id, task_id, from_run_id, mode, trigger_kind, phase, opened_at) values (?, ?, ?, 'auto', 'limit', 'starting_target', '2026-10-30T00:00:00Z')",
+    );
+    insert.run("h1", t.id, run.id);
+    expect(() => insert.run("h2", t.id, run.id)).toThrow(/UNIQUE/);
+    expect(env.o.get(t.id).status).toBe("needs_input");
+
+    env.o.shutdown();
+    const o2 = new Orchestrator({ ...env.options, adapters: new AdapterRegistry({}) });
+    o2.start();
+    open.push({ o: o2, store: env.store });
+    expect(o2.get(t.id).handoffs[0]).toMatchObject({ outcome: "interrupted", detail: "starting_target", phase: "closed" });
+  });
+
   it("pauses and stops runs on request", async () => {
     const { o, project } = await setup({ pick: () => [running, ...question("hold")] });
     const t = await o.propose({ projectId: project.id, title: "Research A" });
@@ -413,10 +454,12 @@ describe("recovery", () => {
     expect((await o.pause(run.id)).state).toBe("paused");
     const stopped = await o.stop(run.id);
     expect([stopped.endReason, stopped.endDetail]).toEqual(["stopped", "user_stop"]);
-    await expect(o.message(run.id, "hi")).rejects.toThrow("run.ended");
+    // A stopped run can be resumed, so a message waits for it.
+    expect((await o.message(run.id, "hi")).queuedMessages).toBe(1);
     const cancelled = await o.cancel(t.id);
     expect(cancelled.status).toBe("cancelled");
     expect(cancelled.resumableRunIds).toEqual([]);
+    await expect(o.message(run.id, "hi")).rejects.toThrow("run.ended");
   });
 });
 

@@ -14,6 +14,7 @@ import {
   type CrewEdit,
   type EndReason,
   type FallbackMode,
+  type HandoffPhase,
   type HandoffTrigger,
   type LimitWindow,
   type NativeSessionRef,
@@ -39,7 +40,7 @@ import { admit, DEFAULT_LIMITS, type AdmissionLimits } from "./admission.ts";
 import { AdapterRegistry } from "./adapters.ts";
 import { classifyTask } from "./classify.ts";
 import { eligible, MIN_HEADROOM, modelKey, proposeCrew, rankForRole, sameModel, scoreCandidate, sumEstimates, type ScoringContext } from "./crew.ts";
-import { OrchestratorDb, type MemberRow, type ProjectRow, type RequestRow, type RunRow, type TaskRow } from "./db.ts";
+import { OrchestratorDb, type MemberRow, type ProjectRow, type RequestRow, type RunRow, type TaskRow, type WorktreeRow } from "./db.ts";
 import { EMPTY_DIRECTORY, type Candidate, type ProfileDirectory } from "./directory.ts";
 import { errorCode, OrchestratorError } from "./errors.ts";
 import { checkpoint, defaultWorktreeRoot, diffStat, ensureWorktree, headSha, taskSlug, writeFileAtomic } from "./git.ts";
@@ -108,6 +109,7 @@ export class Orchestrator {
   /** Target run -> handoff it must confirm before the handoff record flips. */
   private readonly confirming = new Map<string, string>();
   private readonly background = new Set<Promise<unknown>>();
+  private readonly creating = new Map<string, Promise<WorktreeRow>>();
   private ticking = false;
   private tickAgain = false;
   private closed = false;
@@ -347,12 +349,34 @@ export class Orchestrator {
 
   async message(runId: string, text: string): Promise<RunView> {
     const run = this.db.run(runId);
-    if (run.ended_at) throw new OrchestratorError("run.ended");
+    if (run.end_reason === "completed" || this.db.task(run.task_id).cancelled_at) throw new OrchestratorError("run.ended");
     const live = this.live.get(runId);
-    if (!live) throw new OrchestratorError("run.not_live");
-    await live.adapter.send(live.handle, { kind: "text", text });
-    this.audit(run.task_id, runId, "run.message", { chars: text.length });
+    // A paused run keeps its message until resume; sending it now would start a new turn.
+    if (live && !run.paused_at) {
+      await live.adapter.send(live.handle, { kind: "text", text });
+      this.audit(run.task_id, runId, "run.message", { chars: text.length, queued: false });
+    } else {
+      // No process to talk to right now: the message belongs to the step, not to this process.
+      this.db.exec("insert into outbox (id, task_id, member_id, text, created_at) values (?, ?, ?, ?, ?)", randomUUID(), run.task_id, run.member_id, text, this.iso());
+      this.audit(run.task_id, runId, "run.message", { chars: text.length, queued: true });
+      await this.flushOutbox(run.task_id, run.member_id);
+    }
     return this.db.runView(this.db.run(runId));
+  }
+
+  /** Delivers a step's queued messages to its live run, if it has one now. */
+  private async flushOutbox(taskId: string, memberId: string): Promise<void> {
+    const target = this.db.runs(taskId).find((r) => r.member_id === memberId && !r.ended_at && !r.paused_at && this.live.has(r.id));
+    const live = target ? this.live.get(target.id) : undefined;
+    if (!target || !live) return;
+    for (const m of this.db.queued(memberId)) {
+      try {
+        await live.adapter.send(live.handle, { kind: "text", text: m.text });
+      } catch {
+        return; // stays queued for the next live run
+      }
+      this.db.exec("update outbox set delivered_at = ?, delivered_run_id = ? where id = ?", this.iso(), target.id, m.id);
+    }
   }
 
   // ---------------------------------------------------------------- requests
@@ -547,7 +571,16 @@ export class Orchestrator {
     return runId;
   }
 
-  private async ensureTaskWorktree(task: TaskRow, project: ProjectRow, root: string) {
+  private ensureTaskWorktree(task: TaskRow, project: ProjectRow, root: string): Promise<WorktreeRow> {
+    // One creation per task at a time; a second caller waits for the first instead of racing git.
+    const pending = this.creating.get(task.id);
+    if (pending) return pending;
+    const p = this.createTaskWorktree(task, project, root).finally(() => this.creating.delete(task.id));
+    this.creating.set(task.id, p);
+    return p;
+  }
+
+  private async createTaskWorktree(task: TaskRow, project: ProjectRow, root: string): Promise<WorktreeRow> {
     const existing = this.db.worktree(task.id);
     const slug = taskSlug(task.title, task.id);
     const path = existing?.path ?? join(root, slug);
@@ -573,6 +606,8 @@ export class Orchestrator {
     const live: Live = { adapter, handle, candidate, done: new Promise<void>((r) => (finish = r)) };
     this.live.set(runId, live);
     this.track(this.pump(runId, live).finally(finish));
+    const run = this.db.run(runId);
+    this.track(this.flushOutbox(run.task_id, run.member_id));
   }
 
   private async pump(runId: string, live: Live): Promise<void> {
@@ -684,6 +719,8 @@ export class Orchestrator {
     const live = this.live.get(runId);
     if (live) {
       await live.adapter.send(live.handle, { kind: "text", text });
+      const r = this.db.run(runId);
+      await this.flushOutbox(r.task_id, r.member_id);
       return;
     }
     const run = this.db.run(runId);
@@ -917,23 +954,36 @@ export class Orchestrator {
     const source = this.db.run(sourceRunId);
     const task = this.db.task(source.task_id);
     const project = this.db.project(task.project_id);
-    const handoffId = randomUUID();
-    this.db.exec(
-      "insert into handoffs (id, task_id, from_run_id, target_profile_id, mode, trigger_kind, opened_at) values (?, ?, ?, ?, ?, ?, ?)",
-      handoffId,
-      task.id,
-      source.id,
-      target.profileId,
-      task.fallback,
-      trigger,
-      this.iso(),
-    );
+
+    // Preflight before claiming anything, so a target that cannot start never touches the source.
+    const candidate = (await this.candidates(project)).find((c) => c.profile.id === target.profileId);
+    if (!candidate?.ready || !this.adapters.has(target.runner)) {
+      await this.offerHandoff(source, task, "manual", { trigger, window: null, resetsAt: null }, "target_unavailable");
+      return;
+    }
+
+    // Claim: one open handoff per source run (also a unique index). A second click, or Auto
+    // racing a click, stops here instead of starting a second target.
+    const handoffId = this.db.tx(() => {
+      if (this.db.openHandoffs().some((h) => h.from_run_id === source.id)) return null;
+      const id = randomUUID();
+      this.db.exec(
+        "insert into handoffs (id, task_id, from_run_id, target_profile_id, mode, trigger_kind, phase, opened_at) values (?, ?, ?, ?, ?, ?, 'stopping_source', ?)",
+        id,
+        task.id,
+        source.id,
+        target.profileId,
+        task.fallback,
+        trigger,
+        this.iso(),
+      );
+      return id;
+    });
+    if (!handoffId) return;
     this.audit(task.id, source.id, "handoff.opened", { handoffId, target: target.profileId, trigger });
     this.emitTask(task.id, "handoff_opened");
+    const phase = (p: HandoffPhase) => this.db.exec("update handoffs set phase = ? where id = ? and closed_at is null", p, handoffId);
     try {
-      const candidate = (await this.candidates(project)).find((c) => c.profile.id === target.profileId);
-      if (!candidate?.ready || !this.adapters.has(target.runner)) throw new OrchestratorError("adapter.failed", { detail: "target_unavailable" });
-
       // Stop the source at a turn boundary; never replay a half-finished tool call.
       const live = this.live.get(source.id);
       if (live) {
@@ -942,6 +992,7 @@ export class Orchestrator {
         if (!(await this.within(live.done, this.opts.stopTimeoutMs ?? 30_000))) await this.safe(() => live.adapter.stop(live.handle));
       }
 
+      phase("checkpoint");
       const wt = this.db.worktree(task.id);
       let sha: string | null = null;
       let stat: string | null = null;
@@ -967,6 +1018,7 @@ export class Orchestrator {
       const native = target.runner === source.runner && target.profileId === source.profile_id && source.native_session_id !== null;
       this.db.exec("update handoffs set package_path = ?, checkpoint_sha = ?, kind = ? where id = ?", packagePath, sha, native ? "native_resume" : "new_session", handoffId);
 
+      phase("starting_target");
       const targetRunId = await this.launch({
         task,
         member: this.db.member(source.member_id),
@@ -978,6 +1030,7 @@ export class Orchestrator {
         handoffId,
       });
       this.db.exec("update handoffs set to_run_id = ? where id = ?", targetRunId, handoffId);
+      phase("confirming");
       const started = this.db.run(targetRunId);
       if (started.ended_at && this.db.handoff(handoffId).closed_at === null) throw new OrchestratorError("adapter.failed", { detail: started.end_detail ?? "target_failed" });
     } catch (err) {
@@ -1024,7 +1077,7 @@ export class Orchestrator {
   }
 
   private closeHandoff(id: string, outcome: "completed" | "failed" | "cancelled" | "interrupted", detail: string | null): void {
-    this.db.exec("update handoffs set closed_at = ?, outcome = ?, detail = ? where id = ? and closed_at is null", this.iso(), outcome, detail, id);
+    this.db.exec("update handoffs set closed_at = ?, outcome = ?, detail = ?, phase = 'closed' where id = ? and closed_at is null", this.iso(), outcome, detail, id);
   }
 
   /** Wait-for-reset: the same session continues when its window resets. */
@@ -1071,7 +1124,8 @@ export class Orchestrator {
       tasks.add(r.task_id);
     }
     for (const h of this.db.openHandoffs()) {
-      this.closeHandoff(h.id, "interrupted", null);
+      // The phase it died in tells you how far it got (e.g. a WIP commit exists after "checkpoint").
+      this.closeHandoff(h.id, "interrupted", h.phase);
       tasks.add(h.task_id);
     }
     tasks.forEach((t) => this.emitTask(t, "recovered"));

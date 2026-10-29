@@ -1,11 +1,11 @@
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Headroom } from "@crewyard/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { admit } from "./admission.ts";
 import { classifyTask } from "./classify.ts";
 import { proposeCrew, scoreCandidate, type ScoringContext } from "./crew.ts";
-import { checkpoint, defaultWorktreeRoot, ensureWorktree, taskSlug } from "./git.ts";
+import { checkpoint, defaultWorktreeRoot, ensureWorktree, parseWorktreeList, taskSlug } from "./git.ts";
 import { onlyDocPaths, planFor } from "./roles.ts";
 import { CANDIDATES, candidate, cleanTemps, git, model, tempDir, tempRepo } from "./testing.ts";
 
@@ -130,5 +130,46 @@ describe("worktrees", () => {
     expect((await git(path, "log", "-1", "--format=%s")).trim()).toBe("wip: handoff from r1");
     // Nothing reaches the main checkout's branch.
     expect((await git(repo, "log", "-1", "--format=%s")).trim()).toBe("init");
+  });
+
+  it("recovers a registered worktree whose folder is gone without touching anything else", async () => {
+    const root = tempDir();
+    const repo = await tempRepo(root);
+    const path = join(defaultWorktreeRoot(repo), "task-1");
+    const sibling = join(defaultWorktreeRoot(repo), "task-2");
+    await ensureWorktree(repo, path, "crewyard/task-1", null);
+    await ensureWorktree(repo, sibling, "crewyard/task-2", null);
+    rmSync(path, { recursive: true, force: true });
+    rmSync(sibling, { recursive: true, force: true });
+
+    await ensureWorktree(repo, path, "crewyard/task-1", null);
+    expect(existsSync(join(path, "README.md"))).toBe(true);
+    // No repo-wide prune: the sibling's registration survives for its own recovery.
+    expect(parseWorktreeList(await git(repo, "worktree", "list", "--porcelain", "-z")).map((r) => r.branch)).toContain("crewyard/task-2");
+  });
+
+  it("refuses a locked registration, a branch checked out elsewhere and a foreign folder", async () => {
+    const root = tempDir();
+    const repo = await tempRepo(root);
+    const base = defaultWorktreeRoot(repo);
+    await ensureWorktree(repo, join(base, "a"), "crewyard/a", null);
+    await expect(ensureWorktree(repo, join(base, "b"), "crewyard/a", null)).rejects.toMatchObject({ code: "worktree.branch_elsewhere" });
+
+    await git(repo, "worktree", "lock", join(base, "a"));
+    rmSync(join(base, "a"), { recursive: true, force: true });
+    await expect(ensureWorktree(repo, join(base, "a"), "crewyard/a", null)).rejects.toMatchObject({ code: "worktree.locked" });
+
+    mkdirSync(join(base, "c"), { recursive: true });
+    writeFileSync(join(base, "c", "notes.txt"), "mine\n");
+    await expect(ensureWorktree(repo, join(base, "c"), "crewyard/c", null)).rejects.toMatchObject({ code: "worktree.path_taken" });
+    expect(readFileSync(join(base, "c", "notes.txt"), "utf8")).toBe("mine\n");
+  });
+
+  it("parses porcelain output with spaces and locks", () => {
+    const out = ["worktree C:/Projeler/my repo", "HEAD abc", "branch refs/heads/main", "", "worktree C:/Projeler/.mc/worktrees/my repo/t", "HEAD def", "branch refs/heads/crewyard/t", "locked moving", "", ""].join("\0");
+    expect(parseWorktreeList(out)).toEqual([
+      { path: "C:/Projeler/my repo", branch: "main", locked: false },
+      { path: "C:/Projeler/.mc/worktrees/my repo/t", branch: "crewyard/t", locked: true },
+    ]);
   });
 });

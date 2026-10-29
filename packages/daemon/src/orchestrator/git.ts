@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 import { run } from "@crewyard/proc";
 import { OrchestratorError } from "./errors.ts";
 
@@ -37,17 +37,55 @@ export interface WorktreeInfo {
   baseSha: string;
 }
 
+export interface Registration {
+  path: string;
+  branch: string | null;
+  locked: boolean;
+}
+
+/** `git worktree list --porcelain -z`: NUL-terminated attribute lines, an empty field between entries. */
+export function parseWorktreeList(out: string): Registration[] {
+  const regs: Registration[] = [];
+  let cur: Registration | null = null;
+  for (const field of out.split("\0")) {
+    if (field === "") {
+      if (cur) regs.push(cur);
+      cur = null;
+    } else if (field.startsWith("worktree ")) cur = { path: field.slice(9), branch: null, locked: false };
+    else if (cur && field.startsWith("branch ")) cur.branch = field.slice(7).replace(/^refs\/heads\//, "");
+    else if (cur && (field === "locked" || field.startsWith("locked "))) cur.locked = true;
+  }
+  if (cur) regs.push(cur);
+  return regs;
+}
+
+const samePath = (a: string, b: string) => resolve(a).toLowerCase() === resolve(b).toLowerCase();
+
 /**
- * Creates the task's worktree on a new branch from `base` (or the repo's HEAD), or reuses an
- * existing one, e.g. after a restart.
+ * Creates the task's worktree on a new branch from `base` (or the repo's HEAD), or reuses it,
+ * e.g. after a restart. Every recovery path here touches only this one registration and never
+ * deletes a folder: a repo-wide `git worktree prune` would also drop sibling registrations whose
+ * folders are briefly unreachable, and a folder git does not know may hold someone's work.
  */
 export async function ensureWorktree(repoPath: string, path: string, branch: string, base: string | null, bin = "git"): Promise<WorktreeInfo> {
   const baseSha = (await git(repoPath, ["rev-parse", "--verify", `${base ?? "HEAD"}^{commit}`], bin)).trim();
-  if (existsSync(join(path, ".git"))) return { path, branch, baseSha };
+  const regs = parseWorktreeList(await git(repoPath, ["worktree", "list", "--porcelain", "-z"], bin));
+  const here = regs.find((r) => samePath(r.path, path));
+  const elsewhere = regs.find((r) => r.branch === branch && !samePath(r.path, path));
+  if (elsewhere) throw new OrchestratorError("worktree.branch_elsewhere", { branch, path: elsewhere.path });
+
+  const folder = existsSync(path);
+  if (here && folder) return { path, branch, baseSha };
+  if (here?.locked) throw new OrchestratorError("worktree.locked", { path });
+  if (!here && folder && readdirSync(path).length > 0) throw new OrchestratorError("worktree.path_taken", { path });
+
+  // Registered but its folder is gone: `add --force` re-registers just this path, and git still
+  // refuses it if a non-empty folder appeared in the meantime, so a lost race fails instead of overwriting.
+  const force = here ? ["--force"] : [];
   mkdirSync(dirname(path), { recursive: true });
   const exists = await run(bin, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`], { cwd: repoPath, env: GIT_ENV });
-  if (exists.code === 0) await git(repoPath, ["worktree", "add", path, branch], bin);
-  else await git(repoPath, ["worktree", "add", "-b", branch, path, baseSha], bin);
+  if (exists.code === 0) await git(repoPath, ["worktree", "add", ...force, path, branch], bin);
+  else await git(repoPath, ["worktree", "add", ...force, "-b", branch, path, baseSha], bin);
   return { path, branch, baseSha };
 }
 

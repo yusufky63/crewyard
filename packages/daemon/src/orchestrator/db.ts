@@ -147,6 +147,7 @@ export interface HandoffRow {
   mode: FallbackMode;
   kind: HandoffView["kind"];
   trigger_kind: HandoffView["trigger"];
+  phase: HandoffView["phase"];
   package_path: string | null;
   checkpoint_sha: string | null;
   opened_at: string;
@@ -296,6 +297,11 @@ export class OrchestratorDb {
 
   openHandoffs(): HandoffRow[] {
     return this.all<HandoffRow>("select * from handoffs where closed_at is null");
+  }
+
+  /** Undelivered messages for a crew step, oldest first. */
+  queued(memberId: string): Array<{ id: string; text: string }> {
+    return this.all<{ id: string; text: string }>("select id, text from outbox where member_id = ? and delivered_at is null order by created_at, id", memberId);
   }
 
   allowRules(projectId: string): string[] {
@@ -501,6 +507,7 @@ export class OrchestratorDb {
       handoffId: r.handoff_id,
       resumedFrom: r.resumed_from,
       nativeSessionId: r.native_session_id,
+      queuedMessages: this.queued(r.member_id).length,
       tokensIn: r.tokens_in,
       tokensOut: r.tokens_out,
       cost: { usd: r.cost_usd, provenance: r.cost_provenance },
@@ -558,6 +565,7 @@ export const handoffView = (h: HandoffRow): HandoffView => ({
   mode: h.mode,
   kind: h.kind,
   trigger: h.trigger_kind,
+  phase: h.phase,
   packagePath: h.package_path,
   checkpointSha: h.checkpoint_sha,
   openedAt: h.opened_at,

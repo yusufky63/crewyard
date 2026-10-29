@@ -145,12 +145,24 @@ const MIGRATIONS: string[] = [
      trigger_kind text not null,
      package_path text,
      checkpoint_sha text,
+     phase text not null,
      opened_at text not null,
      closed_at text,
      outcome text,
      detail text
    );
    create index handoffs_task on handoffs(task_id, opened_at);
+   create unique index handoffs_one_open on handoffs(from_run_id) where closed_at is null;
+   create table outbox (
+     id text primary key,
+     task_id text not null references tasks(id),
+     member_id text not null references crew_members(id),
+     text text not null,
+     created_at text not null,
+     delivered_at text,
+     delivered_run_id text
+   );
+   create index outbox_pending on outbox(member_id, delivered_at);
    create table allow_rules (
      project_id text not null references projects(id),
      command text not null,
