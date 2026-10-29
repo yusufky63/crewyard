@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Check, FolderOpen, FolderSearch, RefreshCw } from "lucide-react";
+import { AlertTriangle, Check, FolderOpen, FolderSearch, FolderTree, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Button, Label, Panel } from "@crewyard/ui";
+import { BrandIcon, Button, Label, Panel } from "@crewyard/ui";
 import type { MachineEnv, ProjectSummary, ToolId } from "@crewyard/core";
 import { call, useDaemon } from "../../ipc.ts";
 import { canOpenProjects, useNav } from "../../nav.ts";
@@ -10,6 +10,8 @@ import { usePrefs } from "../../prefs.ts";
 import "./start.css";
 
 const TOOL_ORDER: ToolId[] = ["claude", "codex", "opencode", "gemini", "git", "gh"];
+// Brand glyphs are keyed by runner id (PLAN.md D9), not by the CLI's binary name.
+const TOOL_BRAND: Record<ToolId, string> = { claude: "claude-code", codex: "codex", opencode: "opencode", gemini: "gemini-cli", git: "git", gh: "github" };
 const IMPORT_PREVIEW = 8;
 
 function useRelativeTime() {
@@ -24,13 +26,16 @@ function useRelativeTime() {
   };
 }
 
-function CheckRow({ ok, pending, label, detail }: { ok: boolean; pending: boolean; label: string; detail: string }) {
+function CheckRow({ ok, pending, label, detail, glyph }: { ok: boolean; pending: boolean; label: string; detail: string; glyph: ReactNode }) {
   return (
     <div className="sysrow">
       <span className={pending ? "st st-run" : ok ? "st st-ok" : "st st-wait"}>
         {pending ? <span className="spin" /> : ok ? <Check size={16} strokeWidth={1.75} /> : <AlertTriangle size={16} strokeWidth={1.75} />}
       </span>
-      <span>{label}</span>
+      <span className="brand-name">
+        {glyph}
+        {label}
+      </span>
       <span className="muted">{detail}</span>
     </div>
   );
@@ -52,7 +57,7 @@ function ToolRow({ id, env }: { id: ToolId; env: MachineEnv | undefined }) {
     else detail = tool.version ? t("machine.version", { version: tool.version }) : t("machine.installed");
   }
   const ok = Boolean(tool?.found) && (id !== "gh" || Boolean(env?.ghUser));
-  return <CheckRow ok={ok} pending={pending} label={t(`machine.tools.${id}`)} detail={detail} />;
+  return <CheckRow ok={ok} pending={pending} label={t(`machine.tools.${id}`)} detail={detail} glyph={<BrandIcon id={TOOL_BRAND[id]} />} />;
 }
 
 function MachineCheck() {
@@ -81,6 +86,7 @@ function MachineCheck() {
           ok={Boolean(env.data?.longPathsEnabled)}
           pending={!env.data}
           label={t("machine.longPaths")}
+          glyph={<FolderTree className="brand" size={16} strokeWidth={1.75} aria-hidden="true" />}
           detail={!env.data ? t("machine.checking") : env.data.longPathsEnabled ? t("machine.longOn") : t("machine.longOff")}
         />
       )}

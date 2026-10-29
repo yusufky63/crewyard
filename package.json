@@ -15,6 +15,7 @@
     "tokens": "node scripts/build-tokens.mjs",
     "contrast": "node design/check-contrast.mjs",
     "catalog:sync": "node catalog/sync-catalog.mjs",
+    "logos:sync": "node catalog/sync-logos.mjs",
     "check": "pnpm tokens --check && pnpm contrast && pnpm typecheck && pnpm lint && pnpm test && pnpm build"
   },
   "devDependencies": {

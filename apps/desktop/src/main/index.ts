@@ -1,4 +1,4 @@
-import { readdirSync, rmSync, writeFileSync } from "node:fs";
+import { readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import type { IpcMethod } from "@crewyard/core";
@@ -12,13 +12,28 @@ const here = import.meta.dirname;
 // the user's settings or database. Used for the light/dark and width checks before merging UI work.
 // Chromium keeps the profile locked until the process ends, so each run sweeps the leftovers of
 // earlier runs; the "shoot-" prefix also matches the machine's scheduled headless cleanup.
+// Several sessions take shots at once, so a profile is only swept once it is old enough to be
+// abandoned, and a locked one (EPERM on Windows) is skipped: it belongs to a run still going.
+const SHOT_PROFILE_STALE_MS = 10 * 60_000;
 const shotFile = process.env.CREWYARD_SHOT;
 const shotProfile = shotFile ? join(app.getPath("temp"), `shoot-crewyard-${process.pid}`) : null;
 if (shotProfile) {
-  for (const name of readdirSync(app.getPath("temp"))) {
-    if (name.startsWith("shoot-crewyard-")) rmSync(join(app.getPath("temp"), name), { recursive: true, force: true, maxRetries: 2 });
+  const temp = app.getPath("temp");
+  for (const name of readdirSync(temp)) {
+    if (!name.startsWith("shoot-crewyard-")) continue;
+    const dir = join(temp, name);
+    try {
+      if (Date.now() - statSync(dir).mtimeMs > SHOT_PROFILE_STALE_MS) rmSync(dir, { recursive: true, force: true });
+    } catch {
+      // still in use by another run
+    }
   }
   app.setPath("userData", shotProfile);
+  // A headless run must never wait on a modal error box nobody is there to close.
+  process.on("uncaughtException", (err) => {
+    console.error(err);
+    app.exit(1);
+  });
 }
 
 app.setAppUserModelId("dev.crewyard.app");

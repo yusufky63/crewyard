@@ -4,7 +4,8 @@ import reactHooks from "eslint-plugin-react-hooks";
 import globals from "globals";
 
 export default tseslint.config(
-  { ignores: ["**/node_modules/**", "**/out/**", "**/dist/**", "design/prototype.html", "catalog/providers.json"] },
+  // .claude/worktrees holds other sessions' checkouts; each one lints itself.
+  { ignores: ["**/node_modules/**", "**/out/**", "**/dist/**", ".claude/**", "design/prototype.html", "catalog/providers.json"] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

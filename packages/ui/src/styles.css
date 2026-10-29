@@ -55,6 +55,9 @@ svg.i, .i { width: 16px; height: 16px; flex: none; }
 .sec { color: var(--ink-2); }
 .num { font-variant-numeric: tabular-nums; }
 .dot { width: 7px; height: 7px; border-radius: var(--radius-dot); background: var(--c, var(--ink-3)); flex: none; display: inline-block; }
+/* Vendor marks stay monochrome: they name a service, and color is reserved for state (DESIGN.md §1). */
+.brand { flex: none; display: inline-block; vertical-align: middle; color: var(--ink-2); }
+.brand-name { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
 
 /* Frames with corner ticks (R1). One masked pseudo-element draws all four corners. */
 .panel, .spec, .frame, .btn, .seg, .tabs, .banner { position: relative; }

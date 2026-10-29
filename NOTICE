@@ -11,6 +11,10 @@ Third-party material used by this project:
   in catalog/curated.json come from cc-switch (MIT, https://github.com/farion1231/cc-switch);
   every entry cites its file and line.
 - Geist and Geist Mono fonts (SIL Open Font License 1.1), bundled through @fontsource.
+- packages/ui/src/brand-icons.gen.ts: provider logos from models.dev (MIT,
+  https://github.com/anomalyco/models.dev) and the Claude, Google Gemini, Git, GitHub and Ollama
+  marks from simple-icons 16.36.0 (CC0-1.0, https://github.com/simple-icons/simple-icons).
+  All marks are trademarks of their owners and are used only to name their service.
 - Design and architecture ideas from OrchestratorInc/agent-orchestrator and BloopAI/vibe-kanban
   (Apache-2.0), among other projects listed in PRIOR_ART.md. They were read for reference only;
   no code has been copied or ported from them.
