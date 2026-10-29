@@ -60,6 +60,8 @@ function createWindow(): BrowserWindow {
   if (shotFile) {
     if (process.env.CREWYARD_SHOT_THEME) query.theme = process.env.CREWYARD_SHOT_THEME;
     if (process.env.CREWYARD_SHOT_LANG) query.lang = process.env.CREWYARD_SHOT_LANG;
+    // Extra renderer query for a given screen state, e.g. "screen=setup&step=2".
+    for (const [k, v] of new URLSearchParams(process.env.CREWYARD_SHOT_QUERY ?? "")) query[k] ??= v;
     // Long enough for the machine check (each CLI's --version) to finish.
     w.webContents.once("did-finish-load", () => setTimeout(() => void capture(w), Number(process.env.CREWYARD_SHOT_DELAY ?? 9000)));
   }
