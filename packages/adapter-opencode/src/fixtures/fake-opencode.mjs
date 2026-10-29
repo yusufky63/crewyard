@@ -243,7 +243,9 @@ const server = createServer(async (req, res) => {
     }
     if (req.method === "POST" && parts[2] === "abort") {
       log({ kind: "abort", session: s.id });
+      // The real server publishes the aborted turn's idle before it answers the abort request.
       s.onAbort?.();
+      await sleep(20);
       return json(res, 200, true);
     }
   }

@@ -40,6 +40,8 @@ interface Run {
   sawBusy: boolean;
   promptAt: number;
   interrupted: boolean;
+  /** stop() was called; the idle that follows its abort must not read as a completed turn. */
+  stopping: boolean;
   error: string | null;
   ended: boolean;
   connections: number;
@@ -167,6 +169,7 @@ export class OpenCodeAdapter implements AgentAdapter {
   async stop(handle: RunHandle): Promise<void> {
     const run = this.runs.get(handle.runId);
     if (!run) return;
+    run.stopping = true;
     if (!run.ended && run.awaiting) {
       await Promise.race([run.client.session.abort({ sessionID: run.mapper.rootSession }).catch(() => undefined), sleep(2_000)]);
     }
@@ -205,6 +208,7 @@ export class OpenCodeAdapter implements AgentAdapter {
       sawBusy: false,
       promptAt: 0,
       interrupted: false,
+      stopping: false,
       error: null,
       ended: false,
       connections: 0,
@@ -320,7 +324,8 @@ export class OpenCodeAdapter implements AgentAdapter {
       this.setState(run, /rate|limit|429|quota|overloaded/i.test(status.message) ? "rate_limited" : "running", status.message.slice(0, 300));
     } else if (run.awaiting && (run.sawBusy || run.error !== null)) {
       run.awaiting = false;
-      if (run.interrupted) this.end(run, "interrupted");
+      if (run.stopping) this.end(run, "stopped");
+      else if (run.interrupted) this.end(run, "interrupted");
       else if (run.error) this.end(run, "failed", run.error);
       else this.end(run, "completed");
     }
