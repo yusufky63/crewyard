@@ -83,6 +83,166 @@ const MIGRATIONS: string[] = [
    );
    create index spend_credential_at on spend(credential_id, at);
    create index spend_task on spend(task_id, credential_id);`,
+  // Orchestrator (PLAN.md §4.3): facts only; task and run status are derived on read.
+  `create table tasks (
+     id text primary key,
+     project_id text not null references projects(id),
+     title text not null,
+     description text not null,
+     kind text not null,
+     size text not null,
+     base_branch text,
+     fallback text not null,
+     wait_reset_minutes integer not null,
+     budget_usd real,
+     classification text not null,
+     created_at text not null,
+     cancelled_at text
+   );
+   create index tasks_project on tasks(project_id, created_at);
+   create table crews (
+     id text primary key,
+     task_id text not null unique references tasks(id),
+     proposed_at text not null,
+     approved_at text,
+     estimate_usd real,
+     estimate_provenance text not null
+   );
+   create table crew_members (
+     id text primary key,
+     crew_id text not null references crews(id),
+     position integer not null,
+     step text not null,
+     role text not null,
+     depends_on text not null,
+     required integer not null,
+     writes_code integer not null,
+     chosen text,
+     standby text not null,
+     reasons text not null,
+     edited integer not null default 0
+   );
+   create index crew_members_crew on crew_members(crew_id, position);
+   create table worktrees (
+     id text primary key,
+     task_id text not null unique references tasks(id),
+     repo_path text not null,
+     path text not null,
+     branch text not null,
+     base_sha text not null,
+     owner_run_id text,
+     created_at text not null,
+     last_heartbeat_at text
+   );
+   create table runs (
+     id text primary key,
+     task_id text not null references tasks(id),
+     member_id text not null references crew_members(id),
+     role text not null,
+     profile_id text not null,
+     runner text not null,
+     model text,
+     cwd text not null,
+     worktree_id text references worktrees(id),
+     native_session_id text,
+     pid integer,
+     resumed_from text,
+     handoff_id text,
+     started_at text not null,
+     ended_at text,
+     end_reason text,
+     end_detail text,
+     last_state text,
+     last_activity_at text,
+     paused_at text,
+     resume_at text,
+     limit_reached integer not null default 0,
+     tokens_in integer not null default 0,
+     tokens_out integer not null default 0,
+     cost_usd real,
+     cost_provenance text not null default 'unknown',
+     plan text,
+     diff text
+   );
+   create index runs_task on runs(task_id, started_at);
+   create index runs_open on runs(ended_at);
+   create table requests (
+     id text primary key,
+     task_id text not null references tasks(id),
+     run_id text references runs(id),
+     native_id text,
+     kind text not null,
+     risk text,
+     payload text not null,
+     created_at text not null,
+     answered_at text,
+     answer text,
+     answered_by text
+   );
+   create index requests_open on requests(answered_at, task_id);
+   create table usage_samples (
+     id integer primary key autoincrement,
+     profile_id text not null,
+     limit_window text not null,
+     used_pct real,
+     resets_at text,
+     provenance text not null,
+     observed_at text not null,
+     run_id text
+   );
+   create index usage_samples_profile on usage_samples(profile_id, limit_window, observed_at);
+   create table handoffs (
+     id text primary key,
+     task_id text not null references tasks(id),
+     from_run_id text not null references runs(id),
+     to_run_id text,
+     target_profile_id text,
+     mode text not null,
+     kind text,
+     trigger_kind text not null,
+     package_path text,
+     checkpoint_sha text,
+     phase text not null,
+     opened_at text not null,
+     closed_at text,
+     outcome text,
+     detail text
+   );
+   create index handoffs_task on handoffs(task_id, opened_at);
+   create unique index handoffs_one_open on handoffs(from_run_id) where closed_at is null;
+   create table outbox (
+     id text primary key,
+     task_id text not null references tasks(id),
+     member_id text not null references crew_members(id),
+     text text not null,
+     created_at text not null,
+     delivered_at text,
+     delivered_run_id text
+   );
+   create index outbox_pending on outbox(member_id, delivered_at);
+   create table native_usage (
+     runner text not null,
+     session_id text not null,
+     tokens_in integer not null,
+     tokens_out integer not null,
+     cache_read integer not null,
+     cost_usd real,
+     updated_at text not null,
+     primary key (runner, session_id)
+   );
+   create table allow_rules (
+     project_id text not null references projects(id),
+     command text not null,
+     added_at text not null,
+     primary key (project_id, command)
+   );
+   create table role_prefs (
+     project_id text not null references projects(id),
+     role text not null,
+     profile_id text not null,
+     weight integer not null,
+     primary key (project_id, role, profile_id)
+   );`,
 ];
 
 export interface EventInput {
