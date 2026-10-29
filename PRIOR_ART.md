@@ -36,7 +36,7 @@ Not used: n8n (209k, Sustainable Use License, a workflow tool), langflow (156k, 
 
 Electron desktop app + Go daemon on `127.0.0.1:3001`, SQLite WAL, ConPTY on Windows, about 35 agent harnesses, stable releases every 1–3 days.
 
-**Adopt (ideas, Apache-2.0 allows porting with attribution):**
+**Adopt (ideas only; we write our own code):**
 1. **Store facts, derive status.** Only facts are persisted (`activity_state`, `is_terminated`, PR and check rows). Display status is computed when read. DB triggers write a `change_log`, a poller turns it into SSE with `Last-Event-ID` replay (`docs/architecture.md`, `backend/internal/cdc`).
 2. **One provider-neutral event model** across drivers: `approval.requested`, `input.requested`, `account.rateLimits`, `usage`, `turn.diff`, `turn.plan` (`backend/internal/ports/chat.go`).
 3. **Quota from what the provider reports.** Claude via a `get_usage` control request through the CLI, Codex via `account/rateLimits/updated`. Refusal messages matched only by strict regexes; reset times parsed with IANA zones (`domain/usage_limit.go`). Opt-in auto-resume at reset.
@@ -100,9 +100,9 @@ Electron desktop app + Go daemon on `127.0.0.1:3001`, SQLite WAL, ConPTY on Wind
 Build our own app, small and Windows-first, using these projects as references, not as a base:
 
 - **No fork.** agent-orchestrator moves too fast and treats Windows as second tier; vibe-kanban's company has shut down; crystal is deprecated; claude-squad is tmux-based and AGPL; orca is very large with hundreds of open Windows issues.
-- **Revisit point:** emdash (Apache-2.0, ACP-based, Windows MSI, PRs and checks in-app) was only read at README and tree level. A half-day audit before M1 is worthwhile; if its core is clean, borrowing its ACP adapter layer could save time.
+- **Revisit point:** emdash (Apache-2.0, ACP-based, Windows MSI, PRs and checks in-app) was only read at README and tree level. A half-day audit before M1 is worthwhile; its ACP adapter layer is the closest model for ours.
 - **Provider data:** models.dev and cc-switch are both MIT; `catalog/curated.json` cites the cc-switch file and line for every endpoint it takes.
-- **Copying code:** Apache-2.0 and MIT code may be ported with the license header and a NOTICE entry. AGPL (claude-squad, christag/agency) and Elastic (Paradev, Phoenix) code is never copied. Unlicensed repos (camtrik/agent-trail, Ericonaldo/AgentMonitor) are read-only references.
+- **Copying code:** none. Every repo here, whatever its license, is read to learn how it works; Crewyard's code is written for its own architecture (AGENTS.md).
 
 ## Not verified
 

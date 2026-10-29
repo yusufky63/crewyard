@@ -12,5 +12,5 @@ Third-party material used by this project:
   every entry cites its file and line.
 - Geist and Geist Mono fonts (SIL Open Font License 1.1), bundled through @fontsource.
 - Design and architecture ideas from OrchestratorInc/agent-orchestrator and BloopAI/vibe-kanban
-  (Apache-2.0). No code has been copied from them; any future port keeps its license header and
-  gets an entry here.
+  (Apache-2.0), among other projects listed in PRIOR_ART.md. They were read for reference only;
+  no code has been copied or ported from them.

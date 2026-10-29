@@ -33,7 +33,7 @@
 
 ## 3. Key decisions
 
-**D1. Build our own, use others as references.** No fork (reasons in PRIOR_ART.md). Ideas come mostly from agent-orchestrator (Apache-2.0) and vibe-kanban's executors (Apache-2.0); code ported from them keeps its license header and gets a NOTICE entry.
+**D1. Build our own, use others as references.** No fork (reasons in PRIOR_ART.md). Ideas come mostly from agent-orchestrator (Apache-2.0) and vibe-kanban's executors (Apache-2.0). We read them to learn how they work and write our own code; nothing is copied or ported (AGENTS.md).
 
 **D2. Electron + TypeScript end to end.**
 - The Claude Agent SDK exists only for Node and Python; the OpenCode SDK and ACP client are TypeScript; the Codex app-server is JSON-RPC over stdio and is easy to drive from Node. A Rust (Tauri) or Go core would still need a Node sidecar for Claude.
@@ -419,6 +419,7 @@ Each milestone ends with: typecheck, lint with `--max-warnings=0`, tests, build,
 **Decided**
 - 2026-10-29: the app may be shared later, so Claude Code runs on API keys only, from the first build (§6). M1 starts with Codex, which has the richest reported limits; Claude Code moves to M2.
 - 2026-10-29: runners and providers are separate (D9). Providers are not limited to the four vendors: the catalog (D10, §6.1) brings DeepSeek, Kimi, GLM, Qwen, MiniMax, MiMo, OpenRouter and others, with data from models.dev and cc-switch.
+- 2026-10-30: other projects, whatever their license, are read only to learn how they work; Crewyard's code is our own and nothing is copied or ported (AGENTS.md, D1).
 
 **Open**
 1. Should automatic switching between two accounts of the same provider exist at all, even as an opt-in?
