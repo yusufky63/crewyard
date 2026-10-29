@@ -1,0 +1,126 @@
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { run } from "@crewyard/proc";
+import { GithubClient, type FetchLike } from "./client.ts";
+import { GithubService } from "./service.ts";
+
+let root = "";
+let repo = "";
+beforeAll(async () => {
+  root = mkdtempSync(join(tmpdir(), "crewyard gh service "));
+  repo = join(root, "my repo");
+  mkdirSync(repo);
+  for (const args of [["init", "--initial-branch=main"], ["remote", "add", "origin", "git@github.com:octo/app.git"]]) await run("git", args, { cwd: repo });
+});
+afterAll(() => rmSync(root, { recursive: true, force: true, maxRetries: 3 }));
+
+const recent = new Date(Date.now() - 3_600_000).toISOString();
+const old = new Date(Date.now() - 30 * 86_400_000).toISOString();
+
+/** Answers by URL; every answer carries an ETag, and a matching If-None-Match gets a 304. */
+function routes(table: Record<string, unknown>) {
+  const seen: string[] = [];
+  const fn: FetchLike = async (url, init) => {
+    const path = url.replace("https://api.github.com", "");
+    seen.push(`${init.method} ${path}${init.headers["If-None-Match"] ? " (etag)" : ""}`);
+    if (init.method === "POST" && path === "/graphql") return Response.json({ data: { repository: { viewerDefaultMergeMethod: "SQUASH" } } });
+    const key = Object.keys(table).find((k) => path === k || path.startsWith(k.includes("?") ? k : `${k}?`));
+    if (!key) return Response.json({ message: "Not Found" }, { status: 404 });
+    const etag = `"${key}"`;
+    if (init.headers["If-None-Match"] === etag) return new Response(null, { status: 304, headers: { etag } });
+    return Response.json(table[key], { headers: { etag, "x-ratelimit-remaining": "4000", "x-ratelimit-limit": "5000", "x-ratelimit-reset": "9999999999" } });
+  };
+  return { fn, seen };
+}
+
+const pull = (number: number, extra: Record<string, unknown> = {}) => ({
+  number,
+  title: `PR ${number}`,
+  html_url: `https://github.com/octo/app/pull/${number}`,
+  user: { login: "octo" },
+  head: { ref: `agent/${number}`, sha: `sha${number}` },
+  base: { ref: "main" },
+  ...extra,
+});
+
+describe("GitHub service", () => {
+  it("lists open and recently merged PRs with checks and gates, and revalidates with ETags", async () => {
+    const { fn, seen } = routes({
+      "/repos/octo/app": { private: true, default_branch: "main", owner: { type: "User" }, allow_merge_commit: false, allow_squash_merge: true, allow_rebase_merge: true },
+      "/repos/octo/app/pulls": [pull(2), pull(3, { draft: true })],
+      "/repos/octo/app/commits/sha2/check-runs": { check_runs: [{ name: "check", status: "completed", conclusion: "success" }] },
+      "/repos/octo/app/commits/sha2/statuses": [],
+      "/repos/octo/app/commits/sha3/check-runs": { check_runs: [{ name: "check", status: "completed", conclusion: "failure" }] },
+      "/repos/octo/app/commits/sha3/statuses": [],
+      "/repos/octo/app/compare/main...sha2": { ahead_by: 2, behind_by: 0 },
+      "/repos/octo/app/compare/main...sha3": { ahead_by: 1, behind_by: 4 },
+    });
+    const svc = new GithubService({
+      projectPath: () => repo,
+      emit: () => undefined,
+      client: new GithubClient(async () => "t", fn),
+      tokenState: () => "ok",
+      resetToken: () => undefined,
+      openQuestions: (_p, branch) => (branch === "agent/2" ? 0 : null),
+    });
+    const res = await svc.pulls("p");
+    expect(res.problem).toBeNull();
+    expect(res.mergeMethod).toBe("squash");
+    // The closed list is the same URL prefix in this table, so both lists return the open ones; merged needs merged_at.
+    const [two, three] = res.pulls;
+    expect(two).toMatchObject({ number: 2, state: "open", behindBy: 0, checks: { state: "passed" } });
+    expect(two?.gate).toMatchObject({ readyForApproval: true, mergeable: false });
+    expect(three).toMatchObject({ number: 3, state: "draft", checks: { state: "failing", failingNames: ["check"] } });
+    expect(three?.gate?.items.map((i) => i.status)).toEqual(["fail", "fail", "unknown", "wait"]);
+
+    seen.length = 0;
+    await svc.refresh("p");
+    expect(seen.filter((s) => s.startsWith("GET")).every((s) => s.endsWith("(etag)"))).toBe(true);
+    expect((await svc.repo("p")).private).toBe(true);
+  });
+
+  it("keeps merged PRs from the last two weeks and gives them no gate", async () => {
+    const { fn } = routes({
+      "/repos/octo/app": { private: false, default_branch: "main", owner: { type: "Organization" } },
+      "/repos/octo/app/pulls?state=open": [],
+      "/repos/octo/app/pulls?state=closed": [pull(9, { merged_at: recent }), pull(8, { merged_at: null }), pull(7, { merged_at: old })],
+      "/repos/octo/app/commits/sha9/check-runs": { check_runs: [] },
+      "/repos/octo/app/commits/sha9/statuses": [{ context: "ci", state: "success" }],
+    });
+    const svc = new GithubService({ projectPath: () => repo, emit: () => undefined, client: new GithubClient(async () => "t", fn), tokenState: () => "ok", resetToken: () => undefined });
+    const res = await svc.pulls("p");
+    expect(res.pulls.map((p) => [p.number, p.state, p.gate])).toEqual([[9, "merged", null]]);
+    expect(res.mergeMethod).toBe("squash");
+  });
+
+  it("refuses to merge while a gate item is unknown, without calling the merge endpoint", async () => {
+    const { fn, seen } = routes({
+      "/repos/octo/app": { private: true, default_branch: "main", owner: { type: "User" } },
+      "/repos/octo/app/pulls": [pull(2)],
+      "/repos/octo/app/commits/sha2/check-runs": { check_runs: [{ name: "check", status: "completed", conclusion: "success" }] },
+      "/repos/octo/app/commits/sha2/statuses": [],
+      "/repos/octo/app/compare/main...sha2": { ahead_by: 2, behind_by: 0 },
+    });
+    const svc = new GithubService({ projectPath: () => repo, emit: () => undefined, client: new GithubClient(async () => "t", fn), tokenState: () => "ok", resetToken: () => undefined });
+    await expect(svc.merge("p", 2, "sha2")).rejects.toThrow(/questions/);
+    await expect(svc.merge("p", 2, "other")).rejects.toThrow(/new commits/);
+    expect(seen.some((s) => s.startsWith("PUT"))).toBe(false);
+  });
+
+  it("merges with the repo's method once every gate passes", async () => {
+    const { fn, seen } = routes({
+      "/repos/octo/app": { private: true, default_branch: "main", owner: { type: "User" }, allow_merge_commit: true, allow_squash_merge: true },
+      "/repos/octo/app/pulls?state=open": [pull(2)],
+      "/repos/octo/app/pulls?state=closed": [],
+      "/repos/octo/app/commits/sha2/check-runs": { check_runs: [{ name: "check", status: "completed", conclusion: "success" }] },
+      "/repos/octo/app/commits/sha2/statuses": [],
+      "/repos/octo/app/compare/main...sha2": { ahead_by: 2, behind_by: 0 },
+      "/repos/octo/app/pulls/2/merge": { merged: true, sha: "m1" },
+    });
+    const svc = new GithubService({ projectPath: () => repo, emit: () => undefined, client: new GithubClient(async () => "t", fn), tokenState: () => "ok", resetToken: () => undefined, openQuestions: () => 0 });
+    expect(await svc.merge("p", 2, "sha2")).toEqual({ merged: true, sha: "m1", method: "squash" });
+    expect(seen.filter((s) => s.startsWith("PUT"))).toEqual(["PUT /repos/octo/app/pulls/2/merge"]);
+  });
+});

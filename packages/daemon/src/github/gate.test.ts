@@ -1,0 +1,64 @@
+import { describe, expect, it } from "vitest";
+import type { ChecksSummary } from "@crewyard/core";
+import { evaluateGate, summarizeChecks } from "./gate.ts";
+
+const passed: ChecksSummary = { state: "passed", total: 3, passed: 3, failing: 0, pending: 0, failingNames: [] };
+const base = { checks: passed, behindBy: 0, draft: false, openQuestions: 0, ownerApproved: false };
+const statusOf = (g: ReturnType<typeof evaluateGate>) => Object.fromEntries(g.items.map((i) => [i.id, i.status]));
+
+describe("merge gate", () => {
+  it("waits only for the owner when everything else passes", () => {
+    const g = evaluateGate(base);
+    expect(statusOf(g)).toEqual({ checks: "pass", up_to_date: "pass", questions: "pass", approval: "wait" });
+    expect(g.readyForApproval).toBe(true);
+    expect(g.mergeable).toBe(false);
+    expect(evaluateGate({ ...base, ownerApproved: true }).mergeable).toBe(true);
+  });
+
+  it("blocks on failing or pending checks", () => {
+    expect(evaluateGate({ ...base, ownerApproved: true, checks: { ...passed, state: "failing" } }).mergeable).toBe(false);
+    const pending = evaluateGate({ ...base, checks: { ...passed, state: "pending" } });
+    expect(statusOf(pending).checks).toBe("wait");
+    expect(pending.readyForApproval).toBe(false);
+  });
+
+  it("never treats unknown as passing", () => {
+    const g = evaluateGate({ ...base, ownerApproved: true, behindBy: null, openQuestions: null, checks: { ...passed, state: "none", total: 0 } });
+    expect(statusOf(g)).toEqual({ checks: "unknown", up_to_date: "unknown", questions: "unknown", approval: "pass" });
+    expect(g.mergeable).toBe(false);
+  });
+
+  it("blocks a branch that is behind, has open questions or is a draft", () => {
+    expect(statusOf(evaluateGate({ ...base, behindBy: 2 })).up_to_date).toBe("fail");
+    expect(statusOf(evaluateGate({ ...base, openQuestions: 1 })).questions).toBe("wait");
+    const draft = evaluateGate({ ...base, draft: true, ownerApproved: true });
+    expect(draft.mergeable).toBe(false);
+    expect(draft.readyForApproval).toBe(false);
+  });
+});
+
+describe("checks summary", () => {
+  it("counts runs and statuses and names the failing ones", () => {
+    const s = summarizeChecks(
+      [
+        { name: "check", status: "completed", conclusion: "success" },
+        { name: "e2e", status: "completed", conclusion: "failure" },
+        { name: "docs", status: "completed", conclusion: "skipped" },
+        { name: "lint", status: "in_progress", conclusion: null },
+      ],
+      [
+        { context: "vercel", state: "error" },
+        { context: "vercel", state: "success" },
+      ],
+    );
+    expect(s).toEqual({ state: "failing", total: 5, passed: 2, failing: 2, pending: 1, failingNames: ["e2e", "vercel"] });
+  });
+
+  it("reports none without any check", () => {
+    expect(summarizeChecks([], []).state).toBe("none");
+  });
+
+  it("is pending while a run has not finished and nothing failed", () => {
+    expect(summarizeChecks([{ name: "a", status: "queued", conclusion: null }], [{ context: "b", state: "success" }]).state).toBe("pending");
+  });
+});

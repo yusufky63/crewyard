@@ -1,0 +1,19 @@
+name: matrix
+on:
+  push:
+    branches: [main, "release/**"]
+  pull_request:
+    branches: [main]
+    paths: ["src/**"]
+concurrency: matrix-${{ github.ref }}
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-14]
+        include:
+          - os: windows-2025
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - run: echo test
