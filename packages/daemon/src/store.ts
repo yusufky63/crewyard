@@ -26,6 +26,63 @@ const MIGRATIONS: string[] = [
    );
    create index events_run on events(run_id, seq);
    create table settings (key text primary key, value text not null);`,
+  // Providers: catalog snapshots, credentials (keys live DPAPI-encrypted in files, never here),
+  // profiles, last balance per credential and the spend ledger with its caps (PLAN.md §4.3, §6).
+  `create table catalog_snapshots (
+     hash text primary key,
+     origin text not null,
+     generated_at text not null,
+     source_sha text not null,
+     created_at text not null,
+     body text not null
+   );
+   create table credentials (
+     id text primary key,
+     alias text not null unique collate nocase,
+     provider_id text not null,
+     kind text not null check (kind in ('api_key', 'local')),
+     daily_cap_usd real,
+     task_cap_usd real,
+     created_at text not null
+   );
+   create table profiles (
+     id text primary key,
+     alias text not null,
+     runner text not null,
+     provider_id text not null,
+     credential_id text references credentials(id) on delete restrict,
+     default_model text,
+     config_dir text not null,
+     created_at text not null,
+     updated_at text not null,
+     unique (runner, alias collate nocase)
+   );
+   create table balances (
+     credential_id text primary key references credentials(id) on delete cascade,
+     provider_id text not null,
+     wallets text not null,
+     fetched_at text,
+     error text
+   );
+   create table spend (
+     id integer primary key autoincrement,
+     at text not null,
+     credential_id text,
+     profile_id text,
+     task_id text,
+     run_id text,
+     provider_id text not null,
+     model text,
+     tokens_in integer not null default 0,
+     tokens_out integer not null default 0,
+     tokens_cache integer not null default 0,
+     tokens_reasoning integer not null default 0,
+     cost_usd real not null,
+     source text not null check (source in ('estimated', 'billed')),
+     catalog_version text
+   );
+   create index spend_credential_at on spend(credential_id, at);
+   create index spend_task on spend(task_id, credential_id);`,
 ];
 
 export interface EventInput {

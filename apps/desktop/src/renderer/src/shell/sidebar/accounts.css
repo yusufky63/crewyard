@@ -1,0 +1,22 @@
+/* Accounts block pinned at the sidebar bottom; the list scrolls on its own above 34% of the window. */
+.accts { position: relative; border: 1px solid var(--line); padding: 10px 0 4px; display: flex; flex-direction: column; min-height: 0; }
+.accts::before { content: ""; position: absolute; inset: -1px; pointer-events: none; background: var(--ink-3); -webkit-mask: var(--tick-mask); mask: var(--tick-mask); }
+.accts-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 10px 6px; }
+.accts-head .lbl, .accts-head button { white-space: nowrap; }
+.accts-head button { font: 500 11px / 1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); padding: 2px 0; }
+.accts-head button:hover { color: var(--ink); }
+.accts-list { overflow-y: auto; max-height: min(34vh, var(--layout-accounts-max)); scrollbar-width: thin; scrollbar-color: var(--tick) transparent; display: grid; gap: 1px; padding-bottom: 6px; }
+.acct { display: grid; grid-template-columns: 7px minmax(0, 1fr) 26px 44px; align-items: center; gap: 6px; height: 28px; padding: 0 8px; font-size: 12px; color: var(--ink-2); text-align: left; width: 100%; }
+.acct:hover { background: var(--raised); color: var(--ink); }
+.acct .n { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.acct .v { font: 500 11px / 1 var(--mono); text-align: right; color: var(--ink); white-space: nowrap; }
+.acct .v.muted { color: var(--ink-3); }
+.acct .v.warn { color: var(--warn); }
+.acct .v.bad { color: var(--bad); }
+.accts-empty { padding: 4px 10px 8px; font-size: 12px; color: var(--ink-3); text-align: left; }
+.accts-empty:hover { color: var(--ink); }
+
+/* Icon rail below 1180 px: the block hides; the status bar keeps the near-limit count (DESIGN.md §4). */
+@media (max-width: 1180px) {
+  .accts { display: none; }
+}
