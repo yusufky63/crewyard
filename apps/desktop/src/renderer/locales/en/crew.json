@@ -1,0 +1,211 @@
+{
+  "nav": "Crew graph",
+  "title": "Crew graph",
+  "sub_one": "{{count}} step",
+  "sub_other": "{{count}} steps",
+  "fixture": "sample data",
+  "noTask": "Pick a task to see its crew",
+  "reset": "Reset layout",
+  "showList": "Show as list",
+  "showGraph": "Show as graph",
+  "full": {
+    "enter": "Full screen",
+    "exit": "Exit full screen",
+    "enterHint": "Full screen (F)",
+    "exitHint": "Exit full screen (Esc)"
+  },
+  "picker": {
+    "title": "Recent tasks",
+    "error": "The task list could not be read. Check that the background service is running.",
+    "loading": "Loading…",
+    "empty": "This project has no tasks yet. A crew appears here once you describe a task.",
+    "openTasks": "Go to Tasks",
+    "choose": "Pick another task"
+  },
+  "list": {
+    "step": "Step",
+    "runner": "Runner",
+    "status": "Status",
+    "model": "Model · account",
+    "fact": "Detail"
+  },
+  "canvas": {
+    "hint": "Task → crew → fallback"
+  },
+  "legend": {
+    "reports": "Reports to",
+    "depends": "Depends on",
+    "fallback": "Fallback",
+    "help": "Drag to arrange · Alt+arrows move · right-click or Shift+F10 for actions · F full screen"
+  },
+  "zoom": {
+    "label": "Zoom",
+    "in": "Zoom in",
+    "out": "Zoom out",
+    "inHint": "Zoom in (+ or Ctrl + wheel)",
+    "outHint": "Zoom out (- or Ctrl + wheel)",
+    "fit": "Fit to view"
+  },
+  "edge": {
+    "fallback": {
+      "manual": "fallback · you choose",
+      "ask": "fallback · asks first",
+      "auto": "fallback · automatic",
+      "wait_for_reset": "fallback · after reset wait"
+    }
+  },
+  "annot": {
+    "limit": "Limit reached",
+    "resumes": "resumes {{time}}"
+  },
+  "node": {
+    "task": "Task",
+    "taskTitle": "Task · {{title}}",
+    "memberHead": "{{step}} {{role}}",
+    "standbyHead": "{{step}} standby · {{role}}",
+    "defaultModel": "default model",
+    "noAccount": "no account"
+  },
+  "role": {
+    "planner": "Plan",
+    "implementer": "Implement",
+    "reviewer": "Review",
+    "tester": "Test",
+    "researcher": "Research",
+    "docs": "Docs",
+    "security": "Security"
+  },
+  "runner": {
+    "claude-code": "Claude Code",
+    "codex": "Codex",
+    "gemini-cli": "Gemini CLI",
+    "opencode": "OpenCode",
+    "acp": "ACP agent",
+    "fake": "Test runner",
+    "none": "No runner"
+  },
+  "status": {
+    "proposed": "Not approved",
+    "queued": "Queued",
+    "running": "Running",
+    "needs_answer": "Needs answer",
+    "needs_approval": "Needs approval",
+    "limited": "Limit reached",
+    "paused": "Paused",
+    "handing_off": "Handing off",
+    "done": "Done",
+    "failed": "Failed",
+    "stopped": "Stopped",
+    "interrupted": "Interrupted",
+    "cancelled": "Not run",
+    "standby": "Standby"
+  },
+  "taskStatus": {
+    "proposed": "Waiting for approval",
+    "failed": "Failed",
+    "needs_input": "Waiting for you",
+    "limited": "Limit reached",
+    "handing_off": "Handing off",
+    "running": "Running",
+    "queued": "Queued",
+    "review": "Ready for review",
+    "merged": "Merged",
+    "done": "Done",
+    "cancelled": "Stopped by you"
+  },
+  "kind": {
+    "code": "Code",
+    "research": "Research",
+    "review": "Review",
+    "docs": "Docs"
+  },
+  "fact": {
+    "usage": "{{tokens}} tok · {{cost}}",
+    "cost": {
+      "reported": "{{usd}} reported",
+      "estimated": "{{usd}} est."
+    },
+    "costUnknown": "cost unknown",
+    "estimate": "forecast {{cost}}",
+    "after": "waits for {{steps}}",
+    "noCandidate": "no account fits; edit the crew",
+    "standby": "takes over {{step}}",
+    "standbyMore_one": "takes over {{step}} · {{count}} more",
+    "standbyMore_other": "takes over {{step}} · {{count}} more",
+    "branch": "{{base}} → {{branch}}",
+    "kind": "{{kind}} · size {{size}}",
+    "queuedMessages_one": "{{count}} message waiting",
+    "queuedMessages_other": "{{count}} messages waiting"
+  },
+  "blocked": {
+    "admission": {
+      "project_slots": "project slots full ({{used}}/{{slots}})",
+      "profile_busy": "account busy ({{used}}/{{limit}})",
+      "global_slots": "all slots in use ({{used}}/{{slots}})",
+      "memory": "waiting for free memory",
+      "worktree_busy": "worktree in use by another step",
+      "no_profile": "no account; edit the crew",
+      "no_adapter": "runner not available in this build"
+    },
+    "other": "held back"
+  },
+  "menu": {
+    "label": "Actions for {{target}}",
+    "heading": "Actions",
+    "open": "Open in inspector",
+    "message": "Message this agent…",
+    "pause": "Pause",
+    "resume": "Resume",
+    "copy_run_id": "Copy run id",
+    "stop": "Stop agent…",
+    "why": {
+      "not_started": "This step has not started yet",
+      "ended": "This run has already ended",
+      "completed": "This step finished; there is no one to read it",
+      "handing_off": "Wait until the handoff finishes",
+      "task_cancelled": "The task was stopped",
+      "no_run": "No run yet, so there is no id"
+    }
+  },
+  "stop": {
+    "title": "Stop this agent?",
+    "target": "{{target}} ({{model}} on {{account}})",
+    "body": "This ends {{target}} and every process it started.",
+    "keeps": "The worktree stays on disk. Closing a panel never does this; only this button does.",
+    "confirm": "Stop agent"
+  },
+  "message": {
+    "title": "Message {{target}}",
+    "label": "Message",
+    "send": "Send",
+    "live": "The agent reads it at its next turn. Ctrl+Enter sends.",
+    "queued": "The agent is not running now. The message waits and goes to whichever run continues this step. Ctrl+Enter sends."
+  },
+  "dialog": {
+    "close": "Close",
+    "cancel": "Cancel"
+  },
+  "done": {
+    "pause": "Pausing {{target}} at its next turn",
+    "resume": "Resuming {{target}}",
+    "stop": "Stopped {{target}}",
+    "message": "Message sent",
+    "copied": "Run id copied"
+  },
+  "error": {
+    "generic": "The action failed ({{code}})",
+    "layout": "The layout could not be saved ({{code}})",
+    "copy": "The run id could not be copied",
+    "run": {
+      "not_found": "That run no longer exists",
+      "not_live": "That agent has no running process",
+      "ended": "That run has already ended",
+      "not_resumable": "That run cannot be resumed",
+      "resume_unsupported": "This runner cannot resume a session"
+    },
+    "task": {
+      "not_found": "That task no longer exists",
+      "cancelled": "The task was stopped"
+    }
+  }
+}

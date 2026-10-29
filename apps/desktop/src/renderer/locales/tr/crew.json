@@ -1,0 +1,211 @@
+{
+  "nav": "Ekip grafiği",
+  "title": "Ekip grafiği",
+  "sub_one": "{{count}} adım",
+  "sub_other": "{{count}} adım",
+  "fixture": "örnek veri",
+  "noTask": "Ekibini görmek için bir görev seç",
+  "reset": "Yerleşimi sıfırla",
+  "showList": "Liste olarak göster",
+  "showGraph": "Grafik olarak göster",
+  "full": {
+    "enter": "Tam ekran",
+    "exit": "Tam ekrandan çık",
+    "enterHint": "Tam ekran (F)",
+    "exitHint": "Tam ekrandan çık (Esc)"
+  },
+  "picker": {
+    "title": "Son görevler",
+    "error": "Görev listesi okunamadı. Arka plan hizmetinin çalıştığından emin ol.",
+    "loading": "Yükleniyor…",
+    "empty": "Bu projede henüz görev yok. Bir görev tarif ettiğinde ekibi burada görünür.",
+    "openTasks": "Görevlere git",
+    "choose": "Başka bir görev seç"
+  },
+  "list": {
+    "step": "Adım",
+    "runner": "Çalıştırıcı",
+    "status": "Durum",
+    "model": "Model · hesap",
+    "fact": "Ayrıntı"
+  },
+  "canvas": {
+    "hint": "Görev → ekip → yedek"
+  },
+  "legend": {
+    "reports": "Sonucu iletir",
+    "depends": "Bekler",
+    "fallback": "Yedek",
+    "help": "Sürükleyip yerleştir · Alt+oklar taşır · işlemler için sağ tık ya da Shift+F10 · F tam ekran"
+  },
+  "zoom": {
+    "label": "Yakınlaştırma",
+    "in": "Yakınlaştır",
+    "out": "Uzaklaştır",
+    "inHint": "Yakınlaştır (+ ya da Ctrl + tekerlek)",
+    "outHint": "Uzaklaştır (- ya da Ctrl + tekerlek)",
+    "fit": "Görünüme sığdır"
+  },
+  "edge": {
+    "fallback": {
+      "manual": "yedek · sen seçersin",
+      "ask": "yedek · önce sorar",
+      "auto": "yedek · kendiliğinden",
+      "wait_for_reset": "yedek · sıfırlanmayı bekledikten sonra"
+    }
+  },
+  "annot": {
+    "limit": "Limit doldu",
+    "resumes": "{{time}} itibarıyla devam eder"
+  },
+  "node": {
+    "task": "Görev",
+    "taskTitle": "Görev · {{title}}",
+    "memberHead": "{{step}} {{role}}",
+    "standbyHead": "{{step}} yedek · {{role}}",
+    "defaultModel": "varsayılan model",
+    "noAccount": "hesap yok"
+  },
+  "role": {
+    "planner": "Plan",
+    "implementer": "Uygulama",
+    "reviewer": "İnceleme",
+    "tester": "Test",
+    "researcher": "Araştırma",
+    "docs": "Belgeler",
+    "security": "Güvenlik"
+  },
+  "runner": {
+    "claude-code": "Claude Code",
+    "codex": "Codex",
+    "gemini-cli": "Gemini CLI",
+    "opencode": "OpenCode",
+    "acp": "ACP ajanı",
+    "fake": "Test çalıştırıcısı",
+    "none": "Çalıştırıcı yok"
+  },
+  "status": {
+    "proposed": "Onaylanmadı",
+    "queued": "Sırada",
+    "running": "Çalışıyor",
+    "needs_answer": "Yanıt bekliyor",
+    "needs_approval": "Onay bekliyor",
+    "limited": "Limit doldu",
+    "paused": "Duraklatıldı",
+    "handing_off": "Devrediliyor",
+    "done": "Bitti",
+    "failed": "Başarısız",
+    "stopped": "Durduruldu",
+    "interrupted": "Yarıda kaldı",
+    "cancelled": "Çalışmadı",
+    "standby": "Yedekte"
+  },
+  "taskStatus": {
+    "proposed": "Onayını bekliyor",
+    "failed": "Başarısız",
+    "needs_input": "Seni bekliyor",
+    "limited": "Limit doldu",
+    "handing_off": "Devrediliyor",
+    "running": "Çalışıyor",
+    "queued": "Sırada",
+    "review": "İncelemeye hazır",
+    "merged": "Birleştirildi",
+    "done": "Bitti",
+    "cancelled": "Sen durdurdun"
+  },
+  "kind": {
+    "code": "Kod",
+    "research": "Araştırma",
+    "review": "İnceleme",
+    "docs": "Belgeler"
+  },
+  "fact": {
+    "usage": "{{tokens}} token · {{cost}}",
+    "cost": {
+      "reported": "{{usd}} bildirilen",
+      "estimated": "{{usd}} tahmini"
+    },
+    "costUnknown": "maliyet bilinmiyor",
+    "estimate": "öngörü {{cost}}",
+    "after": "{{steps}} bitince başlar",
+    "noCandidate": "uygun hesap yok; ekibi düzenle",
+    "standby": "{{step}} adımını devralır",
+    "standbyMore_one": "{{step}} adımını devralır · {{count}} yedek daha",
+    "standbyMore_other": "{{step}} adımını devralır · {{count}} yedek daha",
+    "branch": "{{base}} → {{branch}}",
+    "kind": "{{kind}} · boyut {{size}}",
+    "queuedMessages_one": "{{count}} mesaj bekliyor",
+    "queuedMessages_other": "{{count}} mesaj bekliyor"
+  },
+  "blocked": {
+    "admission": {
+      "project_slots": "proje kotası dolu ({{used}}/{{slots}})",
+      "profile_busy": "hesap meşgul ({{used}}/{{limit}})",
+      "global_slots": "tüm yuvalar dolu ({{used}}/{{slots}})",
+      "memory": "boş bellek bekleniyor",
+      "worktree_busy": "çalışma ağacını başka bir adım kullanıyor",
+      "no_profile": "hesap yok; ekibi düzenle",
+      "no_adapter": "bu sürümde bu çalıştırıcı yok"
+    },
+    "other": "bekletiliyor"
+  },
+  "menu": {
+    "label": "{{target}} için işlemler",
+    "heading": "İşlemler",
+    "open": "Denetçide aç",
+    "message": "Bu ajana mesaj yaz…",
+    "pause": "Duraklat",
+    "resume": "Sürdür",
+    "copy_run_id": "Çalıştırma kimliğini kopyala",
+    "stop": "Ajanı durdur…",
+    "why": {
+      "not_started": "Bu adım henüz başlamadı",
+      "ended": "Bu çalıştırma zaten bitti",
+      "completed": "Bu adım bitti; mesajı okuyacak kimse yok",
+      "handing_off": "Devir bitene kadar bekle",
+      "task_cancelled": "Görev durduruldu",
+      "no_run": "Henüz çalıştırma yok, kimlik de yok"
+    }
+  },
+  "stop": {
+    "title": "Bu ajan durdurulsun mu?",
+    "target": "{{target}} ({{account}} hesabında {{model}})",
+    "body": "{{target}} ve başlattığı tüm süreçler kapanacak.",
+    "keeps": "Çalışma ağacı diskte kalır. Bir paneli kapatmak bunu asla yapmaz; yalnızca bu düğme yapar.",
+    "confirm": "Ajanı durdur"
+  },
+  "message": {
+    "title": "{{target}} için mesaj",
+    "label": "Mesaj",
+    "send": "Gönder",
+    "live": "Ajan bir sonraki turunda okur. Ctrl+Enter gönderir.",
+    "queued": "Ajan şu an çalışmıyor. Mesaj bekler ve bu adımı sürdüren çalıştırmaya gider. Ctrl+Enter gönderir."
+  },
+  "dialog": {
+    "close": "Kapat",
+    "cancel": "Vazgeç"
+  },
+  "done": {
+    "pause": "{{target}} bir sonraki turunda duraklatılacak",
+    "resume": "{{target}} sürdürülüyor",
+    "stop": "{{target}} durduruldu",
+    "message": "Mesaj gönderildi",
+    "copied": "Çalıştırma kimliği kopyalandı"
+  },
+  "error": {
+    "generic": "İşlem başarısız oldu ({{code}})",
+    "layout": "Yerleşim kaydedilemedi ({{code}})",
+    "copy": "Çalıştırma kimliği kopyalanamadı",
+    "run": {
+      "not_found": "Bu çalıştırma artık yok",
+      "not_live": "Bu ajanın çalışan bir süreci yok",
+      "ended": "Bu çalıştırma zaten bitti",
+      "not_resumable": "Bu çalıştırma sürdürülemiyor",
+      "resume_unsupported": "Bu çalıştırıcı oturumu sürdüremiyor"
+    },
+    "task": {
+      "not_found": "Bu görev artık yok",
+      "cancelled": "Görev durduruldu"
+    }
+  }
+}

@@ -1,0 +1,109 @@
+/* Crew graph (DESIGN.md §5 GraphNode, GraphEdge, GraphView). Colors only from tokens. */
+
+.crew-fixture { color: var(--warn); }
+.crew-sub-title { text-transform: none; letter-spacing: 0; font-size: 12px; color: var(--ink-2); }
+.crew-live { min-height: 20px; margin: -8px 0 8px; font-size: 13px; }
+.crew-notice { color: var(--ink-2); }
+.crew-notice.bad { color: var(--bad); }
+.st-muted { color: var(--ink-3); }
+
+/* Task picker */
+.crew-picker { max-width: 640px; }
+.crew-picker-note { padding: 12px 16px 16px; display: grid; gap: 12px; justify-items: start; font-size: 13px; }
+.crew-picker-list { list-style: none; padding: 8px; display: grid; gap: 2px; }
+.crew-picker-row { display: flex; align-items: center; gap: 12px; width: 100%; height: var(--row); padding: 0 10px; text-align: left; border: 1px solid transparent; }
+.crew-picker-row:hover { background: var(--raised); border-color: var(--line); }
+.crew-picker-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+
+/* Frame: hairline with corner ticks; full screen covers the window and keeps agents running. */
+.crew-frame { position: relative; height: max(420px, calc(100vh - 246px)); border: 1px solid var(--line); background: var(--surface); }
+.crew-frame::before { content: ""; position: absolute; inset: -1px; pointer-events: none; z-index: 6; background: var(--ink-3); -webkit-mask: var(--tick-mask); mask: var(--tick-mask); }
+/* Sits under the inspector overlay (z-dialog) so the inspector stays usable in full screen. */
+.crew-frame.full { position: fixed; inset: 0; z-index: var(--z-drawer); height: auto; border: 0; background: var(--canvas); }
+.crew-frame.full::before { display: none; }
+/* Centred, so it never sits under the native caption buttons at the top right. */
+.crew-exit { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 7; background: var(--surface); }
+.crew-canvas { position: absolute; inset: 0; overflow: hidden; }
+.crew-canvas .react-flow { background: transparent; }
+.crew-canvas .react-flow__pane { cursor: grab; }
+.crew-canvas .react-flow__pane.dragging { cursor: grabbing; }
+.crew-canvas .react-flow__attribution { background: transparent; font: 400 10px / 1 var(--mono); }
+.crew-canvas .react-flow__attribution a { color: var(--ink-3); }
+.crew-frame.full .react-flow__attribution { top: 44px; }
+
+/* Nodes: fixed 180 × 100 spec tiles. */
+.crew-canvas .react-flow__node { cursor: grab; }
+.crew-canvas .react-flow__node.dragging { cursor: grabbing; z-index: 5 !important; }
+.crew-node {
+  width: 180px; height: 100px; padding: 13px 12px 8px; display: grid; gap: 5px; align-content: start;
+  font-size: 13px; color: var(--ink); overflow: visible;
+}
+.crew-node > *:not(.crew-annot) { min-width: 0; }
+.crew-node.standby { border-style: dashed; background: var(--canvas); }
+.crew-node.on-path { --tk: var(--ink-2); }
+.crew-node.selected { border-color: var(--accent); --tk: var(--accent); }
+.react-flow__node.dragging .crew-node { --tk: var(--ink); border-color: var(--line-strong); }
+.crew-node:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.crew-node-role { position: absolute; top: -7px; left: 8px; max-width: calc(100% - 16px); padding: 0 4px; background: inherit; z-index: 2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.crew-node.selected .crew-node-role { color: var(--accent); }
+.crew-node-runner { font-weight: 500; min-width: 0; }
+.crew-node-runner span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.crew-node .st { font-size: 12px; gap: 6px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.crew-node-title { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.crew-node-facts { display: grid; gap: 2px; font: 400 11px / 1.3 var(--mono); color: var(--ink-3); }
+.crew-node-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.crew-handle { opacity: 0; pointer-events: none; width: 1px; height: 1px; min-width: 0; min-height: 0; border: 0; }
+
+/* Leader-line annotation above a node that hit a limit. */
+.crew-annot {
+  position: absolute; right: 24px; bottom: calc(100% + 12px); padding-right: 12px; display: grid; gap: 2px; justify-items: end;
+  font: 500 11px / 1.3 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--warn); white-space: nowrap; pointer-events: none;
+}
+/* The leader line drops from the label to the node's top edge, clear of the role label on the left. */
+.crew-annot::before { content: ""; position: absolute; right: 0; top: 6px; bottom: -12px; border-left: 1px dotted var(--warn); }
+.crew-annot::after { content: ""; position: absolute; right: -2px; top: 3px; width: 5px; height: 5px; border-radius: var(--radius-dot); background: var(--warn); }
+.crew-annot-sub { color: var(--ink-3); text-transform: none; letter-spacing: 0; }
+
+/* Edges */
+.crew-edge { fill: none; stroke: var(--line-strong); stroke-width: 1; }
+.crew-edge-depends { stroke-width: 1.5; stroke-dasharray: 1 4; stroke-linecap: round; }
+.crew-edge-fallback { stroke: var(--warn); stroke-width: 1.25; stroke-dasharray: 5 4; }
+.crew-edge.active { stroke: var(--accent); stroke-width: 1.5; }
+.crew-elabel { position: absolute; padding: 2px 4px; background: var(--surface); font: 400 11px / 1 var(--mono); color: var(--ink-3); white-space: nowrap; pointer-events: none; }
+.crew-elabel-fallback { color: var(--warn); }
+.crew-frame.full .crew-elabel { background: var(--canvas); }
+
+/* Overlays on the canvas */
+.crew-hint { position: absolute; left: 16px; top: 14px; z-index: 6; pointer-events: none; }
+.crew-legend { position: absolute; left: 16px; bottom: 14px; z-index: 6; display: flex; gap: 16px; padding: 8px 10px; background: var(--surface); border: 1px solid var(--line); pointer-events: none; }
+.crew-help { margin-top: 8px; font: 400 11px / 1.4 var(--mono); color: var(--ink-3); }
+.crew-legend > div { display: flex; align-items: center; gap: 10px; font: 400 11px / 1 var(--mono); color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.06em; }
+.crew-legend svg { width: 34px; height: 6px; overflow: visible; }
+.crew-zoom { position: absolute; right: 14px; bottom: 14px; z-index: 6; display: flex; flex-direction: column; border: 1px solid var(--line); background: var(--surface); }
+.crew-zoom button { width: 34px; height: 34px; display: grid; place-items: center; color: var(--ink-2); }
+.crew-zoom button:hover { background: var(--raised); color: var(--ink); }
+.crew-zoom button + button { border-top: 1px solid var(--line); }
+
+/* List view: the screen-reader equivalent of the graph (DESIGN.md §8). */
+.crew-list { overflow-x: auto; }
+.crew-list table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.crew-list th { text-align: left; padding: 12px 12px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.crew-list td { padding: 8px 12px; height: var(--row); border-bottom: 1px solid var(--line); }
+.crew-list td.mono { white-space: nowrap; }
+.crew-list tr:last-child td { border-bottom: 0; }
+.crew-list tr.standby td { color: var(--ink-2); }
+.crew-list td.mono { font-size: 12px; }
+.crew-list-open { font-weight: 500; text-align: left; }
+.crew-list-open:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+/* Dialogs */
+.crew-dialog { margin: auto; width: min(520px, calc(100vw - 48px)); padding: 0; color: var(--ink); overflow: visible; }
+.crew-dialog[open] { display: flex; flex-direction: column; }
+.crew-dialog::backdrop { background: var(--scrim); }
+.crew-dialog-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.crew-dialog-head h2 { font-size: 15px; font-weight: 500; }
+.crew-x { margin-left: auto; display: grid; place-items: center; width: 28px; height: 28px; color: var(--ink-2); }
+.crew-x:hover { background: var(--raised); color: var(--ink); }
+.crew-dialog-body { padding: 16px; display: grid; gap: 10px; font-size: 14px; }
+.crew-dialog-foot { display: flex; justify-content: flex-end; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--line); }
+.crew-textarea { width: 100%; resize: vertical; padding: 8px 10px; border: 1px solid var(--line-strong); background: var(--sunken); font: 400 13px / 1.45 var(--ui); }

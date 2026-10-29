@@ -1,0 +1,215 @@
+import { useCallback, useEffect, useMemo, useRef, type KeyboardEvent } from "react";
+import { Background, BackgroundVariant, ReactFlow, useReactFlow, type NodeChange } from "@xyflow/react";
+import { Maximize2, Minimize2, Minus, Plus, Scan } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import { CrewEdge, type CrewFlowEdge } from "./CrewEdge.tsx";
+import { CrewNode, useNodeTitle, type CrewFlowNode } from "./CrewNode.tsx";
+import { NODE_H, NODE_W, nudge, selectedPath, SNAP, type GraphModel, type Point } from "./model.ts";
+import { routeEdge, spreadPorts, type Box } from "./route.ts";
+
+// The React Flow canvas. Positions are owned by CrewScreen (saved per task); this component only
+// reports moves. Edges are routed here from the node boxes on every render, so they follow a
+// node while it is dragged.
+
+const nodeTypes = { crew: CrewNode };
+const edgeTypes = { crew: CrewEdge };
+// Room for the hint above and the legend and zoom bar below, so fitting never hides a node.
+const FIT = { padding: { top: "56px", bottom: "72px", left: "40px", right: "72px" }, maxZoom: 1 } as const;
+// Full screen has room to spare, so it may enlarge a small crew a little.
+const FIT_FULL = { ...FIT, maxZoom: 1.4 } as const;
+
+export interface CanvasProps {
+  model: GraphModel;
+  taskTitle: string;
+  positions: Record<string, Point>;
+  selected: string | null;
+  full: boolean;
+  onMove(id: string, p: Point, done: boolean): void;
+  onSelect(id: string | null): void;
+  onMenu(id: string, x: number, y: number): void;
+  onToggleFull(): void;
+  /** Bumped by Reset layout so the view fits the new arrangement. */
+  fitKey: number;
+}
+
+export function CrewCanvas({ model, taskTitle, positions, selected, full, onMove, onSelect, onMenu, onToggleFull, fitKey }: CanvasProps) {
+  const { t } = useTranslation("crew");
+  const flow = useReactFlow();
+  const title = useNodeTitle();
+  const wrap = useRef<HTMLDivElement>(null);
+
+  const path = useMemo(() => selectedPath(model, selected), [model, selected]);
+
+  const onKey = useCallback(
+    (id: string, e: KeyboardEvent<HTMLDivElement>) => {
+      if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
+        e.preventDefault();
+        const r = e.currentTarget.getBoundingClientRect();
+        onMenu(id, r.left + 24, r.bottom - 8);
+        return;
+      }
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        onSelect(id);
+        return;
+      }
+      const p = positions[id];
+      const next = p && nudge(p, e.key, e.altKey);
+      if (next) {
+        e.preventDefault();
+        onMove(id, next, true);
+      }
+    },
+    [positions, onMenu, onMove, onSelect],
+  );
+
+  const nodes: CrewFlowNode[] = useMemo(
+    () =>
+      model.nodes.map((n) => ({
+        id: n.id,
+        type: "crew" as const,
+        position: positions[n.id] ?? { x: 0, y: 0 },
+        width: NODE_W,
+        height: NODE_H,
+        selectable: false,
+        data: { model: n, title: title(n, taskTitle), taskTitle, selected: n.id === selected, onPath: path.nodes.has(n.id), onKey },
+      })),
+    [model, positions, selected, path, onKey, title, taskTitle],
+  );
+
+  const fallbackLabel = t(`edge.fallback.${model.fallback}`);
+  const edges: CrewFlowEdge[] = useMemo(() => {
+    const boxes: Record<string, Box> = {};
+    for (const n of model.nodes) {
+      const p = positions[n.id];
+      if (p) boxes[n.id] = { x: p.x, y: p.y, w: NODE_W, h: NODE_H };
+    }
+    // Fallback edges leave from the bottom on their own, so only work edges share side ports.
+    const ports = spreadPorts(
+      model.edges.filter((e) => e.kind !== "fallback"),
+      (id) => (positions[id]?.y ?? 0) + NODE_H / 2,
+    );
+    return model.edges.flatMap((e) => {
+      const a = boxes[e.from];
+      const b = boxes[e.to];
+      if (!a || !b) return [];
+      const others = Object.entries(boxes)
+        .filter(([id]) => id !== e.from && id !== e.to)
+        .map(([, box]) => box);
+      return [
+        {
+          id: e.id,
+          source: e.from,
+          target: e.to,
+          type: "crew" as const,
+          focusable: false,
+          selectable: false,
+          data: { route: routeEdge(a, b, others, ports.get(e.id)), kind: e.kind, active: path.edges.has(e.id), label: e.kind === "fallback" ? fallbackLabel : null },
+        },
+      ];
+    });
+  }, [model, positions, path, fallbackLabel]);
+
+  const onNodesChange = useCallback(
+    (changes: NodeChange<CrewFlowNode>[]) => {
+      for (const c of changes) if (c.type === "position" && c.position) onMove(c.id, c.position, !c.dragging);
+    },
+    [onMove],
+  );
+
+  // Refit when the frame changes size (full screen) or the layout is reset.
+  useEffect(() => {
+    const id = requestAnimationFrame(() => void flow.fitView(full ? FIT_FULL : FIT));
+    return () => cancelAnimationFrame(id);
+  }, [full, fitKey, flow]);
+
+  // +/- zoom from the keyboard while the graph screen is showing.
+  useEffect(() => {
+    const onDocKey = (e: globalThis.KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (e.ctrlKey || e.altKey || e.metaKey || el?.closest("input, textarea, select, [contenteditable], dialog, [role=menu]")) return;
+      if (e.key === "+" || e.key === "=") void flow.zoomIn();
+      else if (e.key === "-") void flow.zoomOut();
+    };
+    document.addEventListener("keydown", onDocKey);
+    return () => document.removeEventListener("keydown", onDocKey);
+  }, [flow]);
+
+  return (
+    <div className="crew-canvas" ref={wrap}>
+      <ReactFlow<CrewFlowNode, CrewFlowEdge>
+        nodes={nodes}
+        edges={edges}
+        nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
+        onNodesChange={onNodesChange}
+        onNodeClick={(_, n) => onSelect(n.id)}
+        onNodeContextMenu={(e, n) => {
+          e.preventDefault();
+          // Focus the tile first, so closing the menu with Esc returns focus to it.
+          wrap.current?.querySelector<HTMLElement>(`[data-node="${CSS.escape(n.id)}"]`)?.focus();
+          onMenu(n.id, e.clientX, e.clientY);
+        }}
+        onPaneClick={() => onSelect(null)}
+        onPaneContextMenu={(e) => e.preventDefault()}
+        snapToGrid
+        snapGrid={[SNAP, SNAP]}
+        nodeDragThreshold={4}
+        nodesConnectable={false}
+        nodesFocusable={false}
+        edgesFocusable={false}
+        elementsSelectable={false}
+        disableKeyboardA11y
+        zoomOnScroll={false}
+        zoomOnDoubleClick={false}
+        zoomActivationKeyCode="Control"
+        panOnScroll={false}
+        minZoom={0.4}
+        maxZoom={2}
+        fitView
+        fitViewOptions={FIT}
+        deleteKeyCode={null}
+        selectionKeyCode={null}
+        multiSelectionKeyCode={null}
+        attributionPosition="top-right"
+      >
+        <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="var(--tick)" />
+      </ReactFlow>
+      <span className="crew-hint lbl">{t("canvas.hint")}</span>
+      <div className="crew-legend" aria-hidden="true">
+        <div>
+          <svg viewBox="0 0 34 6">
+            <path d="M0 3H34" className="crew-edge crew-edge-reports" />
+          </svg>
+          {t("legend.reports")}
+        </div>
+        <div>
+          <svg viewBox="0 0 34 6">
+            <path d="M1 3H34" className="crew-edge crew-edge-depends" />
+          </svg>
+          {t("legend.depends")}
+        </div>
+        <div>
+          <svg viewBox="0 0 34 6">
+            <path d="M0 3H34" className="crew-edge crew-edge-fallback" />
+          </svg>
+          {t("legend.fallback")}
+        </div>
+      </div>
+      <div className="crew-zoom" role="toolbar" aria-label={t("zoom.label")}>
+        <button type="button" onClick={() => void flow.zoomIn()} aria-label={t("zoom.in")} title={t("zoom.inHint")}>
+          <Plus size={16} strokeWidth={1.75} />
+        </button>
+        <button type="button" onClick={() => void flow.zoomOut()} aria-label={t("zoom.out")} title={t("zoom.outHint")}>
+          <Minus size={16} strokeWidth={1.75} />
+        </button>
+        <button type="button" onClick={() => void flow.fitView(full ? FIT_FULL : FIT)} aria-label={t("zoom.fit")} title={t("zoom.fit")}>
+          <Scan size={16} strokeWidth={1.75} />
+        </button>
+        <button type="button" onClick={onToggleFull} aria-label={full ? t("full.exit") : t("full.enter")} title={full ? t("full.exitHint") : t("full.enterHint")}>
+          {full ? <Minimize2 size={16} strokeWidth={1.75} /> : <Maximize2 size={16} strokeWidth={1.75} />}
+        </button>
+      </div>
+    </div>
+  );
+}

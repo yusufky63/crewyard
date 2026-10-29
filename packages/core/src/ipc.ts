@@ -1,3 +1,4 @@
+import type { CrewIpc } from "./ipc/crew.ts";
 import type { GithubIpc } from "./ipc/github.ts";
 import type { ProvidersIpc } from "./ipc/providers.ts";
 import type { SetupIpc } from "./ipc/setup.ts";
@@ -48,7 +49,7 @@ export interface ScanResult {
 }
 
 /** Base methods live here; each area adds its own in src/ipc/<area>.ts so parallel work never edits this list. */
-export interface IpcMethods extends TasksIpc, ProvidersIpc, GithubIpc, SetupIpc {
+export interface IpcMethods extends TasksIpc, ProvidersIpc, GithubIpc, SetupIpc, CrewIpc {
   "daemon.status": { params: void; result: DaemonStatus };
   "machine.check": { params: void; result: MachineReport };
   /** One tool at a time, so slow CLIs (gemini --version takes ~6 s) don't hold up the others. */
