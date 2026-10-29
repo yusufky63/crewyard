@@ -119,8 +119,12 @@ export class CodexAdapter implements AgentAdapter {
   readonly id = "codex" as const;
   readonly capabilities = capabilities;
   private readonly runs = new Map<string, Run>();
+  private readonly launcher: Launcher;
 
-  constructor(private readonly launcher: Launcher = {}) {}
+  // No parameter properties: scripts import this file with Node's type stripping.
+  constructor(launcher: Launcher = {}) {
+    this.launcher = launcher;
+  }
 
   async probe(profile: Profile): Promise<Probe> {
     const executable = this.launcher.command ?? (await which("codex"));

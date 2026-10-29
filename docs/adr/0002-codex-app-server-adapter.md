@@ -38,6 +38,7 @@ No code was copied. The generated types are output of codex's own generator (Apa
 - On Windows, `codex` is an npm `.cmd` shim. `which` resolves it and cross-spawn starts it without a shell.
 - `windowsSandbox/readiness` returned `notConfigured` on the development machine. Without that sandbox, codex asks for approval for every command that is not known to be safe, instead of running it sandboxed. `probe()` reports this as a problem. For read-only roles this fails closed: those approvals are declined.
 - The stream of `events()` ends only after the app-server process has exited, so a worktree can be removed right after the loop.
+- With the `plugins` feature on (the default), codex 0.147 starts a background `git fetch` of `github.com/openai/plugins` into `CODEX_HOME\.tmp`. That git process outlives the app-server, so it can't be killed as part of the tree, and it keeps the folder locked. We start `codex app-server --disable plugins`. Reproduced on 2026-10-30 without a model call: with default settings git is still running after close; with `--disable plugins` nothing is left. `--disable remote_plugin` is not enough.
 
 ## Security notes
 

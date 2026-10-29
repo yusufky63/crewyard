@@ -18,6 +18,19 @@
 
 `scripts/live.mjs` (`CREWYARD_LIVE=1`) repeats these three calls and never starts a model turn.
 
+## Codex on DeepSeek (live, 2026-10-30)
+
+Test setup:
+- A throwaway `CODEX_HOME` whose `config.toml` sets `model_provider = "deepseek"`.
+- `[model_providers.deepseek]` with `base_url = "https://api.deepseek.com"`, `env_key = "DEEPSEEK_API_KEY"` and model `deepseek-flash`.
+- The key was passed only through the run's environment.
+
+Results:
+- `wire_api = "responses"` works. A one-word reply streamed, `usage.update` reported a context window of 258,400, and the run ended `completed`.
+- `wire_api = "chat"` is refused by codex 0.147 while loading config ("no longer supported").
+- `probe()` reports `signedIn: true`, because a custom provider needs no OpenAI account. `limits()` reports Unknown.
+- One codex turn sends about 14,800 input tokens (system prompt and tools) even for a one-word answer. On a repeat, about 9,500 of them were served from DeepSeek's cache.
+
 ## 0.147.0 vs 0.166.0 (npm latest on 2026-10-30)
 
 Compared the generated 0.147 types with the 0.166 `schema/typescript` files in openai/codex (tag `rust-v0.166.0`). Everything this adapter uses is the same or only has additions:

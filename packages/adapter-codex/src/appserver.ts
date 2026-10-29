@@ -10,9 +10,16 @@ import { JsonRpcConnection } from "./rpc.ts";
 export interface Launcher {
   /** Executable to start. Defaults to `codex` found on PATH (an npm .cmd shim on Windows). */
   command?: string;
-  /** Arguments. Defaults to ["app-server"]. */
+  /** Arguments. Defaults to DEFAULT_ARGS. */
   args?: string[];
 }
+
+/**
+ * With plugins on, codex 0.147 starts a background `git fetch` of github.com/openai/plugins into
+ * CODEX_HOME/.tmp that outlives the app-server: an orphan we cannot kill as part of the tree and
+ * that keeps the folder locked. Crewyard profiles do not use codex plugins. Checked 2026-10-30.
+ */
+export const DEFAULT_ARGS = ["app-server", "--disable", "plugins"];
 
 export interface LaunchOptions {
   codexHome: string;
@@ -57,7 +64,7 @@ export class AppServer {
     const env: NodeJS.ProcessEnv = { ...process.env };
     for (const key of INHERITED_BLOCKLIST) delete env[key];
     Object.assign(env, opts.env ?? {}, { CODEX_HOME: opts.codexHome });
-    const child = start(command, launcher.args ?? ["app-server"], { cwd: opts.cwd, env, stdio: ["pipe", "pipe", "pipe"] });
+    const child = start(command, launcher.args ?? DEFAULT_ARGS, { cwd: opts.cwd, env, stdio: ["pipe", "pipe", "pipe"] });
     const failedToSpawn = new Promise<never>((_, reject) => child.once("error", (err) => reject(new Error(`could not start codex: ${err.message}`))));
     failedToSpawn.catch(() => undefined);
     if (!child.stdout || !child.stdin) throw new Error("codex started without stdio pipes");
