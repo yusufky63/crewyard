@@ -81,6 +81,13 @@ export type OrchestratorErrorCode =
   | "request.always_high_risk" // "always allow" is never offered for high risk
   | "request.no_target" // a handoff answer without a target
   | "request.no_reset" // wait for reset without a known reset time
+  | "request.not_budget" // "continue" answers only a budget or spend-cap pause
+  | "run.superseded" // a later run already continues this step
+  | "run.still_limited" // { window, resetsAt }: retry found the limit still in place
+  | "handoff.same_profile" // the target is the profile the run already uses
+  | "handoff.open" // the run is already being handed off
+  | "handoff.target_not_ready" // { profileId }: not signed in, no key, or no adapter
+  | "handoff.over_cap" // { profileId, cap }: the target's key is past its daily or task cap
   | "git.failed" // { command, detail }
   | "worktree.branch_elsewhere" // { branch, path }: the task's branch is checked out in another worktree
   | "worktree.locked" // { path }: registered, folder missing, and locked with `git worktree lock`
@@ -186,7 +193,8 @@ export interface WorktreeView {
   createdAt: string;
 }
 
-export type HandoffTrigger = "limit" | "budget" | "crashed";
+/** `manual` is a hand off you asked for (runs.handoff); the others come from the run. */
+export type HandoffTrigger = "limit" | "budget" | "crashed" | "manual";
 export type HandoffOutcome = "completed" | "failed" | "cancelled" | "interrupted";
 
 /**
@@ -275,12 +283,29 @@ export type RequestPayload =
       candidates: CandidateView[];
       /** Code for why no target was proposed or why a handoff failed. */
       detail: string | null;
+      /** Set when spend paused the run (trigger "budget"); answering `continue` approves going past it. */
+      cap?: SpendCap | null;
     };
+
+/**
+ * Which spend limit paused a run: the task's own budget, or the credential's daily or per-task cap
+ * from the Limits screen. Amounts are Estimated unless the provider billed them.
+ */
+export interface SpendCap {
+  kind: "task_budget" | "daily_cap" | "task_cap";
+  spentUsd: number;
+  capUsd: number;
+  credentialId: string | null;
+}
 
 export type RequestAnswer =
   | { kind: "question"; answers: Array<{ selected: string[]; text?: string }> }
   | { kind: "approval"; decision: "allow_once" | "allow_always" | "deny"; message?: string }
-  | { kind: "handoff"; decision: "hand_off" | "wait_for_reset" | "stop"; targetProfileId?: string }
+  /**
+   * `continue` is only for a budget pause: it approves spend past that cap for this run until it
+   * ends; a resumed or retried run asks again.
+   */
+  | { kind: "handoff"; decision: "hand_off" | "wait_for_reset" | "stop" | "continue"; targetProfileId?: string }
   | { kind: "cancel" };
 
 export interface RequestView {
@@ -370,6 +395,20 @@ export interface TasksIpc {
    * the step: a resume, a reset or a handoff target. Fails with `run.ended` for a completed run.
    */
   "runs.message": { params: { runId: string; text: string }; result: RunView };
+  /**
+   * Moves the step to another profile now (the Crew graph's "Change AI"), through the same durable
+   * handoff as a limit, with trigger `manual`: stop at a turn boundary, checkpoint, package, start
+   * the target. Works on a live, paused, limited, failed or stopped run; the target must pass the
+   * role, independence, readiness and spend-cap preflight. Returns the source run.
+   */
+  "runs.handoff": { params: { runId: string; targetProfileId: string }; result: RunView };
+  /**
+   * "Check again". A failed, stopped or interrupted step starts a fresh run of the same member on
+   * the same profile. A run paused on a limit or a spend cap re-checks now and continues when it
+   * cleared, or fails with `run.still_limited`. Any other open run re-runs admission for queued
+   * steps. Never starts anything for a completed or superseded run.
+   */
+  "runs.retry": { params: { runId: string }; result: RunView };
   /** Open requests by default, oldest first. */
   "requests.list": { params: { projectId?: string; taskId?: string; includeAnswered?: boolean }; result: RequestView[] };
   /** Resolves a request; the same record backs the Inbox, the inspector and toasts. */
@@ -397,5 +436,6 @@ export type TaskChangeCause =
   | "handoff_opened"
   | "handoff_completed"
   | "handoff_failed"
+  | "retried"
   | "admission"
   | "recovered";

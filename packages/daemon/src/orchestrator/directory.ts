@@ -12,6 +12,10 @@ export interface Candidate {
   capabilities: AgentCapabilities;
   /** Signed in or key present according to the last probe. */
   ready: boolean;
+  /** The credential (API key) this profile spends on; spend is recorded and capped per credential. */
+  credentialId?: string | null;
+  /** Hash of the catalog snapshot `model` prices came from, stored with estimated spend. */
+  catalogVersion?: string | null;
 }
 
 export interface ProfileDirectory {

@@ -92,6 +92,9 @@ export function providersDirectory(svc: ProvidersService): ProfileDirectory {
       capabilities: CAPABILITIES[p.runner],
       // A provider that needs API-format conversion needs a proxy we do not run; Claude never runs without a key.
       ready: support !== "none" && support !== "conversion" && keyReady && !(p.runner === "claude-code" && !credential),
+      // Spend is recorded and capped per API key; local providers have no key to cap.
+      credentialId: credential?.kind === "api_key" ? credential.id : null,
+      catalogVersion: svc.catalog.current().hash,
     };
   };
 

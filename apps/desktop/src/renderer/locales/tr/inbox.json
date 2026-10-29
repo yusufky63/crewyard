@@ -1,0 +1,97 @@
+{
+  "nav": "Gelen kutusu",
+  "context": "{{open}} yanıt bekliyor · {{info}} bilgi notu",
+  "listLabel": "İstekler",
+  "empty": "Şu an sizi bekleyen bir şey yok.",
+  "forInfo": "Bilginize",
+  "errors": { "load": "İstekler arka plan hizmetinden okunamadı." },
+  "title": {
+    "page": "Gelen kutusu",
+    "question": "Bir ajandan soru",
+    "approval": "Bu araç çağrısı onaylansın mı?",
+    "approvalCommand": "{{command}} çalıştırılsın mı?",
+    "approvalPaths_one": "{{count}} dosya değiştirilsin mi?",
+    "approvalPaths_other": "{{count}} dosya değiştirilsin mi?",
+    "approvalNetwork": "Ağ erişimine izin verilsin mi?",
+    "budget": "Harcama sınırına ulaşıldı",
+    "cap_daily_cap": "{{usd}} günlük harcama sınırı doldu",
+    "cap_task_cap": "{{usd}} görev başı harcama sınırı doldu",
+    "cap_task_budget": "{{usd}} görev bütçesi doldu",
+    "handoff_limit": "{{window}} limiti doldu",
+    "handoff_crashed": "Ajan beklenmedik şekilde durdu",
+    "handoff_handoff_failed": "Bir devir tamamlanamadı",
+    "handoff_manual": "İstediğiniz devir başlatılamadı"
+  },
+  "eyebrow": { "approval": "Araç onayı", "question": "Soru", "handoff": "Karar" },
+  "risk": { "low": "Düşük risk", "medium": "Orta risk", "high": "Yüksek risk" },
+  "detail": {
+    "askedIn": "Soran görev:",
+    "step": "{{total}} adımın {{step}}. adımı, {{role}}",
+    "cwd": "Çalışma klasörü",
+    "paths": "Dosyalar",
+    "scope": "Kapsam",
+    "policy": "Kural",
+    "requestedBy": "İsteyen",
+    "noAlwaysHigh": "Yüksek riskli komutlar tek tek onaylanır; izin listesine hiç eklenmez.",
+    "freeText": "Ya da kendi yanıtınızı yazın",
+    "spent": "Harcanan",
+    "cap": "Sınır",
+    "resets": "{{time}} sıfırlanır",
+    "targets": "Şununla devam et",
+    "proposed": "Önerilen",
+    "headroom": "{{window}} içinde %{{pct}} payı kaldı",
+    "headroomUnknown": "kota bilinmiyor",
+    "estimate": "yaklaşık {{usd}}",
+    "estimateUnknown": "maliyet bilinmiyor",
+    "noTokenCost": "token başına ücret yok",
+    "continueNote": "Devam ederseniz yalnızca bu çalışma sınırın ötesinde harcar. Sürdürülen ya da yeniden denenen çalışma tekrar sorar."
+  },
+  "scope": {
+    "low": "Görevin worktree'si içinde, izin listesinde.",
+    "medium": "Worktree dışında ama proje içinde ya da izin listesinde değil.",
+    "high": "Yıkıcı git işlemi, proje dışı yol, kimlik bilgisi ya da paket kurulumu.",
+    "network": "Ağ erişimi gerekiyor.",
+    "noNetwork": "Ağ erişimi yok."
+  },
+  "policy": {
+    "notAllowlisted": "Henüz bu projenin izin listesinde değil.",
+    "policy_allowlisted": "İzin listesinde.",
+    "policy_role_read_only": "Reddedildi: bu rol yalnızca okuyabilir.",
+    "policy_role_docs_only": "Reddedildi: bu rol yalnızca belgeleri değiştirebilir.",
+    "policy_role_no_network": "Reddedildi: bu rolün ağ erişimi yok."
+  },
+  "cap": {
+    "daily_cap": "Bu API anahtarının günlük sınırı",
+    "task_cap": "Bu API anahtarının görev başı sınırı",
+    "task_budget": "Bu görevin bütçesi"
+  },
+  "handoffDetail": {
+    "no_target": "Ön kontrolü geçen yedek hesap yok: oturum açık, payı %20'nin üstünde ve bütçesi kalan bir hesap gerekiyor.",
+    "target_unavailable": "Seçilen hesap kullanılamadı.",
+    "handoff_failed": "Çalışma duraklatılmış olarak kalıyor; hiçbir şey taşınmadı.",
+    "git_mismatch": "Hedefin worktree'si kontrol noktasıyla eşleşmedi.",
+    "target_ended": "Hedef çalışma onay vermeden sona erdi.",
+    "adapter_failed": "Çalıştırıcı bir hata bildirdi.",
+    "run_resume_unsupported": "Bu çalıştırıcı oturumunu sürdüremiyor."
+  },
+  "action": {
+    "approveOnce": "Bir kez onayla",
+    "allowAlways": "Bu projede izin ver",
+    "allowAlwaysTitle": "“{{command}}” komutunu bu projenin izin listesine ekle",
+    "deny": "Reddet",
+    "send": "Yanıtı gönder",
+    "dismiss": "Kapat",
+    "handOffTo": "{{target}} hesabına devret",
+    "pickTarget": "Bir hesap seçin",
+    "waitForReset": "Sıfırlanmayı bekle · {{time}}",
+    "continuePastCap": "Sınırı aşarak devam et",
+    "stop": "Ajanı durdur",
+    "stopConfirm": "Bu ajan durdurulsun mu?"
+  },
+  "notice": {
+    "warn": "{{who}}, {{window}} kotasının %{{pct}} kadarını kullandı",
+    "critical": "{{who}}, {{window}} kotasının %{{pct}} kadarını kullandı",
+    "ahead_of_pace": "Bu hızla {{who}} yaklaşık {{minutes}} dakikada {{window}} kotasını doldurur",
+    "noReset": "sıfırlanma zamanı bilinmiyor"
+  }
+}

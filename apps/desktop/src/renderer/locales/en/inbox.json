@@ -1,0 +1,97 @@
+{
+  "nav": "Inbox",
+  "context": "{{open}} need your answer · {{info}} for your information",
+  "listLabel": "Requests",
+  "empty": "Nothing needs you right now.",
+  "forInfo": "For your information",
+  "errors": { "load": "Requests could not be loaded from the background service." },
+  "title": {
+    "page": "Inbox",
+    "question": "A question from an agent",
+    "approval": "Approve a tool call?",
+    "approvalCommand": "Run {{command}}?",
+    "approvalPaths_one": "Change {{count}} file?",
+    "approvalPaths_other": "Change {{count}} files?",
+    "approvalNetwork": "Allow network access?",
+    "budget": "Spend limit reached",
+    "cap_daily_cap": "Daily spend cap of {{usd}} reached",
+    "cap_task_cap": "Task spend cap of {{usd}} reached",
+    "cap_task_budget": "Task budget of {{usd}} reached",
+    "handoff_limit": "Limit reached on the {{window}}",
+    "handoff_crashed": "The agent stopped unexpectedly",
+    "handoff_handoff_failed": "A handoff did not complete",
+    "handoff_manual": "Your handoff could not start"
+  },
+  "eyebrow": { "approval": "Tool approval", "question": "Question", "handoff": "Decision" },
+  "risk": { "low": "Low risk", "medium": "Medium risk", "high": "High risk" },
+  "detail": {
+    "askedIn": "Asked in",
+    "step": "step {{step}} of {{total}}, {{role}}",
+    "cwd": "Working directory",
+    "paths": "Files",
+    "scope": "Scope",
+    "policy": "Policy",
+    "requestedBy": "Requested by",
+    "noAlwaysHigh": "High-risk commands are approved one at a time; they are never added to the allowlist.",
+    "freeText": "Or write your own answer",
+    "spent": "Spent",
+    "cap": "Cap",
+    "resets": "Resets {{time}}",
+    "targets": "Continue on",
+    "proposed": "Proposed",
+    "headroom": "{{pct}}% left on its {{window}}",
+    "headroomUnknown": "quota unknown",
+    "estimate": "about {{usd}}",
+    "estimateUnknown": "cost unknown",
+    "noTokenCost": "no per-token cost",
+    "continueNote": "Continuing spends past the cap for this run only. A resumed or retried run asks again."
+  },
+  "scope": {
+    "low": "Inside the task's worktree, on the allowlist.",
+    "medium": "Outside the worktree but inside the project, or not on the allowlist.",
+    "high": "Destructive git, outside the project, credentials or a package install.",
+    "network": "Needs network access.",
+    "noNetwork": "No network."
+  },
+  "policy": {
+    "notAllowlisted": "Not on this project's allowlist yet.",
+    "policy_allowlisted": "On the allowlist.",
+    "policy_role_read_only": "Denied: this role is read-only.",
+    "policy_role_docs_only": "Denied: this role may only change docs.",
+    "policy_role_no_network": "Denied: this role has no network access."
+  },
+  "cap": {
+    "daily_cap": "Daily cap on this API key",
+    "task_cap": "Per-task cap on this API key",
+    "task_budget": "This task's budget"
+  },
+  "handoffDetail": {
+    "no_target": "No standby account passed preflight: signed in, headroom above 20%, budget left.",
+    "target_unavailable": "The chosen account was not available.",
+    "handoff_failed": "The run stays paused; nothing moved.",
+    "git_mismatch": "The target's worktree did not match the checkpoint.",
+    "target_ended": "The target run ended before it confirmed.",
+    "adapter_failed": "The runner reported an error.",
+    "run_resume_unsupported": "This runner cannot resume its session."
+  },
+  "action": {
+    "approveOnce": "Approve once",
+    "allowAlways": "Allow in this project",
+    "allowAlwaysTitle": "Add “{{command}}” to this project's allowlist",
+    "deny": "Deny",
+    "send": "Send answer",
+    "dismiss": "Dismiss",
+    "handOffTo": "Hand off to {{target}}",
+    "pickTarget": "Pick an account",
+    "waitForReset": "Wait for reset · {{time}}",
+    "continuePastCap": "Continue past the cap",
+    "stop": "Stop agent",
+    "stopConfirm": "Stop this agent?"
+  },
+  "notice": {
+    "warn": "{{who}} at {{pct}}% of its {{window}}",
+    "critical": "{{who}} at {{pct}}% of its {{window}}",
+    "ahead_of_pace": "{{who}} fills its {{window}} in about {{minutes}} min at this pace",
+    "noReset": "reset time unknown"
+  }
+}

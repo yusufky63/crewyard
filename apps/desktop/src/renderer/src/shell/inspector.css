@@ -1,0 +1,72 @@
+/* Inspector (DESIGN.md §4): a 380 px column next to the main view; below 1280 px it overlays. */
+.body:has(> .inspector) { grid-template-columns: 224px minmax(0, 1fr) 380px; }
+.inspector {
+  position: relative; width: 380px; min-height: 0; overflow: hidden auto; display: flex; flex-direction: column;
+  border-left: 1px solid var(--line); background: var(--surface);
+  scrollbar-width: thin; scrollbar-color: var(--tick) transparent;
+}
+.ins-close { position: absolute; top: 12px; right: 12px; width: 28px; height: 28px; display: grid; place-items: center; color: var(--ink-3); }
+.ins-close:hover { color: var(--ink); background: var(--raised); }
+.ins-head { padding: 16px 52px 16px 16px; border-bottom: 1px solid var(--line); }
+.ins-head h2 { font-size: 17px; font-weight: 600; margin-top: 8px; display: flex; align-items: center; gap: 8px; overflow-wrap: anywhere; }
+.ins-sub { display: flex; gap: 12px; align-items: center; margin-top: 8px; font-size: 12px; flex-wrap: wrap; }
+.ins-state { font-size: 13px; }
+.ins-state.s-running { color: var(--accent); }
+.ins-state.s-needs_you, .ins-state.s-paused, .ins-state.s-handing_off, .ins-state.s-blocked { color: var(--warn); }
+.ins-state.s-limited, .ins-state.s-failed { color: var(--bad); }
+.ins-state.s-done { color: var(--ok); }
+.ins-state.s-waiting, .ins-state.s-stopped, .ins-state.s-interrupted { color: var(--ink-2); }
+.ins-task { margin-top: 8px; font-size: 12px; color: var(--ink-2); text-align: left; text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
+.ins-task:hover { color: var(--ink); }
+.ins-tabs { display: flex; gap: 16px; padding: 0 16px; border-bottom: 1px solid var(--line); }
+.ins-tabs button { height: 38px; font-size: 13px; color: var(--ink-3); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.ins-tabs button[aria-selected="true"] { color: var(--ink); border-color: var(--ink); }
+.ins-sec { padding: 16px; border-bottom: 1px solid var(--line); display: grid; gap: 10px; }
+.ins-sec .tk-banner { margin-top: 0; }
+.ins-now { font-size: 14px; overflow-wrap: anywhere; }
+.ins-plan, .ins-steps, .ins-lineage, .ins-files { list-style: none; display: grid; gap: 2px; }
+.ins-plan li { display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 8px; align-items: baseline; font-size: 13px; color: var(--ink-2); }
+.ins-plan .mark { width: 8px; height: 8px; border: 1px solid var(--ink-3); align-self: center; }
+.ins-plan .p-completed { color: var(--ink-3); }
+.ins-plan .p-completed .mark { background: var(--ok); border-color: var(--ok); }
+.ins-plan .p-in_progress { color: var(--ink); }
+.ins-plan .p-in_progress .mark { border-color: var(--accent); background: var(--accent); }
+.ins-steps button, .ins-lineage button { display: grid; align-items: center; gap: 8px; width: 100%; text-align: left; padding: 6px 4px; font-size: 13px; color: var(--ink-2); }
+.ins-steps button { grid-template-columns: 10px 22px minmax(0, 1fr) auto 56px; }
+.ins-steps button > :last-child { text-align: right; font-size: 12px; }
+.ins-lineage button { grid-template-columns: 14px minmax(0, 1fr) auto; }
+.ins-steps button:hover, .ins-lineage button:hover { background: var(--raised); color: var(--ink); }
+.ins-steps button[aria-current], .ins-lineage button[aria-current] { background: var(--raised); color: var(--ink); box-shadow: inset 2px 0 0 var(--ink); }
+.ins-path { font-size: 12px; overflow-wrap: anywhere; }
+.ins-files li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; font-size: 12px; padding: 3px 0; }
+.ins-files li > :first-child { overflow-wrap: anywhere; }
+.ins-files .add { color: var(--ok); }
+.ins-files .del { color: var(--bad); }
+.ins-empty { font-size: 13px; }
+.ins-mrow { display: grid; gap: 6px; }
+.ins-mrow .row { display: flex; justify-content: space-between; font-size: 13px; }
+.ins-small { font-size: 12px; }
+.ins-facts { grid-template-columns: 1fr 1fr; gap: 14px 16px; }
+.ins-facts .v { font: 500 15px / 1.2 var(--mono); margin: 4px 0; }
+.ins-actions { padding: 16px; display: grid; gap: 12px; }
+.ins-message { display: grid; gap: 8px; }
+.ins-message textarea { width: 100%; border: 1px solid var(--line-strong); background: var(--canvas); padding: 8px 10px; font-size: 13px; resize: vertical; }
+.ins-message .btn { justify-self: start; }
+.ins-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+.ins-handoff { display: grid; gap: 6px; }
+.ins-handoff .row { display: flex; gap: 8px; }
+.ins-handoff select { flex: 1; min-width: 0; height: var(--ctl); border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); font-size: 12px; padding: 0 6px; }
+.ins-pad { padding: 0 16px; }
+.ins-note { margin-top: auto; padding: 12px 16px 16px; font-size: 12px; color: var(--ink-3); border-top: 1px solid var(--line); }
+
+@media (max-width: 1279.98px) {
+  .body:has(> .inspector) { grid-template-columns: 224px minmax(0, 1fr); }
+  .inspector { position: fixed; right: 0; top: 40px; bottom: 28px; z-index: 90; }
+}
+@media (max-width: 1180px) {
+  .body:has(> .inspector) { grid-template-columns: 56px minmax(0, 1fr); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .inspector { animation: ins-in 180ms ease-out; }
+}
+@keyframes ins-in { from { transform: translateX(16px); opacity: 0; } to { transform: none; opacity: 1; } }

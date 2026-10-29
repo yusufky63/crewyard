@@ -402,6 +402,35 @@ export class OrchestratorDb {
     return best;
   }
 
+  /**
+   * A plan window this profile has used up and that has not reset yet, by its latest sample. A
+   * window without a known reset time is not reported: only trying again can tell.
+   */
+  reachedWindow(profileId: string, now: Date): { window: LimitWindow; resetsAt: string } | null {
+    const rows = this.all<{ limit_window: LimitWindow; used_pct: number | null; resets_at: string | null; provenance: Provenance }>(
+      `select s.limit_window, s.used_pct, s.resets_at, s.provenance from usage_samples s
+        where s.profile_id = ? and s.limit_window in ('5h', 'weekly', 'daily')
+          and s.id = (select id from usage_samples x where x.profile_id = s.profile_id and x.limit_window = s.limit_window order by x.observed_at desc, x.id desc limit 1)`,
+      profileId,
+    );
+    const hit = rows
+      .filter((r) => r.provenance !== "unknown" && (r.used_pct ?? 0) >= 100 && r.resets_at !== null && Date.parse(r.resets_at) > now.getTime())
+      .sort((a, b) => b.resets_at!.localeCompare(a.resets_at!))[0];
+    return hit ? { window: hit.limit_window, resetsAt: hit.resets_at! } : null;
+  }
+
+  /** Spend caps you approved going past for this run ("continue" on a budget request). */
+  approvedCaps(runId: string): Set<string> {
+    const rows = this.all<{ payload: string; answer: string | null }>("select payload, answer from requests where run_id = ? and kind = 'handoff' and answered_by = 'user'", runId);
+    const out = new Set<string>();
+    for (const r of rows) {
+      const answer = json<RequestAnswer>(r.answer);
+      const payload = JSON.parse(r.payload) as RequestPayload;
+      if (answer?.kind === "handoff" && answer.decision === "continue" && payload.kind === "handoff" && payload.cap) out.add(payload.cap.kind);
+    }
+    return out;
+  }
+
   // ---- views ----
 
   facts(task: TaskRow, runs = this.runs(task.id)): TaskFacts {

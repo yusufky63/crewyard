@@ -9,7 +9,7 @@ import { AdapterRegistry } from "./adapters.ts";
 import type { Candidate } from "./directory.ts";
 import { orchestratorFor } from "./index.ts";
 import { Orchestrator, type OrchestratorOptions } from "./orchestrator.ts";
-import { CANDIDATES, candidate, cleanTemps, git, ScriptedAdapter, tempDir, tempRepo, waitFor } from "./testing.ts";
+import { CANDIDATES, candidate, cleanTemps, git, model, ScriptedAdapter, tempDir, tempRepo, waitFor } from "./testing.ts";
 
 // Git on Windows is slow enough that a whole crew can take a few seconds.
 vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
@@ -498,6 +498,147 @@ describe("recovery", () => {
     expect(cancelled.status).toBe("cancelled");
     expect(cancelled.resumableRunIds).toEqual([]);
     await expect(o.message(run.id, "hi")).rejects.toThrow("run.ended");
+  });
+});
+
+describe("spend caps", () => {
+  const usage = (tokensIn: number): FakeStep => ({
+    emit: { type: "usage.update", tokensIn, tokensOut: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, contextUsed: null, contextSize: null, costUsd: null, costProvenance: "unknown" },
+  });
+  // deepseek-chat input is $0.27 per million tokens.
+  const paidCandidates = (): Candidate[] => CANDIDATES().map((c) => (c.profile.id === "deepseek-key" ? { ...c, credentialId: "cred-ds", catalogVersion: "cat-1" } : c));
+  const addCredential = (store: Store, daily: number | null) =>
+    store.db
+      .prepare("insert into credentials (id, alias, provider_id, kind, daily_cap_usd, task_cap_usd, created_at) values ('cred-ds', 'ds', 'deepseek', 'api_key', ?, null, '2026-10-30T00:00:00Z')")
+      .run(daily);
+  const spendRows = (store: Store) => store.db.prepare("select run_id, cost_usd, source, catalog_version from spend order by id").all() as Array<{ run_id: string; cost_usd: number; source: string; catalog_version: string | null }>;
+
+  it("records every usage delta on the key, pauses at the daily cap and continues only after you approve", async () => {
+    const pick: Picker = (_role, _req, resumed) => (resumed ? [running, usage(2_000_000), say("done")] : [running, usage(1_000_000), { awaitAnswer: "never" }]);
+    const { o, project, store, topics } = await setup({ pick, candidates: paidCandidates() });
+    addCredential(store, 0.1);
+    const t = await o.propose({ projectId: project.id, title: "Research A", pins: { researcher: "deepseek-key" } });
+    await o.approve({ taskId: t.id });
+
+    const q = await waitFor(() => o.requests({ taskId: t.id }).find((r) => r.kind === "handoff"));
+    expect(q.payload).toMatchObject({ kind: "handoff", trigger: "budget", window: "budget-day", proposedTarget: null, cap: { kind: "daily_cap", spentUsd: 0.27, capUsd: 0.1, credentialId: "cred-ds" } });
+    if (q.payload.kind !== "handoff") throw new Error("unexpected payload");
+    expect(Date.parse(q.payload.resetsAt!)).toBeGreaterThan(Date.now());
+    const run = o.get(t.id).runs[0]!;
+    expect(run.state).toBe("rate_limited");
+    expect(spendRows(store)).toEqual([{ run_id: run.id, cost_usd: 0.27, source: "estimated", catalog_version: "cat-1" }]);
+    expect(topics.some((x) => x.topic === "limits.notice" && (x.payload as { kind: string; window: string }).kind === "reached" && (x.payload as { window: string }).window === "budget-day")).toBe(true);
+    // Resume never walks past a cap; only the Inbox answer does.
+    await expect(o.resume(run.id)).rejects.toThrow("run.still_limited");
+    await expect(o.answer(q.id, { kind: "question", answers: [] })).rejects.toThrow("request.answer_kind");
+
+    await o.answer(q.id, { kind: "handoff", decision: "continue" });
+    await waitFor(() => o.get(t.id).status === "done");
+    // The second report grows the session total by 1M more tokens; the approved cap does not ask again.
+    expect(spendRows(store).map((r) => r.cost_usd)).toEqual([0.27, 0.27]);
+    expect(o.requests({ taskId: t.id })).toEqual([]);
+  });
+
+  it("holds a paid run before it starts when its key is already past a cap", async () => {
+    const pick: Picker = () => [running, say("done")];
+    const { o, project, store, adapter } = await setup({ pick, candidates: paidCandidates() });
+    addCredential(store, 0);
+    const t = await o.propose({ projectId: project.id, title: "Research A", pins: { researcher: "deepseek-key" } });
+    await o.approve({ taskId: t.id });
+
+    const q = await waitFor(() => o.requests({ taskId: t.id }).find((r) => r.kind === "handoff"));
+    expect(q.payload).toMatchObject({ trigger: "budget", cap: { kind: "daily_cap", capUsd: 0 } });
+    expect(adapter.started).toEqual([]);
+    const run = o.get(t.id).runs[0]!;
+    expect([run.state, run.nativeSessionId]).toEqual(["rate_limited", null]);
+    await expect(o.retry(run.id)).rejects.toThrow("run.still_limited");
+
+    await o.answer(q.id, { kind: "handoff", decision: "continue" });
+    await waitFor(() => o.get(t.id).status === "done");
+    expect(adapter.started.map((s) => [s.role, s.resumed])).toEqual([["researcher", false]]);
+    expect(o.get(t.id).runs).toHaveLength(1);
+  });
+
+  it("refuses continue on a request that is not about spend", async () => {
+    const env = await setup({ pick: () => [running, { emit: { type: "limit.update", window: "5h", usedPct: 100, resetsAt: new Date(Date.now() + 3_600_000).toISOString(), provenance: "reported", reached: true } }, { awaitAnswer: "never" }] });
+    const t = await env.o.propose({ projectId: env.project.id, title: "Research A", fallback: "manual" });
+    await env.o.approve({ taskId: t.id });
+    const q = await waitFor(() => env.o.requests({ taskId: t.id }).find((r) => r.kind === "handoff"));
+    await expect(env.o.answer(q.id, { kind: "handoff", decision: "continue" })).rejects.toThrow("request.not_budget");
+  });
+});
+
+describe("manual handoff and retry", () => {
+  it("hands a step to another AI on request through the durable handoff", async () => {
+    let starts = 0;
+    const pick: Picker = () => (starts++ === 0 ? [running, ...question("hold")] : [running, say("moved")]);
+    const cands = [...CANDIDATES(), { ...candidate("capped-key", "moonshot", model("kimi-k2")), credentialId: "cred-capped" }];
+    const { o, project, store, adapter } = await setup({ pick, candidates: cands });
+    store.db.prepare("insert into credentials (id, alias, provider_id, kind, daily_cap_usd, task_cap_usd, created_at) values ('cred-capped', 'capped', 'moonshot', 'api_key', 0, null, '2026-10-30T00:00:00Z')").run();
+    const t = await o.propose({ projectId: project.id, title: "Research A", pins: { researcher: "anthropic-key" } });
+    await o.approve({ taskId: t.id });
+    await waitFor(() => o.requests({ taskId: t.id })[0]);
+    const source = o.get(t.id).runs[0]!;
+
+    await expect(o.handoff(source.id, "anthropic-key")).rejects.toThrow("handoff.same_profile");
+    await expect(o.handoff(source.id, "missing")).rejects.toThrow("crew.unknown_profile");
+    await expect(o.handoff(source.id, "capped-key")).rejects.toThrow("handoff.over_cap");
+    expect(o.get(t.id).handoffs).toEqual([]);
+
+    await o.handoff(source.id, "openai-key");
+    await expect(o.handoff(source.id, "deepseek-key")).rejects.toThrow(/handoff.open|run.superseded/);
+    const h = await waitFor(() => o.get(t.id).handoffs.find((x) => x.outcome === "completed"));
+    expect([h.trigger, h.mode, h.kind]).toEqual(["manual", "manual", "new_session"]);
+    await waitFor(() => o.get(t.id).status === "done");
+    const runs = o.get(t.id).runs;
+    const from = runs.find((r) => r.id === source.id)!;
+    const to = runs.find((r) => r.id === h.toRunId)!;
+    expect([from.endReason, from.endDetail]).toEqual(["stopped", "handed_off"]);
+    expect([to.profileId, to.resumedFrom, to.endReason]).toEqual(["openai-key", source.id, "completed"]);
+    expect(adapter.started[1]!.req.prompt).toContain("Reason for the handoff: manual");
+    await expect(o.handoff(to.id, "deepseek-key")).rejects.toThrow("run.ended");
+  });
+
+  it("retries a failed step as a fresh run of the same member and refuses finished or superseded runs", async () => {
+    let researchers = 0;
+    const pick: Picker = () => (researchers++ === 0 ? [running, { emit: { type: "run.ended", reason: "failed", detail: "boom" } }] : [running, say("ok")]);
+    const { o, project, adapter } = await setup({ pick });
+    const t = await o.propose({ projectId: project.id, title: "Research A", fallback: "manual" });
+    await o.approve({ taskId: t.id });
+    await waitFor(() => o.get(t.id).runs[0]?.endReason === "failed");
+    const failed = o.get(t.id).runs[0]!;
+
+    const fresh = await o.retry(failed.id);
+    expect([fresh.memberId, fresh.profileId, fresh.resumedFrom]).toEqual([failed.memberId, failed.profileId, failed.id]);
+    await waitFor(() => o.get(t.id).status === "done");
+    expect(adapter.started.map((s) => [s.role, s.resumed])).toEqual([
+      ["researcher", false],
+      ["researcher", false],
+    ]);
+    // The crash question about the failed run closed when you retried it.
+    expect(o.requests({ taskId: t.id })).toEqual([]);
+    await expect(o.retry(failed.id)).rejects.toThrow("run.superseded");
+    await expect(o.retry(fresh.id)).rejects.toThrow("run.ended");
+  });
+
+  it("re-checks a limit on retry: refuses while the window is used up, continues once it cleared", async () => {
+    const resetsAt = new Date(Date.now() + 3 * 3_600_000).toISOString();
+    const pick: Picker = (_role, _req, resumed) =>
+      resumed ? [running, say("back")] : [running, { emit: { type: "limit.update", window: "5h", usedPct: 100, resetsAt, provenance: "reported", reached: true } }, { awaitAnswer: "never" }];
+    const { o, project } = await setup({ pick });
+    const t = await o.propose({ projectId: project.id, title: "Research A", fallback: "manual" });
+    await o.approve({ taskId: t.id });
+    await waitFor(() => o.requests({ taskId: t.id }).find((r) => r.kind === "handoff"));
+    const run = o.get(t.id).runs[0]!;
+
+    await expect(o.retry(run.id)).rejects.toThrow("run.still_limited");
+    expect(o.get(t.id).status).toBe("needs_input");
+
+    o.ingestSample({ profileId: run.profileId, window: "5h", usedPct: 12, resetsAt, provenance: "reported", observedAt: new Date(Date.now() + 1_000).toISOString() });
+    const continued = await o.retry(run.id);
+    expect([continued.id, continued.limitReached]).toEqual([run.id, false]);
+    await waitFor(() => o.get(t.id).status === "done");
+    expect(o.requests({ taskId: t.id })).toEqual([]);
   });
 });
 
