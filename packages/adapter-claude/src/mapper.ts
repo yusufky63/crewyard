@@ -138,14 +138,18 @@ export class EventMapper {
   }
 
   /**
-   * The SDK's modelUsage is cumulative for the process (its docs: "a consumer that differences the
-   * cumulative costUSD per turn gets that turn's basis"), so every usage.update carries run totals.
-   * total_cost_usd is the CLI's local price estimate, hence "estimated".
+   * modelUsage and total_cost_usd are cumulative for the native session, and the CLI restores them
+   * on resume (seen live on 2026-10-30: cost kept growing across three resumed processes). So every
+   * usage.update carries session totals; per-run figures are the difference to the previous run.
+   * total_cost_usd is the CLI's own price estimate. For a model missing from its price table
+   * (costBasis "unknown", e.g. every DeepSeek model) that estimate uses a Claude rate and was ~40x
+   * too high, so the cost becomes Unknown and the daemon prices the tokens from the catalog.
    */
   private usage(msg: SDKResultMessage): EventBody {
     const models = Object.values(msg.modelUsage ?? {});
     const sum = (f: (m: (typeof models)[number]) => number) => models.reduce((n, m) => n + (f(m) || 0), 0);
     const fromModels = models.length > 0;
+    const unpriced = models.some((m) => m.costBasis === "unknown");
     const contextSize = models.reduce<number | null>((max, m) => (m.contextWindow > 0 && (max === null || m.contextWindow > max) ? m.contextWindow : max), null);
     return {
       type: "usage.update",
@@ -156,8 +160,8 @@ export class EventMapper {
       reasoning: sum((m) => m.thinkingTokens ?? 0),
       contextUsed: this.lastContext,
       contextSize,
-      costUsd: Number.isFinite(msg.total_cost_usd) && msg.total_cost_usd >= 0 ? msg.total_cost_usd : null,
-      costProvenance: "estimated",
+      costUsd: !unpriced && Number.isFinite(msg.total_cost_usd) && msg.total_cost_usd >= 0 ? msg.total_cost_usd : null,
+      costProvenance: unpriced ? "unknown" : "estimated",
     };
   }
 

@@ -70,6 +70,14 @@ export function policyDecision(name: string, policy: RolePolicy): PermissionResu
   return null;
 }
 
+/**
+ * The CLI leaves its task-list tools out in SDK mode unless allowedTools names them (checked on
+ * 2.1.306: default init lists only Task and TaskStop). They only edit the session's own plan,
+ * which is where plan.update comes from, so they are named and pre-approved for every role.
+ * TodoWrite covers CLI versions that still use it.
+ */
+export const PLAN_TOOLS = ["TodoWrite", "TaskCreate", "TaskGet", "TaskList", "TaskUpdate"];
+
 /** Tools the CLI should never offer to the model for this policy. */
 export function disallowedFor(policy: RolePolicy): string[] {
   return [...(policy.writes === "none" ? WRITE_TOOLS : []), ...(policy.network === "denied" ? NETWORK_TOOLS : [])];

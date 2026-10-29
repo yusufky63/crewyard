@@ -62,6 +62,12 @@ describe("EventMapper", () => {
     expect(m.outcome(errorResult("error_during_execution", { errors: [] }))).toMatchObject({ reason: "limit" });
   });
 
+  it("drops the CLI's cost for a model it has no price for (DeepSeek through the Anthropic endpoint)", () => {
+    const usage = { inputTokens: 19032, outputTokens: 868, thinkingTokens: 0, cacheReadInputTokens: 106752, cacheCreationInputTokens: 0, webSearchRequests: 0, costUSD: 0.170236, contextWindow: 200000, maxOutputTokens: 32000, canonicalModel: "deepseek-flash", provider: "firstParty", costBasis: "unknown" as const };
+    const out = new EventMapper().map(result({ total_cost_usd: 0.170236, modelUsage: { "deepseek-flash": usage } }))[0];
+    expect(out).toMatchObject({ type: "usage.update", tokensIn: 19032, tokensOut: 868, cacheRead: 106752, costUsd: null, costProvenance: "unknown" });
+  });
+
   it("uses the reported cost when there is no per-model breakdown", () => {
     const out = new EventMapper().map(result({ modelUsage: {} }))[0];
     expect(out).toMatchObject({ type: "usage.update", tokensIn: 1500, tokensOut: 200, cacheRead: 6000, cacheWrite: 400, contextSize: null, contextUsed: null, costUsd: 0.0151, costProvenance: "estimated" });

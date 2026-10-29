@@ -101,6 +101,7 @@ describe("Claude adapter: one turn", () => {
     expect(o.model).toBe("claude-opus-4-8");
     expect(o.permissionMode).toBe("default");
     expect(o.includePartialMessages).toBe(true);
+    expect(o.allowedTools).toEqual(["TodoWrite", "TaskCreate", "TaskGet", "TaskList", "TaskUpdate"]);
     expect(o.sessionId).toBe(run.nativeSession?.sessionId);
     expect(o.resume).toBeUndefined();
     expect(o.env).toMatchObject({ Path: "C:\\Windows", CLAUDE_CONFIG_DIR: profile.configDir, ANTHROPIC_API_KEY: KEY });

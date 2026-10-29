@@ -1,13 +1,22 @@
 // Live conformance run for the Claude Code adapter (PLAN.md §5.4). It spends API money, so it
 // only runs with CREWYARD_LIVE=1. Run it through the key vault so the key never touches a file:
 //
-//   CREWYARD_LIVE=1 node ~/.claude/skills/env-vault/scripts/vault.mjs run -- node packages/adapter-claude/scripts/live.mjs
+//   CREWYARD_LIVE=1 node ~/.claude/skills/env-vault/scripts/vault.mjs run --only ANTHROPIC_API_KEY -- node packages/adapter-claude/scripts/live.mjs
+//
+// DeepSeek through its Anthropic-compatible endpoint:
+//
+//   CREWYARD_LIVE=1 CREWYARD_LIVE_KEY_VAR=DEEPSEEK_API_KEY CREWYARD_LIVE_BASE_URL=https://api.deepseek.com/anthropic \
+//   CREWYARD_LIVE_MODEL=deepseek-flash node ~/.claude/skills/env-vault/scripts/vault.mjs run --only DEEPSEEK_API_KEY -- node packages/adapter-claude/scripts/live.mjs
+//
+// Always pass --only: `vault run` exports every key, and only the one for this provider may reach it.
 //
 // Environment:
-//   ANTHROPIC_API_KEY             key for Anthropic (or ANTHROPIC_AUTH_TOKEN with CREWYARD_LIVE_BASE_URL)
+//   CREWYARD_LIVE_KEY_VAR         variable that holds the key, default ANTHROPIC_API_KEY
 //   CREWYARD_LIVE_BASE_URL        optional Anthropic-compatible endpoint, e.g. https://api.deepseek.com/anthropic
 //   CREWYARD_LIVE_MODEL           model id, default claude-haiku-4-5 (the cheapest that can use tools)
+//   CREWYARD_LIVE_MAX_OUTPUT      output token cap per response, default 2048 (CLAUDE_CODE_MAX_OUTPUT_TOKENS)
 //   CREWYARD_LIVE_RECORD=<file>   also write every raw SDK frame as JSON lines, for new replay fixtures
+//   CREWYARD_LIVE_FEATURES=1      also try WebSearch and WebFetch and report whether they work
 //
 // `node live.mjs --probe` only runs probe(), which reads `claude --version` and calls no API.
 
@@ -25,7 +34,8 @@ if (!probeOnly && process.env.CREWYARD_LIVE !== "1") {
 }
 
 const baseUrl = process.env.CREWYARD_LIVE_BASE_URL || null;
-const key = process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN || "";
+const key = process.env[process.env.CREWYARD_LIVE_KEY_VAR || "ANTHROPIC_API_KEY"] || "";
+const maxOutput = process.env.CREWYARD_LIVE_MAX_OUTPUT || "2048";
 const model = process.env.CREWYARD_LIVE_MODEL || "claude-haiku-4-5";
 
 // Paths with spaces on purpose (AGENTS.md, Windows rules).
@@ -44,15 +54,16 @@ const profile = {
 };
 
 const frames = [];
+// The SDK's Query iterates through its own iterator, so frames are teed from a wrapper generator.
 const recordingQuery = (params) => {
   const q = sdkQuery(params);
-  const next = q.next.bind(q);
-  q.next = async (...args) => {
-    const r = await next(...args);
-    if (!r.done) frames.push(r.value);
-    return r;
-  };
-  return q;
+  async function* tee() {
+    for await (const frame of q) {
+      frames.push(frame);
+      yield frame;
+    }
+  }
+  return Object.assign(tee(), { interrupt: () => q.interrupt(), setModel: (m) => q.setModel(m), close: () => q.close() });
 };
 const adapter = createAdapter(process.env.CREWYARD_LIVE_RECORD ? { query: recordingQuery } : {});
 
@@ -91,7 +102,7 @@ const req = (prompt, policy = { writes: "worktree", allowCommands: [], network: 
   model,
   prompt,
   policy,
-  env: key ? (baseUrl ? { ANTHROPIC_AUTH_TOKEN: key } : { ANTHROPIC_API_KEY: key }) : {},
+  env: { ...(key ? (baseUrl ? { ANTHROPIC_AUTH_TOKEN: key } : { ANTHROPIC_API_KEY: key }) : {}), CLAUDE_CODE_MAX_OUTPUT_TOKENS: maxOutput },
 });
 
 async function main() {
@@ -107,8 +118,8 @@ async function main() {
   // 1. Plan, tool call, approve once, deny once, answer a question, usage.
   const prompt = [
     "Do these steps in order and keep every reply short.",
-    "1. Use TodoWrite to record a three-item plan for these steps.",
-    "2. Run the shell command `git status`.",
+    "1. Record a three-item plan for these steps with your todo or task list tool.",
+    "2. Run the shell command `git add README.md`.",
     "3. Create a file named notes.txt containing the word ok.",
     "4. Use AskUserQuestion to ask me which color I prefer, with the options red and blue.",
     "5. Reply with my answer in one word.",
@@ -120,18 +131,23 @@ async function main() {
       await adapter.answer(first, e.requestId, { kind: "question", answers: [{ selected: ["blue"] }] });
     } else {
       approvals++;
-      // Approve the first tool, deny every later one (the notes.txt write).
-      await adapter.answer(first, e.requestId, approvals === 1 ? { kind: "approval", decision: "allow_once" } : { kind: "approval", decision: "deny", message: "Not this one." });
+      // Approve `git add`, deny everything else: the notes.txt write and any shell workaround for it.
+      // (`git status` would not do here: the CLI runs read-only commands without asking.)
+      const allow = e.command?.trim().startsWith("git add") === true;
+      await adapter.answer(first, e.requestId, allow ? { kind: "approval", decision: "allow_once" } : { kind: "approval", decision: "deny", message: "Do not create notes.txt. Skip that step." });
     }
   });
   const end1 = ev1.at(-1);
   check("receives a plan", ev1.some((e) => e.type === "plan.update" && e.steps.length > 0));
   check("receives a tool call", ev1.some((e) => e.type === "tool.call"));
-  check("approve once", ev1.some((e) => e.type === "tool.update" && e.status === "completed"));
+  const staged = execFileSync("git", ["-C", repo, "diff", "--cached", "--name-only"], { encoding: "utf8", windowsHide: true });
+  check("approve once", staged.includes("README.md"));
   check("deny once", approvals >= 2 && !existsSync(join(repo, "notes.txt")), `${approvals} approvals`);
   check("answers a question", ev1.some((e) => e.type === "request.question") && ev1.filter((e) => e.type === "message.delta").map((e) => e.text).join("").toLowerCase().includes("blue"));
   const usage = ev1.findLast((e) => e.type === "usage.update");
-  check("reads usage", Boolean(usage && usage.tokensIn > 0 && usage.costProvenance === "estimated"), usage ? `${usage.tokensIn} in, ${usage.tokensOut} out, $${usage.costUsd}` : "none");
+  // Session totals. The cost is Unknown when the CLI has no price for the model (any third-party model).
+  const costOk = usage && (usage.costProvenance === "estimated" ? usage.costUsd !== null : usage.costUsd === null);
+  check("reads usage", Boolean(usage && usage.tokensIn > 0 && costOk), usage ? `${usage.tokensIn} in, ${usage.tokensOut} out, ${usage.cacheRead} cache read, cost ${usage.costUsd ?? "unknown"} (${usage.costProvenance})` : "none");
   check("first run completes", end1?.type === "run.ended" && end1.reason === "completed", end1?.detail ?? "");
   check("limits are not read for API keys", adapter.capabilities.reportedLimits === false && adapter.limits === undefined);
 
@@ -156,7 +172,22 @@ async function main() {
   const ev3 = await drive(third);
   check("resume", ev3.filter((e) => e.type === "message.delta").map((e) => e.text).join("").toLowerCase().includes("blue"));
 
-  // 4. Stop and confirm no process remains.
+  // 4. Server-side and helper-model tools, which third-party endpoints may not support. Reported, not gated.
+  if (process.env.CREWYARD_LIVE_FEATURES === "1") {
+    for (const [tool, prompt] of [
+      ["WebSearch", "Use the WebSearch tool once to search for: Claude Code. Then reply with the title of the first result only."],
+      ["WebFetch", "Use the WebFetch tool once on https://example.com and reply with the page title only."],
+    ]) {
+      const h = await adapter.resume(first.nativeSession, req(prompt));
+      const ev = await drive(h, (e) => adapter.answer(h, e.requestId, e.type === "request.question" ? { kind: "cancel" } : { kind: "approval", decision: "allow_once" }));
+      const calls = new Set(ev.filter((e) => e.type === "tool.call" && e.title.startsWith(tool)).map((e) => e.toolCallId));
+      const updates = ev.filter((e) => e.type === "tool.update" && calls.has(e.toolCallId) && e.status !== "in_progress");
+      const ok = updates.length > 0 && updates.every((e) => e.status === "completed");
+      console.log(`INFO  ${tool}: ${calls.size === 0 ? "not called" : ok ? "works" : "failed"}${updates[0]?.output ? `  (${updates[0].output.replace(/\s+/g, " ").slice(0, 200)})` : ""}`);
+    }
+  }
+
+  // 5. Stop and confirm no process remains.
   const fourth = await adapter.resume(first.nativeSession, req("Count slowly from 1 to 200, one number per line."));
   let pid = null;
   const ev4 = await drive(fourth, () => {}, (e) => {

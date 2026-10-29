@@ -6,7 +6,7 @@ import { killTree, parseVersion, run, start as spawnChild, which } from "@crewya
 import { buildEnv, redact } from "./env.ts";
 import { EventMapper, type EventBody, type TurnOutcome } from "./mapper.ts";
 import { AsyncQueue } from "./queue.ts";
-import { approvalResult, approvalScope, disallowedFor, policyDecision, questionResult, questionsFrom } from "./tools.ts";
+import { PLAN_TOOLS, approvalResult, approvalScope, disallowedFor, policyDecision, questionResult, questionsFrom } from "./tools.ts";
 
 /** The CLI version the installed SDK was built against (package.json "claudeCodeVersion"). */
 export const SDK_CLI_VERSION = "2.1.312";
@@ -194,6 +194,7 @@ export class ClaudeAdapter implements AgentAdapter {
       // Without this the CLI may start in "auto" and approve tools without asking us.
       permissionMode: "default",
       canUseTool: this.canUseTool(ctx),
+      allowedTools: PLAN_TOOLS,
       disallowedTools: disallowedFor(req.policy),
       hooks: this.policyHooks(req),
       ...(resumeId ? { resume: resumeId } : { sessionId }),
