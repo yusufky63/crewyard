@@ -445,6 +445,36 @@ export class Orchestrator {
     return this.db.runView(this.db.run(runId));
   }
 
+  /**
+   * Feedback for a step after its run finished, e.g. failing checks or review comments on the
+   * task's PR (the GitHub work calls this only from your "Send to agent" click). An unfinished run
+   * takes it through `message`. A completed one gets a new run of the same step on the same
+   * profile, natively resumed when the runner can, with the feedback as its prompt.
+   */
+  async followUp(runId: string, text: string): Promise<RunView> {
+    const run = this.db.run(runId);
+    const task = this.db.task(run.task_id);
+    if (task.cancelled_at) throw new OrchestratorError("task.cancelled");
+    if (run.end_reason !== "completed") return this.message(runId, text);
+    if (this.superseded(run)) throw new OrchestratorError("run.superseded");
+    const adapter = this.adapters.get(run.runner);
+    const native = Boolean(adapter?.capabilities.resume && run.native_session_id);
+    const member = this.db.member(run.member_id);
+    const wt = this.db.worktree(task.id);
+    const prompt = native ? text : `${rolePrompt(member.role, task, { plan: this.latestPlan(task.id), branch: wt?.branch ?? null })}\n\n${text}`;
+    const id = await this.launch({
+      task,
+      member,
+      target: { profileId: run.profile_id, runner: run.runner, model: run.model },
+      cwd: run.cwd,
+      prompt,
+      resumeRef: native ? { runner: run.runner, sessionId: run.native_session_id! } : null,
+      resumedFrom: run.id,
+    });
+    this.audit(task.id, id, "run.follow_up", { from: run.id, chars: text.length, native });
+    return this.db.runView(this.db.run(id));
+  }
+
   /** Delivers a step's queued messages to its live run, if it has one now. */
   private async flushOutbox(taskId: string, memberId: string): Promise<void> {
     const target = this.db.runs(taskId).find((r) => r.member_id === memberId && !r.ended_at && !r.paused_at && this.live.has(r.id));

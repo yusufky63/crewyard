@@ -187,3 +187,45 @@ export async function workflowFilesAt(path: string, sha: string): Promise<Array<
     }),
   );
 }
+
+// ---- Task pull requests
+
+/** Full sha of any ref, or null when it does not exist. */
+export async function refSha(path: string, ref: string): Promise<string | null> {
+  return out(path, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]);
+}
+
+/** Commits on `head` that `base` does not have. */
+export async function revCount(path: string, base: string, head: string): Promise<number | null> {
+  const n = await out(path, ["rev-list", "--count", `${base}..${head}`]);
+  return n === null || Number.isNaN(Number(n)) ? null : Number(n);
+}
+
+/** Subjects of the commits on `head` that `base` does not have, oldest first. */
+export async function commitSubjects(path: string, base: string, head: string, max = 30): Promise<string[]> {
+  const log = await out(path, ["log", "--reverse", "--format=%s", `-n${max}`, `${base}..${head}`]);
+  return log?.split(/\r?\n/).filter(Boolean) ?? [];
+}
+
+/** Files, added and removed lines between the merge base of `base` and `head`, and `head`. */
+export async function diffTotals(path: string, base: string, head: string): Promise<{ files: number; added: number; removed: number } | null> {
+  const stat = await out(path, ["diff", "--numstat", `${base}...${head}`]);
+  if (stat === null) return null;
+  const rows = stat.split(/\r?\n/).filter(Boolean).map((l) => l.split("\t"));
+  // Binary files show "-" for both counts.
+  const num = (s: string | undefined) => (s && /^\d+$/.test(s) ? Number(s) : 0);
+  return { files: rows.length, added: rows.reduce((n, r) => n + num(r[0]), 0), removed: rows.reduce((n, r) => n + num(r[1]), 0) };
+}
+
+export async function listWorktrees(path: string): Promise<RawWorktree[]> {
+  return parseWorktrees((await out(path, ["worktree", "list", "--porcelain"])) ?? "");
+}
+
+/**
+ * `git worktree remove` without --force: git itself refuses a worktree with changes or untracked
+ * files, and a folder it does not list. Nothing else is deleted, and nothing is pruned repo-wide.
+ */
+export async function removeWorktree(repoPath: string, path: string): Promise<{ ok: boolean; output: string }> {
+  const res = await git(repoPath, ["worktree", "remove", path], 60_000);
+  return { ok: res.code === 0, output: `${res.stdout}${res.stderr}`.trim() };
+}

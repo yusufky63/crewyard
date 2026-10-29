@@ -124,3 +124,29 @@ describe("GitHub service", () => {
     expect(seen.filter((s) => s.startsWith("PUT"))).toEqual(["PUT /repos/octo/app/pulls/2/merge"]);
   });
 });
+
+describe("background refresh", () => {
+  it("refreshes only the projects with a task in review, and runs the after-refresh hook before github.changed", async () => {
+    const { fn, seen } = routes({
+      "/repos/octo/app": { private: true, default_branch: "main", owner: { type: "User" } },
+      "/repos/octo/app/pulls": [],
+    });
+    const order: string[] = [];
+    let watched: string[] = [];
+    const svc = new GithubService({
+      projectPath: () => repo,
+      emit: (topic) => order.push(topic),
+      client: new GithubClient(async () => "t", fn),
+      tokenState: () => "ok",
+      resetToken: () => undefined,
+      watched: () => watched,
+      afterRefresh: async (p) => void order.push(`after:${p}`),
+    });
+    await svc.backgroundTick();
+    expect(seen).toEqual([]);
+    watched = ["p"];
+    await svc.backgroundTick();
+    expect(seen.some((s) => s.startsWith("GET /repos/octo/app/pulls"))).toBe(true);
+    expect(order).toEqual(["after:p", "github.changed"]);
+  });
+});

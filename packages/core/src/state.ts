@@ -20,6 +20,7 @@ export interface TaskFacts {
   cancelledAt: string | null;
   openHandoffId: string | null;
   implementationDone: boolean;
+  /** The task's pull request as GitHub last reported it; null until one is opened or linked. */
   pullRequest: { state: "open" | "merged" | "closed" } | null;
   runs: RunFacts[];
 }
@@ -39,16 +40,20 @@ export type TaskStatus =
 
 const isActive = (r: RunFacts) => r.startedAt !== null && r.endedAt === null;
 
-/** First matching rule wins; order mirrors the table in PLAN.md §13. */
+/**
+ * First matching rule wins; order mirrors the table in PLAN.md §13. Only a pull request GitHub
+ * reported as merged makes a code task `merged`: an open, draft or closed one leaves it in
+ * `review`, so "Ready for review" never reads as merged.
+ */
 export function deriveTaskStatus(t: TaskFacts): TaskStatus {
   if (t.cancelledAt) return "cancelled";
   if (!t.crewApprovedAt) return "proposed";
-  if (t.pullRequest?.state === "merged") return "merged";
   if (t.runs.some((r) => r.required && r.endReason === "failed" && !r.retryPending) && !t.openHandoffId) return "failed";
   if (t.runs.some((r) => r.pendingRequestId !== null)) return "needs_input";
   if (t.runs.some((r) => isActive(r) && r.limitReached) && !t.openHandoffId) return "limited";
   if (t.openHandoffId) return "handing_off";
   if (t.runs.some(isActive)) return "running";
+  if (t.kind === "code" && t.pullRequest?.state === "merged") return "merged";
   if (t.kind === "code" && t.implementationDone) return "review";
   const allEnded = t.runs.length > 0 && t.runs.every((r) => r.endedAt !== null);
   if (t.kind !== "code" && allEnded && t.runs.every((r) => r.endReason === "completed" || !r.required)) return "done";
