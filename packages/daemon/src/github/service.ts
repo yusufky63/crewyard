@@ -317,13 +317,11 @@ export class GithubService {
     const repo = await this.repo(projectId);
     if (repo.problem) return { branches: [], problem: repo.problem };
     const open = this.cache(projectId).pulls?.pulls.filter((p) => p.state !== "merged") ?? [];
-    const branches = await Promise.all(
-      repo.unpushed.map(async (b) => {
+    const branches = await git.pool(repo.unpushed, 8, async (b) => {
         const pr = open.find((p) => p.head === b.branch);
         const files = await git.workflowFilesAt(repo.path, b.headSha);
-        return { ...b, hasOpenPull: Boolean(pr), workflows: triggeredBy(files, b.branch, pr?.base ?? null) };
-      }),
-    );
+      return { ...b, hasOpenPull: Boolean(pr), workflows: triggeredBy(files, b.branch, pr?.base ?? null) };
+    });
     return { branches, problem: null };
   }
 

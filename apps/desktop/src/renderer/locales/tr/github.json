@@ -1,0 +1,176 @@
+{
+  "nav": "GitHub",
+  "title": "GitHub",
+  "refresh": "Yenile",
+  "refreshing": "Yenileniyor…",
+  "visibility": {
+    "private": "gizli",
+    "public": "herkese açık"
+  },
+  "synced": "{{time}} yenilendi",
+  "neverSynced": "henüz yenilenmedi",
+  "branch": "{{branch}} dalında · {{ahead}} ileride · {{behind}} geride",
+  "branchNoUpstream": "{{branch}} dalında · uzak dal yok",
+  "problem": {
+    "no_gh": "GitHub CLI bulunamadı. gh'yi kur ve gh auth login ile oturum aç.",
+    "signed_out": "gh'de oturum açık değil. Bir terminalde gh auth login çalıştır, sonra yenile.",
+    "not_a_repo": "Bu proje klasörü bir git deposu değil.",
+    "no_remote": "Bu deponun henüz uzak sunucusu yok, GitHub'da gösterilecek bir şey yok.",
+    "not_github": "Bu deponun uzak sunucusu github.com üzerinde değil.",
+    "rate_limited": "GitHub istek sınırı doldu. Sınır sıfırlanınca yenileme sürer.",
+    "offline": "GitHub'a ulaşılamadı. Bilinen son durum gösteriliyor.",
+    "error": "GitHub hata döndürdü. Bilinen son durum gösteriliyor."
+  },
+  "minutes": {
+    "product": "Actions",
+    "label": "dakikası · {{month}}",
+    "of": "/ {{included}}",
+    "noQuota": "plan kotası bilinmiyor",
+    "meter": "Bu ay kullanılan Actions dakikası",
+    "byOs": "Linux {{linux}} · Windows {{windows}} ×2 · macOS {{macos}} ×10",
+    "note": "Windows runner'ları iki, macOS on kat sayılır. Ajanların push'ları senin onayını bekler.",
+    "reason": {
+      "needs_scope": "gh token'ı fatura bilgisini okuyamıyor. İzin vermek için:",
+      "not_available": "GitHub, {{owner}} için fatura bilgisini bu hesaba göstermiyor.",
+      "error": "GitHub fatura isteğine yanıt vermedi."
+    },
+    "scopeCommand": "gh auth refresh -h github.com -s user"
+  },
+  "provenance": {
+    "reported": "Bildirilen",
+    "estimated": "Tahmini",
+    "unknown": "Bilinmiyor"
+  },
+  "push": {
+    "label": "Push bekleyenler",
+    "branches_one": "dal",
+    "branches_other": "dal",
+    "commits_one": "{{count}} commit",
+    "commits_other": "{{count}} commit",
+    "empty": "Bekleyen yok. Yereldeki her commit GitHub'da.",
+    "starts": "{{names}} çalışır",
+    "startsNothing": "hiçbir workflow çalışmaz",
+    "conditional": "{{name}} yalnızca ilgili yollar değişirse",
+    "costly": "Windows veya macOS işleri: {{jobs}}",
+    "newBranch": "GitHub'da yeni",
+    "pushOnce": "Bir kez push et",
+    "pushing": "Push ediliyor…",
+    "pushed": "{{branch}} push edildi.",
+    "failed": "Push başarısız: {{message}}",
+    "more_one": "{{count}} dal daha",
+    "more_other": "{{count}} dal daha"
+  },
+  "worktrees": {
+    "label": "Worktree'ler",
+    "active": "etkin",
+    "stale_one": "{{count}} eskimiş",
+    "stale_other": "{{count}} eskimiş",
+    "staleLine": "{{branch}} birleştirildi, push bekleyen işi yok.",
+    "dirtyLine_one": "{{count}} worktree'de commit'lenmemiş değişiklik var.",
+    "dirtyLine_other": "{{count}} worktree'de commit'lenmemiş değişiklik var.",
+    "clean": "Henüz birleştirilmiş worktree yok; hepsi kullanımda."
+  },
+  "pulls": {
+    "label": "Pull request'ler",
+    "colPull": "Pull request",
+    "colChecks": "Kontroller",
+    "colGate": "Birleştirme koşulları",
+    "colAction": "İşlem",
+    "empty": "Açık pull request yok, son iki haftada birleştirilen de yok.",
+    "state": {
+      "open": "İncelemeye hazır",
+      "draft": "Taslak",
+      "merged": "Birleştirildi"
+    },
+    "flow": "{{head}} → {{base}}",
+    "aheadBehind": "{{ahead}} ileride · {{behind}} geride",
+    "mergedLine": "{{time}} {{base}} dalına birleştirildi",
+    "by": "{{author}} tarafından",
+    "checks": {
+      "passed": "{{total}} kontrolün {{passed}} tanesi geçti",
+      "failing_one": "{{count}} başarısız",
+      "failing_other": "{{count}} başarısız",
+      "pending_one": "{{count}} çalışıyor",
+      "pending_other": "{{count}} çalışıyor",
+      "none": "Kontrol yok"
+    },
+    "gate": {
+      "checks": {
+        "pass": "Kontroller",
+        "wait": "Kontroller sürüyor",
+        "fail": "Kontroller başarısız",
+        "unknown": "Henüz kontrol yok"
+      },
+      "up_to_date": {
+        "pass": "Güncel",
+        "wait": "Güncel",
+        "fail": "{{base}} dalının gerisinde",
+        "unknown": "Güncelliği bilinmiyor"
+      },
+      "questions": {
+        "pass": "Açık soru yok",
+        "wait": "Açık sorular var",
+        "fail": "Açık sorular var",
+        "unknown": "Sorular bilinmiyor"
+      },
+      "approval": {
+        "pass": "Onaylandı",
+        "wait": "Senin onayın",
+        "fail": "Senin onayın",
+        "unknown": "Senin onayın"
+      }
+    },
+    "gateTitle": {
+      "questions_unknown": "Ajanların açık soruları görev bazında izlenir. Bu dalın Crewyard'da henüz bir görevi yok, bu yüzden birleştirme kapalı kalır.",
+      "draft": "Taslak pull request'ler birleştirilemez."
+    },
+    "reviewMerge": "İncele ve birleştir",
+    "blocked": "Önce onayın dışındaki bütün koşulların geçmesi gerekir.",
+    "view": "Görüntüle",
+    "confirm": "#{{number}}, {{sha}} commit'inde {{method}} ile birleştirilsin mi? Kontroller, güncellik ve sorular önce yeniden okunur.",
+    "mergeNow": "Şimdi birleştir",
+    "merging": "Birleştiriliyor…",
+    "cancel": "Vazgeç",
+    "merged": "#{{number}} birleştirildi.",
+    "mergeFailed": "Birleştirme yapılmadı: {{message}}",
+    "method": {
+      "merge": "merge commit",
+      "squash": "squash",
+      "rebase": "rebase"
+    }
+  },
+  "workflows": {
+    "label": "Workflow denetimi",
+    "count_one": "{{count}} bulgu",
+    "count_other": "{{count}} bulgu",
+    "none": ".github/workflows altında workflow dosyası yok.",
+    "clean_one": "Workflow CI kurallarına uyuyor.",
+    "clean_other": "{{count}} workflow'un hepsi CI kurallarına uyuyor.",
+    "job": "{{job}} işi",
+    "severity": {
+      "error": "Kural dışı",
+      "warning": "Göz at"
+    },
+    "rule": {
+      "push_all_branches": "push main dışındaki dallarda da çalışıyor; diğer dalları pull_request ile denetle",
+      "no_concurrency": "concurrency grubu yok, yeni bir push yerini aldığı çalışmayı iptal etmez",
+      "no_cancel_in_progress": "concurrency var ama cancel-in-progress: true değil",
+      "no_timeout": "timeout-minutes yok, takılan bir iş altı saate kadar dakika harcayabilir",
+      "costly_runner_on_push": "push ya da pull_request'te Windows veya macOS runner; bunları tag ya da workflow_dispatch ile çalıştır",
+      "schedule_private": "gizli depoda schedule, değişiklik olmadan dakika harcar",
+      "parse_error": "dosya geçerli bir YAML değil"
+    }
+  },
+  "status": {
+    "sync": "GitHub",
+    "syncTitle": "Son GitHub yenilemesi",
+    "never": "henüz yok",
+    "syncing": "eşitleniyor",
+    "actions": "Actions",
+    "actionsTitle": "Bu ayki GitHub Actions dakikası",
+    "unknown": "Bilinmiyor"
+  },
+  "time": {
+    "now": "az önce"
+  }
+}

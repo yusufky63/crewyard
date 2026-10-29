@@ -63,18 +63,40 @@ export async function isDirty(path: string): Promise<boolean> {
   return Boolean(s);
 }
 
-/** Local branches with commits no remote-tracking ref has. */
+/**
+ * Commits reachable from `tip` inside the unpushed graph. The graph holds only commits no remote
+ * has, so the walk stops at anything already pushed.
+ */
+export function countUnpushed(graph: Map<string, string[]>, tip: string): number {
+  const seen = new Set<string>();
+  const stack = [tip];
+  while (stack.length) {
+    const sha = stack.pop()!;
+    if (seen.has(sha) || !graph.has(sha)) continue;
+    seen.add(sha);
+    stack.push(...graph.get(sha)!);
+  }
+  return seen.size;
+}
+
+/** Local branches with commits no remote-tracking ref has. Two git calls, however many branches there are. */
 export async function unpushedBranches(path: string): Promise<UnpushedBranch[]> {
-  const refs = await out(path, ["for-each-ref", "--format=%(refname:short)%09%(objectname)%09%(upstream:short)", "refs/heads"]);
+  const [refs, revs] = await Promise.all([
+    out(path, ["for-each-ref", "--format=%(refname:short)%09%(objectname)%09%(upstream:short)", "refs/heads"]),
+    out(path, ["rev-list", "--parents", "--branches", "--not", "--remotes"]),
+  ]);
   if (!refs) return [];
-  const rows = refs.split(/\r?\n/).map((l) => l.split("\t")).filter((r) => r[0] && r[1]);
-  const result = await Promise.all(
-    rows.map(async ([branch = "", headSha = "", upstream = ""]) => {
-      const n = Number(await out(path, ["rev-list", "--count", headSha, "--not", "--remotes"]));
-      return { branch, headSha, commits: Number.isFinite(n) ? n : 0, upstream: upstream || null };
-    }),
-  );
-  return result.filter((b) => b.commits > 0);
+  const graph = new Map<string, string[]>();
+  for (const line of revs?.split(/\r?\n/) ?? []) {
+    const [sha, ...parents] = line.trim().split(" ");
+    if (sha) graph.set(sha, parents);
+  }
+  return refs
+    .split(/\r?\n/)
+    .map((l) => l.split("\t"))
+    .filter((r) => r[0] && r[1])
+    .map(([branch = "", headSha = "", upstream = ""]) => ({ branch, headSha, commits: countUnpushed(graph, headSha), upstream: upstream || null }))
+    .filter((b) => b.commits > 0);
 }
 
 export async function branchTip(path: string, branch: string): Promise<string | null> {
@@ -107,19 +129,31 @@ export function parseWorktrees(porcelain: string): RawWorktree[] {
   return items;
 }
 
+/** Runs `fn` over `items` with at most `limit` running at once, so 100+ worktrees do not start 100+ git processes. */
+export async function pool<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i]!);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
 export async function worktrees(path: string, unpushed: UnpushedBranch[], merged: Set<string>, defaultBranchName: string | null): Promise<WorktreeInfo[]> {
   const raw = parseWorktrees((await out(path, ["worktree", "list", "--porcelain"])) ?? "");
   const unpushedBy = new Map(unpushed.map((u) => [u.branch, u.commits]));
-  return Promise.all(
-    raw.map(async (w) => {
-      const exists = existsSync(w.path);
-      const dirty = exists ? await isDirty(w.path) : false;
-      const n = w.branch ? (unpushedBy.get(w.branch) ?? 0) : 0;
-      const isMerged = Boolean(w.branch && w.branch !== defaultBranchName && merged.has(w.branch));
-      // The primary checkout is never offered for cleanup.
-      return { path: w.path, branch: w.branch, dirty, unpushed: n, merged: isMerged, stale: !w.primary && isMerged && !dirty && n === 0 };
-    }),
-  );
+  return pool(raw, 8, async (w) => {
+    const exists = existsSync(w.path);
+    const dirty = exists ? await isDirty(w.path) : false;
+    const n = w.branch ? (unpushedBy.get(w.branch) ?? 0) : 0;
+    const isMerged = Boolean(w.branch && w.branch !== defaultBranchName && merged.has(w.branch));
+    // The primary checkout is never offered for cleanup.
+    return { path: w.path, branch: w.branch, dirty, unpushed: n, merged: isMerged, stale: !w.primary && isMerged && !dirty && n === 0 };
+  });
 }
 
 /** Pushes one branch, never with force. Adds an upstream when the branch has none. */
@@ -129,15 +163,27 @@ export async function pushBranch(path: string, remote: string, branch: string, h
   return { ok: res.code === 0, output: `${res.stdout}${res.stderr}`.trim() };
 }
 
+// Workflow files by blob id: many branches share the same files, so each blob is read once.
+const blobs = new Map<string, string>();
+
 /** Workflow files as they are in a commit, because that is what GitHub runs for a push of it. */
 export async function workflowFilesAt(path: string, sha: string): Promise<Array<{ file: string; text: string }>> {
-  const ls = await git(path, ["ls-tree", "--name-only", `${sha}:.github/workflows`]);
+  const ls = await git(path, ["ls-tree", `${sha}:.github/workflows`]);
   if (ls.code !== 0) return [];
-  const names = ls.stdout.split(/\r?\n/).filter((n) => /\.ya?ml$/i.test(n));
+  const entries = ls.stdout
+    .split(/\r?\n/)
+    .map((l) => l.match(/^\d+ blob ([0-9a-f]+)\t(.+)$/))
+    .filter((m): m is RegExpMatchArray => Boolean(m?.[1] && m[2] && /\.ya?ml$/i.test(m[2])));
   return Promise.all(
-    names.map(async (n) => {
-      const show = await git(path, ["show", `${sha}:.github/workflows/${n}`]);
-      return { file: `.github/workflows/${n}`, text: show.code === 0 ? show.stdout : "" };
+    entries.map(async ([, blob = "", name = ""]) => {
+      let text = blobs.get(blob);
+      if (text === undefined) {
+        const show = await git(path, ["cat-file", "blob", blob]);
+        text = show.code === 0 ? show.stdout : "";
+        if (blobs.size > 2000) blobs.clear();
+        blobs.set(blob, text);
+      }
+      return { file: `.github/workflows/${name}`, text };
     }),
   );
 }

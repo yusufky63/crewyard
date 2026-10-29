@@ -1,0 +1,176 @@
+{
+  "nav": "GitHub",
+  "title": "GitHub",
+  "refresh": "Refresh",
+  "refreshing": "Refreshing…",
+  "visibility": {
+    "private": "private",
+    "public": "public"
+  },
+  "synced": "refreshed {{time}}",
+  "neverSynced": "not refreshed yet",
+  "branch": "on {{branch}} · {{ahead}} ahead · {{behind}} behind",
+  "branchNoUpstream": "on {{branch}} · no upstream",
+  "problem": {
+    "no_gh": "GitHub CLI was not found. Install gh and sign in with gh auth login.",
+    "signed_out": "gh is not signed in. Run gh auth login in a terminal, then refresh.",
+    "not_a_repo": "This project folder is not a git repository.",
+    "no_remote": "This repository has no remote yet, so there is nothing on GitHub to show.",
+    "not_github": "The remote of this repository is not on github.com.",
+    "rate_limited": "GitHub's rate limit is used up. Refreshing resumes when it resets.",
+    "offline": "GitHub could not be reached. The last known state is shown.",
+    "error": "GitHub answered with an error. The last known state is shown."
+  },
+  "minutes": {
+    "product": "Actions",
+    "label": "minutes · {{month}}",
+    "of": "/ {{included}}",
+    "noQuota": "plan quota unknown",
+    "meter": "Actions minutes used this month",
+    "byOs": "Linux {{linux}} · Windows {{windows}} ×2 · macOS {{macos}} ×10",
+    "note": "Windows runners count double, macOS ten times. Pushes from agents wait for you.",
+    "reason": {
+      "needs_scope": "The gh token cannot read billing. Allow it with:",
+      "not_available": "GitHub does not show billing for {{owner}} to this account.",
+      "error": "GitHub did not answer the billing request."
+    },
+    "scopeCommand": "gh auth refresh -h github.com -s user"
+  },
+  "provenance": {
+    "reported": "Reported",
+    "estimated": "Estimated",
+    "unknown": "Unknown"
+  },
+  "push": {
+    "label": "Waiting to push",
+    "branches_one": "branch",
+    "branches_other": "branches",
+    "commits_one": "{{count}} commit",
+    "commits_other": "{{count}} commits",
+    "empty": "Nothing waits. Every local commit is on GitHub.",
+    "starts": "would start {{names}}",
+    "startsNothing": "starts no workflow",
+    "conditional": "{{name}} only if its paths change",
+    "costly": "Windows or macOS jobs: {{jobs}}",
+    "newBranch": "new on GitHub",
+    "pushOnce": "Push once",
+    "pushing": "Pushing…",
+    "pushed": "Pushed {{branch}}.",
+    "failed": "Push failed: {{message}}",
+    "more_one": "{{count}} more branch",
+    "more_other": "{{count}} more branches"
+  },
+  "worktrees": {
+    "label": "Worktrees",
+    "active": "active",
+    "stale_one": "{{count}} stale",
+    "stale_other": "{{count}} stale",
+    "staleLine": "{{branch}} is merged and has no unpushed work.",
+    "dirtyLine_one": "{{count}} worktree has uncommitted changes.",
+    "dirtyLine_other": "{{count}} worktrees have uncommitted changes.",
+    "clean": "No worktree is merged yet; all are still in use."
+  },
+  "pulls": {
+    "label": "Pull requests",
+    "colPull": "Pull request",
+    "colChecks": "Checks",
+    "colGate": "Merge gate",
+    "colAction": "Action",
+    "empty": "No open pull requests and none merged in the last two weeks.",
+    "state": {
+      "open": "Ready for review",
+      "draft": "Draft",
+      "merged": "Merged"
+    },
+    "flow": "{{head}} → {{base}}",
+    "aheadBehind": "{{ahead}} ahead · {{behind}} behind",
+    "mergedLine": "merged into {{base}} {{time}}",
+    "by": "by {{author}}",
+    "checks": {
+      "passed": "{{passed}} of {{total}} passed",
+      "failing_one": "{{count}} failing",
+      "failing_other": "{{count}} failing",
+      "pending_one": "{{count}} running",
+      "pending_other": "{{count}} running",
+      "none": "No checks"
+    },
+    "gate": {
+      "checks": {
+        "pass": "Checks",
+        "wait": "Checks running",
+        "fail": "Checks failing",
+        "unknown": "No checks yet"
+      },
+      "up_to_date": {
+        "pass": "Up to date",
+        "wait": "Up to date",
+        "fail": "Behind {{base}}",
+        "unknown": "Freshness unknown"
+      },
+      "questions": {
+        "pass": "No open questions",
+        "wait": "Open questions",
+        "fail": "Open questions",
+        "unknown": "Questions unknown"
+      },
+      "approval": {
+        "pass": "Approved",
+        "wait": "Your approval",
+        "fail": "Your approval",
+        "unknown": "Your approval"
+      }
+    },
+    "gateTitle": {
+      "questions_unknown": "Open agent questions are tracked per task. This branch has no task in Crewyard yet, so merging stays closed.",
+      "draft": "Draft pull requests cannot be merged."
+    },
+    "reviewMerge": "Review and merge",
+    "blocked": "Every gate except your approval must pass first.",
+    "view": "View",
+    "confirm": "Merge #{{number}} with {{method}} at {{sha}}? Checks, freshness and questions are read again first.",
+    "mergeNow": "Merge now",
+    "merging": "Merging…",
+    "cancel": "Cancel",
+    "merged": "Merged #{{number}}.",
+    "mergeFailed": "Merge did not run: {{message}}",
+    "method": {
+      "merge": "a merge commit",
+      "squash": "squash",
+      "rebase": "rebase"
+    }
+  },
+  "workflows": {
+    "label": "Workflow check",
+    "count_one": "{{count}} finding",
+    "count_other": "{{count}} findings",
+    "none": "No workflow files in .github/workflows.",
+    "clean_one": "The workflow follows your CI rules.",
+    "clean_other": "All {{count}} workflows follow your CI rules.",
+    "job": "job {{job}}",
+    "severity": {
+      "error": "Breaks a rule",
+      "warning": "Check this"
+    },
+    "rule": {
+      "push_all_branches": "push runs on branches other than main; check other branches through pull_request",
+      "no_concurrency": "no concurrency group, so a new push does not cancel the run it replaces",
+      "no_cancel_in_progress": "concurrency without cancel-in-progress: true",
+      "no_timeout": "no timeout-minutes, so a stuck job can burn minutes for up to six hours",
+      "costly_runner_on_push": "Windows or macOS runner on push or pull_request; run those on tags or workflow_dispatch",
+      "schedule_private": "schedule in a private repository spends minutes without a change",
+      "parse_error": "the file is not valid YAML"
+    }
+  },
+  "status": {
+    "sync": "GitHub",
+    "syncTitle": "Last GitHub refresh",
+    "never": "not yet",
+    "syncing": "syncing",
+    "actions": "Actions",
+    "actionsTitle": "GitHub Actions minutes this month",
+    "unknown": "Unknown"
+  },
+  "time": {
+    "now": "just now"
+  }
+}
