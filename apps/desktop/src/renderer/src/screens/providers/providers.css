@@ -1,0 +1,76 @@
+/* Providers screen, its dialogs, and helpers shared with Limits and the accounts block. */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.pv-catline { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 12px; }
+.pv-banner { margin-bottom: 14px; }
+.pv-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.pv-toolbar .tabs button .n { font: 500 11px / 1 var(--mono); color: var(--ink-3); }
+.pv-search { margin-left: auto; width: 240px; }
+
+.pv-input { height: 30px; border: 1px solid var(--line-strong); background: var(--canvas); padding: 0 10px; font: 400 13px / 1 var(--ui); color: var(--ink); min-width: 0; }
+.pv-input.mono { font-family: var(--mono); font-size: 12px; }
+.pv-input::placeholder { color: var(--ink-3); }
+select.pv-input { padding-right: 6px; }
+
+.pv-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.pv-table th { font: 500 11px / 1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); text-align: left; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.pv-table td { padding: 14px 16px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.pv-table tr:last-child td { border-bottom: 0; }
+.pv-table td:first-child { width: 20%; }
+.pv-table td:nth-child(2) { width: 26%; }
+.pv-table td:nth-child(3) { width: 14%; }
+.pv-table td:nth-child(5) { width: 1%; }
+.pv-act { text-align: right; white-space: nowrap; }
+.prov-name { display: flex; align-items: center; gap: 8px; font-weight: 500; }
+.pv-group { display: block; margin-top: 4px; }
+.prov-model { font: 400 12px / 1.45 var(--mono); color: var(--ink-2); overflow-wrap: anywhere; }
+tr.dim .prov-name { color: var(--ink-2); }
+.rchips { display: flex; gap: 4px; flex-wrap: wrap; }
+.rchip { font: 500 10.5px / 1 var(--mono); letter-spacing: 0.04em; padding: 4px 6px; border: 1px solid var(--line); color: var(--ink-2); white-space: nowrap; }
+.rchip.on { border-color: transparent; background: var(--ok-soft); color: var(--ok); }
+.rchip.cfg { border-color: transparent; background: var(--accent-soft); color: var(--accent); }
+.rchip.off { border-style: dashed; color: var(--ink-3); }
+.pv-creds { display: grid; gap: 8px; }
+.pv-sub { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; color: var(--ink-3); margin-top: 3px; }
+.note-row { padding: 12px 16px; border-top: 1px solid var(--line); font-size: 12px; color: var(--ink-3); display: grid; gap: 8px; }
+.pv-legend { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Dialogs: square panel with corner ticks over a scrim. */
+.pv-modal { margin: auto; width: min(560px, calc(100vw - 48px)); max-height: calc(100vh - 96px); padding: 0; color: var(--ink); overflow: visible; }
+.pv-modal.wide { width: min(760px, calc(100vw - 48px)); }
+.pv-modal[open] { display: flex; flex-direction: column; }
+.pv-modal::backdrop { background: var(--scrim); }
+.pv-modal-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.pv-modal-head h2 { font-size: 15px; font-weight: 500; }
+.pv-x { margin-left: auto; width: 28px; height: 28px; display: grid; place-items: center; color: var(--ink-2); }
+.pv-x:hover { background: var(--raised); color: var(--ink); }
+.pv-modal-body { padding: 16px; overflow-y: auto; min-height: 0; display: grid; gap: 16px; }
+.pv-modal-foot { display: flex; justify-content: flex-end; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--line); }
+.pv-form { display: grid; gap: 14px; }
+.pv-field { display: grid; gap: 6px; }
+.pv-hint { font-size: 12px; color: var(--ink-3); }
+.pv-checks { display: grid; gap: 4px; }
+.pv-check { display: grid; grid-template-columns: 16px 110px minmax(0, 1fr); gap: 8px; align-items: center; min-height: 28px; font-size: 13px; cursor: pointer; }
+.pv-check.off { color: var(--ink-3); cursor: not-allowed; }
+.pv-check input { accent-color: var(--accent); }
+.pv-error { font-size: 12px; color: var(--bad); }
+.pv-error-inline { font-size: 12px; color: var(--bad); }
+.pv-section { display: grid; gap: 8px; }
+.pv-section-head { display: flex; align-items: center; justify-content: space-between; }
+.pv-empty { font-size: 13px; }
+.pv-item { border: 1px solid var(--line); padding: 10px 12px; display: grid; gap: 8px; }
+.pv-item-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px; }
+.pv-item-top .end { margin-left: auto; display: flex; gap: 4px; }
+.pv-item-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12px; }
+.pv-inline { display: flex; align-items: center; gap: 8px; }
+.pv-path { font-size: 11px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
+.pv-inline-form { display: flex; gap: 8px; }
+.pv-inline-form .pv-input { flex: 1; }
+.pv-add-profile { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding-top: 4px; }
+.pv-add-profile .pv-input { flex: 1 1 140px; }
+.pv-add-profile .pv-error { flex-basis: 100%; }
+
+@media (max-width: 1180px) {
+  .pv-search { margin-left: 0; width: 100%; }
+  .pv-table td:first-child, .pv-table td:nth-child(2) { width: auto; }
+}
