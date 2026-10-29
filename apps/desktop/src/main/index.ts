@@ -78,6 +78,8 @@ function createWindow(): BrowserWindow {
     // Opens a project folder and one of its screens, so project screens can be captured too.
     if (process.env.CREWYARD_SHOT_PROJECT) query.project = process.env.CREWYARD_SHOT_PROJECT;
     if (process.env.CREWYARD_SHOT_SCREEN) query.screen = process.env.CREWYARD_SHOT_SCREEN;
+    // Extra renderer query for a given screen state, e.g. "screen=setup&step=2".
+    for (const [k, v] of new URLSearchParams(process.env.CREWYARD_SHOT_QUERY ?? "")) query[k] ??= v;
     // Long enough for the machine check (each CLI's --version) to finish.
     w.webContents.once("did-finish-load", () => setTimeout(() => void capture(w), Number(process.env.CREWYARD_SHOT_DELAY ?? 9000)));
   }

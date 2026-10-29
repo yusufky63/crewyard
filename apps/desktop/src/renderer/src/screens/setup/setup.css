@@ -1,0 +1,70 @@
+/* New project wizard (DESIGN.md §6, design/prototype.html #s-setup). */
+.setup .sub { margin-top: 6px; }
+.setup .steps-bar { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.setup .stile { padding: 12px; display: grid; gap: 5px; text-align: left; align-content: start; }
+.setup .stile[aria-current="step"] { --tk: var(--accent); border-color: var(--accent); }
+.setup .stile .s-name { font-size: 14px; font-weight: 500; }
+.setup .stile .s-sub { font-size: 12px; color: var(--ink-3); }
+.setup .stile.done .lbl { color: var(--ok); }
+
+.setup .wiz { padding: 20px; }
+.setup .wiz h2 { font-size: var(--font-size-section); font-weight: 600; margin-bottom: 6px; letter-spacing: -0.01em; }
+.setup .wiz-foot { display: flex; gap: 12px; align-items: center; padding: 14px 20px; border-top: 1px solid var(--line); flex-wrap: wrap; }
+.setup .wiz-foot .end { margin-left: auto; display: flex; gap: 12px; }
+.setup .problem { color: var(--warn); font-size: 13px; text-align: left; text-decoration: underline; text-underline-offset: 3px; }
+.setup .wiz-progress { padding: 0 20px 16px; }
+.setup .progress-foot { display: flex; justify-content: flex-end; padding-top: 8px; }
+
+.setup .seg-row { margin: 16px 0 4px; }
+.setup .row-input { display: flex; gap: 8px; align-items: center; margin: 12px 0; }
+.setup .input { height: 34px; border: 1px solid var(--line-strong); background: var(--canvas); padding: 0 10px; font: 400 13px / 1 var(--ui); color: var(--ink); display: flex; align-items: center; flex: 1; min-width: 0; width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.setup .input.mono { font-family: var(--mono); font-size: 12px; }
+.setup .input.muted { color: var(--ink-3); }
+.setup .input::placeholder { color: var(--ink-3); }
+.setup .input[aria-invalid="true"] { border-color: var(--bad); }
+.setup .input:disabled { opacity: 0.6; }
+.setup .num-input { width: 90px; flex: none; }
+
+.setup .check-list { border: 1px solid var(--line); margin-top: 12px; }
+.setup .cl { display: grid; grid-template-columns: 18px minmax(120px, 190px) minmax(0, 1fr) auto; gap: 12px; align-items: center; min-height: 42px; padding: 6px 14px; border-top: 1px solid var(--line); font-size: 13px; }
+.setup .cl:first-child { border-top: 0; }
+.setup .cl-val { min-width: 0; overflow-wrap: anywhere; }
+.setup .cl-act { display: flex; justify-content: flex-end; }
+.setup .small { font-size: 12px; }
+.setup .block { display: block; margin-top: 2px; }
+.setup .inline { margin-left: 8px; }
+.setup .note { margin-top: 12px; }
+
+.setup .cbox-wrap { position: relative; display: inline-grid; place-items: center; width: 18px; height: 18px; cursor: pointer; }
+.setup .cbox-wrap.disabled { cursor: default; opacity: 0.5; }
+.setup .cbox-input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: inherit; }
+.setup .cbox { width: 16px; height: 16px; border: 1px solid var(--line-strong); display: grid; place-items: center; }
+.setup .cbox.on { background: var(--inv-bg); border-color: var(--inv-bg); color: var(--inv-fg); }
+.setup .cbox-input:focus-visible + .cbox { outline: var(--size-focus-ring) solid var(--accent); outline-offset: 2px; }
+
+.setup .setrow { display: flex; gap: 16px; align-items: center; justify-content: space-between; min-height: 56px; padding: 10px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.setup .setrow:first-of-type { margin-top: 12px; }
+.setup .setrow.wrap { align-items: flex-start; }
+.setup .chips { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; align-items: center; max-width: 60%; }
+.setup .chip-x { display: inline-grid; place-items: center; width: 18px; height: 18px; color: var(--ink-3); }
+.setup .chip-x:hover { color: var(--ink); }
+.setup .chip-input { width: 160px; flex: none; height: 28px; }
+.setup .money { display: inline-flex; gap: 8px; align-items: center; }
+
+.setup .clone { margin-top: 12px; }
+.setup .repo-list { border: 1px solid var(--line); border-top: 0; max-height: 264px; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--tick) transparent; }
+.setup .repo { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto auto; gap: 12px; align-items: center; width: 100%; min-height: 38px; padding: 6px 14px; border-top: 1px solid var(--line); text-align: left; font-size: 13px; }
+.setup .repo:first-child { border-top: 0; }
+.setup .repo:hover { background: var(--raised); }
+.setup .repo[aria-checked="true"] { background: var(--raised); box-shadow: inset 2px 0 0 var(--accent); }
+.setup .repo-desc { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.setup .clone-foot { display: flex; gap: 12px; align-items: center; justify-content: space-between; margin-top: 12px; flex-wrap: wrap; }
+
+@media (max-width: 1180px) {
+  .setup .steps-bar { gap: 8px; }
+  .setup .stile .s-sub { display: none; }
+  .setup .cl { grid-template-columns: 18px minmax(100px, 150px) minmax(0, 1fr) auto; }
+  .setup .repo { grid-template-columns: minmax(0, 1fr) auto auto; }
+  .setup .repo-desc { display: none; }
+  .setup .chips { max-width: 70%; }
+}

@@ -20,6 +20,8 @@ const forcedTheme = query.get("theme");
 if (forcedTheme === "dark" || forcedTheme === "light") usePrefs.setState({ theme: forcedTheme });
 const forcedLang = query.get("lang");
 if (forcedLang === "en" || forcedLang === "tr") usePrefs.setState({ language: forcedLang });
+const forcedScreen = query.get("screen");
+if (forcedScreen) useNav.setState({ screen: forcedScreen });
 
 // ?project= and ?screen= are screenshot mode too: add the folder to the throwaway profile and open it.
 const forcedProject = query.get("project");

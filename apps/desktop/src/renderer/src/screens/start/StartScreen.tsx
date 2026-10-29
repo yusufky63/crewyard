@@ -1,12 +1,13 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Check, FolderOpen, FolderSearch, FolderTree, RefreshCw } from "lucide-react";
+import { AlertTriangle, Check, FolderOpen, FolderSearch, FolderTree, GitPullRequest, Plus, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { BrandIcon, Button, Label, Panel } from "@crewyard/ui";
 import type { MachineEnv, ProjectSummary, ToolId } from "@crewyard/core";
 import { call, useDaemon } from "../../ipc.ts";
 import { canOpenProjects, useNav } from "../../nav.ts";
 import { usePrefs } from "../../prefs.ts";
+import { openSetup } from "../setup/draft.ts";
 import "./start.css";
 
 const TOOL_ORDER: ToolId[] = ["claude", "codex", "opencode", "gemini", "git", "gh"];
@@ -225,9 +226,17 @@ export function StartScreen() {
           </h1>
           <p className="sec lead">{t("lead")}</p>
           <div className="launch-actions">
-            <Button variant="primary" onClick={() => void openFolder()}>
+            <Button variant="primary" onClick={() => openSetup("local")}>
+              <Plus size={14} strokeWidth={1.75} />
+              {t("setup:newProject")}
+            </Button>
+            <Button onClick={() => void openFolder()}>
               <FolderOpen size={14} strokeWidth={1.75} />
               {t("openFolder")}
+            </Button>
+            <Button onClick={() => openSetup("clone")}>
+              <GitPullRequest size={14} strokeWidth={1.75} />
+              {t("setup:source.clone")}
             </Button>
           </div>
           <MachineCheck />
