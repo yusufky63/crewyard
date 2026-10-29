@@ -24,13 +24,17 @@ const readJson = (file: string): Record<string, unknown> | null => {
   }
 };
 
+// Checked in this order; a pnpm workspace file marks pnpm even before its lockfile exists.
 const LOCKFILES: Array<[string, PackageManager]> = [
-  ["pnpm-lock.yaml", "pnpm"],
   ["bun.lock", "bun"],
   ["bun.lockb", "bun"],
+  ["pnpm-lock.yaml", "pnpm"],
+  ["pnpm-workspace.yaml", "pnpm"],
   ["yarn.lock", "yarn"],
   ["package-lock.json", "npm"],
+  ["npm-shrinkwrap.json", "npm"],
 ];
+const MANAGERS: PackageManager[] = ["pnpm", "npm", "yarn", "bun"];
 
 // npm init writes this placeholder; it is not a real test command.
 const NPM_PLACEHOLDER_TEST = /no test specified/i;
@@ -38,9 +42,11 @@ const NPM_PLACEHOLDER_TEST = /no test specified/i;
 function nodeGuess(dir: string, entries: string[]): ProjectTypeGuess {
   const pkg = readJson(join(dir, "package.json")) ?? {};
   const lock = LOCKFILES.find(([file]) => entries.includes(file));
-  // Corepack's "packageManager" field names the tool even before a lockfile exists.
-  const field = typeof pkg.packageManager === "string" ? pkg.packageManager.split("@")[0] : null;
-  const pm = lock?.[1] ?? (LOCKFILES.some(([, m]) => m === field) ? (field as PackageManager) : null);
+  // Corepack's "packageManager" field is an explicit choice, so it wins over a stray lockfile
+  // (the same order package-manager-detector uses).
+  const name = typeof pkg.packageManager === "string" ? pkg.packageManager.split("@")[0] : null;
+  const field = MANAGERS.find((m) => m === name) ?? null;
+  const pm = field ?? lock?.[1] ?? null;
   const scripts = (pkg.scripts && typeof pkg.scripts === "object" ? pkg.scripts : {}) as Record<string, unknown>;
   const has = (name: string) => typeof scripts[name] === "string" && !(name === "test" && NPM_PLACEHOLDER_TEST.test(scripts[name] as string));
   const runCmd = (name: string) => (pm === "npm" ? `npm run ${name}` : `${pm} ${name}`);

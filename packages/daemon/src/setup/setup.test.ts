@@ -62,6 +62,10 @@ describe("project type detection", () => {
   it("falls back to the packageManager field, and to nothing without one", () => {
     const withField = files(tempDir(), { "package.json": JSON.stringify({ packageManager: "pnpm@9.15.4", scripts: { build: "x" } }) });
     expect(detectProjectType(withField)).toMatchObject({ packageManager: "pnpm", build: "pnpm build" });
+    const both = files(tempDir(), { "package.json": JSON.stringify({ packageManager: "pnpm@9.15.4", scripts: { build: "x" } }), "package-lock.json": "" });
+    expect(detectProjectType(both)).toMatchObject({ packageManager: "pnpm", build: "pnpm build" });
+    const workspace = files(tempDir(), { "package.json": JSON.stringify({ scripts: { test: "vitest" } }), "pnpm-workspace.yaml": "" });
+    expect(detectProjectType(workspace)).toMatchObject({ packageManager: "pnpm", test: "pnpm test" });
     const bare = files(tempDir(), { "package.json": JSON.stringify({ scripts: { build: "x" } }) });
     expect(detectProjectType(bare)).toMatchObject({ packageManager: null, build: null, test: null });
   });
