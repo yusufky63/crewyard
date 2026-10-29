@@ -795,7 +795,8 @@ export class Orchestrator {
       this.track(this.failHandoff(pendingHandoff, detail ?? "target_ended"));
     }
     // Nobody is left to receive these answers; they close instead of lingering as "needs input".
-    for (const q of this.db.openRequestsForRun(runId).filter((q) => q.kind !== "handoff")) this.closeRequest(q, "system");
+    // A run that finished its work needs no hand off either (e.g. a cap tripped on its last report).
+    for (const q of this.db.openRequestsForRun(runId).filter((q) => q.kind !== "handoff" || reason === "completed")) this.closeRequest(q, "system");
     this.audit(run.task_id, runId, "run.finished", { reason, detail });
     this.emitTask(run.task_id, "run_ended");
     void this.tick();

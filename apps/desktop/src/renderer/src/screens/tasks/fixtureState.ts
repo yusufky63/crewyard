@@ -1,0 +1,16 @@
+import { useEffect } from "react";
+import { useInspector } from "../../inspector.ts";
+import { useNav } from "../../nav.ts";
+import { FIXTURE } from "./fixture.ts";
+
+/** Screenshot mode only: `fixture&task=<id>` selects a task, `&inspect` opens the inspector on it. */
+export function useFixtureState(): void {
+  useEffect(() => {
+    if (!FIXTURE) return;
+    const q = new URLSearchParams(location.search);
+    const task = q.get("task");
+    if (task) useNav.getState().selectTask(task);
+    const member = q.get("member");
+    if (task && q.has("inspect")) useInspector.getState().open({ taskId: task, ...(member ? { memberId: member } : {}) });
+  }, []);
+}

@@ -4,6 +4,8 @@ import { useDaemonLifecycle } from "./ipc.ts";
 import { useNav } from "./nav.ts";
 import { usePrefs } from "./prefs.ts";
 import { screens } from "./registry.ts";
+import { useWorkLive } from "./screens/tasks/live.ts";
+import { Inspector } from "./shell/Inspector.tsx";
 import { Sidebar } from "./shell/Sidebar.tsx";
 import { StatusBar } from "./shell/StatusBar.tsx";
 import { TitleBar } from "./shell/TitleBar.tsx";
@@ -42,6 +44,8 @@ function usePresentation(systemLanguage: string): void {
 export function App({ systemLanguage, platform }: { systemLanguage: string; platform: string }) {
   usePresentation(systemLanguage);
   useDaemonLifecycle();
+  // Task, request and limit events keep every screen fresh and raise Windows toasts.
+  useWorkLive();
   const { screen, projectId } = useNav();
   const current = screens.find((s) => s.id === screen) ?? screens.find((s) => s.id === "start");
   const launch = !projectId || current?.scope === "launch";
@@ -53,6 +57,7 @@ export function App({ systemLanguage, platform }: { systemLanguage: string; plat
       <div className="body">
         {!launch && <Sidebar />}
         <main className="main">{Screen && <Screen />}</main>
+        {!launch && <Inspector />}
       </div>
       <StatusBar />
     </div>

@@ -1,0 +1,90 @@
+/* Tasks screen (DESIGN.md §5 Composer, CrewProposal, TaskRow, StatusLabel, LimitBanner). */
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.tk-context { margin-top: 6px; max-width: 760px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tk-small { font-size: 12px; }
+.tk-error { margin-top: 10px; font-size: 13px; color: var(--bad); }
+
+/* Composer */
+.tk-composer { padding: 16px 16px 12px; }
+.tk-composer textarea {
+  display: block; width: 100%; margin-top: 8px; resize: vertical; border: 0; background: none; outline: 0;
+  font-size: 17px; line-height: 1.4; min-height: 54px; color: var(--ink);
+}
+.tk-composer textarea::placeholder { color: var(--ink-3); }
+.tk-composer textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.tk-composer-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.tk-composer-row .end { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+.tk-composer-foot { margin-top: 10px; }
+.tk-field { cursor: text; }
+.tk-field input, .tk-field select { border: 0; background: none; outline: 0; color: var(--ink); font-weight: 500; font-size: 13px; min-width: 0; }
+.tk-field input { width: 110px; }
+.tk-field input.num { width: 64px; }
+.tk-field select { cursor: pointer; padding-right: 2px; }
+.tk-field select option { background: var(--surface); color: var(--ink); }
+.tk-field:focus-within { border-color: var(--accent); }
+.tk-field input[aria-invalid] { color: var(--bad); }
+
+/* Crew proposal */
+.tk-crew { margin-top: 16px; padding: 16px; background: var(--canvas); }
+.tk-crew-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.tk-crew-head .end { margin-left: auto; }
+.tk-crew-task { font-size: 15px; font-weight: 500; margin: 10px 0 14px; }
+.tk-crew-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.tk-role { padding: 14px; display: grid; gap: 10px; align-content: start; }
+.tk-role-top { display: flex; align-items: flex-start; justify-content: space-between; }
+.tk-role-art { color: var(--ink-2); }
+.tk-role-name { font-size: 15px; font-weight: 500; }
+.tk-role-run { font-size: 13px; }
+.tk-role-acct { font-size: 12px; color: var(--ink-3); overflow-wrap: anywhere; }
+.tk-why { font-size: 12px; color: var(--ink-2); line-height: 1.4; min-height: 34px; }
+.tk-headroom { display: grid; gap: 5px; }
+.tk-headroom .row { display: flex; justify-content: space-between; gap: 8px; }
+.tk-swap { display: grid; gap: 4px; }
+.tk-swap select { height: 28px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); font-size: 12px; padding: 0 6px; min-width: 0; }
+.tk-fallback { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--tick); }
+.tk-fallback .end { margin-left: auto; }
+.tk-chain { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.tk-chain-item { display: inline-flex; align-items: center; gap: 6px; }
+.tk-crew-actions { display: flex; align-items: center; gap: 12px; margin-top: 14px; flex-wrap: wrap; }
+.tk-crew-actions .end { margin-left: auto; display: flex; gap: 12px; align-items: center; }
+.tk-est { font-size: 12px; color: var(--ink-3); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; max-width: 640px; }
+
+/* Task list */
+.tk-list-head { display: flex; align-items: center; gap: 12px; margin: 28px 0 12px; flex-wrap: wrap; }
+.tk-list-head .tabs { flex-wrap: wrap; }
+.tk-list { padding: 0; }
+.tk-empty { padding: 20px 16px; font-size: 13px; }
+.tk-row { border-top: 1px solid var(--line); padding: 14px 16px; }
+.tk-row:first-child { border-top: 0; }
+.tk-row[aria-current] { box-shadow: inset 2px 0 0 var(--ink); }
+.tk-top { display: flex; align-items: center; gap: 12px; }
+.tk-top-main { flex: 1; min-width: 0; text-align: left; }
+.tk-title { font-size: 15px; font-weight: 500; overflow-wrap: anywhere; }
+.tk-meta { display: flex; align-items: center; gap: 14px; margin-top: 5px; font-size: 12px; color: var(--ink-3); flex-wrap: wrap; }
+.tk-meta span { display: inline-flex; align-items: center; gap: 5px; }
+.tk-right { color: var(--ink-3); font: 400 12px / 1 var(--mono); white-space: nowrap; }
+.tk-expand { width: 28px; height: 28px; display: grid; place-items: center; color: var(--ink-3); }
+.tk-expand:hover { color: var(--ink); background: var(--raised); }
+.tk-status { display: flex; align-items: center; gap: 12px; margin-top: 10px; flex-wrap: wrap; }
+.tk-status .end { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.tk-confirm { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
+.tk-diff { display: inline-flex; align-items: center; gap: 8px; font: 500 12px / 1 var(--mono); }
+.tk-diff .add { color: var(--ok); }
+.tk-diff .del { color: var(--bad); }
+.tk-diffbar { display: flex; width: 56px; height: 5px; gap: 2px; }
+.tk-diffbar span { background: var(--ok); }
+.tk-diffbar span + span { background: var(--bad); }
+.tk-banner { margin-top: 12px; }
+.tk-banner .txt { color: var(--ink); }
+.tk-banner .end { margin-left: auto; display: flex; gap: 8px; }
+.tk-steps { list-style: none; margin: 14px 0 2px; padding: 12px 0 0; border-top: 1px dashed var(--tick); display: grid; gap: 2px; }
+.tk-step { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto 72px; gap: 10px; align-items: center; width: 100%; text-align: left; font-size: 13px; color: var(--ink-2); padding: 6px 4px; }
+.tk-step:hover { background: var(--raised); color: var(--ink); }
+.tk-step.now { color: var(--ink); }
+.tk-step .who { color: var(--ink-3); }
+.tk-step .t { font: 400 12px / 1 var(--mono); color: var(--ink-3); text-align: right; }
+.tk-step-dot { width: 7px; height: 7px; border-radius: var(--radius-dot); background: var(--ink-3); justify-self: center; }
+.tk-step-dot.s-running { background: var(--accent); }
+.tk-step-dot.s-needs_you, .tk-step-dot.s-paused, .tk-step-dot.s-handing_off, .tk-step-dot.s-blocked { background: var(--warn); }
+.tk-step-dot.s-limited, .tk-step-dot.s-failed { background: var(--bad); }
+.tk-step-dot.s-done { background: var(--ok); }
