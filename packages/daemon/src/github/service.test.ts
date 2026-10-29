@@ -45,7 +45,8 @@ const pull = (number: number, extra: Record<string, unknown> = {}) => ({
   ...extra,
 });
 
-describe("GitHub service", () => {
+// Each case runs git in a temp repo; under the full parallel suite on Windows that can pass 5 s.
+describe("GitHub service", { timeout: 30_000 }, () => {
   it("lists open and recently merged PRs with checks and gates, and revalidates with ETags", async () => {
     const { fn, seen } = routes({
       "/repos/octo/app": { private: true, default_branch: "main", owner: { type: "User" }, allow_merge_commit: false, allow_squash_merge: true, allow_rebase_merge: true },
@@ -125,7 +126,7 @@ describe("GitHub service", () => {
   });
 });
 
-describe("background refresh", () => {
+describe("background refresh", { timeout: 30_000 }, () => {
   it("refreshes only the projects with a task in review, and runs the after-refresh hook before github.changed", async () => {
     const { fn, seen } = routes({
       "/repos/octo/app": { private: true, default_branch: "main", owner: { type: "User" } },

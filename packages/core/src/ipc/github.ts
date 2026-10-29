@@ -1,3 +1,5 @@
+import type { TaskStatus } from "../state.ts";
+
 // IPC methods for PRs, checks, merge gates, push queue, Actions minutes and workflow checks. Owned by the GitHub work; other work only reads it.
 // Add entries as "github.<verb>": { params: ...; result: ... }. Implement them in
 // packages/daemon/src/handlers/github.ts.
@@ -276,6 +278,8 @@ export interface CleanupVerdict {
 export interface TaskPullView {
   taskId: string;
   projectId: string;
+  title: string;
+  status: TaskStatus;
   pull: TaskPull | null;
   /** The PR as the GitHub cache has it, with checks and the merge gate; null before it is read. */
   live: PullSummary | null;

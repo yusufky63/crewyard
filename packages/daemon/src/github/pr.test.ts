@@ -86,7 +86,8 @@ describe("job log excerpt", () => {
     expect(out.split("\n")[0]).toBe("setup line 47");
     expect(out).toContain("FAIL src/limiter.test.ts > blocks the sixth attempt");
     expect(out).toContain("AssertionError: expected 200 to be 429");
-    expect(out).not.toMatch(/2026-10-30T|\u001b|##\[group\]/);
+    expect(out).not.toMatch(/2026-10-30T|##\[group\]/);
+    expect(out.includes("\u001b")).toBe(false);
   });
 
   it("falls back to the tail and respects the size limits", () => {

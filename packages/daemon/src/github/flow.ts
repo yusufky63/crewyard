@@ -196,24 +196,14 @@ export class PrFlow {
 
   async view(taskId: string): Promise<TaskPullView> {
     const detail = this.deps.tasks().get(taskId);
-    let pulls: PullsResult | null = null;
-    try {
-      pulls = await this.deps.service.pulls(detail.projectId);
-    } catch {
-      pulls = null;
-    }
+    const pulls = await this.deps.service.pulls(detail.projectId).catch((): PullsResult | null => null);
     return this.build(detail, pulls);
   }
 
   async views(projectId: string): Promise<TaskPullView[]> {
     const tasks = this.deps.tasks().list(projectId).filter((t) => t.kind === "code" && (t.status === "review" || t.status === "merged" || this.row(t.id) !== null));
     if (tasks.length === 0) return [];
-    let pulls: PullsResult | null = null;
-    try {
-      pulls = await this.deps.service.pulls(projectId);
-    } catch {
-      pulls = null;
-    }
+    const pulls = await this.deps.service.pulls(projectId).catch((): PullsResult | null => null);
     const out: TaskPullView[] = [];
     for (const t of tasks) out.push(await this.build(this.deps.tasks().get(t.id), pulls));
     return out;
@@ -230,6 +220,8 @@ export class PrFlow {
     return {
       taskId: detail.id,
       projectId: detail.projectId,
+      title: detail.title,
+      status: detail.status,
       pull: row ? toPull(row) : null,
       live,
       mergeMethod: (pulls?.mergeMethod ?? this.deps.service.repoRef(detail.projectId)?.mergeMethod ?? null) as MergeMethod | null,

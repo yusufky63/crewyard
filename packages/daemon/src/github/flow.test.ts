@@ -30,7 +30,7 @@ afterEach(async () => {
 
 const running: FakeStep = { emit: { type: "run.state", state: "running" } };
 const say = (text: string): FakeStep => ({ emit: { type: "message.delta", text } });
-const tool: FakeStep = { emit: { type: "tool.call", toolCallId: "t1", title: "read", kind: "read" } };
+const tool: FakeStep = { emit: { type: "tool.call", toolCallId: "t1", title: "read", kind: "read", input: {} } };
 
 /** A GitHub API with state: what the tests change is what the next read returns. ETags as GitHub sends them. */
 function github() {

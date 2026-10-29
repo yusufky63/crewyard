@@ -67,3 +67,40 @@
 @media (max-width: 1180px) {
   .sb.sb-gh { display: none; }
 }
+
+/* A task's pull request (TaskPull.tsx): the inspector, the task row and the GitHub screen. */
+.tp { display: grid; gap: 12px; min-width: 0; }
+.tp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.tp-head-end { display: inline-flex; align-items: center; gap: 6px; }
+.tp-title { font-weight: 500; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.tp-state, .tp-inline { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 500; white-space: nowrap; }
+.tp-sec { display: grid; gap: 8px; min-width: 0; }
+.tp-small { font-size: 12px; }
+.tp-flow { font-size: 11px; color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tp-path { font-size: 11px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tp-gate { list-style: none; display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--ink-2); }
+.tp-gate li { display: inline-flex; align-items: center; gap: 5px; }
+.tp-gate .g-pass svg { color: var(--ok); }
+.tp-gate .g-wait svg { color: var(--warn); }
+.tp-gate .g-fail { color: var(--bad); }
+.tp-gate .g-unknown { color: var(--ink-3); }
+.tp-field { display: grid; gap: 6px; }
+.tp-field input, .tp-field textarea { width: 100%; font: 400 13px / 1.45 var(--ui); color: var(--ink); background: var(--canvas); border: 1px solid var(--line-strong); padding: 8px 10px; resize: vertical; }
+.tp-field textarea { font: 400 12px / 1.5 var(--mono); }
+.tp-confirm { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; font-size: 13px; padding: 10px 12px; background: var(--raised); border: 1px solid var(--line); }
+.tp-confirm .end { margin-left: auto; display: inline-flex; gap: 8px; }
+.tp-toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2); cursor: pointer; }
+.tp-feedback { list-style: none; display: grid; gap: 10px; }
+.tp-feedback li { display: grid; gap: 6px; padding-top: 10px; border-top: 1px solid var(--line); }
+.tp-fb-head { display: flex; align-items: center; gap: 6px; font-size: 13px; min-width: 0; }
+.tp-fb-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.tp-fb-state { margin-left: auto; font-size: 12px; white-space: nowrap; }
+.tp-fb-excerpt { margin: 0; font-size: 11px; line-height: 1.5; color: var(--ink-2); background: var(--sunken); border: 1px solid var(--line); padding: 6px 8px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 120px; overflow: auto; }
+.tp-blocks { list-style: none; display: grid; gap: 4px; font-size: 12px; color: var(--warn); }
+.tp-chip { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12px; }
+
+.gh .gh-tasks { margin-bottom: 16px; padding-bottom: 8px; }
+.gh .gh-tasks-list { display: grid; }
+.gh .gh-tasks-list > .tp { padding: 16px; border-top: 1px solid var(--line); }
+.gh .gh-tasks-list > .tp:first-child { border-top: 0; }
+.gh .gh-wt-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }

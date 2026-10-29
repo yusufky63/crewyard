@@ -4,6 +4,7 @@ import type { RequestView, TaskSummary } from "@crewyard/core";
 import { BrandIcon, Button } from "@crewyard/ui";
 import { useInspector } from "../../inspector.ts";
 import { useNav } from "../../nav.ts";
+import { TaskPullChip } from "../github/TaskPull.tsx";
 import { act, useErrorText, useWork } from "./data.ts";
 import { useActivity } from "./live.ts";
 import { currentRun, diffTotals, elapsedMs, formatDuration, latestRunOf, limitBanner, profileNames, runDuration, runnersOf, statusLine, stepState } from "./model.ts";
@@ -110,6 +111,15 @@ export function TaskRow({ summary, requests }: { summary: TaskSummary; requests:
         <StatusLabel line={line} />
         {run && !run.endedAt && <span className="muted tk-small">{`${f.runner(run.runner)} · ${names.get(run.profileId)?.alias ?? run.profileId}${run.model ? ` · ${run.model}` : ""}`}</span>}
         {diff && <DiffStat stat={diff} />}
+        {detail.kind === "code" && (detail.status === "review" || detail.status === "merged") && (
+          <TaskPullChip
+            taskId={detail.id}
+            onOpen={() => {
+              selectTask(detail.id);
+              inspect({ taskId: detail.id });
+            }}
+          />
+        )}
         <div className="end">
           {detail.status === "proposed" && (
             <Button size="sm" onClick={() => selectTask(detail.id)}>

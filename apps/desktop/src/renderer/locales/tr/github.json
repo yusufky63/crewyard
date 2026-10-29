@@ -121,7 +121,7 @@
       }
     },
     "gateTitle": {
-      "questions_unknown": "Ajanların açık soruları görev bazında izlenir. Bu dalın Crewyard'da henüz bir görevi yok, bu yüzden birleştirme kapalı kalır.",
+      "questions_unknown": "Crewyard bu dal için ajanların açık sorularını okuyamadı, bu yüzden birleştirme kapalı kalır.",
       "draft": "Taslak pull request'ler birleştirilemez."
     },
     "reviewMerge": "İncele ve birleştir",
@@ -172,5 +172,115 @@
   },
   "time": {
     "now": "az önce"
+  },
+  "taskPull": {
+    "label": "Pull request",
+    "panel": "Görevlerin pull request'leri",
+    "count_one": "{{count}} görev",
+    "count_other": "{{count}} görev",
+    "empty": "İncelemeye hazır bir kod görevi yok. Ekibi işini bitirince görev burada görünür.",
+    "openOnGithub": "#{{number}} numaralı pull request'i GitHub'da aç",
+    "notRead": "GitHub'dan henüz okunmadı.",
+    "state": {
+      "none": "Henüz pull request yok",
+      "open": "İncelemeye hazır",
+      "draft": "Taslak",
+      "merged": "Birleştirildi",
+      "closed": "Birleştirilmeden kapandı"
+    },
+    "gateLabel": "Pull request açmadan önce",
+    "gate": {
+      "review": {
+        "pass": "İnceleme geçti",
+        "wait": "İnceleme bitmedi",
+        "fail": "İnceleme başarısız",
+        "unknown": "İnceleme durumu bilinmiyor"
+      },
+      "commits": {
+        "pass": "Commit var",
+        "wait": "Henüz commit yok",
+        "fail": "{{base}} üzerinde yeni commit yok",
+        "unknown": "Commit durumu bilinmiyor"
+      },
+      "clean": {
+        "pass": "Kaydedilmemiş değişiklik yok",
+        "wait": "Kaydedilmemiş değişiklik var",
+        "fail": "Worktree'de commit'lenmemiş değişiklik var",
+        "unknown": "Worktree klasörü bulunamadı"
+      },
+      "pushed": {
+        "pass": "GitHub'da",
+        "wait": "Henüz push edilmedi",
+        "fail": "Push edilmedi",
+        "unknown": "Push durumu bilinmiyor"
+      },
+      "no_pull": {
+        "pass": "Henüz pull request yok",
+        "wait": "Pull request bekleniyor",
+        "fail": "Zaten bir pull request var",
+        "unknown": "Pull request durumu bilinmiyor"
+      }
+    },
+    "push_one": "Dalı push et · {{count}} commit",
+    "push_other": "Dalı push et · {{count}} commit",
+    "pushNote": "Bir kez push eder, asla zorlamaz. GitHub'da workflow'lar başlayabilir.",
+    "titleLabel": "Başlık",
+    "bodyLabel": "Açıklama",
+    "open": "Pull request aç",
+    "openBlocked": "Önce yukarıdaki maddelerin hepsi geçmeli.",
+    "openConfirm": "GitHub'da {{head}} dalından {{base}} dalına, {{sha}} commit'iyle bir pull request açılsın mı?",
+    "openNow": "Şimdi aç",
+    "opening": "Açılıyor…",
+    "opened": "Pull request açıldı.",
+    "step": {
+      "push": "Dalı push et",
+      "open": "Pull request aç",
+      "merge": "İncele ve birleştir",
+      "feedback": "Geri bildirim bekliyor",
+      "cleanup": "Temizle"
+    },
+    "feedback": {
+      "label": "GitHub'dan geri bildirim",
+      "routing": "Başarısız kontrolleri ve inceleme yorumlarını ajana gönder",
+      "none": "Henüz başarısız kontrol ya da inceleme yorumu yok.",
+      "off": "Bu projede kapalı. Siz açana kadar geri bildirim GitHub'da kalır.",
+      "check": "{{name}} kontrolü başarısız",
+      "review": "{{who}} incelemesi",
+      "comment": "{{who}} yorumu",
+      "commentAt": "{{who}} yorumu · {{where}}",
+      "held": "Sizi bekliyor",
+      "sent": "Ajana gönderildi {{time}}",
+      "send_one": "Ajana gönder",
+      "send_other": "{{count}} maddeyi ajana gönder",
+      "sendNote": "Bu dalı yazan adım bitti. Gönderirseniz adım aynı profille devam eder."
+    },
+    "cleanup": {
+      "label": "Worktree",
+      "remove": "Worktree'yi kaldır",
+      "removeNow": "Şimdi kaldır",
+      "confirm": "Bu worktree klasörü kaldırılsın mı? {{branch}} dalı depoda kalır.",
+      "done": "Worktree kaldırıldı.",
+      "removed": "Worktree klasörü kaldırıldı. Dal yerinde duruyor.",
+      "block": {
+        "not_merged": "Dal henüz birleştirilmedi.",
+        "unknown_to_git": "Git bu klasörü worktree olarak tanımıyor; bu yüzden buradan asla silinmez.",
+        "primary": "Bu, ana çalışma kopyası.",
+        "missing": "Klasör zaten yok.",
+        "dirty": "Kaydedilmemiş değişiklikler var.",
+        "unpushed": "GitHub'da olmayan commit'ler var.",
+        "live_run": "İçinde hâlâ bir ajan çalışıyor."
+      }
+    },
+    "error": {
+      "pull_busy": "Bu pull request zaten açılıyor.",
+      "pull_no_github": "Bu proje için GitHub okunamadı.",
+      "pull_no_title": "Pull request'e bir başlık verin.",
+      "pull_no_branch": "Görevin pull request açılacak bir dalı yok.",
+      "pull_moved": "Siz baktıktan sonra dala yeni commit'ler geldi. Yeniden kontrol edin.",
+      "pull_gate_closed": "Pull request öncesi maddelerin hepsi artık geçmiyor.",
+      "worktree_busy": "Bu worktree zaten kaldırılıyor.",
+      "feedback_busy": "Bu geri bildirim zaten gönderiliyor.",
+      "feedback_no_owner": "Bu görevde dalın sahibi olan bir adım yok."
+    }
   }
 }
