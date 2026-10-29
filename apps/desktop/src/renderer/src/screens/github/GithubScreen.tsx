@@ -442,7 +442,7 @@ export function GithubScreen() {
         <div>
           <h1>{t("title")}</h1>
           <div className="lbl gh-sub">
-            <span lang="en">{remote ? `${remote.owner}/${remote.repo}` : r?.path}</span>
+            <span className="as-typed">{remote ? `${remote.owner}/${remote.repo}` : r?.path}</span>
             {context.map((c) => ` · ${c}`).join("")}
           </div>
           {r?.currentBranch && (

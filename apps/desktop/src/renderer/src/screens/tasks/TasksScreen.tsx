@@ -35,7 +35,9 @@ export function TasksScreen() {
           <h1>{t("title")}</h1>
           {project && (
             <div className="lbl tk-context" title={project.path}>
-              {project.name} · {project.path}
+              <span className="as-typed">
+                {project.name} · {project.path}
+              </span>
             </div>
           )}
         </div>

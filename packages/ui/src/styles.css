@@ -51,6 +51,9 @@ svg.i, .i { width: 16px; height: 16px; flex: none; }
 
 .mono { font-family: var(--mono); }
 .lbl { font: 500 11px / 1.2 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+/* Names the user typed or the disk holds (paths, repos, task titles) keep their own case inside a label:
+   uppercasing would change them, and Turkish casing would turn i into İ. */
+.lbl .as-typed { text-transform: none; letter-spacing: 0.02em; }
 .muted { color: var(--ink-3); }
 .sec { color: var(--ink-2); }
 .num { font-variant-numeric: tabular-nums; }

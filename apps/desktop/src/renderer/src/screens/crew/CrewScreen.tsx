@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ReactFlowProvider } from "@xyflow/react";
-import { Copy, List, Maximize2, MessageSquare, Minimize2, Network, Pause, PanelRight, Play, Square, type LucideIcon } from "lucide-react";
+import { ArrowLeftRight, Copy, List, Maximize2, MessageSquare, Minimize2, Network, Pause, PanelRight, Play, RotateCw, Square, type LucideIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button, ContextMenu, MENU_SEPARATOR, type ContextMenuEntry } from "@crewyard/ui";
 import type { CrewLayout, TaskDetail } from "@crewyard/core";
@@ -9,10 +9,10 @@ import { useInspector } from "../../inspector.ts";
 import { call, useDaemon } from "../../ipc.ts";
 import { useNav } from "../../nav.ts";
 import { screens } from "../../registry.ts";
-import { actionsFor, type ActionId } from "./actions.ts";
+import { actionsFor, handoffCandidates, supersededRuns, type ActionId } from "./actions.ts";
 import { CrewCanvas } from "./CrewCanvas.tsx";
 import { useNodeTitle } from "./CrewNode.tsx";
-import { MessageDialog, StopDialog } from "./Dialogs.tsx";
+import { ChangeAiDialog, MessageDialog, StopDialog } from "./Dialogs.tsx";
 import { crewFixture } from "./fixture.ts";
 import { MemberStatusLabel, runnerName, TaskStatusLabel, useFormatters } from "./labels.tsx";
 import { buildGraph, defaultLayout, mergeLayout, type GraphNodeModel, type Point } from "./model.ts";
@@ -27,7 +27,7 @@ const query = new URLSearchParams(typeof location === "undefined" ? "" : locatio
 const FIXTURE = query.has("fixture");
 const SHOT = { menu: query.get("crewMenu"), select: query.get("crewSelect"), full: query.get("crewFull") === "1", list: query.get("crewList") === "1" };
 
-const ICONS: Record<ActionId, LucideIcon> = { open: PanelRight, message: MessageSquare, pause: Pause, resume: Play, copy_run_id: Copy, stop: Square };
+const ICONS: Record<ActionId, LucideIcon> = { open: PanelRight, message: MessageSquare, pause: Pause, resume: Play, retry: RotateCw, change_ai: ArrowLeftRight, copy_run_id: Copy, stop: Square };
 
 const errorCode = (err: unknown) => (err instanceof Error ? err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : String(err));
 
@@ -97,7 +97,7 @@ function TaskPicker({ projectId }: { projectId: string }) {
   );
 }
 
-type Dialog = { kind: "stop" | "message"; nodeId: string } | null;
+type Dialog = { kind: "stop" | "message" | "change_ai"; nodeId: string } | null;
 type Menu = { nodeId: string; x: number; y: number } | null;
 
 function CrewView({ task, fixture }: { task: TaskDetail; fixture: boolean }) {
@@ -208,7 +208,15 @@ function CrewView({ task, fixture }: { task: TaskDetail; fixture: boolean }) {
     }
   };
 
-  const ctx = useMemo(() => ({ resumable: new Set(task.resumableRunIds), taskCancelled: !!task.cancelledAt }), [task.resumableRunIds, task.cancelledAt]);
+  const ctx = useMemo(
+    () => ({
+      resumable: new Set(task.resumableRunIds),
+      taskCancelled: !!task.cancelledAt,
+      superseded: supersededRuns(task),
+      handoffTargets: (memberId: string, profileId: string) => handoffCandidates(task, memberId, profileId).length,
+    }),
+    [task],
+  );
 
   const menuNode = menu ? byId.get(menu.nodeId) : undefined;
   const menuItems: ContextMenuEntry[] = menuNode
@@ -235,7 +243,11 @@ function CrewView({ task, fixture }: { task: TaskDetail; fixture: boolean }) {
         return openInspector(n);
       case "message":
       case "stop":
+      case "change_ai":
         return setDialog({ kind: id, nodeId: n.id });
+      case "retry":
+        if (run) void runCall(() => call("runs.retry", { runId: run.id }), t("done.retry", { target: title(n, task.title) }));
+        return;
       case "pause":
         if (run) void runCall(() => call("runs.pause", { runId: run.id }), t("done.pause", { target: title(n, task.title) }));
         return;
@@ -392,6 +404,17 @@ function CrewView({ task, fixture }: { task: TaskDetail; fixture: boolean }) {
           })}
           onClose={() => setDialog(null)}
           onConfirm={() => runCall(() => call("runs.stop", { runId: dialogNode.run!.id }), t("done.stop", { target: title(dialogNode, task.title) })).then(() => setDialog(null))}
+        />
+      )}
+      {dialog?.kind === "change_ai" && dialogNode?.run && dialogNode.memberId && (
+        <ChangeAiDialog
+          target={title(dialogNode, task.title)}
+          candidates={handoffCandidates(task, dialogNode.memberId, dialogNode.run.profileId)}
+          runnerLabel={(r) => runnerName(t, r)}
+          onClose={() => setDialog(null)}
+          onConfirm={(profileId) =>
+            runCall(() => call("runs.handoff", { runId: dialogNode.run!.id, targetProfileId: profileId }), t("done.handoff", { target: title(dialogNode, task.title) })).then(() => setDialog(null))
+          }
         />
       )}
       {dialog?.kind === "message" && dialogNode?.run && (

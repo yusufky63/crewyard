@@ -156,6 +156,8 @@
     "message": "Message this agent…",
     "pause": "Pause",
     "resume": "Resume",
+    "retry": "Check again",
+    "change_ai": "Change AI…",
     "copy_run_id": "Copy run id",
     "stop": "Stop agent…",
     "why": {
@@ -164,7 +166,10 @@
       "completed": "This step finished; there is no one to read it",
       "handing_off": "Wait until the handoff finishes",
       "task_cancelled": "The task was stopped",
-      "no_run": "No run yet, so there is no id"
+      "no_run": "No run yet, so there is no id",
+      "superseded": "A later run already continues this step",
+      "working": "The agent is still working, so there is nothing to check",
+      "no_target": "This step has no other account to hand off to"
     }
   },
   "stop": {
@@ -190,7 +195,9 @@
     "resume": "Resuming {{target}}",
     "stop": "Stopped {{target}}",
     "message": "Message sent",
-    "copied": "Run id copied"
+    "copied": "Run id copied",
+    "retry": "Checking {{target}} again",
+    "handoff": "Handing off {{target}}"
   },
   "error": {
     "generic": "The action failed ({{code}})",
@@ -201,11 +208,25 @@
       "not_live": "That agent has no running process",
       "ended": "That run has already ended",
       "not_resumable": "That run cannot be resumed",
-      "resume_unsupported": "This runner cannot resume a session"
+      "resume_unsupported": "This runner cannot resume a session",
+      "superseded": "A later run already continues this step",
+      "still_limited": "The limit is still reached. Try again after it resets."
     },
     "task": {
       "not_found": "That task no longer exists",
       "cancelled": "The task was stopped"
+    },
+    "handoff": {
+      "same_profile": "The step already runs on that account",
+      "open": "This step is already being handed off",
+      "target_not_ready": "That account is not ready: no key, not signed in, or no runner",
+      "over_cap": "That account is past its spending cap"
     }
+  },
+  "changeAi": {
+    "title": "Change the AI for {{target}}",
+    "label": "Hand off to",
+    "body": "The agent stops at its next turn, its work is saved and packaged, and the AI you pick continues from there. That account's spending caps apply.",
+    "confirm": "Hand off"
   }
 }

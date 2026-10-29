@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Button } from "@crewyard/ui";
+import type { CandidateView } from "@crewyard/core";
+import { BrandIcon, Button } from "@crewyard/ui";
 
 /** Native modal <dialog>: focus stays inside, Esc cancels, focus returns to the opener. */
 function Dialog({ title, onClose, children, footer }: { title: string; onClose: () => void; children: ReactNode; footer: ReactNode }) {
@@ -114,6 +115,61 @@ export function MessageDialog({ target, live, onSend, onClose }: { target: strin
         }}
       />
       <p className="muted">{live ? t("message.live") : t("message.queued")}</p>
+    </Dialog>
+  );
+}
+
+/** "Change AI": pick another of the step's candidates; the daemon runs the same durable handoff as a limit. */
+export function ChangeAiDialog({
+  target,
+  candidates,
+  runnerLabel,
+  onConfirm,
+  onClose,
+}: {
+  target: string;
+  candidates: CandidateView[];
+  runnerLabel: (runner: CandidateView["runner"]) => string;
+  onConfirm: (profileId: string) => Promise<void>;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation("crew");
+  const [pick, setPick] = useState(candidates[0]?.profileId ?? "");
+  const [busy, setBusy] = useState(false);
+  return (
+    <Dialog
+      title={t("changeAi.title", { target })}
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            {t("dialog.cancel")}
+          </Button>
+          <Button
+            variant="primary"
+            disabled={!pick || busy}
+            onClick={() => {
+              setBusy(true);
+              void onConfirm(pick).finally(() => setBusy(false));
+            }}
+          >
+            {t("changeAi.confirm")}
+          </Button>
+        </>
+      }
+    >
+      <fieldset className="crew-pick">
+        <legend className="lbl">{t("changeAi.label")}</legend>
+        {candidates.map((c, i) => (
+          <label key={c.profileId} className="crew-pick-row">
+            <input type="radio" name="crew-change-ai" value={c.profileId} checked={pick === c.profileId} onChange={() => setPick(c.profileId)} data-autofocus={i === 0 ? true : undefined} />
+            <BrandIcon id={c.runner} />
+            <span>{`${runnerLabel(c.runner)} · ${c.alias}`}</span>
+            <span className="mono muted">{c.model ?? t("node.defaultModel")}</span>
+          </label>
+        ))}
+      </fieldset>
+      <p className="muted">{t("changeAi.body")}</p>
     </Dialog>
   );
 }

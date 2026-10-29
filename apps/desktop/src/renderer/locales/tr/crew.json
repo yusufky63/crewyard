@@ -156,6 +156,8 @@
     "message": "Bu ajana mesaj yaz…",
     "pause": "Duraklat",
     "resume": "Sürdür",
+    "retry": "Tekrar kontrol et",
+    "change_ai": "Yapay zekayı değiştir…",
     "copy_run_id": "Çalıştırma kimliğini kopyala",
     "stop": "Ajanı durdur…",
     "why": {
@@ -164,7 +166,10 @@
       "completed": "Bu adım bitti; mesajı okuyacak kimse yok",
       "handing_off": "Devir bitene kadar bekle",
       "task_cancelled": "Görev durduruldu",
-      "no_run": "Henüz çalıştırma yok, kimlik de yok"
+      "no_run": "Henüz çalıştırma yok, kimlik de yok",
+      "superseded": "Bu adımı zaten daha yeni bir çalıştırma sürdürüyor",
+      "working": "Ajan hâlâ çalışıyor, kontrol edilecek bir şey yok",
+      "no_target": "Bu adımı devredebileceğin başka hesap yok"
     }
   },
   "stop": {
@@ -190,7 +195,9 @@
     "resume": "{{target}} sürdürülüyor",
     "stop": "{{target}} durduruldu",
     "message": "Mesaj gönderildi",
-    "copied": "Çalıştırma kimliği kopyalandı"
+    "copied": "Çalıştırma kimliği kopyalandı",
+    "retry": "{{target}} yeniden kontrol ediliyor",
+    "handoff": "{{target}} devrediliyor"
   },
   "error": {
     "generic": "İşlem başarısız oldu ({{code}})",
@@ -201,11 +208,25 @@
       "not_live": "Bu ajanın çalışan bir süreci yok",
       "ended": "Bu çalıştırma zaten bitti",
       "not_resumable": "Bu çalıştırma sürdürülemiyor",
-      "resume_unsupported": "Bu çalıştırıcı oturumu sürdüremiyor"
+      "resume_unsupported": "Bu çalıştırıcı oturumu sürdüremiyor",
+      "superseded": "Bu adımı zaten daha yeni bir çalıştırma sürdürüyor",
+      "still_limited": "Limit hâlâ dolu. Sıfırlandıktan sonra yeniden dene."
     },
     "task": {
       "not_found": "Bu görev artık yok",
       "cancelled": "Görev durduruldu"
+    },
+    "handoff": {
+      "same_profile": "Adım zaten bu hesapla çalışıyor",
+      "open": "Bu adım zaten devrediliyor",
+      "target_not_ready": "Bu hesap hazır değil: anahtar yok, oturum açık değil ya da çalıştırıcı yok",
+      "over_cap": "Bu hesap harcama sınırını aştı"
     }
+  },
+  "changeAi": {
+    "title": "{{target}} için yapay zekayı değiştir",
+    "label": "Devredilecek hesap",
+    "body": "Ajan bir sonraki turunda durur, yaptığı iş kaydedilip paketlenir ve seçtiğin yapay zeka oradan devam eder. O hesabın harcama sınırları geçerli olur.",
+    "confirm": "Devret"
   }
 }

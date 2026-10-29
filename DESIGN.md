@@ -47,6 +47,8 @@ One surface language keeps this coherent: **square hairline frames with four cor
 | Headline metric | Geist | 30, 500, one per panel |
 | Labels, ids, numbers, paths | Geist Mono, fallback Cascadia Mono, Consolas | 11 uppercase +0.08em (labels), 12–13 (values) |
 
+Labels are uppercase, but what the user typed or the disk holds (paths, repo names, task titles) keeps its own case inside a label (`.as-typed`): uppercasing would change it, and Turkish casing would turn `i` into `İ`.
+
 Geist and Geist Mono are OFL-1.1. Bundle the font files with the app; do not load them from the network at runtime. The fallbacks are tuned so the app still looks right before fonts load (the headless screenshots in `design/screens/` render with the fallbacks).
 
 ### Color roles

@@ -1,18 +1,23 @@
+import type { CandidateView, TaskDetail } from "@crewyard/core";
 import type { GraphNodeModel } from "./model.ts";
 
 // Which actions a node's context menu offers, and why some are disabled. Each rule is one entry
 // in ACTION_RULES; a new action (for example one that needs a new IPC method) is one more entry
 // plus its label, icon and handler in CrewScreen. Groups are separated by a line in the menu.
 
-export type ActionId = "open" | "message" | "pause" | "resume" | "copy_run_id" | "stop";
+export type ActionId = "open" | "message" | "pause" | "resume" | "retry" | "change_ai" | "copy_run_id" | "stop";
 
 /** Codes for why an action is disabled; translated as `menu.why.<code>`. */
-export type DisabledCode = "not_started" | "ended" | "completed" | "handing_off" | "task_cancelled" | "no_run";
+export type DisabledCode = "not_started" | "ended" | "completed" | "handing_off" | "task_cancelled" | "no_run" | "superseded" | "working" | "no_target";
 
 export interface ActionContext {
   /** Ended runs the daemon can resume (TaskSummary.resumableRunIds). */
   resumable: ReadonlySet<string>;
   taskCancelled: boolean;
+  /** Runs a later run already continues (some run's resumedFrom points at them). */
+  superseded?: ReadonlySet<string>;
+  /** How many other profiles this member could hand off to (its chosen and standby candidates). */
+  handoffTargets?: (memberId: string, currentProfileId: string) => number;
 }
 
 interface ActionRule {
@@ -55,6 +60,31 @@ export const ACTION_RULES: ActionRule[] = [
     check: (node, ctx) => (node.run ? resumeCheck(node.run, ctx) : undefined),
   },
   {
+    // "Check again": restart a failed or stopped step, or re-check a limit or spend-cap pause now.
+    // Same rule as the inspector's Retry button (shell/Inspector.tsx).
+    id: "retry",
+    group: 1,
+    check: runRule((run, ctx) => {
+      if (run.endReason === "completed") return "completed";
+      if (ctx.superseded?.has(run.id)) return "superseded";
+      if (ctx.taskCancelled) return "task_cancelled";
+      return run.endedAt !== null || run.limitReached || run.resumeAt !== null ? null : "working";
+    }),
+  },
+  {
+    // "Change AI": a manual handoff to another of the member's candidates.
+    id: "change_ai",
+    group: 1,
+    check: (node, ctx) =>
+      runRule((run) => {
+        if (run.endReason === "completed") return "completed";
+        if (ctx.superseded?.has(run.id)) return "superseded";
+        if (ctx.taskCancelled) return "task_cancelled";
+        if (run.state === "handing_off") return "handing_off";
+        return node.memberId && (ctx.handoffTargets?.(node.memberId, run.profileId) ?? 0) > 0 ? null : "no_target";
+      })(node, ctx),
+  },
+  {
     id: "copy_run_id",
     group: 2,
     check: (node) => (node.kind !== "member" ? undefined : node.run ? null : "no_run"),
@@ -72,6 +102,21 @@ function resumeCheck(run: NonNullable<GraphNodeModel["run"]>, ctx: ActionContext
   if (run.state === "ended" && ctx.resumable.has(run.id)) return ctx.taskCancelled ? "task_cancelled" : null;
   return undefined;
 }
+
+/** Profiles a member's run can be handed to: its chosen and standby candidates, minus the one it runs on. */
+export function handoffCandidates(task: TaskDetail, memberId: string, currentProfileId: string): CandidateView[] {
+  const member = task.crew?.members.find((m) => m.id === memberId);
+  if (!member) return [];
+  const seen = new Set([currentProfileId]);
+  return [member.chosen, ...member.standby].filter((c): c is CandidateView => {
+    if (!c || seen.has(c.profileId)) return false;
+    seen.add(c.profileId);
+    return true;
+  });
+}
+
+/** Runs a later run already continues; acting on them would fork the step. */
+export const supersededRuns = (task: TaskDetail): Set<string> => new Set(task.runs.flatMap((r) => (r.resumedFrom ? [r.resumedFrom] : [])));
 
 export interface ActionEntry {
   id: ActionId;

@@ -22,6 +22,8 @@
 .tk-field select { cursor: pointer; padding-right: 2px; }
 .tk-field select option { background: var(--surface); color: var(--ink); }
 .tk-field:focus-within { border-color: var(--accent); }
+/* The field itself has no ring (outline 0 above); keyboard focus gets the same 2 px ring as everything else. */
+.tk-field:has(:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
 .tk-field input[aria-invalid] { color: var(--bad); }
 
 /* Crew proposal */
