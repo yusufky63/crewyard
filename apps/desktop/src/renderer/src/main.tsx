@@ -11,6 +11,7 @@ import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { App } from "./App.tsx";
 import { initI18n, pickLanguage } from "./i18n.ts";
+import { useNav } from "./nav.ts";
 import { usePrefs } from "./prefs.ts";
 
 // ?theme= and ?lang= are only set by the main process in screenshot mode.
@@ -19,6 +20,15 @@ const forcedTheme = query.get("theme");
 if (forcedTheme === "dark" || forcedTheme === "light") usePrefs.setState({ theme: forcedTheme });
 const forcedLang = query.get("lang");
 if (forcedLang === "en" || forcedLang === "tr") usePrefs.setState({ language: forcedLang });
+
+// ?project= and ?screen= are screenshot mode too: add the folder to the throwaway profile and open it.
+const forcedProject = query.get("project");
+if (forcedProject) {
+  const project = await window.crewyard.call("projects.add", { path: forcedProject });
+  useNav.getState().openProject(project.id);
+  const forcedScreen = query.get("screen");
+  if (forcedScreen) useNav.getState().go(forcedScreen);
+}
 
 const info = await window.crewyard.appInfo();
 const systemLanguage = pickLanguage(null, info.locales);

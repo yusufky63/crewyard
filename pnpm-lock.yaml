@@ -174,6 +174,9 @@ importers:
       '@crewyard/proc':
         specifier: workspace:^
         version: link:../proc
+      js-yaml:
+        specifier: 3.15.2
+        version: 3.15.2
 
   packages/proc:
     dependencies:

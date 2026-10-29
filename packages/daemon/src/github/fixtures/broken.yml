@@ -1,0 +1,5 @@
+name: broken
+on:
+  push:
+    branches: [main
+jobs: {

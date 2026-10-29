@@ -17,6 +17,7 @@
     "@crewyard/adapter-fake": "workspace:^",
     "@crewyard/adapter-opencode": "workspace:^",
     "@crewyard/core": "workspace:^",
-    "@crewyard/proc": "workspace:^"
+    "@crewyard/proc": "workspace:^",
+    "js-yaml": "3.15.2"
   }
 }

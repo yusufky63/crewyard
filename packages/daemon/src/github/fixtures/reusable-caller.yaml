@@ -1,0 +1,10 @@
+name: caller
+on:
+  push:
+    branches-ignore: ["dependabot/**"]
+concurrency:
+  group: caller
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  call:
+    uses: ./.github/workflows/good.yml

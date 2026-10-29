@@ -75,6 +75,9 @@ function createWindow(): BrowserWindow {
   if (shotFile) {
     if (process.env.CREWYARD_SHOT_THEME) query.theme = process.env.CREWYARD_SHOT_THEME;
     if (process.env.CREWYARD_SHOT_LANG) query.lang = process.env.CREWYARD_SHOT_LANG;
+    // Opens a project folder and one of its screens, so project screens can be captured too.
+    if (process.env.CREWYARD_SHOT_PROJECT) query.project = process.env.CREWYARD_SHOT_PROJECT;
+    if (process.env.CREWYARD_SHOT_SCREEN) query.screen = process.env.CREWYARD_SHOT_SCREEN;
     // Long enough for the machine check (each CLI's --version) to finish.
     w.webContents.once("did-finish-load", () => setTimeout(() => void capture(w), Number(process.env.CREWYARD_SHOT_DELAY ?? 9000)));
   }
