@@ -13,6 +13,6 @@
   "dependencies": {
     "@crewyard/core": "workspace:^",
     "@crewyard/proc": "workspace:^",
-    "@opencode/sdk": "2.2.2"
+    "@opencode-ai/sdk": "1.19.5"
   }
 }
