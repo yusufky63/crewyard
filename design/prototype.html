@@ -1,0 +1,1582 @@
+<!doctype html>
+<html lang="en" data-theme="dark" data-density="comfortable">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mission Control Prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Values mirror design/tokens/*.json; keep both in sync. */
+:root{
+  --tick-mask:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Cpath d='M.5 8V.5H8' fill='none' stroke='%23000'/%3E%3C/svg%3E") top left/8px 8px no-repeat,
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Cpath d='M0 .5h7.5V8' fill='none' stroke='%23000'/%3E%3C/svg%3E") top right/8px 8px no-repeat,
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Cpath d='M.5 0v7.5H8' fill='none' stroke='%23000'/%3E%3C/svg%3E") bottom left/8px 8px no-repeat,
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Cpath d='M0 7.5h7.5V0' fill='none' stroke='%23000'/%3E%3C/svg%3E") bottom right/8px 8px no-repeat;
+  --ui:"Geist","Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;
+  --mono:"Geist Mono","Cascadia Mono",Consolas,ui-monospace,monospace;
+  --ease:cubic-bezier(.2,0,0,1);
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --canvas:#0E0E10;--surface:#151517;--raised:#1C1C1F;--sunken:#0A0A0B;--scrim:#000000B3;
+  --line:#26262B;--tick:#3A3A41;--line-strong:#62626C;
+  --ink:#EDEDEF;--ink-2:#A6A6AE;--ink-3:#8C8C95;
+  --inv-bg:#EDEDEF;--inv-fg:#0E0E10;
+  --accent:#7AA2FF;--accent-soft:#172036;
+  --ok:#4CC38A;--ok-soft:#11251B;--warn:#F0B44C;--warn-soft:#2A2112;--bad:#F47A72;--bad-soft:#2C1514;
+  --s-claude:#EE7D48;--s-codex:#35B8A4;--s-gemini:#5DA9EC;--s-opencode:#A585F2;--s-other:#8C8C95;
+}
+:root[data-theme="light"]{
+  color-scheme:light;
+  --canvas:#F6F6F7;--surface:#FFFFFF;--raised:#F0F0F2;--sunken:#F3F3F5;--scrim:#0E0E1066;
+  --line:#E4E4E8;--tick:#CFCFD5;--line-strong:#8A8A94;
+  --ink:#111113;--ink-2:#4B4B53;--ink-3:#62626B;
+  --inv-bg:#111113;--inv-fg:#FFFFFF;
+  --accent:#2E5BD6;--accent-soft:#E9EEFC;
+  --ok:#137A50;--ok-soft:#E5F4EC;--warn:#935600;--warn-soft:#FBF0DC;--bad:#BE2F28;--bad-soft:#FBE8E6;
+  --s-claude:#C9561F;--s-codex:#0D8574;--s-gemini:#2C78BD;--s-opencode:#7650D2;--s-other:#62626B;
+}
+:root[data-density="comfortable"]{--fs:14px;--row:52px;--ctl:34px;--pad:16px}
+:root[data-density="compact"]{--fs:13px;--row:40px;--ctl:30px;--pad:12px}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--canvas);color:var(--ink);font:400 var(--fs)/1.45 var(--ui);-webkit-font-smoothing:antialiased;overflow:hidden}
+button,input,textarea{font:inherit;color:inherit}
+button{background:none;border:0;cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+svg.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+.mono{font-family:var(--mono)}
+.lbl{font:500 11px/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.muted{color:var(--ink-3)}
+.sec{color:var(--ink-2)}
+.num{font-variant-numeric:tabular-nums}
+.dot{width:7px;height:7px;border-radius:999px;background:var(--c,var(--ink-3));flex:none;display:inline-block}
+
+/* App frame */
+.app{display:grid;grid-template-rows:40px minmax(0,1fr) 28px;height:100vh}
+.titlebar{display:flex;align-items:center;gap:10px;padding-left:14px;border-bottom:1px solid var(--line);background:var(--canvas);min-width:0}
+.brand{display:flex;align-items:center;gap:8px;font-weight:600;font-size:13px;white-space:nowrap}
+.mark{width:16px;height:16px;position:relative;border:1px solid var(--ink-3)}
+.mark::after{content:"";position:absolute;inset:4px;background:var(--ink)}
+.tb-chip{display:flex;align-items:center;gap:6px;height:26px;padding:0 8px;color:var(--ink-2);font-size:13px;white-space:nowrap}
+.tb-chip:hover{background:var(--raised);color:var(--ink)}
+.search{flex:1;max-width:420px;margin:0 auto;display:flex;align-items:center;gap:8px;height:28px;padding:0 10px;border:1px solid var(--line);color:var(--ink-3);font-size:13px;background:var(--surface)}
+.search .kbd{margin-left:auto;flex:none}
+.search-t{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.pulse{display:flex;gap:14px;font-size:12px;color:var(--ink-2);white-space:nowrap}
+.pulse span{display:flex;align-items:center;gap:6px}
+.tb-btn{width:30px;height:28px;display:grid;place-items:center;color:var(--ink-2)}
+.tb-btn:hover{background:var(--raised);color:var(--ink)}
+.proto{font:500 10.5px/1 var(--mono);letter-spacing:.08em;color:var(--ink-3);border:1px dashed var(--tick);padding:4px 6px;white-space:nowrap}
+.win{display:flex;height:100%}
+.win button{width:46px;height:100%;display:grid;place-items:center;color:var(--ink-2)}
+.win button:hover{background:var(--raised)}
+.win button.x:hover{background:#C42B1C;color:#fff}
+
+.body{display:grid;grid-template-columns:224px minmax(0,1fr) auto;min-height:0}
+/* Status bar: system state lives here so the title bar stays short. */
+.statusbar{display:flex;align-items:stretch;height:28px;border-top:1px solid var(--line);background:var(--canvas);font:400 11px/1 var(--mono);color:var(--ink-3);min-width:0;white-space:nowrap;overflow:hidden}
+.sb{display:flex;align-items:center;gap:6px;padding:0 10px;color:var(--ink-3);border-right:1px solid var(--line)}
+.statusbar .end .sb{border-right:0;border-left:1px solid var(--line)}
+button.sb:hover{background:var(--raised);color:var(--ink)}
+.sb .dot{width:6px;height:6px}
+.sb b{font-weight:500;color:var(--ink-2)}
+.sb svg.i{width:13px;height:13px}
+.statusbar .end{margin-left:auto;display:flex}
+.sb.proto-sb{color:var(--ink-3);letter-spacing:.08em;text-transform:uppercase}
+.sidebar{border-right:1px solid var(--line);display:flex;flex-direction:column;padding:12px 10px;gap:2px;overflow:auto;min-height:0}
+.nav{display:flex;align-items:center;gap:10px;height:34px;padding:0 10px;border:1px solid transparent;color:var(--ink-2);font-size:14px;width:100%;text-align:left;position:relative}
+.nav:hover{background:var(--raised);color:var(--ink)}
+.nav[aria-current="page"]{background:var(--raised);color:var(--ink);border-color:var(--line)}
+.nav[aria-current="page"]::before{content:"";position:absolute;inset:-1px;pointer-events:none;background:var(--ink);-webkit-mask:var(--tick-mask);mask:var(--tick-mask)}
+.nav .count{margin-left:auto;font:500 11px/1 var(--mono);color:var(--warn);background:var(--warn-soft);padding:3px 6px}
+.nav-list{display:grid;gap:2px;border:1px solid var(--line);padding:6px}
+/* Accounts sit at the bottom of the sidebar and scroll on their own, so many accounts never push the nav away. */
+.accts{margin-top:auto;border:1px solid var(--line);padding:10px 0 4px;display:flex;flex-direction:column;min-height:0}
+.accts-head{display:flex;align-items:center;justify-content:space-between;padding:0 10px 6px}
+.accts-head button{font:500 11px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2);padding:2px 0}
+.accts-head button:hover{color:var(--ink)}
+.accts-list{overflow-y:auto;max-height:min(34vh,236px);scrollbar-width:thin;scrollbar-color:var(--tick) transparent;display:grid;gap:1px;padding-bottom:6px}
+.acct{display:grid;grid-template-columns:7px minmax(0,1fr) 26px 38px;align-items:center;gap:6px;height:28px;padding:0 8px;font-size:12px;color:var(--ink-2);text-align:left;width:100%}
+.acct:hover{background:var(--raised);color:var(--ink)}
+.acct .n{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.acct .v{font:500 11px/1 var(--mono);text-align:right;color:var(--ink)}
+.side-foot{padding:10px 10px 0;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-3)}
+
+.main{overflow:auto;min-width:0}
+.screen{max-width:1120px;margin:0 auto;padding:24px 28px 56px;display:none}
+.screen.on{display:block}
+.page-head{display:flex;align-items:flex-end;flex-wrap:wrap;gap:12px 16px;margin-bottom:18px}
+.legend .legend-help{margin-top:4px;text-transform:none;letter-spacing:0}
+.page-head h1{font-size:21px;font-weight:600;letter-spacing:-.015em;line-height:1.2}
+.page-head .sub{margin-top:4px}
+.page-head .right{margin-left:auto;display:flex;gap:8px;align-items:center}
+
+/* Start screen and setup wizard: the sidebar hides while no project is open. */
+.launch .body{grid-template-columns:minmax(0,1fr) auto}
+.launch .sidebar{display:none}
+.launch-grid{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.3fr);gap:40px;align-items:start;margin-top:20px}
+.hero{font-size:32px;line-height:1.12;font-weight:500;letter-spacing:-.02em;margin:14px 0 12px}
+.hero .dim{color:var(--ink-3)}
+.lead{max-width:440px;font-size:15px;margin-bottom:22px}
+.launch-actions{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:28px}
+.launch-head{display:flex;align-items:center;margin-bottom:12px;min-height:28px}
+.launch-head .end{margin-left:auto}
+.sysrow{display:grid;grid-template-columns:18px minmax(0,1fr) auto;gap:10px;align-items:center;min-height:40px;padding:0 16px;border-top:1px solid var(--line);font-size:13px}
+.recent-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.ptile{padding:14px;display:grid;gap:7px;align-content:start;text-align:left;min-height:156px}
+.ptile:hover{--tk:var(--ink)}
+.ptile .p-name{font-size:15px;font-weight:500}
+.ptile .p-path{font:400 11px/1.3 var(--mono);color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ptile .p-meta{font-size:12px;color:var(--ink-2)}
+.ptile-new{border-style:dashed;background:var(--canvas)}
+.steps-bar{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:16px}
+.stile{padding:12px;display:grid;gap:5px;text-align:left}
+.stile:hover{--tk:var(--ink)}
+.stile[aria-current="step"]{--tk:var(--accent);border-color:var(--accent)}
+.stile .s-name{font-size:14px;font-weight:500}
+.stile .s-sub{font-size:12px;color:var(--ink-3)}
+.stile.done .lbl{color:var(--ok)}
+.wiz{padding:20px;display:none}
+.wiz.on{display:block}
+.wiz h2{font-size:17px;font-weight:600;margin-bottom:6px;letter-spacing:-.01em}
+.wiz-foot{display:flex;gap:12px;align-items:center;padding:14px 20px;border-top:1px solid var(--line);flex-wrap:wrap}
+.wiz-foot .end{margin-left:auto;display:flex;gap:12px}
+.row-input{display:flex;gap:8px;align-items:center;margin:12px 0}
+.input{height:34px;border:1px solid var(--line-strong);background:var(--canvas);padding:0 10px;font:400 13px/1 var(--mono);display:flex;align-items:center;flex:1;min-width:0}
+.check-list{border:1px solid var(--line);margin-top:12px}
+.cl{display:grid;grid-template-columns:18px minmax(120px,190px) minmax(0,1fr) auto;gap:12px;align-items:center;min-height:42px;padding:6px 14px;border-top:1px solid var(--line);font-size:13px}
+.cl:first-child{border-top:0}
+.cbox{width:16px;height:16px;border:1px solid var(--line-strong);display:grid;place-items:center}
+.cbox.on{background:var(--inv-bg);border-color:var(--inv-bg);color:var(--inv-fg)}
+@media (max-width:1180px){.launch-grid{grid-template-columns:1fr}.recent-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.steps-bar{grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}.stile .s-sub{display:none}}
+
+/* Primitives */
+.panel{background:var(--surface);border:1px solid var(--line)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:var(--ctl);padding:0 14px;border:1px solid var(--line);font:500 12px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;color:var(--ink)}
+.btn svg.i{width:14px;height:14px}
+.btn:hover{background:var(--raised);--tk:var(--ink)}
+.btn-primary{background:var(--inv-bg);color:var(--inv-fg);border-color:var(--inv-bg);--tk:var(--ink-2)}
+.btn-primary:hover{background:var(--inv-bg);opacity:.92;--tk:var(--ink)}
+.btn-ghost,.btn-danger{border-color:transparent;padding:0 4px;gap:6px}
+.btn-ghost{color:var(--ink-2)}
+.btn-ghost:hover{background:none;color:var(--ink)}
+.btn-danger{color:var(--bad)}
+.btn-danger:hover{background:var(--bad-soft)}
+.btn-sm{height:28px;padding:0 10px;font-size:11px}
+.btn-sm.btn-ghost,.btn-sm.btn-danger{padding:0 4px}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.kbd{font:500 11px/1 var(--mono);color:var(--ink-2);border:1px solid var(--line-strong);border-bottom-width:2px;border-radius:2px;padding:3px 5px}
+.chip{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 9px;border:1px solid var(--line);color:var(--ink-2);font-size:13px;white-space:nowrap}
+.chip:hover{border-color:var(--line-strong);color:var(--ink)}
+.chip b{font-weight:500;color:var(--ink)}
+.seg{display:inline-flex;padding:3px;border:1px solid var(--line);gap:2px;background:var(--canvas)}
+.seg button{height:26px;padding:0 12px;font:500 11px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.seg button[aria-pressed="true"]{background:var(--raised);color:var(--ink);box-shadow:inset 0 0 0 1px var(--line-strong)}
+.tabs{display:inline-flex;gap:2px;padding:3px;border:1px solid var(--line);background:var(--surface)}
+.tabs button{height:30px;padding:0 12px;font-size:13px;color:var(--ink-2);display:flex;gap:7px;align-items:center}
+.tabs button .n{font:500 11px/1 var(--mono);color:var(--ink-3)}
+.tabs button[aria-selected="true"]{background:var(--raised);color:var(--ink)}
+.tabs button[aria-selected="true"] .n{color:var(--ink)}
+.st{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:500;white-space:nowrap}
+.st.run{color:var(--accent)}.st.wait{color:var(--warn)}.st.ok{color:var(--ok)}.st.bad{color:var(--bad)}.st.rev{color:var(--ink)}
+.badge{font:500 10.5px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;padding:4px 6px;border:1px solid var(--line-strong);color:var(--ink-2);white-space:nowrap}
+.badge.rep{border-color:transparent;background:var(--ok-soft);color:var(--ok)}
+.badge.est{border-color:transparent;background:var(--accent-soft);color:var(--accent)}
+.badge.unk{border-style:dashed;color:var(--ink-3)}
+.spin{width:13px;height:13px;border:1.75px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin 1s linear infinite;flex:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spin{animation:none;border-right-color:currentColor;opacity:.6}*{transition:none!important}}
+
+/* Spec tile: square, hairline, corner ticks (R1) */
+/* Corner ticks (R1): one masked pseudo-element draws all four corners over the hairline border. */
+.panel,.spec,.nav-list,.accts,.search,.cmenu,.tabs,.seg,.graph-wrap,.banner,.btn{position:relative}
+.panel::before,.spec::before,.nav-list::before,.accts::before,.search::before,.cmenu::before,.tabs::before,.seg::before,.graph-wrap::before,.banner::before,.btn::before{content:"";position:absolute;inset:-1px;pointer-events:none;z-index:1;background:var(--tk,var(--ink-3));-webkit-mask:var(--tick-mask);mask:var(--tick-mask)}
+.btn-primary::before{inset:-4px}
+.btn-ghost::before,.btn-ghost::after,.btn-danger::before,.btn-danger::after{content:"[";position:static;inset:auto;z-index:auto;-webkit-mask:none;mask:none;background:none;color:var(--ink-3);font-weight:400}
+.btn-ghost::after,.btn-danger::after{content:"]"}
+.btn-danger::before,.btn-danger::after{color:inherit;opacity:.65}
+.spec{border:1px solid var(--line);background:var(--surface)}
+
+/* Tick meter (R2) */
+.meter{position:relative;display:grid;grid-template-columns:repeat(var(--n,48),1fr);align-items:end;height:18px}
+.meter i{justify-self:center;width:2px;height:11px;background:var(--tick)}
+.meter i.tall{height:16px}
+.meter i.on{background:var(--c,var(--accent))}
+.meter i.w{background:var(--warn)}
+.meter i.cr{background:var(--bad)}
+.meter i.th{height:18px;background:var(--ink-3)}
+.meter .handle{position:absolute;bottom:-3px;width:6px;height:22px;margin-left:-3px;border-radius:1px;background:var(--ink);outline:2px solid var(--surface)}
+.meter.unknown i{background:none;border-left:1px dashed var(--tick);width:0;border-radius:0}
+.meter.sm{height:12px}
+.meter.sm i{height:7px}.meter.sm i.tall{height:10px}.meter.sm i.th{height:12px}
+.meter.sm .handle{display:none}
+.meter.xs{height:10px}.meter.xs i{height:6px}.meter.xs i.th{height:10px}.meter.xs .handle{display:none}
+
+.segbar{display:flex;gap:4px;height:8px}
+.segbar span{background:var(--c)}
+
+/* Composer (R3) */
+.composer{padding:16px 16px 12px}
+.composer textarea{width:100%;resize:none;border:0;background:none;outline:0;font-size:17px;line-height:1.4;min-height:54px;color:var(--ink)}
+.composer textarea::placeholder{color:var(--ink-3)}
+.composer-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:10px}
+.composer-row .end{margin-left:auto;display:flex;align-items:center;gap:6px}
+
+/* Crew proposal */
+.crew{margin-top:-1px;border-top-left-radius:0;border-top-right-radius:0;padding:16px;background:var(--canvas)}
+.attached{border-bottom-left-radius:0;border-bottom-right-radius:0}
+.crew-head{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.crew-head .end{margin-left:auto}
+.crew-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+.role{padding:14px;display:grid;gap:10px;align-content:start;text-align:left;width:100%}
+.role:hover{--tk:var(--ink)}
+.role-top{display:flex;align-items:flex-start;justify-content:space-between}
+.role-art{width:34px;height:34px;color:var(--ink-2)}
+.role-art svg{width:34px;height:34px;stroke:currentColor;fill:none;stroke-width:1}
+.role-name{font-size:15px;font-weight:500}
+.role-run{display:flex;align-items:center;gap:7px;font-size:13px}
+.role-acct{font:400 12px/1.3 var(--mono);color:var(--ink-3)}
+.why{font-size:12px;color:var(--ink-2);line-height:1.4;min-height:34px}
+.headroom{display:grid;gap:5px}
+.headroom .row{display:flex;justify-content:space-between}
+.fallback{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px;padding-top:14px;border-top:1px dashed var(--tick)}
+.chain{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.chain .arrow{color:var(--ink-3)}
+.crew-actions{display:flex;align-items:center;gap:8px;margin-top:14px}
+.crew-actions .est{font-size:12px;color:var(--ink-3)}
+.crew-actions .end{margin-left:auto;display:flex;gap:8px;align-items:center}
+
+/* Task list (R3) */
+.list-head{display:flex;align-items:center;gap:12px;margin:28px 0 12px}
+.list-head .end{margin-left:auto}
+
+.task{border-top:1px solid var(--line);padding:14px 16px}
+.task:first-child{border-top:0}
+.task-top{display:flex;align-items:center;gap:12px;width:100%;text-align:left}
+.task-title{font-size:15px;font-weight:500}
+.task-meta{display:flex;align-items:center;gap:14px;margin-top:5px;font-size:12px;color:var(--ink-3);flex-wrap:wrap}
+.task-meta span{display:flex;align-items:center;gap:5px}
+.task-meta svg.i{width:13px;height:13px}
+.task-right{margin-left:auto;display:flex;align-items:center;gap:10px;color:var(--ink-3);font-size:12px;white-space:nowrap}
+.task-status{display:flex;align-items:center;gap:12px;margin-top:10px;flex-wrap:wrap}
+.task-status .end{margin-left:auto;display:flex;gap:8px;align-items:center}
+.diff{display:flex;align-items:center;gap:8px;font:500 12px/1 var(--mono)}
+.diff .add{color:var(--ok)}.diff .del{color:var(--bad)}
+.diffbar{display:flex;width:56px;height:5px;gap:2px}
+.diffbar span{background:var(--ok)}.diffbar span+span{background:var(--bad)}
+.steps{margin:14px 0 2px;padding:12px 0 0;border-top:1px dashed var(--tick);display:grid;gap:8px}
+.step{display:grid;grid-template-columns:18px 1fr auto;gap:10px;align-items:center;font-size:13px;color:var(--ink-2)}
+.step .who{color:var(--ink-3)}
+.step.now{color:var(--ink)}
+.step .t{font:400 12px/1 var(--mono);color:var(--ink-3)}
+.step svg.i{width:14px;height:14px;color:var(--ink-3)}
+.banner{display:flex;align-items:center;gap:12px;padding:10px 12px;margin-top:12px;font-size:13px;flex-wrap:wrap;border:1px solid transparent}
+.banner.warn{background:var(--warn-soft);color:var(--warn);--tk:var(--warn)}
+.banner .txt{color:var(--ink)}
+.banner .end{margin-left:auto;display:flex;gap:8px}
+
+/* Inbox */
+.inbox{display:grid;grid-template-columns:minmax(300px,380px) 1fr;gap:16px;align-items:start}
+
+.ibx{display:grid;grid-template-columns:18px 1fr auto;gap:10px;padding:14px;border-top:1px solid var(--line);width:100%;text-align:left;align-items:start}
+.ibx:first-child{border-top:0}
+.ibx:hover{background:var(--raised)}
+.ibx[aria-selected="true"]{background:var(--raised);box-shadow:inset 2px 0 0 var(--ink)}
+.ibx .t{font-size:14px;font-weight:500}
+.ibx .s{font-size:12px;color:var(--ink-3);margin-top:3px}
+.ibx .k{font:400 11px/1 var(--mono);color:var(--ink-3)}
+.detail{padding:20px;display:none}
+.detail.on{display:block}
+.detail h2{font-size:17px;font-weight:600;margin:8px 0 6px;letter-spacing:-.01em}
+.code{background:var(--sunken);border:1px solid var(--line);padding:12px 14px;font:400 13px/1.5 var(--mono);margin:14px 0}
+.kv{display:grid;grid-template-columns:150px 1fr;gap:8px 16px;font-size:13px;margin:14px 0}
+.kv dt{color:var(--ink-3)}
+.actions{display:flex;gap:8px;margin-top:18px;flex-wrap:wrap}
+.opt{display:flex;gap:10px;align-items:flex-start;padding:12px;border:1px solid var(--line);margin-top:8px;cursor:pointer}
+.opt:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
+.opt input{margin-top:3px;accent-color:var(--accent)}
+.reply{width:100%;min-height:70px;margin-top:12px;border:1px solid var(--line-strong);background:var(--canvas);padding:10px 12px;font-size:13px;resize:vertical}
+
+/* Graph (R1) */
+.graph-wrap{border:1px solid var(--line);background:var(--surface);height:600px}
+.graph{position:absolute;top:0;left:50%;width:860px;height:600px;transform-origin:top center;transform:translateX(-50%)}
+.graph-clip{position:absolute;inset:0;overflow:hidden;cursor:grab;touch-action:none}
+.graph-clip.panning{cursor:grabbing}
+.graph-hint{left:16px;top:14px;z-index:2}
+.legend,.zoom,.graph-exit{z-index:2}
+.graph-exit{position:absolute;top:12px;right:12px;display:none}
+.graph-wrap.full{position:fixed;inset:0;z-index:95;height:auto;border:0}
+.graph-wrap.full .graph-exit{display:inline-flex}
+.graph-full .inspector.on{position:fixed;right:0;top:0;bottom:0;z-index:96}
+.graph svg.edges{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.gnode{position:absolute;width:180px;height:100px;padding:11px 12px;display:grid;gap:6px;align-content:start;text-align:left;cursor:grab;touch-action:none}
+.gnode.dragging{cursor:grabbing;z-index:5;--tk:var(--ink);border-color:var(--line-strong)}
+.gnode:hover{--tk:var(--ink)}
+.gnode.sel{border-color:var(--accent);--tk:var(--accent)}
+.gnode.standby{border-style:dashed;background:var(--canvas)}
+.gnode .name{font-size:13px;font-weight:500;display:flex;align-items:center;gap:7px;white-space:nowrap}
+.gnode .name .st{margin-left:auto;font-size:12px;gap:5px}
+.gnode .facts{font:400 11px/1.3 var(--mono);color:var(--ink-3)}
+.elabel{position:absolute;font:400 11px/1 var(--mono);color:var(--ink-3);background:var(--surface);padding:2px 4px;white-space:nowrap}
+.elabel.warn{color:var(--warn)}
+.annot{position:absolute;font:500 11px/1.3 var(--mono);letter-spacing:.06em;color:var(--ink-3);text-transform:uppercase;white-space:nowrap}
+.legend{position:absolute;left:16px;bottom:14px;display:grid;gap:6px}
+.legend div{display:flex;align-items:center;gap:10px;font:400 11px/1 var(--mono);color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em}
+.legend svg{width:34px;height:6px}
+.rchips{display:flex;gap:4px;flex-wrap:wrap}
+.rchip{font:500 10.5px/1 var(--mono);letter-spacing:.04em;padding:4px 6px;border:1px solid var(--line);color:var(--ink-2);white-space:nowrap}
+.rchip.on{border-color:transparent;background:var(--ok-soft);color:var(--ok)}
+.rchip.cfg{border-color:transparent;background:var(--accent-soft);color:var(--accent)}
+.rchip.off{border-style:dashed;color:var(--ink-3)}
+.prov-name{display:flex;align-items:center;gap:8px;font-weight:500}
+.prov-model{font:400 12px/1.4 var(--mono);color:var(--ink-2)}
+tr.dim .prov-name{color:var(--ink-2)}
+.note-row{padding:12px 16px;border-top:1px solid var(--line);font-size:12px;color:var(--ink-3);display:grid;gap:6px}
+.cmenu{position:fixed;z-index:50;min-width:244px;background:var(--surface);border:1px solid var(--line-strong);padding:6px;box-shadow:0 12px 32px #00000052;display:none}
+.cmenu.on{display:block}
+.cmenu .h{padding:6px 10px 8px;border-bottom:1px solid var(--line);margin-bottom:4px;display:grid;gap:3px}
+.cmenu .h b{font-size:13px;font-weight:500}
+.cmenu button{display:flex;align-items:center;gap:10px;width:100%;height:32px;padding:0 10px;font-size:13px;color:var(--ink);text-align:left}
+.cmenu button svg.i{color:var(--ink-3)}
+.cmenu button:hover,.cmenu button:focus-visible{background:var(--raised);outline:none}
+.cmenu button .k{margin-left:auto;font:400 11px/1 var(--mono);color:var(--ink-3)}
+.cmenu button[aria-disabled="true"]{color:var(--ink-3);cursor:not-allowed}
+.cmenu button.danger,.cmenu button.danger svg.i{color:var(--bad)}
+.cmenu .sep{height:1px;background:var(--line);margin:4px 2px}
+.zoom{position:absolute;right:14px;bottom:14px;display:flex;flex-direction:column;border:1px solid var(--line);background:var(--surface)}
+.zoom button{width:30px;height:30px;display:grid;place-items:center;color:var(--ink-2)}
+.zoom button+button{border-top:1px solid var(--line)}
+.graph-bar{display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+.graph-bar .end{margin-left:auto;display:flex;gap:8px}
+
+/* Inspector */
+.inspector{width:380px;border-left:1px solid var(--line);background:var(--surface);display:none;flex-direction:column;min-height:0;overflow:auto}
+.inspector.on{display:flex}
+.ins-head{padding:16px;border-bottom:1px solid var(--line)}
+.ins-head .row{display:flex;align-items:center;gap:8px}
+.ins-head h2{font-size:17px;font-weight:600;margin-top:8px;display:flex;align-items:center;gap:8px}
+.ins-tabs{display:flex;gap:16px;padding:0 16px;border-bottom:1px solid var(--line)}
+.ins-tabs button{height:38px;font-size:13px;color:var(--ink-3);border-bottom:2px solid transparent;margin-bottom:-1px}
+.ins-tabs button[aria-selected="true"]{color:var(--ink);border-color:var(--ink)}
+.ins-sec{padding:16px;border-bottom:1px solid var(--line);display:grid;gap:12px}
+.ins-sec .mrow{display:grid;gap:6px}
+.ins-sec .mrow .row{display:flex;justify-content:space-between;font-size:13px}
+.facts4{display:grid;grid-template-columns:1fr 1fr;gap:12px 16px}
+.facts4 .v{font:500 15px/1.2 var(--mono);margin-top:4px}
+.ins-actions{padding:16px;display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.ins-actions .full{grid-column:1/-1;justify-content:center}
+.ins-actions .btn{justify-content:center}
+.note{padding:0 16px 16px;font-size:12px;color:var(--ink-3)}
+
+/* Limits (R2) */
+.grid2{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:16px;align-items:start}
+.stack{display:grid;gap:16px}
+.ph{display:flex;align-items:center;gap:10px;padding:16px 16px 0}
+.ph .end{margin-left:auto}
+.ph h2{font-size:15px;font-weight:500}
+.lim{padding:16px;border-top:1px dashed var(--tick);display:grid;gap:12px}
+.ph+.lim{border-top:0}
+.lim-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.lim-top .name{font-size:14px;font-weight:500}
+.lim-top .end{margin-left:auto;display:flex;gap:6px;align-items:center}
+.mline{display:grid;grid-template-columns:110px 1fr 120px;gap:14px;align-items:center;font-size:12px}
+.mline .v{text-align:right;font:500 12px/1.3 var(--mono)}
+.mline .v small{display:block;font-weight:400;color:var(--ink-3)}
+.unk-note{font-size:12px;color:var(--ink-3)}
+.metric{font-size:30px;font-weight:500;letter-spacing:-.015em;line-height:1.1}
+.metric small{font-size:15px;color:var(--ink-3);font-weight:400;letter-spacing:0}
+.legend4{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}
+.legend4 .k{display:flex;align-items:center;gap:7px;font:500 11px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+.legend4 .v{font:500 15px/1 var(--mono);margin-top:6px}
+.legend4 .v small{font-size:11px;color:var(--ink-3);font-weight:400}
+.pbody{padding:16px}
+.setrow{display:flex;align-items:center;gap:12px;padding:12px 16px;border-top:1px solid var(--line);font-size:13px}
+.setrow .end{margin-left:auto}
+.toggle{width:34px;height:20px;background:var(--inv-bg);position:relative}
+.toggle::after{content:"";position:absolute;top:3px;right:3px;width:14px;height:14px;background:var(--inv-fg)}
+.field{height:28px;width:64px;border:1px solid var(--line-strong);display:inline-grid;place-items:center;font:500 12px/1 var(--mono)}
+
+/* GitHub */
+.table{width:100%;border-collapse:collapse;font-size:13px}
+.table th{font:500 11px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);text-align:left;padding:12px 16px;border-bottom:1px solid var(--line)}
+.table td{padding:14px 16px;border-bottom:1px solid var(--line);vertical-align:top}
+.table tr:last-child td{border-bottom:0}
+.gate{display:flex;gap:12px;flex-wrap:wrap;margin-top:8px;font-size:12px;color:var(--ink-2)}
+.gate span{display:flex;align-items:center;gap:5px}
+.gate .y svg{color:var(--ok)}
+.gate .n svg{color:var(--warn)}
+.gh-top{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-bottom:16px}
+.gh-top .panel{padding:16px;display:grid;gap:10px}
+
+@media (max-width:1180px){
+  .body{grid-template-columns:56px minmax(0,1fr) auto}
+  .nav span.t,.nav .count,.accts,.side-foot span{display:none}
+  .nav{justify-content:center;padding:0}
+  .sb-opt{display:none}
+  .search{min-width:140px}
+}
+@media (max-width:1280px){
+  .inspector.on{position:fixed;right:0;top:40px;bottom:0;z-index:90;box-shadow:-1px 0 0 var(--line)}
+  .grid2,.inbox{grid-template-columns:1fr}
+  .gh-top{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-tasks" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><path d="m3.5 6 1.2 1.2L7 5M3.5 12l1.2 1.2L7 11"/><circle cx="5" cy="18" r="1.2"/></symbol>
+  <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M4 13h4.5l1.5 2.5h4l1.5-2.5H20"/><path d="M5.5 5.5h13L20 13v5.5H4V13z"/></symbol>
+  <symbol id="i-graph" viewBox="0 0 24 24"><rect x="3" y="9.5" width="5" height="5"/><rect x="16" y="3.5" width="5" height="5"/><rect x="16" y="15.5" width="5" height="5"/><path d="M8 12h4m0-6v12m0-12h4m-4 12h4"/></symbol>
+  <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M4 17a8 8 0 1 1 16 0"/><path d="m12 17 4-5"/><path d="M4 20h16"/></symbol>
+  <symbol id="i-pr" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.2"/><circle cx="6" cy="18" r="2.2"/><circle cx="18" cy="18" r="2.2"/><path d="M6 8.2v7.6M18 15.8V9a3 3 0 0 0-3-3h-4"/><path d="m13 3.5-2.5 2.5L13 8.5"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 6.5h6l2 2h9v10h-17z"/></symbol>
+  <symbol id="i-branch" viewBox="0 0 24 24"><circle cx="6" cy="5.5" r="2"/><circle cx="6" cy="18.5" r="2"/><circle cx="18" cy="8" r="2"/><path d="M6 7.5v9M18 10c0 4-6 3-11.5 7"/></symbol>
+  <symbol id="i-crew" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><circle cx="17" cy="9" r="2.3"/><path d="M15.5 14.2A4.5 4.5 0 0 1 21 18.5"/></symbol>
+  <symbol id="i-swap" viewBox="0 0 24 24"><path d="M4 8h14l-3.5-3.5M20 16H6l3.5 3.5"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3.5 19 6v6c0 4.2-3 7.2-7 8.5-4-1.3-7-4.3-7-8.5V6z"/><path d="m9 12 2.2 2.2L15.5 10"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9.5 6 6 6-6"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="m6 14.5 6-6 6 6"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4 21 19.5H3z"/><path d="M12 10v4.5M12 17.2v.1"/></symbol>
+  <symbol id="i-q" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.6a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5v.6M12 16.8v.1"/></symbol>
+  <symbol id="i-term" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="1.5"/><path d="m7.5 9.5 3 2.5-3 2.5M12.5 15h4"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z"/><path d="M10 20.5h4"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.4-4.4"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></symbol>
+  <symbol id="i-rows" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+  <symbol id="i-min" viewBox="0 0 24 24"><path d="M6 12h12"/></symbol>
+  <symbol id="i-max" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-fit" viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 5.5v13M15 5.5v13"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6.5" y="6.5" width="11" height="11" rx="1"/></symbol>
+  <symbol id="i-reply" viewBox="0 0 24 24"><path d="M10 7 5 12l5 5"/><path d="M5 12h9a5 5 0 0 1 5 5v1"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15V4.5M7.5 9 12 4.5 16.5 9"/><path d="M4.5 15v4.5h15V15"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.5 4.5v4h-4"/></symbol>
+  <symbol id="i-plug" viewBox="0 0 24 24"><path d="M9 3.5v4M15 3.5v4"/><path d="M6.5 7.5h11v3a5.5 5.5 0 0 1-11 0z"/><path d="M12 16v4.5"/></symbol>
+  <symbol id="i-open" viewBox="0 0 24 24"><path d="M14 4.5h5.5V10M19.5 4.5 11 13"/><path d="M18 14v5.5H4.5V6H10"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11" height="11" rx="1.5"/><path d="M15.5 8.5V4.5h-11v11h4"/></symbol>
+  <symbol id="i-recheck" viewBox="0 0 24 24"><path d="M4.5 12a7.5 7.5 0 0 1 13-5.1M19.5 4.5v4h-4"/><path d="m8.5 12.5 2.3 2.3 4.7-4.8"/></symbol>
+</svg>
+
+<div class="app">
+  <header class="titlebar">
+    <div class="brand"><span class="mark" aria-hidden="true"></span>Mission Control</div>
+    <button class="tb-chip" aria-label="Switch project" data-screen="start"><svg class="i"><use href="#i-folder"/></svg>cubeofempires<svg class="i" style="width:13px;height:13px"><use href="#i-down"/></svg></button>
+    <div class="search" role="button" tabindex="0"><svg class="i"><use href="#i-search"/></svg><span class="search-t">Search tasks, agents, PRs or run a command</span><span class="kbd">Ctrl K</span></div>
+    <button class="tb-btn" aria-label="Notifications"><svg class="i"><use href="#i-bell"/></svg></button>
+    <div class="win" aria-hidden="true">
+      <button tabindex="-1"><svg class="i" style="width:14px"><use href="#i-min"/></svg></button>
+      <button tabindex="-1"><svg class="i" style="width:12px"><use href="#i-max"/></svg></button>
+      <button tabindex="-1" class="x"><svg class="i" style="width:14px"><use href="#i-x"/></svg></button>
+    </div>
+  </header>
+
+  <div class="body">
+    <nav class="sidebar" aria-label="Main">
+      <div class="nav-list">
+      <button class="nav" data-screen="tasks" aria-current="page"><svg class="i"><use href="#i-tasks"/></svg><span class="t">Tasks</span></button>
+      <button class="nav" data-screen="inbox"><svg class="i"><use href="#i-inbox"/></svg><span class="t">Inbox</span><span class="count">2</span></button>
+      <button class="nav" data-screen="graph"><svg class="i"><use href="#i-graph"/></svg><span class="t">Crew graph</span></button>
+      <button class="nav" data-screen="limits"><svg class="i"><use href="#i-gauge"/></svg><span class="t">Limits &amp; usage</span></button>
+      <button class="nav" data-screen="providers"><svg class="i"><use href="#i-plug"/></svg><span class="t">Providers</span></button>
+      <button class="nav" data-screen="github"><svg class="i"><use href="#i-pr"/></svg><span class="t">GitHub</span></button>
+      </div>
+
+      <section class="accts" aria-label="Account limits">
+        <div class="accts-head"><span class="lbl">Accounts · 9</span><button data-screen="limits">All limits</button></div>
+        <div class="accts-list" tabindex="0" aria-label="Accounts, most urgent first">
+          <button class="acct" data-screen="limits" title="Codex · work: 5-hour window 86% used (reported)"><i class="dot" style="--c:var(--s-codex)"></i><span class="n">Codex · work</span><span class="meter xs" data-v="86" data-ticks="8" data-c="--s-codex"></span><span class="v" style="color:var(--warn)">86%</span></button>
+          <button class="acct" data-screen="limits" title="DeepSeek API: $2.41 of the $5 daily cap"><i class="dot" style="--c:var(--s-opencode)"></i><span class="n">DeepSeek</span><span class="meter xs" data-v="48" data-ticks="8" data-c="--s-opencode"></span><span class="v">$2.41</span></button>
+          <button class="acct" data-screen="limits" title="Anthropic API: $3.10 of the $10 daily cap"><i class="dot" style="--c:var(--s-claude)"></i><span class="n">Anthropic</span><span class="meter xs" data-v="31" data-ticks="8" data-c="--s-claude"></span><span class="v">$3.10</span></button>
+          <button class="acct" data-screen="limits" title="Codex · personal: 5-hour window 22% used (reported)"><i class="dot" style="--c:var(--s-codex)"></i><span class="n">Codex · personal</span><span class="meter xs" data-v="22" data-ticks="8" data-c="--s-codex"></span><span class="v">22%</span></button>
+          <button class="acct" data-screen="limits" title="OpenRouter: $1.12 of the $5 daily cap"><i class="dot" style="--c:var(--s-other)"></i><span class="n">OpenRouter</span><span class="meter xs" data-v="22" data-ticks="8" data-c="--s-other"></span><span class="v">$1.12</span></button>
+          <button class="acct" data-screen="limits" title="Kimi API: $0.40 of the $5 daily cap"><i class="dot" style="--c:var(--s-other)"></i><span class="n">Kimi</span><span class="meter xs" data-v="8" data-ticks="8" data-c="--s-other"></span><span class="v">$0.40</span></button>
+          <button class="acct" data-screen="limits" title="Z.ai coding plan: quota unknown until its endpoint is confirmed"><i class="dot" style="--c:var(--s-other)"></i><span class="n">Z.ai plan</span><span class="meter xs unknown" data-ticks="8"></span><span class="v muted">—</span></button>
+          <button class="acct" data-screen="limits" title="Gemini CLI · personal: Google sign-in does not report quota"><i class="dot" style="--c:var(--s-gemini)"></i><span class="n">Gemini</span><span class="meter xs unknown" data-ticks="8"></span><span class="v muted">—</span></button>
+          <button class="acct" data-screen="providers" title="Ollama on this machine: no limit"><i class="dot" style="--c:var(--s-other)"></i><span class="n">Ollama</span><span></span><span class="v muted">local</span></button>
+        </div>
+      </section>
+
+      <div class="side-foot"><svg class="i"><use href="#i-settings"/></svg><span>Settings</span></div>
+    </nav>
+
+    <main class="main" id="main">
+      <!-- START -->
+      <section class="screen" id="s-start" aria-label="Start">
+        <div class="launch-grid">
+          <div>
+            <span class="lbl">Mission Control · v0.1</span>
+            <h1 class="hero">Run your agent crews<br><span class="dim">from one place.</span></h1>
+            <p class="sec lead">Claude Code, Codex, Gemini CLI and OpenCode on your own accounts and keys. Nothing starts until you approve it.</p>
+            <div class="launch-actions">
+              <button class="btn btn-primary" data-screen="setup"><svg class="i"><use href="#i-plus"/></svg>New project</button>
+              <button class="btn"><svg class="i"><use href="#i-folder"/></svg>Open folder</button>
+              <button class="btn"><svg class="i"><use href="#i-pr"/></svg>Clone from GitHub</button>
+            </div>
+
+            <div class="panel">
+              <div class="ph"><h2>This machine</h2><span class="end lbl">Checked 17:42</span></div>
+              <div style="height:8px"></div>
+              <div class="sysrow"><span class="st ok"><svg class="i"><use href="#i-check"/></svg></span><span>Claude Code</span><span class="muted">installed · runs on API keys</span></div>
+              <div class="sysrow"><span class="st ok"><svg class="i"><use href="#i-check"/></svg></span><span>Codex</span><span class="muted">installed · 2 ChatGPT profiles</span></div>
+              <div class="sysrow"><span class="st ok"><svg class="i"><use href="#i-check"/></svg></span><span>OpenCode</span><span class="muted">installed</span></div>
+              <div class="sysrow"><span class="st wait"><svg class="i"><use href="#i-alert"/></svg></span><span>Gemini CLI</span><button class="btn btn-sm btn-ghost">Install guide</button></div>
+              <div class="sysrow"><span class="st ok"><svg class="i"><use href="#i-check"/></svg></span><span>Git and GitHub CLI</span><span class="muted">gh signed in as yusufky63</span></div>
+              <div class="sysrow"><span class="st ok"><svg class="i"><use href="#i-check"/></svg></span><span>Windows long paths</span><span class="muted">enabled</span></div>
+              <div class="sysrow"><span class="st wait"><svg class="i"><use href="#i-alert"/></svg></span><span>Defender exclusion for worktrees</span><button class="btn btn-sm btn-ghost">Show how</button></div>
+            </div>
+          </div>
+
+          <div>
+            <div class="launch-head">
+              <span class="lbl" style="color:var(--ink)">Recent projects</span>
+              <div class="end"><button class="btn btn-sm btn-ghost">All projects</button></div>
+            </div>
+            <div class="recent-grid">
+              <button class="spec ptile" data-screen="tasks">
+                <div class="role-top"><span class="lbl">01</span><span class="role-art"><svg viewBox="0 0 34 34"><path d="M17 4 30 17 17 30 4 17z"/><path d="M17 10 24 17 17 24 10 17z"/></svg></span></div>
+                <div class="p-name">cubeofempires</div>
+                <div class="p-path" title="C:\Projeler\cubeofempires">C:\Projeler\cubeofempires</div>
+                <div class="p-meta"><span class="st run" style="font-size:12px"><span class="spin"></span>3 running</span> · <span style="color:var(--warn)">2 need you</span></div>
+                <div class="lbl">Opened 2 min ago</div>
+              </button>
+              <button class="spec ptile" data-screen="tasks">
+                <div class="role-top"><span class="lbl">02</span><span class="role-art"><svg viewBox="0 0 34 34"><path d="M6 27 14 9l6 12 4-6 4 12"/><path d="M4 27h26" stroke-dasharray="1 2.5"/></svg></span></div>
+                <div class="p-name">stick-war</div>
+                <div class="p-path" title="C:\Projeler\stick-war">C:\Projeler\stick-war</div>
+                <div class="p-meta">main · clean · idle</div>
+                <div class="lbl">Yesterday</div>
+              </button>
+              <button class="spec ptile" data-screen="tasks">
+                <div class="role-top"><span class="lbl">03</span><span class="role-art"><svg viewBox="0 0 34 34"><rect x="5" y="5" width="8" height="8"/><rect x="21" y="5" width="8" height="8"/><rect x="5" y="21" width="8" height="8"/><rect x="21" y="21" width="8" height="8" fill="currentColor"/></svg></span></div>
+                <div class="p-name">agesofcommand</div>
+                <div class="p-path" title="C:\Projeler\agesofcommand">C:\Projeler\agesofcommand</div>
+                <div class="p-meta">1 PR ready for review</div>
+                <div class="lbl">3 days ago</div>
+              </button>
+              <button class="spec ptile" data-screen="tasks">
+                <div class="role-top"><span class="lbl">04</span><span class="role-art"><svg viewBox="0 0 34 34"><rect x="4" y="7" width="26" height="20"/><path d="M4 12h26M9 17h10M9 21h14"/></svg></span></div>
+                <div class="p-name">translaterr-ai</div>
+                <div class="p-path" title="C:\Projeler\translaterr-ai">C:\Projeler\translaterr-ai</div>
+                <div class="p-meta">main · 2 unpushed commits</div>
+                <div class="lbl">Last week</div>
+              </button>
+              <button class="spec ptile" data-screen="tasks">
+                <div class="role-top"><span class="lbl">05</span><span class="role-art"><svg viewBox="0 0 34 34"><path d="M5 8h24M8 14h18M11 20h12M14 26h6"/></svg></span></div>
+                <div class="p-name">sift</div>
+                <div class="p-path" title="C:\Projeler\sift">C:\Projeler\sift</div>
+                <div class="p-meta">main · clean · idle</div>
+                <div class="lbl">2 weeks ago</div>
+              </button>
+              <button class="spec ptile ptile-new" data-screen="setup">
+                <div class="role-top"><span class="lbl">+</span><span class="role-art"><svg viewBox="0 0 34 34"><path d="M17 8v18M8 17h18"/></svg></span></div>
+                <div class="p-name">Import from C:\Projeler</div>
+                <div class="p-meta">8 git repositories found, 5 not added yet</div>
+                <div class="lbl">Scan again</div>
+              </button>
+            </div>
+
+            <div class="panel" style="margin-top:16px">
+              <div class="ph"><h2>Getting started</h2><span class="end lbl">3 of 5 done</span></div>
+              <div style="height:8px"></div>
+              <div class="sysrow"><span class="st ok"><svg class="i"><use href="#i-check"/></svg></span><span>Agents detected</span><span class="muted">3 of 4</span></div>
+              <div class="sysrow"><span class="st ok"><svg class="i"><use href="#i-check"/></svg></span><span>A plan account signed in</span><span class="muted">Codex · work, personal</span></div>
+              <div class="sysrow"><span class="st ok"><svg class="i"><use href="#i-check"/></svg></span><span>GitHub connected</span><span class="muted">pushes wait for your approval</span></div>
+              <div class="sysrow"><span class="dot" style="--c:var(--tick);margin-left:4px"></span><span>Add an API key for Claude Code</span><button class="btn btn-sm" data-screen="providers">Add key</button></div>
+              <div class="sysrow"><span class="dot" style="--c:var(--tick);margin-left:4px"></span><span>Run a first task with a suggested crew</span><button class="btn btn-sm btn-ghost" data-screen="tasks">Try it</button></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- NEW PROJECT -->
+      <section class="screen" id="s-setup" aria-label="New project">
+        <div class="page-head">
+          <div><h1>New project</h1><div class="sub lbl" id="stepLbl">Step 1 of 5 · nothing is written until you create the project</div></div>
+          <div class="right"><button class="btn btn-sm btn-ghost" data-screen="start">Cancel</button></div>
+        </div>
+
+        <div class="steps-bar" role="tablist" aria-label="Setup steps">
+          <button class="spec stile" role="tab" data-step="1" aria-current="step"><span class="lbl">01</span><span class="s-name">Folder</span><span class="s-sub">repo, type, commands</span></button>
+          <button class="spec stile" role="tab" data-step="2"><span class="lbl">02</span><span class="s-name">Agents</span><span class="s-sub">which may work here</span></button>
+          <button class="spec stile" role="tab" data-step="3"><span class="lbl">03</span><span class="s-name">Accounts &amp; budget</span><span class="s-sub">profiles and caps</span></button>
+          <button class="spec stile" role="tab" data-step="4"><span class="lbl">04</span><span class="s-name">Rules</span><span class="s-sub">fallback, approvals, slots</span></button>
+          <button class="spec stile" role="tab" data-step="5"><span class="lbl">05</span><span class="s-name">GitHub</span><span class="s-sub">remote, pushes, CI</span></button>
+        </div>
+
+        <div class="panel">
+          <div class="wiz on" data-pane="1">
+            <h2>Where is the project?</h2>
+            <p class="sec">Pick a folder you already have, clone one, or start empty. Mission Control reads it to suggest commands.</p>
+            <div style="margin:16px 0 4px"><div class="seg" role="group" aria-label="Source"><button aria-pressed="true">Local folder</button><button aria-pressed="false">Clone from GitHub</button><button aria-pressed="false">Empty folder</button></div></div>
+            <div class="row-input"><span class="input">C:\Projeler\new-rts</span><button class="btn">Browse</button></div>
+            <div class="check-list">
+              <div class="cl"><span class="st ok"><svg class="i"><use href="#i-check"/></svg></span><span class="muted">Git repository</span><span>main · 2 commits · clean</span><span></span></div>
+              <div class="cl"><span class="st ok"><svg class="i"><use href="#i-check"/></svg></span><span class="muted">Project type</span><span>Godot 4 · C# <span class="muted mono" style="font-size:12px">from project.godot, NewRts.csproj</span></span><span></span></div>
+              <div class="cl"><span class="st ok"><svg class="i"><use href="#i-check"/></svg></span><span class="muted">Build command</span><span class="mono" style="font-size:12px">dotnet build</span><button class="btn btn-sm btn-ghost">Edit</button></div>
+              <div class="cl"><span class="st ok"><svg class="i"><use href="#i-check"/></svg></span><span class="muted">Test command</span><span class="mono" style="font-size:12px">dotnet test</span><button class="btn btn-sm btn-ghost">Edit</button></div>
+              <div class="cl"><span class="st ok"><svg class="i"><use href="#i-check"/></svg></span><span class="muted">Worktrees</span><span class="mono" style="font-size:12px">C:\Projeler\.mc\worktrees\new-rts</span><button class="btn btn-sm btn-ghost">Change</button></div>
+              <div class="cl"><span class="st ok"><svg class="i"><use href="#i-check"/></svg></span><span class="muted">Path length</span><span>longest path in a worktree: 118 of 260 characters</span><span></span></div>
+              <div class="cl"><span class="st wait"><svg class="i"><use href="#i-alert"/></svg></span><span class="muted">GitHub remote</span><span>none yet, set it up in step 5</span><span></span></div>
+            </div>
+          </div>
+
+          <div class="wiz" data-pane="2">
+            <h2>Which agents may work here?</h2>
+            <p class="sec">Only agents that passed their conformance check on this machine can be picked. You can change this later.</p>
+            <div class="check-list">
+              <div class="cl"><span class="cbox on"><svg class="i" style="width:12px;height:12px"><use href="#i-check"/></svg></span><span><i class="dot" style="--c:var(--s-claude)"></i> Claude Code</span><span class="muted">installed · conformance passed · runs on API keys</span><span class="rchip on">Allowed</span></div>
+              <div class="cl"><span class="cbox on"><svg class="i" style="width:12px;height:12px"><use href="#i-check"/></svg></span><span><i class="dot" style="--c:var(--s-codex)"></i> Codex</span><span class="muted">installed · conformance passed</span><span class="rchip on">Allowed</span></div>
+              <div class="cl"><span class="cbox on"><svg class="i" style="width:12px;height:12px"><use href="#i-check"/></svg></span><span><i class="dot" style="--c:var(--s-opencode)"></i> OpenCode</span><span class="muted">installed · conformance passed</span><span class="rchip on">Allowed</span></div>
+              <div class="cl"><span class="cbox"></span><span><i class="dot" style="--c:var(--s-gemini)"></i> Gemini CLI</span><span class="muted">not installed</span><button class="btn btn-sm btn-ghost">Install guide</button></div>
+            </div>
+          </div>
+
+          <div class="wiz" data-pane="3">
+            <h2>Accounts and budget</h2>
+            <p class="sec">Crew proposals only pick from the profiles you allow. Paid fallbacks never go past these caps.</p>
+            <div class="check-list">
+              <div class="cl"><span class="cbox on"><svg class="i" style="width:12px;height:12px"><use href="#i-check"/></svg></span><span>Codex · work</span><span class="muted">ChatGPT Plus · 5h window reported</span><span></span></div>
+              <div class="cl"><span class="cbox on"><svg class="i" style="width:12px;height:12px"><use href="#i-check"/></svg></span><span>Codex · personal</span><span class="muted">ChatGPT Pro · 5h window reported</span><span></span></div>
+              <div class="cl"><span class="cbox on"><svg class="i" style="width:12px;height:12px"><use href="#i-check"/></svg></span><span>Anthropic · API</span><span class="muted">anthropic-main · for Claude Code</span><span></span></div>
+              <div class="cl"><span class="cbox on"><svg class="i" style="width:12px;height:12px"><use href="#i-check"/></svg></span><span>DeepSeek · API</span><span class="muted">ds-primary · for Claude Code and OpenCode</span><span></span></div>
+              <div class="cl"><span class="cbox"></span><span>OpenRouter · API</span><span class="muted">or-main</span><span></span></div>
+            </div>
+            <div class="kv" style="margin-top:18px">
+              <dt>Daily cap, all API keys</dt><dd><span class="field">$10</span></dd>
+              <dt>Per task cap</dt><dd><span class="field">$4</span></dd>
+            </div>
+          </div>
+
+          <div class="wiz" data-pane="4">
+            <h2>Rules for this project</h2>
+            <p class="sec">Defaults follow your global settings. Every rule is stored in <span class="mono">.mission/project.json</span> without secrets.</p>
+            <div class="setrow" style="border-top:0">When a limit is hit<div class="end seg" role="group" aria-label="Fallback default"><button aria-pressed="false">Manual</button><button aria-pressed="true">Ask</button><button aria-pressed="false">Auto</button></div></div>
+            <div class="setrow">Parallel agents (slots)<span class="end field">4</span></div>
+            <div class="setrow">Commands allowed without asking<span class="end" style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end"><span class="chip"><b>dotnet build</b></span><span class="chip"><b>dotnet test</b></span><span class="chip"><b>git status</b></span><span class="chip">+ Add</span></span></div>
+            <div class="setrow">Network access for agents<div class="end seg" role="group" aria-label="Network"><button aria-pressed="true">Ask</button><button aria-pressed="false">Allowed</button></div></div>
+            <div class="setrow">Approve from Windows notifications<span class="end muted" style="font-size:12px">low-risk commands only</span></div>
+          </div>
+
+          <div class="wiz" data-pane="5">
+            <h2>GitHub</h2>
+            <p class="sec">Mission Control uses your <span class="mono">gh</span> sign-in. Agents commit locally; pushes wait for you.</p>
+            <div class="check-list">
+              <div class="cl"><span class="st ok"><svg class="i"><use href="#i-check"/></svg></span><span class="muted">Signed in</span><span>yusufky63 via gh</span><span></span></div>
+              <div class="cl"><span class="st wait"><svg class="i"><use href="#i-alert"/></svg></span><span class="muted">Remote</span><span>no remote yet</span><button class="btn btn-sm">Create private repo</button></div>
+              <div class="cl"><span class="cbox on"><svg class="i" style="width:12px;height:12px"><use href="#i-check"/></svg></span><span class="muted">Pushes</span><span>wait for my approval, one push per finished change</span><span></span></div>
+              <div class="cl"><span class="cbox on"><svg class="i" style="width:12px;height:12px"><use href="#i-check"/></svg></span><span class="muted">CI workflow</span><span>add a template that follows my CI rules: ubuntu, push on main only, concurrency, timeouts</span><span></span></div>
+              <div class="cl"><span class="cbox on"><svg class="i" style="width:12px;height:12px"><use href="#i-check"/></svg></span><span class="muted">Actions minutes</span><span>warn at 80% of the monthly quota</span><span></span></div>
+            </div>
+          </div>
+
+          <div class="wiz-foot">
+            <span class="muted" style="font-size:12px">Writes <span class="mono">.mission/project.json</span> in the repo. Keys stay in Windows' DPAPI store.</span>
+            <div class="end"><button class="btn" id="stepBack">Back</button><button class="btn btn-primary" id="stepNext">Next: Agents</button></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TASKS -->
+      <section class="screen" id="s-tasks" aria-label="Tasks">
+        <div class="page-head">
+          <div><h1>Tasks</h1><div class="sub lbl">cubeofempires · C:\Projeler\cubeofempires</div></div>
+          <div class="right"><button class="btn btn-ghost btn-sm"><svg class="i"><use href="#i-term"/></svg>Activity</button></div>
+        </div>
+
+        <div class="panel composer attached">
+          <label class="lbl" for="taskInput" style="display:block;margin-bottom:8px">New task</label>
+          <textarea id="taskInput" rows="2">Optimize unit pathfinding for 2,000 units on the benchmark map and keep the frame time under 16 ms.</textarea>
+          <div class="composer-row">
+            <button class="chip"><svg class="i"><use href="#i-folder"/></svg><b>cubeofempires</b><svg class="i" style="width:13px"><use href="#i-down"/></svg></button>
+            <button class="chip"><svg class="i"><use href="#i-branch"/></svg><b>main</b><svg class="i" style="width:13px"><use href="#i-down"/></svg></button>
+            <button class="chip"><svg class="i"><use href="#i-crew"/></svg>Crew<b>Suggested</b><svg class="i" style="width:13px"><use href="#i-down"/></svg></button>
+            <button class="chip"><svg class="i"><use href="#i-swap"/></svg>On limit<b>Ask first</b><svg class="i" style="width:13px"><use href="#i-down"/></svg></button>
+            <div class="end"><span class="kbd">Ctrl</span><span class="kbd">Enter</span></div>
+          </div>
+        </div>
+
+        <div class="panel crew" aria-label="Suggested crew">
+          <div class="crew-head">
+            <span class="lbl" style="color:var(--ink)">Suggested crew</span>
+            <span class="lbl">4 roles · est. 180–260k tokens · $1.60 on API keys</span>
+            <div class="end"><button class="btn btn-ghost btn-sm" id="whyBtn" aria-expanded="true">Hide reasons</button></div>
+          </div>
+          <div class="crew-grid">
+            <button class="spec role">
+              <div class="role-top"><span class="lbl">01</span><span class="role-art"><svg viewBox="0 0 34 34"><path d="M9 4.5h12l5 5v20H9z"/><path d="M21 4.5v5h5"/><path d="M13 15h9M13 19h9M13 23h5"/><circle cx="11" cy="15" r=".6"/><circle cx="11" cy="19" r=".6"/></svg></span></div>
+              <div><div class="role-name">Plan</div></div>
+              <div class="role-run"><i class="dot" style="--c:var(--s-claude)"></i>Claude Code · Opus 5.5</div>
+              <div class="role-acct">API key · anthropic-main</div>
+              <div class="why">Best acceptance on planning in this repo (11 of 12). Estimated $1.20 on your Anthropic key.</div>
+              <div class="headroom"><div class="row"><span class="lbl">Task budget</span><span class="lbl" style="color:var(--ink)">$1.20 / $4</span></div><div class="meter sm" data-v="30" data-c="--s-claude"></div></div>
+            </button>
+            <button class="spec role">
+              <div class="role-top"><span class="lbl">02</span><span class="role-art"><svg viewBox="0 0 34 34"><path d="M5 17h8"/><path d="M5 9c5 0 5 8 8 8M5 25c5 0 5-8 8-8"/><path d="M5 13c4 0 5 4 8 4M5 21c4 0 5-4 8-4"/><circle cx="15" cy="17" r="2"/><path d="M17 17h12"/><circle cx="29" cy="17" r=".8"/></svg></span></div>
+              <div><div class="role-name">Implement</div></div>
+              <div class="role-run"><i class="dot" style="--c:var(--s-codex)"></i>Codex · gpt-6.1-sol</div>
+              <div class="role-acct">work · Plus plan</div>
+              <div class="why">Strongest on C# changes here (7 of 8 accepted). Writes in its own worktree.</div>
+              <div class="headroom"><div class="row"><span class="lbl">5h window</span><span class="lbl" style="color:var(--warn)">86% used</span></div><div class="meter sm" data-v="86" data-c="--s-codex"></div></div>
+            </button>
+            <button class="spec role">
+              <div class="role-top"><span class="lbl">03</span><span class="role-art"><svg viewBox="0 0 34 34"><rect x="5" y="9" width="5" height="5"/><rect x="5" y="20" width="5" height="5"/><path d="M10 11.5h6M10 22.5h6"/><path d="M16 11.5h3l3 5.5M16 22.5h3l3-5.5"/><rect x="22" y="14.5" width="7" height="5"/></svg></span></div>
+              <div><div class="role-name">Review</div></div>
+              <div class="role-run"><i class="dot" style="--c:var(--s-claude)"></i>Claude Code · glm-5.3</div>
+              <div class="role-acct">Z.ai coding plan · zai-plan</div>
+              <div class="why">Claude Code on Z.ai's GLM: a different provider than the implementer, no per-token cost.</div>
+              <div class="headroom"><div class="row"><span class="lbl">Plan quota</span><span class="lbl">Unknown</span></div><div class="meter sm unknown"></div></div>
+            </button>
+            <button class="spec role">
+              <div class="role-top"><span class="lbl">04</span><span class="role-art"><svg viewBox="0 0 34 34"><path d="M3 15h7v6h6v-9h5v9h4v-6h6"/><path d="M3 25h28" stroke-dasharray="1 2.5"/></svg></span></div>
+              <div><div class="role-name">Test &amp; benchmark</div></div>
+              <div class="role-run"><i class="dot" style="--c:var(--s-opencode)"></i>OpenCode · deepseek-flash</div>
+              <div class="role-acct">DeepSeek API · ds-primary</div>
+              <div class="why">Cheapest for repeated benchmark runs. Estimated $0.40 for this task.</div>
+              <div class="headroom"><div class="row"><span class="lbl">Task budget</span><span class="lbl" style="color:var(--ink)">$0.40 / $4</span></div><div class="meter sm" data-v="10" data-c="--s-opencode"></div></div>
+            </button>
+          </div>
+          <div class="fallback">
+            <span class="lbl">If a limit is hit</span>
+            <div class="chain">
+              <span class="chip"><i class="dot" style="--c:var(--s-codex)"></i>Codex · work</span><span class="arrow">→</span>
+              <span class="chip"><i class="dot" style="--c:var(--s-claude)"></i>Claude Code · API key</span><span class="arrow">→</span>
+              <span class="chip"><i class="dot" style="--c:var(--s-opencode)"></i>OpenCode · DeepSeek</span>
+            </div>
+            <div class="seg" role="group" aria-label="Fallback mode" style="margin-left:auto">
+              <button aria-pressed="false">Manual</button><button aria-pressed="true">Ask</button><button aria-pressed="false">Auto</button>
+            </div>
+          </div>
+          <div class="crew-actions">
+            <span class="est">Estimates come from your past runs and the price table of 2026-10. Paid fallbacks stay inside the $4 task budget. Nothing starts until you approve.</span>
+            <div class="end"><button class="btn btn-ghost">Edit crew</button><button class="btn btn-primary">Approve and start</button></div>
+          </div>
+        </div>
+
+        <div class="list-head">
+          <div class="tabs" role="tablist" aria-label="Filter tasks">
+            <button role="tab" aria-selected="true">All <span class="n">9</span></button>
+            <button role="tab" aria-selected="false">Running <span class="n">3</span></button>
+            <button role="tab" aria-selected="false">Needs you <span class="n">2</span></button>
+            <button role="tab" aria-selected="false">Ready for review <span class="n">2</span></button>
+            <button role="tab" aria-selected="false">Merged <span class="n">1</span></button>
+            <button role="tab" aria-selected="false">Done <span class="n">1</span></button>
+          </div>
+        </div>
+
+        <div class="panel tasks">
+          <div class="task" data-open="true">
+            <button class="task-top" aria-expanded="true">
+              <div><div class="task-title">Fix terrain seam artifacts at chunk borders</div>
+                <div class="task-meta"><span><svg class="i"><use href="#i-folder"/></svg>cubeofempires</span><span><svg class="i"><use href="#i-branch"/></svg>agent/terrain-seams</span><span><i class="dot" style="--c:var(--s-claude)"></i><i class="dot" style="--c:var(--s-codex)"></i><i class="dot" style="--c:var(--s-opencode)"></i>3 agents</span></div></div>
+              <div class="task-right"><span class="num">14m 02s</span><svg class="i"><use href="#i-up"/></svg></div>
+            </button>
+            <div class="task-status"><span class="st run"><span class="spin"></span>Running benchmark scene</span><span class="muted" style="font-size:12px">OpenCode · deepseek-flash</span></div>
+            <div class="task-body">
+              <div class="banner warn" role="status">
+                <svg class="i"><use href="#i-alert"/></svg>
+                <span class="txt">Codex · work has used 86% of its 5-hour window (reported by Codex). It resets at 16:40.</span>
+                <div class="end"><button class="btn btn-sm">Hand off now</button><button class="btn btn-sm btn-ghost">Let it finish</button></div>
+              </div>
+              <div class="steps">
+                <div class="step"><svg class="i"><use href="#i-check"/></svg><span>Created worktree <span class="mono">agent/terrain-seams</span></span><span class="t">1s</span></div>
+                <div class="step"><svg class="i"><use href="#i-check"/></svg><span>Planned 4 steps <span class="who">· Claude Code · Opus 5.5</span></span><span class="t">42s</span></div>
+                <div class="step"><svg class="i"><use href="#i-check"/></svg><span>Blended chunk normals across borders <span class="who">· Codex</span></span><span class="t">6m 10s</span></div>
+                <div class="step now"><span class="spin" style="color:var(--accent)"></span><span>Running benchmark scene, 2,000 units <span class="who">· OpenCode</span></span><span class="t">2m 31s</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="task">
+            <button class="task-top" aria-expanded="false">
+              <div><div class="task-title">Allow <span class="mono" style="font-size:14px">dotnet test</span> in the replay worktree?</div>
+                <div class="task-meta"><span><svg class="i"><use href="#i-branch"/></svg>agent/replay-export</span><span><i class="dot" style="--c:var(--s-claude)"></i>Review · Claude Code · Sonnet 5.5</span></div></div>
+              <div class="task-right"><span class="num">2m ago</span><svg class="i"><use href="#i-down"/></svg></div>
+            </button>
+            <div class="task-status"><span class="st wait"><svg class="i"><use href="#i-q"/></svg>Waiting for your approval</span><div class="end"><button class="btn btn-sm btn-ghost">Deny</button><button class="btn btn-sm" data-goto="inbox">Open</button><button class="btn btn-sm btn-primary">Approve once</button></div></div>
+          </div>
+
+          <div class="task">
+            <button class="task-top" aria-expanded="false">
+              <div><div class="task-title">Add replay export to match history</div>
+                <div class="task-meta"><span><svg class="i"><use href="#i-folder"/></svg>cubeofempires</span><span><svg class="i"><use href="#i-branch"/></svg>agent/replay-export</span><span><i class="dot" style="--c:var(--s-codex)"></i><i class="dot" style="--c:var(--s-claude)"></i>2 agents</span></div></div>
+              <div class="task-right"><span class="num">38m</span><svg class="i"><use href="#i-down"/></svg></div>
+            </button>
+            <div class="task-status"><span class="st ok"><svg class="i"><use href="#i-check"/></svg>Ready for review</span><span class="diff"><span class="add">+125</span><span class="del">−18</span><span class="diffbar"><span style="flex:125"></span><span style="flex:18"></span></span><span class="muted">7 files</span></span><span class="st ok" style="font-size:12px"><svg class="i"><use href="#i-shield"/></svg>Checks passed</span><span class="muted" style="font-size:12px">PR #214 · not merged</span><div class="end"><button class="btn btn-sm btn-primary" data-goto="github">Review PR</button></div></div>
+          </div>
+
+          <div class="task">
+            <button class="task-top" aria-expanded="false">
+              <div><div class="task-title">Refactor resource manager</div>
+                <div class="task-meta"><span><svg class="i"><use href="#i-branch"/></svg>agent/resource-mgr</span><span><i class="dot" style="--c:var(--s-codex)"></i>Codex · work</span></div></div>
+              <div class="task-right"><span class="num">2h ago</span><svg class="i"><use href="#i-down"/></svg></div>
+            </button>
+            <div class="task-status"><span class="st rev"><svg class="i"><use href="#i-pr"/></svg>Merged</span><span class="muted" style="font-size:12px">PR #212 into main · worktree kept until you clean it up</span></div>
+          </div>
+
+          <div class="task">
+            <button class="task-top" aria-expanded="false">
+              <div><div class="task-title">Research: flow field vs. HPA* for 2,000 units</div>
+                <div class="task-meta"><span><i class="dot" style="--c:var(--s-gemini)"></i>Research · Gemini CLI</span><span>no code changes</span></div></div>
+              <div class="task-right"><span class="num">yesterday</span><svg class="i"><use href="#i-down"/></svg></div>
+            </button>
+            <div class="task-status"><span class="st ok"><svg class="i"><use href="#i-check"/></svg>Done</span><span class="muted" style="font-size:12px">Report with 6 sources · linked to 2 tasks</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- INBOX -->
+      <section class="screen" id="s-inbox" aria-label="Inbox">
+        <div class="page-head"><div><h1>Inbox</h1><div class="sub lbl">2 need your answer · 2 for your information</div></div></div>
+        <div class="inbox">
+          <div class="panel inbox-list" role="listbox" aria-label="Inbox items">
+            <button class="ibx" role="option" aria-selected="true" data-detail="d-approve"><span class="st wait"><svg class="i"><use href="#i-term"/></svg></span><div><div class="t">Run <span class="mono" style="font-size:13px">dotnet test</span>?</div><div class="s">Review · Claude Code · Sonnet 5.5 · replay export</div></div><span class="k">2m</span></button>
+            <button class="ibx" role="option" aria-selected="false" data-detail="d-question"><span class="st wait"><svg class="i"><use href="#i-q"/></svg></span><div><div class="t">Keep the old flow-field cache format?</div><div class="s">Plan · Claude Code · Opus 5.5 · pathfinding</div></div><span class="k">6m</span></button>
+            <button class="ibx" role="option" aria-selected="false" data-detail="d-limit"><span class="st wait"><svg class="i"><use href="#i-gauge"/></svg></span><div><div class="t">Codex · work at 86% of its 5-hour window</div><div class="s">Fallback is set to Ask · terrain seams</div></div><span class="k">9m</span></button>
+            <button class="ibx" role="option" aria-selected="false" data-detail="d-pr"><span class="st rev"><svg class="i"><use href="#i-pr"/></svg></span><div><div class="t">PR #214 is ready for your review</div><div class="s">Checks passed · 7 files · not merged</div></div><span class="k">21m</span></button>
+          </div>
+          <div class="panel">
+            <div class="detail on" id="d-approve">
+              <span class="lbl">Tool approval · low risk</span>
+              <h2>The reviewer wants to run the project's tests</h2>
+              <p class="sec">Asked in <b style="font-weight:500;color:var(--ink)">Add replay export to match history</b>, step 3 of 4.</p>
+              <div class="code">dotnet test Game.Tests --no-build</div>
+              <dl class="kv">
+                <dt>Working directory</dt><dd class="mono" style="font-size:12px">C:\Projeler\.mc\worktrees\cubeofempires\replay-export</dd>
+                <dt>Scope</dt><dd>Reads and writes inside this worktree only. No network.</dd>
+                <dt>Policy</dt><dd>Not in this project's allowlist yet.</dd>
+                <dt>Requested by</dt><dd><i class="dot" style="--c:var(--s-claude)"></i> Review · Claude Code · API key</dd>
+              </dl>
+              <div class="actions"><button class="btn btn-primary">Approve once</button><button class="btn">Allow in this project</button><button class="btn btn-ghost">Deny</button></div>
+            </div>
+            <div class="detail" id="d-limit">
+              <span class="lbl">Limit warning · reported by Codex</span>
+              <h2>Codex · work has used 86% of its 5-hour window</h2>
+              <p class="sec">At the current pace it reaches the limit in about 25 minutes, before the 16:40 reset. The implementer of <b style="font-weight:500;color:var(--ink)">Fix terrain seam artifacts</b> is mid-task.</p>
+              <div class="mline" style="margin:16px 0 6px"><span class="sec">5-hour window</span><div class="meter" data-v="86" data-c="--s-codex"></div><span class="v" style="color:var(--warn)">86%<small>resets 16:40</small></span></div>
+              <dl class="kv">
+                <dt>Fallback mode</dt><dd>Ask first</dd>
+                <dt>Next in chain</dt><dd><i class="dot" style="--c:var(--s-claude)"></i> Claude Code · API key · paid, $2.80 left in this task's budget</dd>
+                <dt>What transfers</dt><dd>Plan, 3 finished steps, a local WIP commit, failing tests, open questions. New session in the same worktree.</dd>
+              </dl>
+              <div class="actions"><button class="btn btn-primary">Hand off now</button><button class="btn">Wait for reset</button><button class="btn btn-ghost">Let it finish</button></div>
+            </div>
+            <div class="detail" id="d-pr">
+              <span class="lbl">GitHub · ready for review</span>
+              <h2>PR #214 Add replay export to match history</h2>
+              <p class="sec">Implemented by Codex · work, reviewed by Claude Code on the Anthropic API key. All 6 checks passed. It is not merged.</p>
+              <div class="gate" style="margin-top:14px"><span class="y"><svg class="i"><use href="#i-check"/></svg>Tests</span><span class="y"><svg class="i"><use href="#i-check"/></svg>Up to date</span><span class="y"><svg class="i"><use href="#i-check"/></svg>No open questions</span><span class="n"><svg class="i"><use href="#i-clock"/></svg>Your review</span></div>
+              <div class="actions"><button class="btn btn-primary" data-goto="github">Open in GitHub view</button><button class="btn btn-ghost">Snooze</button></div>
+            </div>
+            <div class="detail" id="d-question">
+              <span class="lbl">Question from the planner</span>
+              <h2>Keep the old flow-field cache format, or migrate it?</h2>
+              <p class="sec">The new solver stores 8-bit costs. Saved maps use 16-bit costs. Both options are safe for multiplayer replays.</p>
+              <label class="opt"><input type="radio" name="q" checked><div><b style="font-weight:500">Migrate on load</b><div class="muted" style="font-size:12px">Converts old maps once. Adds about 40 ms to the first load.</div></div></label>
+              <label class="opt"><input type="radio" name="q"><div><b style="font-weight:500">Keep both formats</b><div class="muted" style="font-size:12px">No migration. Two code paths to maintain.</div></div></label>
+              <textarea class="reply" aria-label="Add a note for the agent" placeholder="Add a note for the agent (optional)"></textarea>
+              <div class="actions"><button class="btn btn-primary">Send answer</button><button class="btn btn-ghost">Let the planner decide</button></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- GRAPH -->
+      <section class="screen" id="s-graph" aria-label="Crew graph">
+        <div class="page-head">
+          <div><h1>Crew graph</h1><div class="sub lbl">#COE-118 · Fix terrain seam artifacts · 5 runs · 14m 02s</div></div>
+          <div class="right">
+            <div class="seg" role="group" aria-label="Edges"><button aria-pressed="true">Tasks</button><button aria-pressed="false">Messages</button><button aria-pressed="false">Files</button></div>
+            <button class="btn btn-sm btn-ghost" id="resetLayout">Reset layout</button>
+            <button class="btn btn-sm">Show as list</button>
+            <button class="btn btn-sm" id="fullBtn" title="Full screen (F)"><svg class="i"><use href="#i-max"/></svg>Full screen</button>
+          </div>
+        </div>
+        <div class="graph-wrap" id="graphWrap">
+          <div class="graph-clip" id="graphClip">
+            <div class="graph" id="graph">
+              <svg class="edges" viewBox="0 0 860 600" aria-hidden="true">
+                <defs><pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1" style="fill:var(--tick)"/></pattern></defs>
+                <rect x="-3000" y="-3000" width="6860" height="6600" fill="url(#dots)"/>
+                <g id="edgeLayer" fill="none"></g>
+              </svg>
+              <span class="annot" id="limitAnnot" style="color:var(--warn)">Limit 86% · 5h window<br><span style="color:var(--ink-3)">resets 16:40</span></span>
+
+              <div class="gnode spec" data-id="task" style="left:16px;top:220px" tabindex="0" data-menu="task" data-label="Task · Fix terrain seams">
+                <span class="lbl">Task · #COE-118</span>
+                <div class="name">Fix terrain seams</div>
+                <div class="facts">main → agent/terrain-seams</div>
+              </div>
+              <button class="gnode spec" data-id="plan" style="left:232px;top:220px" data-menu="done" data-label="01 Plan · Claude Code · Opus 5.5">
+                <span class="lbl">01 Plan</span>
+                <div class="name"><i class="dot" style="--c:var(--s-claude)"></i>Claude Code<span class="st ok"><svg class="i" style="width:13px;height:13px"><use href="#i-check"/></svg>Done</span></div>
+                <div class="facts">Opus 5.5 · API key<br>19k tok · $0.31 est.</div>
+              </button>
+              <button class="gnode spec" data-id="impl" id="nodeImpl" style="left:448px;top:60px" aria-pressed="false" aria-controls="inspector" data-menu="running" data-label="02 Implement · Codex · work">
+                <span class="lbl">02 Implement</span>
+                <div class="name"><i class="dot" style="--c:var(--s-codex)"></i>Codex<span class="st run"><span class="spin"></span>Running</span></div>
+                <div class="facts">gpt-6.1-sol · work<br>62k tok · 6m 10s</div>
+              </button>
+              <div class="gnode spec standby" data-id="standby" style="left:448px;top:220px" tabindex="0" data-menu="standby" data-label="02 Standby · Claude Code · Sonnet 5.5">
+                <span class="lbl">02 Standby</span>
+                <div class="name"><i class="dot" style="--c:var(--s-claude)"></i>Claude Code<span class="st" style="color:var(--ink-3)">Idle</span></div>
+                <div class="facts">Sonnet 5.5 · API key<br>waits for your OK</div>
+              </div>
+              <button class="gnode spec" data-id="test" style="left:448px;top:380px" data-menu="test" data-label="04 Test · OpenCode · DeepSeek">
+                <span class="lbl">04 Test</span>
+                <div class="name"><i class="dot" style="--c:var(--s-opencode)"></i>OpenCode<span class="st run"><span class="spin"></span>Running</span></div>
+                <div class="facts">deepseek-flash · DeepSeek<br>8k tok · $0.01 est.</div>
+              </button>
+              <button class="gnode spec" data-id="review" style="left:664px;top:60px" data-menu="queued" data-label="03 Review · Claude Code · Z.ai GLM">
+                <span class="lbl">03 Review</span>
+                <div class="name"><i class="dot" style="--c:var(--s-claude)"></i>Claude<span class="st wait"><svg class="i" style="width:13px;height:13px"><use href="#i-clock"/></svg>Queued</span></div>
+                <div class="facts">glm-5.3 · Z.ai plan<br>waits for 02 and 04</div>
+              </button>
+              <div class="gnode spec" data-id="pr" style="left:664px;top:380px" tabindex="0" data-menu="pr" data-label="Pull request · draft">
+                <span class="lbl">Pull request</span>
+                <div class="name"><svg class="i" style="width:14px;height:14px"><use href="#i-pr"/></svg>Draft<span class="st" style="color:var(--ink-3)">Not opened</span></div>
+                <div class="facts">opens after review passes</div>
+              </div>
+
+              <div id="edgeLabels"></div>
+            </div>
+          </div>
+
+          <span class="annot graph-hint">Task → crew → pull request</span>
+          <div class="legend">
+            <div><svg viewBox="0 0 34 6" aria-hidden="true"><path d="M0 3H34" style="stroke:var(--line-strong);stroke-width:1"/></svg>Reports to</div>
+            <div><svg viewBox="0 0 34 6" aria-hidden="true"><path d="M1 3H34" style="stroke:var(--line-strong);stroke-width:1.5;stroke-dasharray:1 4;stroke-linecap:round"/></svg>Depends on</div>
+            <div><svg viewBox="0 0 34 6" aria-hidden="true"><path d="M0 3H34" style="stroke:var(--warn);stroke-width:1.25;stroke-dasharray:5 4"/></svg>Fallback</div>
+            <div class="legend-help">Drag to arrange · Alt+arrows to move · right-click or Shift+F10 for actions · F full screen</div>
+          </div>
+          <div class="zoom">
+            <button id="zoomIn" aria-label="Zoom in" title="Zoom in (Ctrl + wheel)"><svg class="i"><use href="#i-plus"/></svg></button>
+            <button id="zoomOut" aria-label="Zoom out" title="Zoom out"><svg class="i"><use href="#i-min"/></svg></button>
+            <button id="zoomFit" aria-label="Fit to screen" title="Fit"><svg class="i"><use href="#i-fit"/></svg></button>
+            <button id="zoomFull" aria-label="Full screen" title="Full screen (F)"><svg class="i"><use href="#i-max"/></svg></button>
+          </div>
+          <button class="btn btn-sm graph-exit" id="exitFull">Exit full screen <span class="kbd">Esc</span></button>
+        </div>
+      </section>
+
+      <!-- LIMITS -->
+      <section class="screen" id="s-limits" aria-label="Limits and usage">
+        <div class="page-head">
+          <div><h1>Limits &amp; usage</h1><div class="sub lbl">Updated 1 min ago · every number shows where it came from</div></div>
+          <div class="right"><div class="seg" role="group" aria-label="Range"><button aria-pressed="false">Today</button><button aria-pressed="true">7 days</button><button aria-pressed="false">30 days</button></div></div>
+        </div>
+        <div class="grid2">
+          <div class="panel">
+            <div class="ph"><h2>Subscription limits</h2><span class="end lbl">Notify 80% · critical 95%</span></div>
+            <div class="lim">
+              <div class="lim-top"><i class="dot" style="--c:var(--s-codex)"></i><span class="name">Codex · work</span><span class="lbl">Plus</span><div class="end"><span class="badge rep">Reported</span></div></div>
+              <div class="mline"><span class="sec">5-hour window</span><div class="meter" data-v="86" data-c="--s-codex"></div><span class="v" style="color:var(--warn)">86%<small>resets 16:40</small></span></div>
+              <div class="mline"><span class="sec">Weekly</span><div class="meter" data-v="41" data-c="--s-codex"></div><span class="v">41%<small>resets Mon 09:00</small></span></div>
+            </div>
+            <div class="lim">
+              <div class="lim-top"><i class="dot" style="--c:var(--s-codex)"></i><span class="name">Codex · personal</span><span class="lbl">Pro</span><div class="end"><span class="badge rep">Reported</span></div></div>
+              <div class="mline"><span class="sec">5-hour window</span><div class="meter" data-v="22" data-c="--s-codex"></div><span class="v">22%<small>resets 18:05</small></span></div>
+              <div class="mline"><span class="sec">Weekly</span><div class="meter" data-v="9" data-c="--s-codex"></div><span class="v">9%<small>resets Tue 14:00</small></span></div>
+            </div>
+            <div class="lim">
+              <div class="lim-top"><i class="dot" style="--c:var(--s-other)"></i><span class="name">Z.ai · coding plan</span><span class="lbl">GLM</span><div class="end"><span class="badge unk">Unknown</span></div></div>
+              <div class="mline"><span class="sec">Plan quota</span><div class="meter unknown"></div><span class="v">41 runs<small>endpoint not confirmed</small></span></div>
+            </div>
+            <div class="lim">
+              <div class="lim-top"><i class="dot" style="--c:var(--s-gemini)"></i><span class="name">Gemini CLI · personal</span><span class="lbl">Google sign-in</span><div class="end"><span class="badge unk">Unknown</span></div></div>
+              <div class="mline"><span class="sec">Daily requests</span><div class="meter unknown"></div><span class="v">212 sent<small>no limit data</small></span></div>
+              <div class="unk-note">This sign-in method does not report remaining quota, so Mission Control only counts requests and never guesses a percentage.</div>
+            </div>
+          </div>
+
+          <div class="stack">
+            <div class="panel pbody">
+              <span class="lbl">API spend · 7 days</span>
+              <div style="margin:10px 0 4px" class="metric num">$14.62 <small>/ week</small></div>
+              <div class="lbl" style="margin-bottom:16px">Estimated · tokens × price table 2026-10</div>
+              <div class="segbar" role="img" aria-label="Spend by provider: Anthropic API 42 percent, DeepSeek 30 percent, OpenRouter 17 percent, Gemini API 11 percent">
+                <span style="flex:42;--c:var(--s-claude)"></span><span style="flex:30;--c:var(--s-opencode)"></span><span style="flex:17;--c:var(--s-other)"></span><span style="flex:11;--c:var(--s-gemini)"></span>
+              </div>
+              <div class="legend4">
+                <div><div class="k"><i class="dot" style="--c:var(--s-claude)"></i>Anthropic API</div><div class="v num">$6.10 <small>42%</small></div></div>
+                <div><div class="k"><i class="dot" style="--c:var(--s-opencode)"></i>DeepSeek</div><div class="v num">$4.45 <small>30%</small></div></div>
+                <div><div class="k"><i class="dot" style="--c:var(--s-other)"></i>OpenRouter</div><div class="v num">$2.47 <small>17%</small></div></div>
+                <div><div class="k"><i class="dot" style="--c:var(--s-gemini)"></i>Gemini API</div><div class="v num">$1.60 <small>11%</small></div></div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="ph"><h2>Balances and caps</h2></div>
+              <div class="lim">
+                <div class="lim-top"><i class="dot" style="--c:var(--s-claude)"></i><span class="name">Anthropic · anthropic-main</span><div class="end"><span class="badge est">Estimated</span></div></div>
+                <div class="mline"><span class="sec">Daily cap $10.00</span><div class="meter" data-v="31" data-c="--s-claude"></div><span class="v">$3.10<small>used today</small></span></div>
+              </div>
+              <div class="lim">
+                <div class="lim-top"><i class="dot" style="--c:var(--s-opencode)"></i><span class="name">DeepSeek balance</span><div class="end"><span class="num mono" style="font-size:13px">$23.10</span><span class="badge rep">Reported</span></div></div>
+                <div class="mline"><span class="sec">Daily cap $5.00</span><div class="meter" data-v="48" data-c="--s-opencode"></div><span class="v">$2.41<small>used today</small></span></div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="ph"><h2>Alerts</h2></div>
+              <div style="height:8px"></div>
+              <div class="setrow">Notify when a window passes<span class="end field">80%</span></div>
+              <div class="setrow">Mark as critical at<span class="end field">95%</span></div>
+              <div class="setrow">When a limit is hit<div class="end seg" role="group" aria-label="On limit"><button aria-pressed="true">Pause &amp; ask</button><button aria-pressed="false">Auto fallback</button></div></div>
+              <div class="setrow">Windows notifications<span class="end toggle" role="switch" aria-checked="true" aria-label="Windows notifications"></span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- PROVIDERS -->
+      <section class="screen" id="s-providers" aria-label="Providers">
+        <div class="page-head">
+          <div><h1>Providers</h1><div class="sub lbl">Catalog 2026-10-29 · models.dev d645251e · 34 providers · 1,061 tool-capable models</div></div>
+          <div class="right"><button class="btn btn-sm btn-ghost">Refresh catalog</button><button class="btn btn-sm btn-primary"><svg class="i"><use href="#i-plus"/></svg>Add provider</button></div>
+        </div>
+        <div class="list-head" style="margin-top:0">
+          <div class="tabs" role="tablist" aria-label="Filter providers">
+            <button role="tab" aria-selected="true">All <span class="n">34</span></button>
+            <button role="tab" aria-selected="false">Connected <span class="n">7</span></button>
+            <button role="tab" aria-selected="false">First-party <span class="n">17</span></button>
+            <button role="tab" aria-selected="false">Coding plans <span class="n">6</span></button>
+            <button role="tab" aria-selected="false">Aggregators <span class="n">9</span></button>
+            <button role="tab" aria-selected="false">Local <span class="n">2</span></button>
+          </div>
+        </div>
+        <div class="panel">
+          <table class="table">
+            <thead><tr><th>Provider</th><th>Newest models · $ per 1M in / out</th><th>Works with</th><th>Credential and limits</th><th></th></tr></thead>
+            <tbody>
+              <tr>
+                <td><div class="prov-name"><i class="dot" style="--c:var(--s-claude)"></i>Anthropic</div><div class="lbl" style="margin-top:4px">First-party · 17 models</div></td>
+                <td><div class="prov-model">claude-opus-5-5 · $4 / $20<br>claude-sonnet-5-5 · $2 / $10</div></td>
+                <td><div class="rchips"><span class="rchip on">Claude Code</span><span class="rchip on">OpenCode</span></div></td>
+                <td>API key · anthropic-main<div class="muted" style="font-size:12px;margin-top:3px">$3.10 of $10 today · Estimated</div></td>
+                <td style="text-align:right"><button class="btn btn-sm btn-ghost">Manage</button></td>
+              </tr>
+              <tr>
+                <td><div class="prov-name"><i class="dot" style="--c:var(--s-codex)"></i>OpenAI</div><div class="lbl" style="margin-top:4px">First-party · 35 models</div></td>
+                <td><div class="prov-model">gpt-6.1-sol · $2 / $10<br>gpt-6.1-terra · $1 / $5</div></td>
+                <td><div class="rchips"><span class="rchip on">Codex</span><span class="rchip on">OpenCode</span><span class="rchip off" title="Needs an API format converter; not offered in v1">Claude Code</span></div></td>
+                <td>ChatGPT sign-in · work, personal<div class="muted" style="font-size:12px;margin-top:3px">5h 86% and 22% · Reported</div></td>
+                <td style="text-align:right"><button class="btn btn-sm btn-ghost">Manage</button></td>
+              </tr>
+              <tr>
+                <td><div class="prov-name"><i class="dot" style="--c:var(--s-opencode)"></i>DeepSeek</div><div class="lbl" style="margin-top:4px">First-party · 2 models</div></td>
+                <td><div class="prov-model">deepseek-v4-pro · $0.66 / $1.98<br>deepseek-flash · $0.15 / $0.60</div></td>
+                <td><div class="rchips"><span class="rchip on" title="Anthropic-compatible endpoint">Claude Code</span><span class="rchip cfg" title="OpenAI-compatible provider in the profile's config.toml">Codex</span><span class="rchip on">OpenCode</span></div></td>
+                <td>API key · ds-primary<div class="muted" style="font-size:12px;margin-top:3px">Balance $23.10 · Reported</div></td>
+                <td style="text-align:right"><button class="btn btn-sm btn-ghost">Manage</button></td>
+              </tr>
+              <tr>
+                <td><div class="prov-name"><i class="dot" style="--c:var(--s-other)"></i>Z.ai Coding Plan</div><div class="lbl" style="margin-top:4px">Coding plan · 3 models</div></td>
+                <td><div class="prov-model">glm-5.3 · included<br>glm-5.3-highspeed · included</div></td>
+                <td><div class="rchips"><span class="rchip on">Claude Code</span><span class="rchip cfg">Codex</span><span class="rchip on">OpenCode</span></div></td>
+                <td>Plan key · zai-plan<div class="muted" style="font-size:12px;margin-top:3px">Quota Unknown until confirmed</div></td>
+                <td style="text-align:right"><button class="btn btn-sm btn-ghost">Manage</button></td>
+              </tr>
+              <tr>
+                <td><div class="prov-name"><i class="dot" style="--c:var(--s-other)"></i>Moonshot AI (Kimi)</div><div class="lbl" style="margin-top:4px">First-party · 6 models</div></td>
+                <td><div class="prov-model">kimi-k3.1-pro · $2 / $10<br>kimi-k3 · $3 / $15</div></td>
+                <td><div class="rchips"><span class="rchip on">Claude Code</span><span class="rchip cfg">Codex</span><span class="rchip on">OpenCode</span></div></td>
+                <td>API key · kimi-main<div class="muted" style="font-size:12px;margin-top:3px">$0.40 of $5 today · Estimated</div></td>
+                <td style="text-align:right"><button class="btn btn-sm btn-ghost">Manage</button></td>
+              </tr>
+              <tr>
+                <td><div class="prov-name"><i class="dot" style="--c:var(--s-gemini)"></i>Google</div><div class="lbl" style="margin-top:4px">First-party · 23 models</div></td>
+                <td><div class="prov-model">gemini-4-argon · $2 / $10<br>gemini-3.8-flash · $0.75 / $3.75</div></td>
+                <td><div class="rchips"><span class="rchip on">Gemini CLI</span><span class="rchip on">OpenCode</span><span class="rchip off" title="Needs an API format converter; not offered in v1">Claude Code</span></div></td>
+                <td>Google sign-in · personal<div class="muted" style="font-size:12px;margin-top:3px">Quota Unknown · not reported</div></td>
+                <td style="text-align:right"><button class="btn btn-sm btn-ghost">Manage</button></td>
+              </tr>
+              <tr>
+                <td><div class="prov-name"><i class="dot" style="--c:var(--s-other)"></i>OpenRouter</div><div class="lbl" style="margin-top:4px">Aggregator · 299 models</div></td>
+                <td><div class="prov-model">many providers behind one key</div></td>
+                <td><div class="rchips"><span class="rchip on">Claude Code</span><span class="rchip cfg">Codex</span><span class="rchip on">OpenCode</span></div></td>
+                <td>API key · or-main<div class="muted" style="font-size:12px;margin-top:3px">$1.12 of $5 today · balance Reported</div></td>
+                <td style="text-align:right"><button class="btn btn-sm btn-ghost">Manage</button></td>
+              </tr>
+              <tr class="dim">
+                <td><div class="prov-name"><i class="dot" style="--c:var(--s-other)"></i>Alibaba (Qwen)</div><div class="lbl" style="margin-top:4px">First-party · 26 models</div></td>
+                <td><div class="prov-model">qwen3.8-max · $2 / $6<br>qwen3.8-flash · $0.15 / $0.47</div></td>
+                <td><div class="rchips"><span class="rchip on">Claude Code</span><span class="rchip cfg">Codex</span><span class="rchip on">OpenCode</span></div></td>
+                <td class="muted">Not connected</td>
+                <td style="text-align:right"><button class="btn btn-sm">Connect</button></td>
+              </tr>
+              <tr class="dim">
+                <td><div class="prov-name"><i class="dot" style="--c:var(--s-other)"></i>Xiaomi MiMo</div><div class="lbl" style="margin-top:4px">First-party · 3 models</div></td>
+                <td><div class="prov-model">mimo-v2.6-pro · $0.435 / $0.87<br>mimo-v2.6-flash · $0.14 / $0.28</div></td>
+                <td><div class="rchips"><span class="rchip on">Claude Code</span><span class="rchip cfg">Codex</span><span class="rchip on">OpenCode</span></div></td>
+                <td class="muted">Not connected</td>
+                <td style="text-align:right"><button class="btn btn-sm">Connect</button></td>
+              </tr>
+              <tr>
+                <td><div class="prov-name"><i class="dot" style="--c:var(--s-other)"></i>Ollama (local)</div><div class="lbl" style="margin-top:4px">Local · models from your machine</div></td>
+                <td><div class="prov-model">127.0.0.1:11434</div></td>
+                <td><div class="rchips"><span class="rchip on">Claude Code</span><span class="rchip cfg">Codex</span><span class="rchip cfg">OpenCode</span></div></td>
+                <td>No key needed<div class="muted" style="font-size:12px;margin-top:3px">No limit · runs on your GPU</div></td>
+                <td style="text-align:right"><button class="btn btn-sm btn-ghost">Manage</button></td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="note-row">
+            <span><span class="rchip on">Works directly</span> &nbsp; <span class="rchip cfg">Through the profile's config</span> &nbsp; <span class="rchip off">Needs a format converter, not in v1</span></span>
+            <span>Models, prices and context limits come from models.dev; Anthropic-compatible endpoints and balance endpoints from cc-switch. Relays that resell other providers' subscriptions are not listed; you can add any endpoint as a custom provider.</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- GITHUB -->
+      <section class="screen" id="s-github" aria-label="GitHub">
+        <div class="page-head">
+          <div><h1>GitHub</h1><div class="sub lbl">yusufky63/cubeofempires · private · refreshed 3 min ago</div></div>
+          <div class="right"><button class="btn btn-sm"><svg class="i"><use href="#i-refresh"/></svg>Refresh</button></div>
+        </div>
+        <div class="gh-top">
+          <div class="panel"><span class="lbl">Actions minutes · October</span><div class="metric num" style="font-size:24px">1,240 <small>/ 2,000</small></div><div class="meter" data-v="62" data-c="--accent"></div><span class="muted" style="font-size:12px">Windows runners count double. Pushes from agents wait for you.</span></div>
+          <div class="panel"><span class="lbl">Waiting to push</span><div class="metric num" style="font-size:24px">1 <small>branch · 4 commits</small></div><span class="muted" style="font-size:12px">agent/terrain-seams · would start CI once (about 6 min)</span><div style="display:flex;gap:8px"><button class="btn btn-sm btn-primary"><svg class="i"><use href="#i-upload"/></svg>Push once</button><button class="btn btn-sm btn-ghost">Hold</button></div></div>
+          <div class="panel"><span class="lbl">Worktrees</span><div class="metric num" style="font-size:24px">3 <small>active · 1 stale</small></div><span class="muted" style="font-size:12px">agent/resource-mgr is merged. Its worktree has no unpushed work.</span><div><button class="btn btn-sm">Clean up 1</button></div></div>
+        </div>
+        <div class="panel">
+          <table class="table">
+            <thead><tr><th>Pull request</th><th>Checks</th><th>Merge gate</th><th style="text-align:right">Action</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><div style="font-weight:500">#214 Add replay export to match history</div><div class="muted" style="font-size:12px;margin-top:4px">agent/replay-export → main · 3 ahead · 0 behind</div></td>
+                <td><span class="st ok" style="font-size:12px"><svg class="i"><use href="#i-shield"/></svg>6 of 6 passed</span></td>
+                <td><div class="gate"><span class="y"><svg class="i"><use href="#i-check"/></svg>Tests</span><span class="y"><svg class="i"><use href="#i-check"/></svg>Up to date</span><span class="y"><svg class="i"><use href="#i-check"/></svg>No open questions</span><span class="n"><svg class="i"><use href="#i-clock"/></svg>Your review</span></div></td>
+                <td style="text-align:right"><button class="btn btn-sm btn-primary">Review and merge</button></td>
+              </tr>
+              <tr>
+                <td><div style="font-weight:500">#215 Fix terrain seam artifacts</div><div class="muted" style="font-size:12px;margin-top:4px">agent/terrain-seams → main · draft · not pushed yet</div></td>
+                <td><span class="muted" style="font-size:12px">Not started</span></td>
+                <td><div class="gate"><span class="n"><svg class="i"><use href="#i-clock"/></svg>Review agent</span><span class="n"><svg class="i"><use href="#i-clock"/></svg>Benchmark</span></div></td>
+                <td style="text-align:right"><button class="btn btn-sm" disabled title="Opens after the review agent passes">Open PR</button></td>
+              </tr>
+              <tr>
+                <td><div style="font-weight:500">#212 Refactor resource manager</div><div class="muted" style="font-size:12px;margin-top:4px">merged into main 2h ago by you</div></td>
+                <td><span class="st ok" style="font-size:12px"><svg class="i"><use href="#i-shield"/></svg>Passed</span></td>
+                <td><span class="st rev" style="font-size:12px"><svg class="i"><use href="#i-pr"/></svg>Merged</span></td>
+                <td style="text-align:right"><button class="btn btn-sm btn-ghost">View</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <div class="cmenu" id="cmenu" role="menu" aria-label="Node actions"></div>
+    <aside class="inspector" id="inspector" aria-label="Run details">
+      <div class="ins-head">
+        <div class="row"><span class="lbl">Run · 02 Implement</span><button class="tb-btn" id="insClose" style="margin-left:auto" aria-label="Close panel (Esc)"><svg class="i"><use href="#i-x"/></svg></button></div>
+        <h2><i class="dot" style="--c:var(--s-codex)"></i>Codex · work</h2>
+        <div style="display:flex;gap:12px;align-items:center;margin-top:8px"><span class="st run"><span class="spin"></span>Running</span><span class="muted mono" style="font-size:12px">gpt-6.1-sol</span></div>
+      </div>
+      <div class="ins-tabs" role="tablist"><button role="tab" aria-selected="true">Details</button><button role="tab" aria-selected="false">Conversation</button><button role="tab" aria-selected="false">Changes</button><button role="tab" aria-selected="false">Usage</button></div>
+      <div class="ins-sec">
+        <span class="lbl">Now</span>
+        <div style="font-size:14px">Blending chunk normals across borders, then handing the build to the test run.</div>
+      </div>
+      <div class="ins-sec">
+        <div class="mrow"><div class="row"><span class="sec">Context window</span><span class="mono">48%</span></div><div class="meter" data-v="48" data-c="--s-codex"></div></div>
+        <div class="mrow"><div class="row"><span class="sec">5-hour window</span><span class="mono" style="color:var(--warn)">86%</span></div><div class="meter" data-v="86" data-c="--s-codex"></div></div>
+      </div>
+      <div class="ins-sec facts4">
+        <div><span class="lbl">Tokens</span><div class="v">62.4k</div></div>
+        <div><span class="lbl">Elapsed</span><div class="v">6m 10s</div></div>
+        <div><span class="lbl">Cost</span><div class="v" style="font-size:13px">Subscription</div></div>
+        <div><span class="lbl">Files</span><div class="v">6 changed</div></div>
+      </div>
+      <div class="ins-sec"><span class="lbl">Worktree</span><div class="mono" style="font-size:12px;word-break:break-all">C:\Projeler\.mc\worktrees\cubeofempires\terrain-seams</div></div>
+      <div class="ins-actions">
+        <button class="btn btn-primary full"><svg class="i"><use href="#i-reply"/></svg>Message this agent</button>
+        <button class="btn"><svg class="i"><use href="#i-pause"/></svg>Pause</button>
+        <button class="btn"><svg class="i"><use href="#i-swap"/></svg>Hand off</button>
+        <button class="btn btn-danger full"><svg class="i"><use href="#i-stop"/></svg>Stop agent</button>
+      </div>
+      <p class="note">Closing this panel does not stop the agent.</p>
+    </aside>
+  </div>
+
+  <footer class="statusbar" aria-label="Status">
+    <span class="sb" title="Mission Control daemon"><i class="dot" style="--c:var(--ok)"></i>Daemon <b>running</b></span>
+    <button class="sb" data-screen="tasks" title="Running agents, queued runs and the concurrency cap"><i class="dot" style="--c:var(--accent)"></i><b>3</b> running · <b>1</b> queued · slots <b>3/4</b></button>
+    <button class="sb" data-screen="inbox"><i class="dot" style="--c:var(--warn)"></i><b>2</b> need you</button>
+    <button class="sb" data-screen="limits"><i class="dot" style="--c:var(--warn)"></i><b>1</b> near limit</button>
+    <span class="sb sb-opt" title="Memory used by agent processes / installed">RAM <b>6.1/32 GB</b></span>
+    <div class="end">
+      <button class="sb sb-opt" data-screen="github" title="Last GitHub refresh"><svg class="i"><use href="#i-pr"/></svg>GitHub <b>3m ago</b></button>
+      <button class="sb sb-opt" data-screen="github" title="GitHub Actions minutes this month">Actions <b>1,240/2,000</b></button>
+      <button class="sb" title="Notification quiet hours: off"><svg class="i"><use href="#i-bell"/></svg>Quiet <b>off</b></button>
+      <button class="sb" id="themeBtn" title="Switch theme"><svg class="i"><use href="#i-sun"/></svg><b id="themeLbl">Dark</b></button>
+      <button class="sb" id="densityBtn" title="Switch density" aria-label="Switch density"><svg class="i"><use href="#i-rows"/></svg><b id="densityLbl">Comfortable</b></button>
+      <span class="sb proto-sb">Sample data</span>
+    </div>
+  </footer>
+</div>
+
+<script>
+// Ticks: 48 per meter by default (data-ticks overrides), every 6th taller, threshold ticks at 80% and 95%.
+const WARN = 0.8, CRIT = 0.95;
+document.querySelectorAll(".meter").forEach((m) => {
+  const TICKS = Number(m.dataset.ticks || 48);
+  m.style.setProperty("--n", TICKS);
+  const unknown = m.classList.contains("unknown");
+  const v = Number(m.dataset.v || 0) / 100;
+  if (m.dataset.c) m.style.setProperty("--c", `var(${m.dataset.c})`);
+  const warnAt = Math.round(WARN * TICKS), critAt = Math.round(CRIT * TICKS);
+  let html = "";
+  for (let i = 0; i < TICKS; i++) {
+    const cls = [];
+    if (TICKS === 48 && i % 6 === 0) cls.push("tall");
+    if (!unknown && i < Math.round(v * TICKS)) cls.push(i >= critAt ? "cr" : i >= warnAt ? "w" : "on");
+    else if (!unknown && (i === warnAt || i === critAt)) cls.push("th");
+    html += `<i class="${cls.join(" ")}"></i>`;
+  }
+  if (!unknown && !m.classList.contains("sm") && !m.classList.contains("xs")) html += `<span class="handle" style="left:${(v * 100).toFixed(1)}%"></span>`;
+  m.innerHTML = html;
+  m.setAttribute("role", "meter");
+  if (unknown) m.setAttribute("aria-label", "Quota unknown");
+  else { m.setAttribute("aria-valuemin", "0"); m.setAttribute("aria-valuemax", "100"); m.setAttribute("aria-valuenow", String(Math.round(v * 100))); }
+});
+
+// Graph view: fit scale × user zoom, plus pan. Nodes can be dragged; edges are recomputed from node boxes.
+// Moving a node only changes the layout; it never re-routes work between agents.
+const GW = 860, GH = 600, NODE_W = 180, NODE_H = 100, SNAP = 12;
+const graph = document.getElementById("graph"), graphWrap = document.getElementById("graphWrap"), graphClip = document.getElementById("graphClip");
+const view = { zoom: 1, px: 0, py: 0, scale: 1 };
+const fitGraph = () => {
+  const full = graphWrap.classList.contains("full");
+  const w = graphWrap.clientWidth;
+  const base = full ? Math.min(1.25, (w - 64) / GW, (graphWrap.clientHeight - 64) / GH) : Math.min(1, (w - 2) / GW);
+  graphWrap.style.height = full ? "" : `${Math.round(GH * base)}px`;
+  view.scale = base * view.zoom;
+  const oy = full ? Math.max(0, (graphWrap.clientHeight - GH * view.scale) / 2) : 0;
+  graph.style.transform = `translateX(-50%) translate(${view.px}px, ${view.py + oy}px) scale(${view.scale})`;
+};
+new ResizeObserver(fitGraph).observe(graphWrap);
+addEventListener("resize", fitGraph);
+
+const EDGES = [
+  { from: "task", to: "plan", kind: "reports" },
+  { from: "plan", to: "impl", kind: "reports", so: -8 },
+  { from: "plan", to: "test", kind: "reports", so: 8 },
+  { from: "impl", to: "review", kind: "active" },
+  { from: "test", to: "review", kind: "depends", ti: 30, label: "depends on", at: 0.3 },
+  { from: "review", to: "pr", kind: "reports", label: "opens" },
+  { from: "impl", to: "standby", kind: "fallback", label: "hand off on limit", tone: "warn" },
+];
+const STROKE = {
+  reports: "stroke:var(--line-strong);stroke-width:1",
+  active: "stroke:var(--accent);stroke-width:1.5",
+  depends: "stroke:var(--line-strong);stroke-width:1.5;stroke-dasharray:1 4;stroke-linecap:round",
+  fallback: "stroke:var(--warn);stroke-width:1.25;stroke-dasharray:5 4",
+};
+const nodes = Object.fromEntries([...graph.querySelectorAll(".gnode")].map((n) => [n.dataset.id, n]));
+const initial = Object.fromEntries(Object.entries(nodes).map(([id, n]) => [id, [n.style.left, n.style.top]]));
+// Positions come from inline styles: offsetLeft is 0 while the graph screen is hidden.
+const box = (n) => ({ x: parseFloat(n.style.left), y: parseFloat(n.style.top), w: NODE_W, h: NODE_H });
+
+// Orthogonal paths with one rounded elbow, horizontal-first or vertical-first.
+const elbowH = (x1, y1, x2, y2) => {
+  if (Math.abs(y2 - y1) < 1) return `M${x1} ${y1}H${x2}`;
+  const mx = (x1 + x2) / 2, dx = Math.sign(x2 - x1) || 1, dy = Math.sign(y2 - y1);
+  const r = Math.min(8, Math.abs(y2 - y1) / 2, Math.abs(mx - x1));
+  return `M${x1} ${y1}H${mx - dx * r}Q${mx} ${y1} ${mx} ${y1 + dy * r}V${y2 - dy * r}Q${mx} ${y2} ${mx + dx * r} ${y2}H${x2}`;
+};
+const elbowV = (x1, y1, x2, y2) => {
+  if (Math.abs(x2 - x1) < 1) return `M${x1} ${y1}V${y2}`;
+  const my = (y1 + y2) / 2, dy = Math.sign(y2 - y1) || 1, dx = Math.sign(x2 - x1);
+  const r = Math.min(8, Math.abs(x2 - x1) / 2, Math.abs(my - y1));
+  return `M${x1} ${y1}V${my - dy * r}Q${x1} ${my} ${x1 + dx * r} ${my}H${x2 - dx * r}Q${x2} ${my} ${x2} ${my + dy * r}V${y2}`;
+};
+const route = (e) => {
+  const a = box(nodes[e.from]), b = box(nodes[e.to]);
+  const sideBySide = !(a.x < b.x + b.w && b.x < a.x + a.w);
+  if (sideBySide) {
+    const right = b.x >= a.x + a.w;
+    const x1 = right ? a.x + a.w : a.x, x2 = right ? b.x : b.x + b.w;
+    const y1 = a.y + a.h / 2 + (e.so || 0), y2 = b.y + b.h / 2 + (e.ti || 0);
+    return { d: elbowH(x1, y1, x2, y2), lx: (x1 + x2) / 2, ly: y1 + (y2 - y1) * (e.at ?? 0.5), side: false };
+  }
+  const down = b.y >= a.y + a.h / 2;
+  const x1 = a.x + a.w / 2, x2 = b.x + b.w / 2;
+  const y1 = down ? a.y + a.h : a.y, y2 = down ? b.y : b.y + b.h;
+  return { d: elbowV(x1, y1, x2, y2), lx: (x1 + x2) / 2, ly: (y1 + y2) / 2, side: true };
+};
+const edgeLayer = document.getElementById("edgeLayer"), edgeLabels = document.getElementById("edgeLabels"), limitAnnot = document.getElementById("limitAnnot");
+const drawEdges = () => {
+  let svg = "", labels = "";
+  for (const e of EDGES) {
+    const r = route(e);
+    svg += `<path d="${r.d}" style="${STROKE[e.kind]}"/>`;
+    if (e.label) {
+      const pos = r.side ? `left:${r.lx + 8}px;top:${r.ly - 8}px` : `left:${r.lx}px;top:${r.ly}px;transform:translate(-50%,-50%)`;
+      labels += `<span class="elabel${e.tone ? " " + e.tone : ""}" style="${pos}">${e.label}</span>`;
+    }
+  }
+  // The limit annotation is a leader line pinned to the implementer node.
+  const im = box(nodes.impl), cx = im.x + im.w / 2;
+  svg += `<path d="M${cx} ${im.y - 36}V${im.y}" style="stroke:var(--warn);stroke-width:1;stroke-dasharray:1 3;stroke-linecap:round"/><circle cx="${cx}" cy="${im.y - 36}" r="2.5" style="fill:var(--warn)"/>`;
+  limitAnnot.style.left = `${cx + 12}px`;
+  limitAnnot.style.top = `${im.y - 46}px`;
+  edgeLayer.innerHTML = svg;
+  edgeLabels.innerHTML = labels;
+};
+drawEdges();
+
+let drag = null, suppressClick = false;
+const snap = (n) => {
+  n.style.left = `${Math.round(n.offsetLeft / SNAP) * SNAP}px`;
+  n.style.top = `${Math.round(n.offsetTop / SNAP) * SNAP}px`;
+};
+Object.values(nodes).forEach((n) => {
+  n.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    drag = { n, sx: e.clientX, sy: e.clientY, x: n.offsetLeft, y: n.offsetTop, moved: false };
+    n.setPointerCapture(e.pointerId);
+  });
+  n.addEventListener("pointermove", (e) => {
+    if (!drag || drag.n !== n) return;
+    const dx = (e.clientX - drag.sx) / view.scale, dy = (e.clientY - drag.sy) / view.scale;
+    if (!drag.moved && Math.hypot(dx, dy) < 4) return;
+    drag.moved = true;
+    n.classList.add("dragging");
+    n.style.left = `${drag.x + dx}px`;
+    n.style.top = `${drag.y + dy}px`;
+    drawEdges();
+  });
+  n.addEventListener("pointerup", () => {
+    if (!drag || drag.n !== n) return;
+    if (drag.moved) {
+      snap(n);
+      suppressClick = true;
+      setTimeout(() => (suppressClick = false), 0);
+    }
+    n.classList.remove("dragging");
+    drag = null;
+    drawEdges();
+  });
+  // A drag must not also count as a click (which would open the inspector).
+  n.addEventListener("click", (e) => { if (suppressClick) { e.stopImmediatePropagation(); e.preventDefault(); } }, true);
+  // Keyboard alternative to dragging (WCAG 2.5.7): Alt + arrow keys move the focused node.
+  n.addEventListener("keydown", (e) => {
+    const d = { ArrowLeft: [-SNAP, 0], ArrowRight: [SNAP, 0], ArrowUp: [0, -SNAP], ArrowDown: [0, SNAP] }[e.key];
+    if (!e.altKey || !d) return;
+    e.preventDefault();
+    n.style.left = `${n.offsetLeft + d[0]}px`;
+    n.style.top = `${n.offsetTop + d[1]}px`;
+    drawEdges();
+  });
+});
+
+// Dragging the empty canvas pans the view.
+let pan = null;
+graphClip.addEventListener("pointerdown", (e) => {
+  if (e.button !== 0 || e.target.closest(".gnode")) return;
+  pan = { sx: e.clientX, sy: e.clientY, px: view.px, py: view.py };
+  graphClip.setPointerCapture(e.pointerId);
+  graphClip.classList.add("panning");
+});
+graphClip.addEventListener("pointermove", (e) => {
+  if (!pan) return;
+  view.px = pan.px + e.clientX - pan.sx;
+  view.py = pan.py + e.clientY - pan.sy;
+  fitGraph();
+});
+graphClip.addEventListener("pointerup", () => { pan = null; graphClip.classList.remove("panning"); });
+graphClip.addEventListener("wheel", (e) => {
+  if (!e.ctrlKey) return;
+  e.preventDefault();
+  view.zoom = Math.min(2, Math.max(0.5, view.zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1)));
+  fitGraph();
+}, { passive: false });
+document.getElementById("zoomIn").addEventListener("click", () => { view.zoom = Math.min(2, view.zoom * 1.2); fitGraph(); });
+document.getElementById("zoomOut").addEventListener("click", () => { view.zoom = Math.max(0.5, view.zoom / 1.2); fitGraph(); });
+document.getElementById("zoomFit").addEventListener("click", () => { view.zoom = 1; view.px = view.py = 0; fitGraph(); });
+document.getElementById("resetLayout").addEventListener("click", () => {
+  for (const [id, [l, t]] of Object.entries(initial)) { nodes[id].style.left = l; nodes[id].style.top = t; }
+  view.zoom = 1; view.px = view.py = 0;
+  drawEdges(); fitGraph();
+});
+
+// Full screen covers the whole window; Esc or the button leaves it. Agents keep running either way.
+const setFull = (on) => {
+  graphWrap.classList.toggle("full", on);
+  document.body.classList.toggle("graph-full", on);
+  view.px = view.py = 0;
+  fitGraph();
+};
+const toggleFull = () => setFull(!graphWrap.classList.contains("full"));
+document.getElementById("fullBtn").addEventListener("click", toggleFull);
+document.getElementById("zoomFull").addEventListener("click", toggleFull);
+document.getElementById("exitFull").addEventListener("click", () => setFull(false));
+document.addEventListener("keydown", (e) => {
+  const typing = e.target instanceof Element && e.target.closest("input, textarea, [contenteditable]");
+  if (!typing && !e.ctrlKey && !e.altKey && (e.key === "f" || e.key === "F") && document.getElementById("s-graph").classList.contains("on")) toggleFull();
+});
+
+const inspector = document.getElementById("inspector");
+// The inspector is closed by default and opens only when a node is selected.
+const nodeImpl = document.getElementById("nodeImpl");
+const setInspector = (open) => {
+  inspector.classList.toggle("on", open);
+  nodeImpl.classList.toggle("sel", open);
+  nodeImpl.setAttribute("aria-pressed", String(open));
+  fitGraph();
+};
+const show = (name) => {
+  document.querySelectorAll(".screen").forEach((s) => s.classList.toggle("on", s.id === `s-${name}`));
+  document.querySelectorAll(".nav").forEach((n) => (n.dataset.screen === name ? n.setAttribute("aria-current", "page") : n.removeAttribute("aria-current")));
+  document.body.classList.toggle("launch", name === "start" || name === "setup");
+  setInspector(false);
+  if (graphWrap.classList.contains("full")) setFull(false);
+  document.getElementById("main").scrollTop = 0;
+};
+document.querySelectorAll("[data-screen]").forEach((b) => b.addEventListener("click", () => show(b.dataset.screen)));
+document.querySelectorAll("[data-goto]").forEach((b) => b.addEventListener("click", () => show(b.dataset.goto)));
+
+document.getElementById("insClose").addEventListener("click", () => setInspector(false));
+nodeImpl.addEventListener("click", () => setInspector(!inspector.classList.contains("on")));
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (inspector.classList.contains("on")) setInspector(false);
+  else if (graphWrap.classList.contains("full")) setFull(false);
+});
+
+document.querySelectorAll(".ibx").forEach((item) => item.addEventListener("click", () => {
+  document.querySelectorAll(".ibx").forEach((x) => x.setAttribute("aria-selected", String(x === item)));
+  document.querySelectorAll(".detail").forEach((d) => d.classList.toggle("on", d.id === item.dataset.detail));
+}));
+
+document.querySelectorAll(".seg, .tabs").forEach((group) => group.addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  const attr = group.classList.contains("tabs") ? "aria-selected" : "aria-pressed";
+  group.querySelectorAll("button").forEach((x) => x.setAttribute(attr, String(x === b)));
+}));
+
+const whyBtn = document.getElementById("whyBtn");
+whyBtn.addEventListener("click", () => {
+  const open = whyBtn.getAttribute("aria-expanded") === "true";
+  whyBtn.setAttribute("aria-expanded", String(!open));
+  whyBtn.textContent = open ? "Show reasons" : "Hide reasons";
+  document.querySelectorAll(".why").forEach((w) => (w.style.display = open ? "none" : ""));
+});
+
+document.querySelectorAll(".task-top").forEach((t) => t.addEventListener("click", () => {
+  const body = t.parentElement.querySelector(".task-body");
+  if (!body) return;
+  const open = t.getAttribute("aria-expanded") === "true";
+  t.setAttribute("aria-expanded", String(!open));
+  body.hidden = open;
+  t.querySelector(".task-right use").setAttribute("href", open ? "#i-down" : "#i-up");
+}));
+
+const root = document.documentElement;
+const params = new URLSearchParams(location.search);
+if (params.get("theme")) root.dataset.theme = params.get("theme");
+if (params.get("density")) root.dataset.density = params.get("density");
+// Setup wizard: five steps, nothing is written until the last one.
+const STEP_NAMES = ["Folder", "Agents", "Accounts & budget", "Rules", "GitHub"];
+let step = 1;
+const setStep = (n) => {
+  step = Math.min(5, Math.max(1, n));
+  document.querySelectorAll(".stile").forEach((t) => {
+    const k = Number(t.dataset.step);
+    t.toggleAttribute("aria-current", k === step);
+    if (k === step) t.setAttribute("aria-current", "step");
+    t.classList.toggle("done", k < step);
+    t.querySelector(".lbl").textContent = k < step ? "Done" : String(k).padStart(2, "0");
+  });
+  document.querySelectorAll(".wiz").forEach((w) => w.classList.toggle("on", Number(w.dataset.pane) === step));
+  document.getElementById("stepLbl").textContent = `Step ${step} of 5 · nothing is written until you create the project`;
+  document.getElementById("stepNext").textContent = step === 5 ? "Create project" : `Next: ${STEP_NAMES[step]}`;
+  document.getElementById("stepBack").disabled = step === 1;
+};
+document.querySelectorAll(".stile").forEach((t) => t.addEventListener("click", () => setStep(Number(t.dataset.step))));
+document.getElementById("stepBack").addEventListener("click", () => setStep(step - 1));
+document.getElementById("stepNext").addEventListener("click", () => (step === 5 ? show("tasks") : setStep(step + 1)));
+setStep(Number(params.get("step") || 1));
+
+// Opening the app with no project shows the start screen.
+show(params.get("screen") || "start");
+if (params.get("full")) setFull(true);
+if (params.get("select") === "implement") setInspector(true);
+if (params.get("item")) document.querySelector(`.ibx[data-detail="${params.get("item")}"]`)?.click();
+
+// Right-click (or Shift+F10 / the context-menu key) on a graph node opens actions for that node's state.
+const I = (id) => `<svg class="i"><use href="#i-${id}"/></svg>`;
+// [icon, label, shortcut, action, tone, hint, disabled]
+const MENUS = {
+  running: [["open", "Open details", "Enter", "open"], ["reply", "Message this agent", "M"], ["pause", "Pause", "P"], "-",
+    ["recheck", "Check again", "R", null, null, "Runs review and tests again on the current diff"], ["swap", "Change AI or model…", "C"], ["swap", "Hand off now", "H"],
+    ["clock", "Wait for limit reset", "", null, null, "Resumes on the same account at 16:40"], "-",
+    ["open", "Open worktree in Explorer"], ["copy", "Copy run id"], "-", ["stop", "Stop agent…", "", null, "danger"]],
+  done: [["open", "Open plan"], ["recheck", "Run again"], ["swap", "Change AI and run again…"], "-", ["copy", "Copy run id"]],
+  test: [["open", "Open results"], ["pause", "Pause", "P"], ["recheck", "Run benchmark again", "R"], ["swap", "Change AI or model…", "C"], "-", ["stop", "Stop agent…", "", null, "danger"]],
+  queued: [["check", "Start now", "", null, null, "Starts before 02 and 04 finish"], ["swap", "Change AI or model…", "C"], "-", ["x", "Remove from crew…", "", null, "danger"]],
+  standby: [["swap", "Use now (hand off from 02)"], ["swap", "Change standby AI…"], "-", ["x", "Remove from fallback chain", "", null, "danger"]],
+  pr: [["pr", "Open PR now", "", null, null, "Opens after the review passes", true], ["refresh", "Refresh checks"], ["open", "Open branch on GitHub"]],
+  task: [["pause", "Pause all agents"], ["recheck", "Check everything again"], ["crew", "Edit crew…"], "-", ["stop", "Stop all agents…", "", null, "danger"]],
+};
+const cmenu = document.getElementById("cmenu");
+let menuFrom = null;
+const closeMenu = (refocus) => { cmenu.classList.remove("on"); if (refocus && menuFrom) menuFrom.focus(); menuFrom = null; };
+const openMenu = (node, x, y) => {
+  menuFrom = node;
+  const items = MENUS[node.dataset.menu] || [];
+  cmenu.innerHTML = `<div class="h"><span class="lbl">Actions</span><b>${node.dataset.label}</b></div>` + items.map((it) => {
+    if (it === "-") return '<div class="sep" role="separator"></div>';
+    const [icon, label, key, action, tone, hint, disabled] = it;
+    return `<button role="menuitem" class="${tone || ""}" data-action="${action || ""}"${hint ? ` title="${hint}"` : ""}${disabled ? ' aria-disabled="true"' : ""}>${I(icon)}${label}${key ? `<span class="k">${key}</span>` : ""}</button>`;
+  }).join("");
+  cmenu.classList.add("on");
+  const r = cmenu.getBoundingClientRect();
+  cmenu.style.left = `${Math.max(8, Math.min(x, innerWidth - r.width - 8))}px`;
+  cmenu.style.top = `${Math.max(48, Math.min(y, innerHeight - r.height - 8))}px`;
+  cmenu.querySelector('button:not([aria-disabled="true"])')?.focus();
+};
+document.querySelectorAll(".gnode[data-menu]").forEach((n) => {
+  n.addEventListener("contextmenu", (e) => { e.preventDefault(); openMenu(n, e.clientX, e.clientY); });
+  n.addEventListener("keydown", (e) => {
+    if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) { e.preventDefault(); const r = n.getBoundingClientRect(); openMenu(n, r.left + 24, r.bottom - 8); }
+  });
+});
+cmenu.addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b || b.getAttribute("aria-disabled") === "true") return;
+  const from = menuFrom;
+  closeMenu(false);
+  if (b.dataset.action === "open" && from === nodeImpl) setInspector(true);
+});
+cmenu.addEventListener("keydown", (e) => {
+  const items = [...cmenu.querySelectorAll('button:not([aria-disabled="true"])')];
+  const i = items.indexOf(document.activeElement);
+  if (e.key === "ArrowDown") { e.preventDefault(); items[(i + 1) % items.length].focus(); }
+  if (e.key === "ArrowUp") { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
+  if (e.key === "Escape") { e.stopPropagation(); closeMenu(true); }
+});
+document.addEventListener("pointerdown", (e) => { if (cmenu.classList.contains("on") && !cmenu.contains(e.target)) closeMenu(false); });
+if (params.get("menu") === "implement") { const r = nodeImpl.getBoundingClientRect(); openMenu(nodeImpl, r.right - 40, r.top + 40); }
+
+const syncPrefs = () => {
+  document.getElementById("themeLbl").textContent = root.dataset.theme === "dark" ? "Dark" : "Light";
+  document.getElementById("densityLbl").textContent = root.dataset.density === "compact" ? "Compact" : "Comfortable";
+};
+document.getElementById("themeBtn").addEventListener("click", () => { root.dataset.theme = root.dataset.theme === "dark" ? "light" : "dark"; syncPrefs(); });
+document.getElementById("densityBtn").addEventListener("click", () => { root.dataset.density = root.dataset.density === "compact" ? "comfortable" : "compact"; syncPrefs(); });
+syncPrefs();
+</script>
+</body>
+</html>

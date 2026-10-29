@@ -1,0 +1,45 @@
+{
+  "$description": "Mission Control dark theme. Semantic names are identical in light.json; only values change.",
+  "color": {
+    "bg": {
+      "canvas": { "$type": "color", "$value": "#0E0E10", "$description": "App background" },
+      "surface": { "$type": "color", "$value": "#151517", "$description": "Panels, rows, composer" },
+      "raised": { "$type": "color", "$value": "#1C1C1F", "$description": "Hover, selected row, inner wells" },
+      "sunken": { "$type": "color", "$value": "#0A0A0B", "$description": "Logs, terminal, code" },
+      "scrim": { "$type": "color", "$value": "#000000B3", "$description": "Behind dialogs and drawers" }
+    },
+    "line": {
+      "default": { "$type": "color", "$value": "#26262B", "$description": "Decorative dividers and panel outlines" },
+      "tick": { "$type": "color", "$value": "#3A3A41", "$description": "Corner ticks, empty meter ticks, grid" },
+      "strong": { "$type": "color", "$value": "#62626C", "$description": "Input and chip boundaries; >= 3:1 on surface" }
+    },
+    "ink": {
+      "primary": { "$type": "color", "$value": "#EDEDEF" },
+      "secondary": { "$type": "color", "$value": "#A6A6AE" },
+      "muted": { "$type": "color", "$value": "#8C8C95", "$description": ">= 4.5:1 on canvas, surface and raised" }
+    },
+    "inverse": {
+      "bg": { "$type": "color", "$value": "#EDEDEF", "$description": "Primary button fill (monochrome)" },
+      "fg": { "$type": "color", "$value": "#0E0E10" }
+    },
+    "accent": {
+      "default": { "$type": "color", "$value": "#7AA2FF", "$description": "Running state, focus ring, selection, links" },
+      "soft": { "$type": "color", "$value": "#172036" }
+    },
+    "state": {
+      "success": { "$type": "color", "$value": "#4CC38A" },
+      "success-soft": { "$type": "color", "$value": "#11251B" },
+      "warning": { "$type": "color", "$value": "#F0B44C" },
+      "warning-soft": { "$type": "color", "$value": "#2A2112" },
+      "danger": { "$type": "color", "$value": "#F47A72" },
+      "danger-soft": { "$type": "color", "$value": "#2C1514" }
+    },
+    "series": {
+      "claude": { "$type": "color", "$value": "#EE7D48" },
+      "codex": { "$type": "color", "$value": "#35B8A4" },
+      "gemini": { "$type": "color", "$value": "#5DA9EC" },
+      "opencode": { "$type": "color", "$value": "#A585F2" },
+      "other": { "$type": "color", "$value": "#8C8C95" }
+    }
+  }
+}

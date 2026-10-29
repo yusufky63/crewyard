@@ -1,0 +1,201 @@
+# Mission Control: design system
+
+This file is the single source for UI decisions. It overrides the house-design skill where the two differ (see "Deviations from house style" at the end).
+
+- Tokens: [design/tokens/base.json](design/tokens/base.json), [dark.json](design/tokens/dark.json), [light.json](design/tokens/light.json)
+- Contrast gate: `node design/check-contrast.mjs` (exit 1 on any failing pair)
+- Working prototype: [design/prototype.html](design/prototype.html), screenshots in [design/screens/](design/screens/)
+
+The prototype shows sample data and says so in its title bar. It is a visual reference, not production code.
+
+## 1. Direction: blueprint instrument panel
+
+The three reference images are combined, not copied:
+
+| Reference | What we take | What we leave |
+|---|---|---|
+| R1 "Agent-first billing" field guide | Near-black canvas, hairline borders, square **spec tiles** with corner ticks, numbered mono labels (`01`), 1px line-art icons, dotted leader lines with mono annotations | The logo construction, angle labels as decoration, hero-size titles |
+| R2 cost estimate panel | **Tick meters** (vertical ticks, every sixth taller, white handle), segmented spend bar with gaps, mono uppercase eyebrows, one large number with a dim unit, pill segmented controls | The monthly/annual discount toggle, made-up totals, sliders as inputs |
+| R3 task composer and list | One composite composer (text + repo + branch + crew + start), filter tabs with counts, compact rows that expand into steps with durations, diff stat, "Checks passed" | Showing "merged" for work that is only ready for review |
+
+One surface language keeps this coherent: **square hairline frames with four corner ticks** (R1).
+
+- Every framed surface uses it: panels, spec tiles (crew roles, graph nodes), the sidebar's nav and accounts blocks, the search field, tabs, segmented controls, menus, banners and buttons.
+- Ticks are drawn by one masked pseudo-element per frame (`--tick-mask` in the prototype), so no extra markup is needed.
+- Tick color carries meaning: `ink.muted` at rest, `ink.primary` on hover and for the active nav item, `accent` for the selected graph node, `state.warning` on warning banners.
+- Nothing is rounded except status dots, the spinner and keycaps (2 px).
+
+## 2. Principles
+
+1. **Show what needs the user first.** Questions, approvals, limits and merge decisions are always one click away. Normal telemetry stays out of the first view.
+2. **One focus at a time.** One main view; the inspector and the activity drawer are closed by default and closing them never stops anything.
+3. **Every number says where it came from.** Quota and cost values carry a provenance badge: `Reported` (the provider said so), `Estimated` (we computed it), `Unknown` (we never draw a percentage).
+4. **Color is information.** Neutral greys carry the layout. Color means a state or a data series, never decoration. State is always shown with an icon or text too.
+5. **Small but readable.** 13–14 px body, 11 px is the floor and only for mono labels. No 40 px headlines, no 48 px icons.
+6. **Nothing starts without the user.** The crew proposal, pushes, merges, fallbacks in Ask mode and risky tool calls all wait for an explicit click.
+7. **Calm motion.** Only the running spinner, panel open/close (180 ms) and meter fill. `prefers-reduced-motion` stops the spinner.
+
+## 3. Foundations
+
+### Type
+
+| Role | Font | Size / weight |
+|---|---|---|
+| UI text | Geist, fallback Segoe UI Variable, Segoe UI | 14 (comfortable) / 13 (compact), 400 |
+| Row and card titles | Geist | 15, 500 |
+| Section / page titles | Geist | 17 / 21, 600, tracking -0.015em |
+| Headline metric | Geist | 30, 500, one per panel |
+| Labels, ids, numbers, paths | Geist Mono, fallback Cascadia Mono, Consolas | 11 uppercase +0.08em (labels), 12–13 (values) |
+
+Geist and Geist Mono are OFL-1.1. Bundle the font files with the app; do not load them from the network at runtime. The fallbacks are tuned so the app still looks right before fonts load (the headless screenshots in `design/screens/` render with the fallbacks).
+
+### Color roles
+
+| Role | Dark | Light | Use |
+|---|---|---|---|
+| `bg.canvas` / `surface` / `raised` / `sunken` | `#0E0E10` / `#151517` / `#1C1C1F` / `#0A0A0B` | `#F6F6F7` / `#FFFFFF` / `#F0F0F2` / `#F3F3F5` | App, panels, hover/selected, logs |
+| `line.default` / `tick` / `strong` | `#26262B` / `#3A3A41` / `#62626C` | `#E4E4E8` / `#CFCFD5` / `#8A8A94` | Dividers / ticks and grid / input boundaries (3:1) |
+| `ink.primary` / `secondary` / `muted` | `#EDEDEF` / `#A6A6AE` / `#8C8C95` | `#111113` / `#4B4B53` / `#62626B` | Text; muted passes 4.5:1 on every background |
+| `inverse.bg` / `fg` | `#EDEDEF` / `#0E0E10` | `#111113` / `#FFFFFF` | The one primary button per view |
+| `accent` | `#7AA2FF` | `#2E5BD6` | Running, focus ring, selection, links |
+| `state.success` / `warning` / `danger` (+ `-soft`) | `#4CC38A` / `#F0B44C` / `#F47A72` | `#137A50` / `#935600` / `#BE2F28` | Passed or done / needs you or near a limit / failed or limit reached |
+| `series.claude` / `codex` / `gemini` / `opencode` | `#EE7D48` / `#35B8A4` / `#5DA9EC` / `#A585F2` | `#C9561F` / `#0D8574` / `#2C78BD` / `#7650D2` | One hue per runner, used for dots, meters and charts, always next to a text label |
+
+The primary button is monochrome (inverted ink), so blue, amber, red and green stay free for state. `check-contrast.mjs` verifies text pairs at 4.5:1, chip text on soft fills at 4.5:1, and input borders, focus ring and chart marks at 3:1, in both themes.
+
+### Space, radius, density
+
+- Spacing scale 4 / 8 / 12 / 16 / 20 / 24 / 32.
+- Radius: 0 for every frame and control; 2 for keycaps; round only for status dots and the spinner.
+- Density: comfortable (body 14, row 52, control 34, padding 16) and compact (13 / 40 / 30 / 12). Switching density never moves the graph viewport.
+
+### Buttons
+
+| Variant | Look | Use |
+|---|---|---|
+| Primary | inverse fill, Geist Mono 12 px uppercase (+0.06em), corner ticks 4 px *outside* the fill | the one main action of a view: `APPROVE AND START`, `REVIEW AND MERGE` |
+| Secondary | transparent, hairline border, corner ticks; hover fills `bg.raised` and brightens ticks | `PAUSE`, `HAND OFF`, `CONNECT`, `FULL SCREEN` |
+| Ghost | bracket text `[ EDIT CREW ]`, brackets in `ink.muted` | low-emphasis actions, also in table rows |
+| Danger | bracket text in `state.danger`, hover `danger-soft` | `[ STOP AGENT ]`; always confirms first |
+| Small | 28 px high, 11 px label | toolbars, table rows |
+
+Icons inside buttons are 14 px.
+
+## 4. Layout
+
+```
+┌ Title bar 40 ─ brand · project · search (Ctrl K) ········· notifications · ─ □ ✕ ────────────┐
+├ Sidebar 224 ──┬ Main (max 1120, centered) ─────────────────────────┬ Inspector 380 (closed) ┤
+│ ┌ Tasks      ┐│  Page head: title 21 + mono context line            │ opens on selection,     │
+│ │ Inbox (n)  ││  View content                                       │ Esc or ✕ closes it      │
+│ │ Crew graph ││                                                     │ "Closing this panel     │
+│ │ Limits     ││                                                     │  does not stop the      │
+│ │ Providers  ││                                                     │  agent."                │
+│ └ GitHub     ┘│                                                     │                         │
+│ ┌ ACCOUNTS 9 ┐│  Activity drawer 280 (closed): events, logs,        │                         │
+│ │ one line   ││  terminal                                           │                         │
+│ └ each, scroll┘│                                                    │                         │
+│ Settings      │                                                     │                         │
+├ Status bar 28 ┴ daemon · running/queued/slots · need you · near limit · RAM ··· GitHub sync · Actions · quiet · theme · density ┤
+```
+
+- **Title bar** stays short: brand, project switcher, command search, notifications and native-sized Windows caption buttons (46 px wide, close turns `#C42B1C` on hover). It is custom (frameless window).
+- **Status bar** holds system state, so the title bar never fills up:
+  - left: daemon state, running / queued / slots, need you, near limit, RAM;
+  - right: last GitHub sync, Actions minutes, quiet hours, theme, density.
+  - Every item that has a screen opens it on click. Below 1180 px the lower-priority items (RAM, GitHub sync, Actions) hide.
+- **Sidebar** is two framed blocks:
+  - **Nav:** six destinations, counters only on Inbox. The active item gets bright corner ticks.
+  - **Accounts:** pinned to the bottom. One 28 px line per account (dot, name, 8-tick meter, value: % for plan windows, $ for API keys, `—` for unknown), sorted most urgent first. It scrolls on its own above about 236 px (34% of the window height), so many accounts never push the nav away. `ALL LIMITS` opens Limits.
+- **Breakpoints:** below 1280 px the inspector overlays the main view; below 1180 px the sidebar becomes a 56 px icon rail (the accounts block hides; the status bar still shows near-limit counts). 960 px is the minimum supported width.
+
+## 5. Components
+
+| Component | Default view | On demand | Notes |
+|---|---|---|---|
+| `TitleBar` | brand, project switcher, command search, notifications | notifications popover | `-webkit-app-region: drag` except on controls |
+| `StatusBar` | daemon, slots, need you, near limit, RAM, GitHub sync, Actions, quiet hours, theme, density | each item opens its screen | mono 11 px, items separated by hairlines |
+| `Sidebar` | framed nav block (6 items, Inbox count) | rail mode | active item marked by bright corner ticks |
+| `AccountsBlock` | pinned to the sidebar bottom, one line per account, most urgent first | scrolls on its own; tooltip with source and reset | value shows % (plan window), $ (API key today vs cap) or `—` (unknown) |
+| `ProjectTile` | index, line-art type glyph, name, path (ellipsized, full path in tooltip), state line, last opened | opens the project | dashed variant for `Import from C:\Projeler` |
+| `Stepper` | numbered spec tiles, current one with accent ticks, finished ones labelled `Done` | any step is clickable | `Back` / `Next: <step>` / `Create project` in the pane footer |
+| `ContextMenu` | opens on right-click, `Shift+F10` or the context-menu key on a graph node | items depend on the node state | arrow keys move, Esc closes and returns focus; disabled items say why |
+| `ProvidersTable` | provider, newest models with price, runner chips, credential and limits | catalog refresh, add provider | runner chips: works directly (green), through config (blue), needs a converter (dashed) |
+| `Composer` | task text, repo, branch, crew mode, on-limit mode, `Ctrl Enter` | full options (model pinning, budget, labels) | submitting opens the crew proposal, it never starts work |
+| `CrewProposal` | 1 spec tile per role: index, line-art icon, role, runner · model, account, one-line reason, meter | "Hide reasons", edit a role, swap account | footer: fallback chain + Manual/Ask/Auto, estimate disclaimer, `Approve and start` |
+| `SpecTile` | hairline + 4 corner ticks | hover ticks ink, selected ticks accent | standby/fallback tiles use a dashed border on `bg.canvas` |
+| `TickMeter` | 48 ticks, fill = used share, threshold ticks at 80% and 95%, handle at value | tooltip with source and reset time | fill turns amber past 80% and red past 95%; `Unknown` draws dashed empty ticks and no handle; `role="meter"` |
+| `SegmentedBar` | one segment per series with 4 px gaps | legend with value and share | always paired with a legend and an `aria-label` sentence |
+| `TaskRow` | title, repo, branch, runner dots, elapsed, one status line | steps with durations, limit banner, diff stat, PR | rows never auto-expand on new events; expanding one never shifts another |
+| `StatusLabel` | icon + text in the state color | | see the mapping table below |
+| `LimitBanner` | amber soft fill, source, reset time, `Hand off now`, `Let it finish` | | appears on the row and in the inspector, plus one Windows toast |
+| `InboxItem` | kind icon, title, who asked, time | full detail pane | approvals show command, working directory, scope and policy |
+| `GraphNode` | role, runner, status, model · account, one fact line | inspector on click, context menu on right-click | fixed 180 × 100; draggable, snaps to 12 px; `Alt` + arrows move it by keyboard; moving a node only changes the layout, never who does the work |
+| `GraphEdge` | `reports to` (solid), `depends on` (dotted), `fallback` (amber dashed) | `messages`, `files` edge sets via the segmented control | orthogonal with one rounded elbow, recomputed while a node is dragged; selected path in accent; leader lines carry mono annotations (limit, reset) |
+| `GraphView` | fit to width | drag the background to pan, `Ctrl` + wheel or +/− to zoom, fit, `Reset layout`, full screen (`F`, `Esc` leaves) | layout is saved per task; full screen keeps the inspector available as an overlay |
+| `Inspector` | header, status, tabs Details / Conversation / Changes / Usage, meters, facts, worktree, actions | transcript loads only on the Conversation tab | `Stop agent` is a danger text button, separate from `Pause` |
+
+### Status labels
+
+| Canonical state (see PLAN.md) | Label | Color | Icon |
+|---|---|---|---|
+| `proposed` | Waiting for approval | ink | crew |
+| `queued` | Queued | warning | clock |
+| `running` | Running · current step | accent | spinner |
+| `needs_input` | Waiting for your answer / approval | warning | question / terminal |
+| `limited` | Limit reached · resets 16:40 | danger | gauge |
+| `handing_off` | Handing off to … | warning | swap |
+| `review` | Ready for review | success | check |
+| `merged` | Merged | ink | pull request |
+| `done` | Done (work without code) | success | check |
+| `failed` | Failed · reason | danger | x |
+| `cancelled` | Stopped by you | muted | square |
+
+"Ready for review" and "Merged" are different filters. A code task is never shown as Done before it is merged.
+
+## 6. Screens
+
+| Screen | First view | Second level |
+|---|---|---|
+| **Start** (no project open) | hero line, `New project` / `Open folder` / `Clone from GitHub`, recent project tiles, `Import from C:\Projeler`, This machine check, Getting started checklist | all projects, install guides; the sidebar hides, and the 32 px hero is used only here |
+| **New project** | five numbered step tiles (Folder, Agents, Accounts & budget, Rules, GitHub), one step pane, Back / Next | edit detected commands, create a private repo, CI template; nothing is written until `Create project` |
+| **Tasks** (project home) | composer, crew proposal when drafting, filters `All / Running / Needs you / Ready for review / Merged / Done`, task rows | steps, limit banner, diff, PR link, inspector |
+| **Inbox** | items that need an answer first, then limits and GitHub notices | detail pane: approve once / allow in project / deny; question options + note |
+| **Crew graph** | one task's crew: task → roles → PR, standby fallback, limit annotation | drag and drop, pan, zoom, full screen, right-click actions (pause, check again, change AI or model, hand off, wait for reset, stop), Messages and Files edge sets, list view for screen readers, inspector |
+| **Providers** | catalog providers with newest models and prices, which runners each works with, credential and limits, connected first | add provider, refresh catalog, filters (connected, first-party, coding plans, aggregators, local) |
+| **Limits & usage** | subscription windows per account with provenance, API spend (7 days) with segmented bar, balances and caps | alert thresholds, on-limit policy, Windows notifications, per-model ledger |
+| **GitHub** | Actions minutes this month, branches waiting to push, worktrees, PR table with merge gate | checks and logs, review comments sent back to the agent, worktree cleanup |
+| **Settings** | accounts and API keys (aliases only), roles, policies, theme, density | per-project allowlist, price table version, diagnostics |
+
+## 7. Interaction rules
+
+- **Close is not stop.** Closing the inspector, the drawer or the window keeps agents running (the tray icon stays). `Stop agent` asks for confirmation and names what it stops.
+- **Approvals:** Windows toasts may offer `Approve once` only for low-risk, read-only or in-worktree commands. Anything else opens the Inbox. `Always allow` is never the default button.
+- **Hand off dialog** shows what transfers (summary, diff, branch, open questions), whether it is a native resume or a new session, the target account's headroom, and the cost estimate. In Auto mode the same record is written and shown afterwards.
+- **Pushes:** agents commit locally; pushes wait in GitHub → "Waiting to push" so CI runs once per finished change.
+- **Keyboard:** `Ctrl K` command palette, `Ctrl Enter` submit composer or approve the focused crew, `Esc` closes the topmost layer (menu, then inspector, then full screen), `J/K` move in lists, `Enter` expands a row, `G T / G I / G G / G L / G P / G H` jump to screens; in the graph `Shift+F10` opens the node menu, `Alt` + arrows move a node, `F` toggles full screen.
+
+## 8. Accessibility
+
+- WCAG 2.2 AA: text 4.5:1, UI boundaries and focus 3:1 (checked by the script), 2 px focus ring with 2 px offset.
+- Targets at least 28 px in compact and 34 px in comfortable.
+- The graph has an equivalent list view (`Show as list`). Meters expose `role="meter"` with values; unknown quota is announced as unknown.
+- Live updates are batched: one polite announcement per state change, never per token.
+
+## 9. QA matrix
+
+Dark and light × compact and comfortable × 960 / 1280 / 1440 / 1920 px × 100 / 150 / 200% Windows scaling. States to capture per screen: empty, running, needs input, near limit, limit reached, review, merged, offline daemon, expired sign-in, unknown quota. Screenshot regression runs in CI on Linux against fixed fixtures; Windows-only behaviour (title bar, toasts, tray) is checked by hand before each release.
+
+## Deviations from house style
+
+| House style | Here | Why |
+|---|---|---|
+| DM Sans / Space Grotesk / JetBrains Mono | Geist / Geist Mono | Closest to the technical grotesk + mono pairing of R1 and R2 |
+| One brand color as primary button | Monochrome primary, accent only for running/focus | Four runner series and four states already need color |
+| Body 15 px | 14 / 13 px | Dense desktop tool, many rows per screen |
+| Cards radius 8 | Radius 0 everywhere | R1's square frames are the chosen look |
+| Ticks on one key module per view | Corner ticks on every framed surface, muted; bright only when active or selected | Requested explicitly; the R1 reference uses them on every tile |
+| Sans-serif button labels | Geist Mono uppercase button labels, bracket ghost buttons | Matches R1's `[ Request early access ]` |
+| Three state colors | Three states + accent for running | "Running" must be distinct from "needs you" at a glance |
+
+Everything else from house style still applies: no gradients, glass, blur, glow, colored shadows, emoji or "coming soon" text.

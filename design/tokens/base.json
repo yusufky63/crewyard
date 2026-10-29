@@ -1,0 +1,309 @@
+{
+  "$description": "Theme-independent tokens. Colors live in dark.json and light.json.",
+  "font": {
+    "family": {
+      "ui": {
+        "$type": "fontFamily",
+        "$value": [
+          "Geist",
+          "Segoe UI Variable Text",
+          "Segoe UI",
+          "system-ui",
+          "sans-serif"
+        ]
+      },
+      "mono": {
+        "$type": "fontFamily",
+        "$value": [
+          "Geist Mono",
+          "Cascadia Mono",
+          "Consolas",
+          "ui-monospace",
+          "monospace"
+        ]
+      }
+    },
+    "size": {
+      "label": {
+        "$type": "dimension",
+        "$value": "11px",
+        "$description": "Mono uppercase labels only, never body copy"
+      },
+      "meta": {
+        "$type": "dimension",
+        "$value": "12px"
+      },
+      "body-compact": {
+        "$type": "dimension",
+        "$value": "13px"
+      },
+      "body": {
+        "$type": "dimension",
+        "$value": "14px"
+      },
+      "title": {
+        "$type": "dimension",
+        "$value": "15px",
+        "$description": "Row and card titles"
+      },
+      "section": {
+        "$type": "dimension",
+        "$value": "17px"
+      },
+      "page": {
+        "$type": "dimension",
+        "$value": "21px"
+      },
+      "metric": {
+        "$type": "dimension",
+        "$value": "30px",
+        "$description": "One headline number per panel"
+      }
+    },
+    "weight": {
+      "regular": {
+        "$type": "fontWeight",
+        "$value": 400
+      },
+      "medium": {
+        "$type": "fontWeight",
+        "$value": 500
+      },
+      "semibold": {
+        "$type": "fontWeight",
+        "$value": 600
+      }
+    },
+    "tracking": {
+      "label": {
+        "$type": "dimension",
+        "$value": "0.08em"
+      },
+      "tight": {
+        "$type": "dimension",
+        "$value": "-0.015em",
+        "$description": "Page titles and metrics"
+      }
+    },
+    "line-height": {
+      "tight": {
+        "$type": "number",
+        "$value": 1.2
+      },
+      "normal": {
+        "$type": "number",
+        "$value": 1.45
+      }
+    }
+  },
+  "space": {
+    "1": {
+      "$type": "dimension",
+      "$value": "4px"
+    },
+    "2": {
+      "$type": "dimension",
+      "$value": "8px"
+    },
+    "3": {
+      "$type": "dimension",
+      "$value": "12px"
+    },
+    "4": {
+      "$type": "dimension",
+      "$value": "16px"
+    },
+    "5": {
+      "$type": "dimension",
+      "$value": "20px"
+    },
+    "6": {
+      "$type": "dimension",
+      "$value": "24px"
+    },
+    "8": {
+      "$type": "dimension",
+      "$value": "32px"
+    }
+  },
+  "radius": {
+    "frame": {
+      "$type": "dimension",
+      "$value": "0px",
+      "$description": "Panels, spec tiles, controls, buttons, menus: square with corner ticks"
+    },
+    "keycap": {
+      "$type": "dimension",
+      "$value": "2px"
+    },
+    "dot": {
+      "$type": "dimension",
+      "$value": "999px",
+      "$description": "Status dots and the spinner only"
+    }
+  },
+  "density": {
+    "comfortable": {
+      "body": {
+        "$type": "dimension",
+        "$value": "14px"
+      },
+      "row": {
+        "$type": "dimension",
+        "$value": "52px"
+      },
+      "control": {
+        "$type": "dimension",
+        "$value": "34px"
+      },
+      "panel-padding": {
+        "$type": "dimension",
+        "$value": "16px"
+      }
+    },
+    "compact": {
+      "body": {
+        "$type": "dimension",
+        "$value": "13px"
+      },
+      "row": {
+        "$type": "dimension",
+        "$value": "40px"
+      },
+      "control": {
+        "$type": "dimension",
+        "$value": "30px"
+      },
+      "panel-padding": {
+        "$type": "dimension",
+        "$value": "12px"
+      }
+    }
+  },
+  "size": {
+    "icon": {
+      "$type": "dimension",
+      "$value": "16px"
+    },
+    "icon-spec": {
+      "$type": "dimension",
+      "$value": "28px",
+      "$description": "Line-art role icon inside spec tiles"
+    },
+    "tick-corner": {
+      "$type": "dimension",
+      "$value": "8px",
+      "$description": "Corner tick length on every framed surface"
+    },
+    "meter-tick-width": {
+      "$type": "dimension",
+      "$value": "2px"
+    },
+    "meter-tick-gap": {
+      "$type": "dimension",
+      "$value": "3px"
+    },
+    "meter-height": {
+      "$type": "dimension",
+      "$value": "16px"
+    },
+    "focus-ring": {
+      "$type": "dimension",
+      "$value": "2px"
+    },
+    "tick-offset-primary": {
+      "$type": "dimension",
+      "$value": "4px",
+      "$description": "Primary button ticks sit this far outside the fill"
+    },
+    "graph-snap": {
+      "$type": "dimension",
+      "$value": "12px",
+      "$description": "Grid that dragged graph nodes snap to"
+    }
+  },
+  "layout": {
+    "titlebar": {
+      "$type": "dimension",
+      "$value": "40px"
+    },
+    "sidebar": {
+      "$type": "dimension",
+      "$value": "224px"
+    },
+    "sidebar-rail": {
+      "$type": "dimension",
+      "$value": "56px"
+    },
+    "inspector": {
+      "$type": "dimension",
+      "$value": "380px"
+    },
+    "drawer": {
+      "$type": "dimension",
+      "$value": "280px"
+    },
+    "content-max": {
+      "$type": "dimension",
+      "$value": "1120px"
+    },
+    "statusbar": {
+      "$type": "dimension",
+      "$value": "28px"
+    },
+    "accounts-max": {
+      "$type": "dimension",
+      "$value": "236px",
+      "$description": "Accounts block scrolls beyond this (or 34vh)"
+    }
+  },
+  "motion": {
+    "fast": {
+      "$type": "duration",
+      "$value": "120ms"
+    },
+    "base": {
+      "$type": "duration",
+      "$value": "180ms"
+    },
+    "slow": {
+      "$type": "duration",
+      "$value": "240ms"
+    },
+    "ease": {
+      "$type": "cubicBezier",
+      "$value": [
+        0.2,
+        0,
+        0,
+        1
+      ]
+    }
+  },
+  "z": {
+    "sticky": {
+      "$type": "number",
+      "$value": 20
+    },
+    "titlebar": {
+      "$type": "number",
+      "$value": 40
+    },
+    "popover": {
+      "$type": "number",
+      "$value": 50
+    },
+    "drawer": {
+      "$type": "number",
+      "$value": 90
+    },
+    "dialog": {
+      "$type": "number",
+      "$value": 100
+    },
+    "toast": {
+      "$type": "number",
+      "$value": 1200
+    }
+  }
+}

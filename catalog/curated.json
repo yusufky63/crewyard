@@ -1,0 +1,54 @@
+{
+  "$comment": "Hand-curated provider list. Model lists, prices and limits come from models.dev at sync time (sync-catalog.mjs); this file only adds what models.dev does not have. First-party providers, well-known aggregators, coding plans and local servers only: resellers of other providers' subscriptions are excluded on purpose.",
+  "checked": "2026-10-29",
+  "sources": {
+    "modelsDev": { "url": "https://models.dev/api.json", "repo": "https://github.com/anomalyco/models.dev", "license": "MIT", "use": "providers, OpenAI-compatible base URLs, env var names, models, prices, context limits, capabilities" },
+    "ccSwitch": { "repo": "https://github.com/farion1231/cc-switch", "license": "MIT", "use": "Anthropic-compatible base URLs for Claude Code (src/config/claudeProviderPresets.ts, line numbers below), balance endpoints (src-tauri/src/services/balance.rs), coding plan quota (src-tauri/src/services/coding_plan.rs)" },
+    "litellm": { "url": "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json", "license": "MIT", "use": "price cross-check only" }
+  },
+  "claudeCodeValues": {
+    "native": "Anthropic itself",
+    "direct": "provider exposes an Anthropic-compatible endpoint; Claude Code runs with ANTHROPIC_BASE_URL + key",
+    "conversion": "needs an API format converter (cc-switch marks it apiFormat openai_chat, openai_responses or gemini_native); not offered in v1, use OpenCode or Codex instead",
+    "none": "no known route"
+  },
+  "providers": [
+    { "id": "anthropic", "group": "first-party", "claudeCode": "native" },
+    { "id": "openai", "group": "first-party", "claudeCode": "conversion", "codex": "native" },
+    { "id": "google", "group": "first-party", "claudeCode": "conversion", "geminiCli": "native", "note": "cc-switch preset 'Gemini Native' uses apiFormat gemini_native" },
+    { "id": "deepseek", "group": "first-party", "claudeCode": "direct", "anthropicBase": "https://api.deepseek.com/anthropic", "ref": "claudeProviderPresets.ts:1257", "balance": "https://api.deepseek.com/user/balance" },
+    { "id": "moonshotai", "group": "first-party", "claudeCode": "direct", "anthropicBase": "https://api.moonshot.ai/anthropic", "ref": "claudeProviderPresets.ts:128" },
+    { "id": "moonshotai-cn", "group": "first-party", "claudeCode": "direct", "anthropicBase": "https://api.moonshot.cn/anthropic", "ref": "claudeProviderPresets.ts:105" },
+    { "id": "zai", "group": "first-party", "claudeCode": "direct", "anthropicBase": "https://api.z.ai/api/anthropic", "ref": "claudeProviderPresets.ts:1535" },
+    { "id": "zhipuai", "group": "first-party", "claudeCode": "direct", "anthropicBase": "https://open.bigmodel.cn/api/anthropic", "ref": "claudeProviderPresets.ts:1515" },
+    { "id": "minimax", "group": "first-party", "claudeCode": "direct", "anthropicBase": "https://api.minimax.io/anthropic", "ref": "claudeProviderPresets.ts:1888" },
+    { "id": "minimax-cn", "group": "first-party", "claudeCode": "direct", "anthropicBase": "https://api.minimax.cn/anthropic", "ref": "claudeProviderPresets.ts:1862" },
+    { "id": "alibaba", "group": "first-party", "claudeCode": "direct", "anthropicBase": "https://dashscope-intl.aliyuncs.com/apps/anthropic", "ref": "claudeProviderPresets.ts:1677" },
+    { "id": "alibaba-cn", "group": "first-party", "claudeCode": "direct", "anthropicBase": "https://dashscope.aliyuncs.com/apps/anthropic", "ref": "claudeProviderPresets.ts:1606" },
+    { "id": "xiaomi", "group": "first-party", "claudeCode": "direct", "anthropicBase": "https://api.xiaomimimo.com/anthropic", "ref": "claudeProviderPresets.ts:2783" },
+    { "id": "longcat", "group": "first-party", "claudeCode": "direct", "anthropicBase": "https://api.longcat.chat/anthropic", "ref": "claudeProviderPresets.ts:1840" },
+    { "id": "stepfun-ai", "group": "first-party", "claudeCode": "none", "balance": "https://api.stepfun.com/v1/accounts" },
+    { "id": "mistral", "group": "first-party", "claudeCode": "conversion", "note": "cc-switch preset uses apiFormat openai_chat" },
+    { "id": "xai", "group": "first-party", "claudeCode": "conversion", "note": "cc-switch preset uses apiFormat openai_responses" },
+
+    { "id": "kimi-code-plan-global", "group": "coding-plan", "claudeCode": "direct", "anthropicBase": "https://api.kimi.ai/coding/", "ref": "claudeProviderPresets.ts:176", "quota": "coding_plan.rs (kimi)" },
+    { "id": "zai-coding-plan", "group": "coding-plan", "claudeCode": "direct", "anthropicBase": "https://api.z.ai/api/anthropic", "ref": "claudeProviderPresets.ts:1535", "quota": "coding_plan.rs (zhipu)" },
+    { "id": "minimax-coding-plan", "group": "coding-plan", "claudeCode": "direct", "anthropicBase": "https://api.minimax.io/anthropic", "ref": "claudeProviderPresets.ts:1888", "quota": "coding_plan.rs (minimax)" },
+    { "id": "alibaba-coding-plan", "group": "coding-plan", "claudeCode": "direct", "anthropicBase": "https://coding-intl.dashscope.aliyuncs.com/apps/anthropic", "ref": "claudeProviderPresets.ts:1698" },
+    { "id": "stepfun-ai-step-plan", "group": "coding-plan", "claudeCode": "direct", "anthropicBase": "https://api.stepfun.ai/step_plan", "ref": "claudeProviderPresets.ts:1764" },
+    { "id": "opencode-go", "group": "coding-plan", "claudeCode": "direct", "anthropicBase": "https://opencode.ai/zen/go", "ref": "claudeProviderPresets.ts:1285", "quota": "coding_plan.rs (opencode_go)" },
+
+    { "id": "openrouter", "group": "aggregator", "claudeCode": "direct", "anthropicBase": "https://openrouter.ai/api", "ref": "claudeProviderPresets.ts:1994", "balance": "https://openrouter.ai/api/v1/credits" },
+    { "id": "novita-ai", "group": "aggregator", "claudeCode": "direct", "anthropicBase": "https://api.novita.ai/anthropic", "ref": "claudeProviderPresets.ts:2056", "balance": "https://api.novita.ai/v3/user/balance" },
+    { "id": "siliconflow", "group": "aggregator", "claudeCode": "none", "balance": "https://api.siliconflow.com/v1/user/info" },
+    { "id": "vercel", "group": "aggregator", "claudeCode": "none" },
+    { "id": "groq", "group": "aggregator", "claudeCode": "conversion", "note": "cc-switch preset uses apiFormat openai_chat" },
+    { "id": "fireworks-ai", "group": "aggregator", "claudeCode": "none" },
+    { "id": "deepinfra", "group": "aggregator", "claudeCode": "none" },
+    { "id": "togetherai", "group": "aggregator", "claudeCode": "none" },
+    { "id": "nvidia", "group": "aggregator", "claudeCode": "conversion", "note": "cc-switch preset uses apiFormat openai_chat" },
+
+    { "id": "lmstudio", "group": "local", "claudeCode": "none" },
+    { "id": "ollama-local", "group": "local", "manual": true, "name": "Ollama (local)", "api": "http://127.0.0.1:11434/v1", "env": [], "claudeCode": "direct", "anthropicBase": "http://localhost:11434", "ref": "claudeProviderPresets.ts:2112", "note": "models come from the local server, not models.dev" }
+  ]
+}
