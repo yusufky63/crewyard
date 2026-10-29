@@ -184,6 +184,8 @@ describe("balances", () => {
     expect(balanceKind("https://evil.example/api.deepseek.com")).toBeNull();
   });
 
+  // Fixtures are hand-written from the documented shapes; DeepSeek's was also checked live (one USD
+  // wallet, same fields) on 2026-10-30 with providers.live.test.ts.
   it("parses the documented response shapes", () => {
     // DeepSeek lists a CNY and a USD wallet; the empty one is hidden when the other has money.
     expect(parseBalance("deepseek", fixture("deepseek"))).toEqual([{ amount: 23.1, currency: "USD" }]);

@@ -1,8 +1,9 @@
 import type { Money } from "@crewyard/core";
 
-// Balance endpoints listed in catalog/curated.json. Request and response shapes follow cc-switch
-// src-tauri/src/services/balance.rs (MIT, opened 2026-10-30) and DeepSeek's API docs; amounts are
-// "reported" because the provider states them. Only GET with the provider's own key, never more.
+// Balance endpoints listed in catalog/curated.json. Only facts were taken from elsewhere: endpoint
+// URLs, response field names and units, read in DeepSeek's API docs and in cc-switch's balance
+// service (opened 2026-10-30). Amounts are "reported" because the provider states them. Only one
+// GET with the provider's own key, never anything that could spend.
 
 export type BalanceKind = "deepseek" | "openrouter" | "novita" | "stepfun" | "siliconflow-cn" | "siliconflow";
 

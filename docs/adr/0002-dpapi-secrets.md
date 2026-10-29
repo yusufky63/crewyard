@@ -29,7 +29,8 @@ Option 1.
 
 - Electron `safeStorage` docs, https://www.electronjs.org/docs/latest/api/safe-storage, opened 2026-10-30: main process only; uses DPAPI on Windows.
 - .NET `ProtectedData.Protect`, https://learn.microsoft.com/en-us/dotnet/api/system.security.cryptography.protecteddata.protect, opened 2026-10-30: `System.Security.dll` in .NET Framework, `CurrentUser` scope, optional entropy.
-- cc-switch, https://github.com/farion1231/cc-switch, MIT, about 150k stars, not archived, opened 2026-10-30: `src-tauri/src/services/balance.rs` for the balance endpoints and response shapes used by `packages/daemon/src/providers/balances.ts` (logic rewritten in TypeScript, no code copied).
+- cc-switch, https://github.com/farion1231/cc-switch, MIT, about 150k stars, not archived, opened 2026-10-30: read `src-tauri/src/services/balance.rs` only to learn the balance endpoint URLs, response field names and units. `packages/daemon/src/providers/balances.ts` is our own code; nothing was copied or translated.
+- DeepSeek balance endpoint checked live with the user's key and approval on 2026-10-30 (`providers.live.test.ts`, opt-in): response `{ is_available, balance_infos: [{ currency, total_balance, granted_balance, topped_up_balance }] }`, amounts as strings.
 - DeepSeek "Get user balance", https://api-docs.deepseek.com/api/get-user-balance, opened 2026-10-30.
 
 ## Windows notes
