@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { parseLongPaths } from "./machine.ts";
 import { scanForRepos } from "./projects.ts";
 import { createHandlers, handleMessage } from "./server.ts";
-import { parseVersion, run, which } from "./spawn.ts";
+import { parseVersion, run, which } from "@crewyard/proc";
 import { Store } from "./store.ts";
 
 const temps: string[] = [];
@@ -75,11 +75,14 @@ describe("ipc handlers", () => {
   it("answers requests and reports errors without throwing", async () => {
     const dir = tempDir();
     const store = new Store(join(dir, "t.db"));
-    const handlers = createHandlers(store, { startedAt: "now", dbPath: "t.db" });
+    const handlers = createHandlers({ store, info: { startedAt: "now", dbPath: "t.db", dataDir: dir }, emit: () => {} });
     const ok = await handleMessage(handlers, { kind: "request", id: 1, method: "projects.add", params: { path: dir } });
     expect(ok).toMatchObject({ id: 1, ok: true });
     const bad = await handleMessage(handlers, { kind: "request", id: 2, method: "projects.add", params: { path: join(dir, "missing") } });
     expect(bad).toMatchObject({ id: 2, ok: false });
+    const id = (ok as { result: { id: string } }).result.id;
+    const opened = await handleMessage(handlers, { kind: "request", id: 3, method: "projects.open", params: { projectId: id } });
+    expect((opened as { result: { lastOpenedAt: string | null } }).result.lastOpenedAt).not.toBeNull();
     expect(await handleMessage(handlers, { kind: "event", topic: "x", payload: null })).toBeNull();
     store.close();
   });

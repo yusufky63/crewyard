@@ -20,7 +20,8 @@ if (!dataDir) throw new Error("CREWYARD_DATA_DIR is not set");
 mkdirSync(dataDir, { recursive: true });
 const dbPath = join(dataDir, "crewyard.db");
 const store = new Store(dbPath);
-const handlers = createHandlers(store, { startedAt: new Date().toISOString(), dbPath });
+const emit = (topic: string, payload: unknown) => parentPort.postMessage({ kind: "event", topic, payload } satisfies IpcMessage);
+const handlers = createHandlers({ store, info: { startedAt: new Date().toISOString(), dbPath, dataDir }, emit });
 
 parentPort.on("message", async ({ data }) => {
   const res = await handleMessage(handlers, data as IpcMessage);
@@ -28,4 +29,4 @@ parentPort.on("message", async ({ data }) => {
 });
 
 process.on("exit", () => store.close());
-parentPort.postMessage({ kind: "event", topic: "daemon.ready", payload: { pid: process.pid } } satisfies IpcMessage);
+emit("daemon.ready", { pid: process.pid });

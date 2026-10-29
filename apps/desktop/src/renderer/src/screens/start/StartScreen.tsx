@@ -98,6 +98,12 @@ function ProjectTile({ project, index }: { project: ProjectSummary; index: numbe
   const { t } = useTranslation("start");
   const rel = useRelativeTime();
   const openProject = useNav((s) => s.openProject);
+  const qc = useQueryClient();
+  const open = async () => {
+    await call("projects.open", { projectId: project.id });
+    void qc.invalidateQueries({ queryKey: ["projects.list"] });
+    openProject(project.id);
+  };
   const body = (
     <>
       <div className="tile-top">
@@ -114,7 +120,7 @@ function ProjectTile({ project, index }: { project: ProjectSummary; index: numbe
   );
   // Tiles become buttons once a project home screen exists to open into.
   return canOpenProjects ? (
-    <button className="spec ptile" onClick={() => openProject(project.id)}>{body}</button>
+    <button className="spec ptile" onClick={() => void open()}>{body}</button>
   ) : (
     <div className="spec ptile">{body}</div>
   );

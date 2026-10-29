@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { useNav } from "../nav.ts";
-import { projectScreens, type ScreenDef } from "../registry.ts";
+import { projectScreens, sidebarBlocks, type ScreenDef } from "../registry.ts";
 
 function NavItem({ screen }: { screen: ScreenDef }) {
   const { t } = useTranslation();
@@ -23,6 +23,12 @@ export function Sidebar() {
       <div className="nav-list">
         {projectScreens.map((s) => (
           <NavItem key={s.id} screen={s} />
+        ))}
+      </div>
+      {/* Blocks sit at the bottom; the first one takes the free space above it. */}
+      <div className="sidebar-blocks">
+        {sidebarBlocks.map(({ id, component: Block }) => (
+          <Block key={id} />
         ))}
       </div>
     </nav>

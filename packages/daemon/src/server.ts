@@ -1,12 +1,18 @@
 import { basename } from "node:path";
-import type { DaemonStatus, IpcMessage, IpcMethod, IpcMethods, IpcResponse } from "@crewyard/core";
+import type { DaemonStatus, IpcMessage, IpcMethods, IpcResponse } from "@crewyard/core";
+import { createGithubHandlers } from "./handlers/github.ts";
+import { createProvidersHandlers } from "./handlers/providers.ts";
+import { createSetupHandlers } from "./handlers/setup.ts";
+import { createTasksHandlers } from "./handlers/tasks.ts";
+import type { HandlerContext, HandlerMap } from "./handlers/types.ts";
 import { checkEnv, checkMachine, checkTool, TOOL_BINS } from "./machine.ts";
 import { assertFolder, scanForRepos } from "./projects.ts";
-import type { Store } from "./store.ts";
 
-type Handlers = { [M in IpcMethod]: (params: IpcMethods[M]["params"]) => Promise<IpcMethods[M]["result"]> | IpcMethods[M]["result"] };
+export type Handlers = HandlerMap<IpcMethods>;
 
-export function createHandlers(store: Store, info: { startedAt: string; dbPath: string }): Handlers {
+// Base handlers live here; every area brings its own from ./handlers/<area>.ts.
+export function createHandlers(ctx: HandlerContext): Handlers {
+  const { store, info } = ctx;
   return {
     "daemon.status": (): DaemonStatus => ({
       state: "running",
@@ -27,13 +33,18 @@ export function createHandlers(store: Store, info: { startedAt: string; dbPath: 
       const abs = assertFolder(path);
       return store.addProject(abs, name ?? basename(abs));
     },
+    "projects.open": ({ projectId }) => store.markOpened(projectId),
+    ...createTasksHandlers(ctx),
+    ...createProvidersHandlers(ctx),
+    ...createGithubHandlers(ctx),
+    ...createSetupHandlers(ctx),
   };
 }
 
 /** Handles one request message; anything that is not a known request is ignored. */
 export async function handleMessage(handlers: Handlers, msg: IpcMessage): Promise<IpcResponse | null> {
   if (msg.kind !== "request") return null;
-  const handler = handlers[msg.method] as ((p: unknown) => unknown) | undefined;
+  const handler = (handlers as Record<string, ((p: unknown) => unknown) | undefined>)[msg.method];
   if (!handler) return { kind: "response", id: msg.id, ok: false, error: `Unknown method: ${msg.method}` };
   try {
     return { kind: "response", id: msg.id, ok: true, result: await handler(msg.params) };

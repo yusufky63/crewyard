@@ -5,6 +5,7 @@ import type { LucideIcon } from "lucide-react";
 // in its own folder without touching shared files:
 //   src/renderer/src/screens/<id>/screen.ts   exports `screen: ScreenDef`
 //   src/renderer/src/shell/status/<id>.tsx     exports `item: StatusItemDef`
+//   src/renderer/src/shell/sidebar/<id>.tsx    exports `block: SidebarBlockDef`
 
 export interface ScreenDef {
   id: string;
@@ -26,8 +27,20 @@ export interface StatusItemDef {
   component: ComponentType;
 }
 
+/** Blocks pinned under the sidebar nav, e.g. the accounts limits block (DESIGN.md §4). */
+export interface SidebarBlockDef {
+  id: string;
+  order: number;
+  component: ComponentType;
+}
+
 const screenModules = import.meta.glob<{ screen: ScreenDef }>("./screens/*/screen.ts", { eager: true });
 const statusModules = import.meta.glob<{ item: StatusItemDef }>("./shell/status/*.tsx", { eager: true });
+const sidebarModules = import.meta.glob<{ block: SidebarBlockDef }>("./shell/sidebar/*.tsx", { eager: true });
+
+export const sidebarBlocks: SidebarBlockDef[] = Object.values(sidebarModules)
+  .map((m) => m.block)
+  .sort((a, b) => a.order - b.order);
 
 export const screens: ScreenDef[] = Object.values(screenModules)
   .map((m) => m.screen)

@@ -1,0 +1,19 @@
+{
+  "name": "@crewyard/proc",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Windows-safe process helpers: resolve .cmd shims, spawn without a shell or console window, kill whole process trees.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "cross-spawn": "7.0.6"
+  },
+  "devDependencies": {
+    "@types/cross-spawn": "6.0.6"
+  }
+}

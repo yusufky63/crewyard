@@ -102,6 +102,9 @@ importers:
       '@crewyard/core':
         specifier: workspace:^
         version: link:../core
+      '@crewyard/proc':
+        specifier: workspace:^
+        version: link:../proc
 
   packages/adapter-claude:
     dependencies:
@@ -111,12 +114,18 @@ importers:
       '@crewyard/core':
         specifier: workspace:^
         version: link:../core
+      '@crewyard/proc':
+        specifier: workspace:^
+        version: link:../proc
 
   packages/adapter-codex:
     dependencies:
       '@crewyard/core':
         specifier: workspace:^
         version: link:../core
+      '@crewyard/proc':
+        specifier: workspace:^
+        version: link:../proc
 
   packages/adapter-fake:
     dependencies:
@@ -129,6 +138,9 @@ importers:
       '@crewyard/core':
         specifier: workspace:^
         version: link:../core
+      '@crewyard/proc':
+        specifier: workspace:^
+        version: link:../proc
       '@opencode/sdk':
         specifier: 2.2.2
         version: 2.2.2(@aws-sdk/credential-provider-node@3.972.91)(@opentelemetry/api@1.9.0)(@opentelemetry/semantic-conventions@1.44.0)(@opentui/core@0.7.0(typescript@6.0.3)(web-tree-sitter@0.25.10))(@smithy/signature-v4@5.7.5)(electron@45.1.0)(graphql@16.14.2)(redis@6.3.1(@opentelemetry/api@1.9.0))(typescript@6.0.3)(vite@8.3.5(@types/node@24.19.2))(web-tree-sitter@0.25.10)(ws@8.22.0)
@@ -141,9 +153,30 @@ importers:
 
   packages/daemon:
     dependencies:
+      '@crewyard/adapter-acp':
+        specifier: workspace:^
+        version: link:../adapter-acp
+      '@crewyard/adapter-claude':
+        specifier: workspace:^
+        version: link:../adapter-claude
+      '@crewyard/adapter-codex':
+        specifier: workspace:^
+        version: link:../adapter-codex
+      '@crewyard/adapter-fake':
+        specifier: workspace:^
+        version: link:../adapter-fake
+      '@crewyard/adapter-opencode':
+        specifier: workspace:^
+        version: link:../adapter-opencode
       '@crewyard/core':
         specifier: workspace:^
         version: link:../core
+      '@crewyard/proc':
+        specifier: workspace:^
+        version: link:../proc
+
+  packages/proc:
+    dependencies:
       cross-spawn:
         specifier: 7.0.6
         version: 7.0.6

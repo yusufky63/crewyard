@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "2.1.0",
-    "@crewyard/core": "workspace:^"
+    "@crewyard/core": "workspace:^",
+    "@crewyard/proc": "workspace:^"
   }
 }

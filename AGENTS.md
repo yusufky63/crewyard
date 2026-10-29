@@ -42,11 +42,15 @@ Pick the tier by the size of the change:
 | Where | What | Add to it by |
 |---|---|---|
 | `packages/core` | event model, adapter contract, state derivation, limits, risk, catalog and project schemas, IPC contract | editing the module; every rule has a test next to it |
-| `packages/daemon` | utility-process daemon: store (node:sqlite), machine check, spawning, IPC handlers | adding an IPC method in `core/src/ipc.ts` first, then its handler in `daemon/src/server.ts` |
-| `packages/adapter-*` | one runner each (`claude`, `codex`, `opencode`, `acp`), plus `fake` for tests | implementing `AgentAdapter`; keep `capabilities` truthful |
+| `packages/core/src/ipc/<area>.ts` | IPC methods per area: `tasks`, `providers`, `github`, `setup` | editing only your area's file; `ipc.ts` already extends every area |
+| `packages/daemon/src/handlers/<area>.ts` | the handlers for that area, composed by `server.ts` | editing only your area's file; use `ctx.emit(topic, payload)` for live updates |
+| `packages/daemon` | utility-process daemon: store (node:sqlite), machine check, base IPC handlers | adding tables as a new entry at the end of `MIGRATIONS` in `store.ts` |
+| `packages/proc` | Windows-safe process helpers (`run`, `which`, `start`, `killTree`) | using them for every child process; never call `child_process` directly |
+| `packages/adapter-*` | one runner each (`claude`, `codex`, `opencode`, `acp`), plus `fake` for tests | exporting `createAdapter(): AgentAdapter` from the package; keep `capabilities` truthful |
 | `packages/ui` | tokens.css (generated, `pnpm tokens`), shared styles, primitives | adding a primitive only when two screens need it |
 | `apps/desktop/src/renderer/src/screens/<id>/` | one folder per screen, registered by `screen.ts` | creating the folder; never edit another screen's folder |
 | `apps/desktop/src/renderer/src/shell/status/<id>.tsx` | status bar items | adding a file that exports `item` |
+| `apps/desktop/src/renderer/src/shell/sidebar/<id>.tsx` | blocks pinned under the sidebar nav | adding a file that exports `block` |
 | `apps/desktop/src/renderer/locales/<lang>/<namespace>.json` | translations, one namespace per screen | adding `en` and `tr` files together |
 
 ## Languages
@@ -58,7 +62,8 @@ Pick the tier by the size of the change:
 
 ## Working in parallel sessions
 
-- Stay inside your module's folders. If you must change a shared file (`packages/core`, `ipc.ts`, `registry.ts`, root configs), keep the change additive and say so in your report.
+- Stay inside your module's folders. If you must change a shared file (`packages/core` outside your area file, `registry.ts`, `store.ts` migrations, root configs), keep the change additive and say so in your report.
+- Two sessions may both append a migration to `store.ts`; keep each migration self-contained so the merge only reorders them.
 - Dependencies are already installed for every module. Add one only when unavoidable, in your own package, with `pnpm add -E`, and say so in your report: `pnpm-lock.yaml` conflicts are the most likely merge problem.
 - Commit on your own branch, never push, and never merge other branches yourself.
 

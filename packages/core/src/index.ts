@@ -6,3 +6,7 @@ export * from "./risk.ts";
 export * from "./catalog.ts";
 export * from "./project.ts";
 export * from "./ipc.ts";
+export * from "./ipc/tasks.ts";
+export * from "./ipc/providers.ts";
+export * from "./ipc/github.ts";
+export * from "./ipc/setup.ts";

@@ -1,5 +1,5 @@
 import type { MachineEnv, MachineReport, ToolCheck, ToolId } from "@crewyard/core";
-import { parseVersion, run, which } from "./spawn.ts";
+import { parseVersion, run, which } from "@crewyard/proc";
 
 // The "This machine" check on the Start screen. Read-only: it never installs or changes anything.
 

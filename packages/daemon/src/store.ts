@@ -95,6 +95,14 @@ export class Store {
     return new Set((this.db.prepare("select path from projects").all() as Array<{ path: string }>).map((r) => r.path.toLowerCase()));
   }
 
+  markOpened(projectId: string): ProjectSummary {
+    const now = new Date().toISOString();
+    const res = this.db.prepare("update projects set last_opened_at = ? where id = ?").run(now, projectId);
+    if (!res.changes) throw new Error(`Unknown project: ${projectId}`);
+    const row = this.db.prepare("select id, name, path, last_opened_at from projects where id = ?").get(projectId) as unknown as Row;
+    return toSummary(row);
+  }
+
   close(): void {
     this.db.close();
   }

@@ -4,7 +4,7 @@ import react from "@vitejs/plugin-react";
 import type { Plugin } from "vite";
 
 // Workspace packages export TypeScript source, so they are bundled instead of externalized.
-const workspace = ["@crewyard/core", "@crewyard/daemon", "@crewyard/ui", "@crewyard/adapter-fake", "@crewyard/adapter-claude", "@crewyard/adapter-codex", "@crewyard/adapter-opencode", "@crewyard/adapter-acp"];
+const workspace = ["@crewyard/core", "@crewyard/proc", "@crewyard/daemon", "@crewyard/ui", "@crewyard/adapter-fake", "@crewyard/adapter-claude", "@crewyard/adapter-codex", "@crewyard/adapter-opencode", "@crewyard/adapter-acp"];
 
 // A strict CSP for built pages; the dev server needs inline scripts for React refresh.
 const csp = (): Plugin => ({

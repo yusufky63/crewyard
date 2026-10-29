@@ -11,10 +11,12 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@crewyard/adapter-acp": "workspace:^",
+    "@crewyard/adapter-claude": "workspace:^",
+    "@crewyard/adapter-codex": "workspace:^",
+    "@crewyard/adapter-fake": "workspace:^",
+    "@crewyard/adapter-opencode": "workspace:^",
     "@crewyard/core": "workspace:^",
-    "cross-spawn": "7.0.6"
-  },
-  "devDependencies": {
-    "@types/cross-spawn": "6.0.6"
+    "@crewyard/proc": "workspace:^"
   }
 }
