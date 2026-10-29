@@ -243,6 +243,18 @@ const MIGRATIONS: string[] = [
      weight integer not null,
      primary key (project_id, role, profile_id)
    );`,
+  // Providers: last sign-in probe per profile that signs in on its own (PLAN.md §6). Only what the
+  // UI shows: state, plan label, CLI version, a problem line and the probe time. Never a token or email.
+  `create table profile_signin (
+     profile_id text primary key references profiles(id) on delete cascade,
+     state text not null,
+     plan text,
+     cli_version text,
+     problem text,
+     update_min text,
+     update_command text,
+     probed_at text not null
+   );`,
 ];
 
 export interface EventInput {

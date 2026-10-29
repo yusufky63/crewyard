@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
-import type { AccountRow, BalanceView, CredentialSummary, LimitWindow, Money, ProfileInput, ProfileRunner, ProfileSummary } from "@crewyard/core";
+import { signInKindFor, type AccountRow, type BalanceView, type CredentialSummary, type LimitWindow, type Money, type ProfileInput, type ProfileRunner, type ProfileSummary, type SignInStatus } from "@crewyard/core";
 import { balanceKind, fetchBalance } from "./balances.ts";
 import { CatalogService } from "./catalog.ts";
 import type { Protector } from "./dpapi.ts";
@@ -38,6 +38,17 @@ interface ProfileRow {
   config_dir: string;
   created_at: string;
   updated_at: string;
+}
+
+interface SignInRow {
+  profile_id: string;
+  state: SignInStatus["state"];
+  plan: string | null;
+  cli_version: string | null;
+  problem: string | null;
+  update_min: string | null;
+  update_command: string | null;
+  probed_at: string;
 }
 
 interface BalanceRow {
@@ -252,6 +263,57 @@ export class ProvidersService {
     if (dir === resolve(row.config_dir)) rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
   }
 
+  /**
+   * Sign-out: removes the profile's own folder (the runner's sign-in, sessions and settings) and
+   * leaves an empty one in its place. Same guard as deleteProfile, so it can never reach ~/.codex.
+   */
+  resetProfileFolder(id: string): void {
+    const row = this.profileRow(id);
+    const dir = this.configDirFor(row.runner, row.alias);
+    if (dir !== resolve(row.config_dir)) throw new Error("Profile folder is not where Crewyard put it; leaving it alone");
+    rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
+    mkdirSync(dir, { recursive: true });
+  }
+
+  // ── sign-in probes ─────────────────────────────────────────
+
+  /** One entry per profile that signs in on its own; "unknown" until its first probe. */
+  signInStatuses(): SignInStatus[] {
+    const rows = this.db.prepare("select * from profile_signin").all() as unknown as SignInRow[];
+    const byId = new Map(rows.map((r) => [r.profile_id, r]));
+    const out: SignInStatus[] = [];
+    for (const p of this.listProfiles()) {
+      const kind = p.credentialId === null ? signInKindFor(p.runner, p.providerId) : null;
+      if (!kind) continue;
+      const r = byId.get(p.id);
+      out.push({
+        profileId: p.id,
+        kind,
+        state: r?.state ?? "unknown",
+        plan: r?.plan ?? null,
+        cliVersion: r?.cli_version ?? null,
+        update: r?.update_min && r.update_command ? { current: r.cli_version, min: r.update_min, command: r.update_command } : null,
+        problem: r?.problem ?? null,
+        probedAt: r?.probed_at ?? null,
+      });
+    }
+    return out;
+  }
+
+  signInStatus(profileId: string): SignInStatus | null {
+    return this.signInStatuses().find((s) => s.profileId === profileId) ?? null;
+  }
+
+  saveSignIn(s: Omit<SignInStatus, "kind" | "probedAt"> & { probedAt?: string | null }): void {
+    this.db
+      .prepare(
+        `insert into profile_signin (profile_id, state, plan, cli_version, problem, update_min, update_command, probed_at) values (?, ?, ?, ?, ?, ?, ?, ?)
+         on conflict(profile_id) do update set state = excluded.state, plan = excluded.plan, cli_version = excluded.cli_version, problem = excluded.problem,
+           update_min = excluded.update_min, update_command = excluded.update_command, probed_at = excluded.probed_at`,
+      )
+      .run(s.profileId, s.state, s.plan, s.cliVersion, s.problem, s.update?.min ?? null, s.update?.command ?? null, s.probedAt ?? this.now().toISOString());
+  }
+
   // ── balances ───────────────────────────────────────────────
 
   listBalances(): BalanceView[] {
@@ -308,9 +370,11 @@ export class ProvidersService {
   /** One row per plan profile and per API key, most urgent first; unknown and local sort last. */
   accounts(): AccountRow[] {
     const windows = latestWindows(this.db);
+    const signIns = new Map(this.signInStatuses().map((s) => [s.profileId, s]));
     const rows: AccountRow[] = [];
     for (const p of this.listProfiles().filter((p) => p.credentialId === null)) {
       const local = this.catalog.provider(p.providerId)?.group === "local";
+      const signIn = signIns.get(p.id);
       const mine = windows.filter((w) => w.profileId === p.id && w.usedPct !== null && WINDOW_ORDER.includes(w.window));
       const worst = mine.sort((a, b) => (b.usedPct ?? 0) - (a.usedPct ?? 0))[0];
       rows.push({
@@ -325,13 +389,14 @@ export class ProvidersService {
         provenance: local ? "unknown" : (worst?.provenance ?? "unknown"),
         window: worst?.window ?? null,
         resetsAt: worst?.resetsAt ?? null,
+        signIn: signIn ? { state: signIn.state, plan: signIn.plan, probedAt: signIn.probedAt } : null,
       });
     }
     const now = this.now();
     for (const c of this.listCredentials()) {
       const runner = (this.db.prepare("select runner from profiles where credential_id = ? order by created_at limit 1").get(c.id) as { runner: ProfileRunner } | undefined)?.runner ?? null;
       if (c.kind === "local") {
-        rows.push({ key: `credential:${c.id}`, label: c.alias, providerId: c.providerId, runner, kind: "local", pct: null, value: { kind: "none" }, provenance: "unknown", window: null, resetsAt: null });
+        rows.push({ key: `credential:${c.id}`, label: c.alias, providerId: c.providerId, runner, kind: "local", pct: null, value: { kind: "none" }, provenance: "unknown", window: null, resetsAt: null, signIn: null });
         continue;
       }
       const usd = spentToday(this.db, c.id, now);
@@ -347,6 +412,7 @@ export class ProvidersService {
         provenance: "estimated",
         window: "budget-day",
         resetsAt: null,
+        signIn: null,
       });
     }
     const rank = (r: AccountRow) => (r.kind === "local" ? -2 : r.pct === null ? -1 : r.pct);

@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import type { Profile } from "@crewyard/core";
 
 // What differs between ACP agents: how to start ACP mode, how to keep each profile in its own
@@ -18,6 +19,21 @@ export interface AgentSpec {
   isolationProblem(version: string | null): string | null;
   /** ACP auth method for a profile that brings an API key; null leaves sign-in to the CLI's own login. */
   authMethod(profile: Profile, env: Record<string, string>): string | null;
+  /** The agent's own subscription sign-in through ACP `authenticate`; null when it has none. */
+  signIn: SignInSpec | null;
+}
+
+export interface SignInSpec {
+  /** ACP auth method that runs the agent's browser login. */
+  methodId: string;
+  /** File the agent writes once signed in. Only its presence is checked; it is never opened. */
+  credentialsFile(profile: Profile): string;
+  /** Where the agent prints the sign-in page, so the UI can offer it when the browser did not open. */
+  urlPattern: RegExp;
+  /** Oldest version that keeps the sign-in inside the profile folder. */
+  minVersion: string;
+  /** What to run when the installed version is older than that. */
+  updateCommand: string;
 }
 
 /** Compares dotted versions numerically; pre-release tags are ignored. */
@@ -61,6 +77,16 @@ export const gemini: AgentSpec = {
   },
   // "gemini-api-key" is AuthType.USE_GEMINI; Gemini reads the key from GEMINI_API_KEY.
   authMethod: (profile, env) => (profile.credential.kind === "api_key" && env.GEMINI_API_KEY ? "gemini-api-key" : null),
+  // Checked against gemini-cli v0.66.0 on 2026-10-30: `authenticate` with "oauth-personal"
+  // (AuthType.LOGIN_WITH_GOOGLE) opens the browser itself in ACP mode, waits for Google's callback on
+  // its own local port and resolves once the tokens are cached in <GEMINI_CLI_HOME>/.gemini/oauth_creds.json.
+  signIn: {
+    methodId: "oauth-personal",
+    credentialsFile: (profile) => join(profile.configDir, ".gemini", "oauth_creds.json"),
+    urlPattern: /https:\/\/accounts\.google\.com\/[^\s"'<>]+/,
+    minVersion: GEMINI_ISOLATION_MIN,
+    updateCommand: "npm install -g @google/gemini-cli@latest",
+  },
 };
 
 export const AGENTS: AgentSpec[] = [gemini];

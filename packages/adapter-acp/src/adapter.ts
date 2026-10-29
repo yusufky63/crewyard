@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { Readable, Writable } from "node:stream";
 import type { ChildProcess } from "node:child_process";
@@ -18,6 +19,24 @@ export interface AcpAdapterOptions {
   prefixArgs?: string[];
   initTimeoutMs?: number;
   cancelGraceMs?: number;
+}
+
+/** What the accounts UI needs to know before offering a sign-in. */
+export interface AcpSignInState {
+  version: string | null;
+  /** "blocked": the CLI is missing or cannot keep its sign-in inside the profile folder. */
+  state: "signed_in" | "signed_out" | "blocked";
+  problem: string | null;
+  /** Set when updating the CLI would unblock the sign-in. */
+  update: { min: string; command: string } | null;
+}
+
+export interface AcpLoginSession {
+  /** The sign-in page once the agent printed it; the agent also opens it in the browser itself. */
+  url(): string | null;
+  /** Settles once: success, failure, cancel, timeout or the agent exiting. */
+  completed: Promise<{ success: boolean; error: string | null }>;
+  cancel(): Promise<void>;
 }
 
 interface CliInfo {
@@ -93,6 +112,84 @@ export class AcpAdapter implements AgentAdapter {
     }
     // Sign-in state is only known when a session starts; we never read the agent's token files.
     return { installed: true, executable, version: cli.version, signedIn: null, capabilities: problems.length > 0 ? { ...capabilities, launch: false } : capabilities, problems };
+  }
+
+  /**
+   * Whether the profile is signed in, without starting a session (which would start the browser
+   * login itself). Asks the CLI for its version afresh, so "Check again" sees an update.
+   */
+  async signInState(profile: Profile): Promise<AcpSignInState> {
+    const spec = this.spec(profile);
+    const executable = await this.executable(spec);
+    if (!executable) return { version: null, state: "blocked", problem: `${spec.command} was not found on PATH`, update: null };
+    this.info.delete(executable);
+    const cli = await this.cliInfo(spec, executable, profile);
+    const blocked = (problem: string, update = false): AcpSignInState => ({
+      version: cli.version,
+      state: "blocked",
+      problem,
+      update: update && spec.signIn ? { min: spec.signIn.minVersion, command: spec.signIn.updateCommand } : null,
+    });
+    const isolation = spec.isolationProblem(cli.version);
+    if (isolation) return blocked(isolation, true);
+    if (!cli.acpArgs) return blocked(`${spec.label} ${cli.version ?? ""} has no ACP mode`.replace("  ", " "), true);
+    if (!spec.signIn) return blocked(`${spec.label} has no sign-in of its own`);
+    return { version: cli.version, state: existsSync(spec.signIn.credentialsFile(profile)) ? "signed_in" : "signed_out", problem: null, update: null };
+  }
+
+  /**
+   * Runs the agent's own browser login inside the profile folder: ACP `authenticate` with the
+   * spec's method in a process that exists only for the sign-in. The agent opens the browser,
+   * listens for the callback and stores the tokens; we never see them. Cancel kills the process.
+   */
+  async signIn(profile: Profile, opts: { timeoutMs?: number } = {}): Promise<AcpLoginSession> {
+    const spec = this.spec(profile);
+    if (!spec.signIn) throw new Error(`${spec.label} has no sign-in of its own`);
+    const state = await this.signInState(profile);
+    if (state.state === "blocked") throw new Error(state.problem ?? `${spec.label} cannot sign in here`);
+    const executable = (await this.executable(spec))!;
+    const cli = await this.cliInfo(spec, executable, profile);
+    const opened = await this.spawn(spec, executable, cli, { profile, cwd: profile.configDir, env: {}, model: null });
+    const pattern = spec.signIn.urlPattern;
+    let url: string | null = null;
+    let tail = "";
+    opened.child.stderr?.on("data", (d: string) => {
+      tail = (tail + d).slice(-STDERR_TAIL);
+      url ??= pattern.exec(tail)?.[0] ?? null;
+    });
+
+    let finished = false;
+    let settle!: (r: { success: boolean; error: string | null }) => void;
+    const completed = new Promise<{ success: boolean; error: string | null }>((resolve) => (settle = resolve));
+    const finish = (r: { success: boolean; error: string | null }) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      settle(r);
+      opened.conn.close();
+      void opened.kill();
+    };
+    // Gemini CLI gives up after 5 minutes on its own; this only covers an agent that never answers.
+    const timer = setTimeout(() => finish({ success: false, error: "sign-in timed out" }), opts.timeoutMs ?? 6 * 60_000);
+    opened.child.once("exit", () => finish({ success: false, error: `${spec.label} exited before sign-in finished: ${lastLine(tail)}` }));
+
+    const methodId = spec.signIn.methodId;
+    const credentials = spec.signIn.credentialsFile(profile);
+    void (async () => {
+      try {
+        const init = await opened.init;
+        if (init.authMethods && !init.authMethods.some((m) => m.id === methodId)) throw new Error(`${spec.label} does not offer ${methodId} sign-in`);
+        await opened.conn.agent.request(acp.methods.agent.authenticate, { methodId });
+        finish(existsSync(credentials) ? { success: true, error: null } : { success: false, error: `${spec.label} finished without storing a sign-in` });
+      } catch (err) {
+        finish({ success: false, error: message(err) });
+      }
+    })();
+    return {
+      url: () => url,
+      completed,
+      cancel: async () => finish({ success: false, error: "cancelled" }),
+    };
   }
 
   async start(req: StartRequest): Promise<RunHandle> {

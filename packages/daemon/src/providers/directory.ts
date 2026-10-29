@@ -67,23 +67,36 @@ export function writeCodexConfig(configDir: string, provider: CatalogProvider | 
   renameSync(tmp, file);
 }
 
+/** The adapter-facing profile for a stored one; shared by runs and the sign-in flows. */
+export function profileFor(svc: ProvidersService, p: ProfileSummary): Profile {
+  const provider = svc.catalog.current().catalog.providers.find((x) => x.id === p.providerId);
+  const credential = p.credentialId ? svc.credential(p.credentialId) : null;
+  return {
+    id: p.id,
+    alias: p.alias,
+    runner: p.runner,
+    providerId: p.providerId,
+    // No credential means the runner signs in on its own (ChatGPT, Google); never claude.ai (PLAN.md §6).
+    credential: credential ? { kind: credential.kind, secretRef: credential.isSet ? credential.id : null } : { kind: "plan_signin", secretRef: null },
+    defaultModel: p.defaultModel,
+    configDir: p.configDir,
+    baseUrl: baseUrlFor(p.runner, provider),
+  };
+}
+
 export function providersDirectory(svc: ProvidersService): ProfileDirectory {
   const providerOf = (id: string) => svc.catalog.current().catalog.providers.find((p) => p.id === id);
+  // A sign-in profile whose last probe found it signed out, or its CLI too old, cannot run yet.
+  // Never probed stays ready: the first run tells, as before sign-in probes existed.
+  const signedIn = (p: ProfileSummary) => {
+    const s = p.credentialId === null ? svc.signInStatus(p.id) : null;
+    return !s || s.state === "signed_in" || s.state === "unknown";
+  };
 
   const toCandidate = (p: ProfileSummary): Candidate => {
     const provider = providerOf(p.providerId);
     const credential = p.credentialId ? svc.credential(p.credentialId) : null;
-    const profile: Profile = {
-      id: p.id,
-      alias: p.alias,
-      runner: p.runner,
-      providerId: p.providerId,
-      // No credential means the runner signs in on its own (ChatGPT, Google); never claude.ai (PLAN.md §6).
-      credential: credential ? { kind: credential.kind, secretRef: credential.isSet ? credential.id : null } : { kind: "plan_signin", secretRef: null },
-      defaultModel: p.defaultModel,
-      configDir: p.configDir,
-      baseUrl: baseUrlFor(p.runner, provider),
-    };
+    const profile = profileFor(svc, p);
     const support = provider ? runnerSupport(provider, p.runner) : "none";
     const keyReady = !credential || credential.kind === "local" || credential.isSet;
     return {
@@ -91,7 +104,7 @@ export function providersDirectory(svc: ProvidersService): ProfileDirectory {
       model: provider?.models.find((m) => m.id === p.defaultModel) ?? null,
       capabilities: CAPABILITIES[p.runner],
       // A provider that needs API-format conversion needs a proxy we do not run; Claude never runs without a key.
-      ready: support !== "none" && support !== "conversion" && keyReady && !(p.runner === "claude-code" && !credential),
+      ready: support !== "none" && support !== "conversion" && keyReady && signedIn(p) && !(p.runner === "claude-code" && !credential),
       // Spend is recorded and capped per API key; local providers have no key to cap.
       credentialId: credential?.kind === "api_key" ? credential.id : null,
       catalogVersion: svc.catalog.current().hash,
