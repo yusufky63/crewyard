@@ -10,3 +10,4 @@ export * from "./ipc/tasks.ts";
 export * from "./ipc/providers.ts";
 export * from "./ipc/github.ts";
 export * from "./ipc/setup.ts";
+export * from "./ipc/crew.ts";

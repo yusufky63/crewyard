@@ -138,3 +138,23 @@ svg.i, .i { width: 16px; height: 16px; flex: none; }
 .meter.xs { height: 10px; } .meter.xs i { height: 6px; } .meter.xs i.th { height: 10px; }
 .segbar { display: flex; gap: 4px; height: 8px; }
 .segbar span { background: var(--c); }
+
+/* Context menu (DESIGN.md §5): a framed surface with corner ticks; disabled items say why. */
+.cmenu { position: fixed; z-index: var(--z-popover); min-width: 248px; max-width: 340px; padding: 6px; background: var(--surface); border: 1px solid var(--line-strong); }
+.cmenu::before { content: ""; position: absolute; inset: -1px; pointer-events: none; z-index: 1; background: var(--ink-3); -webkit-mask: var(--tick-mask); mask: var(--tick-mask); }
+.cmenu:focus { outline: none; }
+.cmenu-head { display: grid; gap: 3px; padding: 6px 10px 8px; margin-bottom: 4px; border-bottom: 1px solid var(--line); }
+.cmenu-head b { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmenu button { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 32px; padding: 6px 10px; font-size: 13px; color: var(--ink); text-align: left; }
+.cmenu button:hover, .cmenu button:focus-visible, .cmenu button:focus { background: var(--raised); outline: none; }
+.cmenu button:focus-visible { box-shadow: inset 2px 0 0 var(--accent); }
+.cmenu-icon { display: grid; place-items: center; width: 14px; height: 14px; flex: none; color: var(--ink-3); }
+.cmenu-icon svg { width: 14px; height: 14px; }
+.cmenu-text { display: grid; gap: 2px; min-width: 0; }
+.cmenu-why { font: 400 11px / 1.3 var(--mono); color: var(--ink-3); }
+.cmenu-key { margin-left: auto; font: 400 11px / 1 var(--mono); color: var(--ink-3); }
+.cmenu button[aria-disabled="true"] { color: var(--ink-3); cursor: not-allowed; }
+.cmenu button.danger, .cmenu button.danger .cmenu-icon { color: var(--bad); }
+.cmenu button.danger:hover, .cmenu button.danger:focus { background: var(--bad-soft); }
+.cmenu button.danger[aria-disabled="true"] { color: var(--ink-3); }
+.cmenu-sep { height: 1px; margin: 4px 2px; background: var(--line); }

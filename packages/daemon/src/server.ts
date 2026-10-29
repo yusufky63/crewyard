@@ -1,5 +1,6 @@
 import { basename } from "node:path";
 import type { DaemonStatus, IpcMessage, IpcMethods, IpcResponse } from "@crewyard/core";
+import { createCrewHandlers } from "./handlers/crew.ts";
 import { createGithubHandlers } from "./handlers/github.ts";
 import { createProvidersHandlers } from "./handlers/providers.ts";
 import { createSetupHandlers } from "./handlers/setup.ts";
@@ -38,6 +39,7 @@ export function createHandlers(ctx: HandlerContext): Handlers {
     ...createProvidersHandlers(ctx),
     ...createGithubHandlers(ctx),
     ...createSetupHandlers(ctx),
+    ...createCrewHandlers(ctx),
   };
 }
 
