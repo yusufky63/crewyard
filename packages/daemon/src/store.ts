@@ -243,6 +243,13 @@ const MIGRATIONS: string[] = [
      weight integer not null,
      primary key (project_id, role, profile_id)
    );`,
+  // Recovery: which daemon process (pid, start time) was running when, so a run's agent process
+  // can be matched to the daemon that spawned it after a crash (recovery/orphans.ts).
+  `create table daemon_sessions (
+     pid integer not null,
+     started_at text not null,
+     primary key (started_at, pid)
+   );`,
 ];
 
 export interface EventInput {

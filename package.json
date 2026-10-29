@@ -16,6 +16,7 @@
     "contrast": "node design/check-contrast.mjs",
     "catalog:sync": "node catalog/sync-catalog.mjs",
     "logos:sync": "node catalog/sync-logos.mjs",
+    "stress": "pnpm --filter @crewyard/daemon stress",
     "check": "pnpm tokens --check && pnpm contrast && pnpm typecheck && pnpm lint && pnpm test && pnpm build"
   },
   "devDependencies": {
