@@ -75,7 +75,7 @@ export class OpenCodeAdapter implements AgentAdapter {
     if (!executable) return { installed: false, executable: null, version: null, signedIn: null, capabilities: this.capabilities, problems: ["opencode was not found on PATH"] };
     const res = await runCommand(executable, [...this.opts.prefixArgs, "--version"], { timeoutMs: 15_000 });
     const version = parseVersion(res.stdout);
-    this.version = version;
+    if (version) this.version = version;
     const problems: string[] = [];
     if (res.code !== 0 || !version) problems.push(`opencode --version failed: ${res.stderr.trim().slice(0, 200)}`);
     else if (version !== TESTED_VERSION) problems.push(`OpenCode ${version} has not passed the conformance suite yet (checked: ${TESTED_VERSION})`);
@@ -184,6 +184,8 @@ export class OpenCodeAdapter implements AgentAdapter {
   private async open(req: StartRequest, sessionId: string | null): Promise<Run> {
     const executable = await this.executable();
     if (!executable) throw new Error("opencode was not found on PATH");
+    // Every event carries the CLI version (PLAN.md §5.3); read it once per adapter.
+    if (this.version === null) this.version = parseVersion((await runCommand(executable, [...this.opts.prefixArgs, "--version"], { timeoutMs: 15_000 })).stdout);
     const server = await launchServer({ executable, prefixArgs: this.opts.prefixArgs, cwd: req.cwd, configDir: req.profile.configDir, env: req.env, readyTimeoutMs: this.opts.readyTimeoutMs });
     const client = createOpencodeClient({ baseUrl: server.url, directory: req.cwd, headers: { Authorization: basicAuth(server.password) }, throwOnError: true });
     const runId = `opencode-${randomUUID()}`;

@@ -1,0 +1,66 @@
+import type { Profile } from "@crewyard/core";
+
+// What differs between ACP agents: how to start ACP mode, how to keep each profile in its own
+// folder, and how an API-key profile authenticates. The protocol driver itself is shared.
+
+export interface AgentSpec {
+  /** Profile runner this spec serves, e.g. "gemini-cli". */
+  runner: Profile["runner"];
+  label: string;
+  /** Command looked up on PATH. */
+  command: string;
+  /** Picks the ACP flag from the installed CLI's --help output; null when it has none. */
+  acpArgs(help: string): string[] | null;
+  modelArgs(model: string): string[];
+  /** Variables that point the agent at the profile folder. */
+  env(profile: Profile): Record<string, string>;
+  /** Why this CLI version cannot be kept inside the profile folder, or null when it can. */
+  isolationProblem(version: string | null): string | null;
+  /** ACP auth method for a profile that brings an API key; null leaves sign-in to the CLI's own login. */
+  authMethod(profile: Profile, env: Record<string, string>): string | null;
+}
+
+/** Compares dotted versions numerically; pre-release tags are ignored. */
+export function versionAtLeast(version: string, min: string): boolean {
+  const a = version.split(/[-+]/)[0]?.split(".").map(Number) ?? [];
+  const b = min.split(".").map(Number);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const x = a[i] ?? 0;
+    const y = b[i] ?? 0;
+    if (x !== y) return x > y;
+  }
+  return true;
+}
+
+/**
+ * Gemini CLI. Checked against the published packages on 2026-10-30:
+ * - ACP flag: 0.6.1 through 0.31 only have `--experimental-acp`; 0.35 adds `--acp` and keeps the old
+ *   one as deprecated. The help text decides, so both generations work.
+ * - GEMINI_CLI_HOME first appears in @google/gemini-cli-core 0.25.0 (`homedir()` in utils/paths.js).
+ *   Older versions always use os.homedir()/.gemini, which would put every profile in your own
+ *   ~/.gemini (PLAN.md D4), so they are refused instead of run.
+ * - GEMINI_FORCE_FILE_STORAGE=true keeps OAuth tokens in the profile folder instead of the OS
+ *   keychain entry that all profiles would otherwise share.
+ */
+export const GEMINI_ISOLATION_MIN = "0.25.0";
+
+export const gemini: AgentSpec = {
+  runner: "gemini-cli",
+  label: "Gemini CLI",
+  command: "gemini",
+  acpArgs(help) {
+    if (/(^|\s)--acp\b/m.test(help)) return ["--acp"];
+    if (/(^|\s)--experimental-acp\b/m.test(help)) return ["--experimental-acp"];
+    return null;
+  },
+  modelArgs: (model) => ["--model", model],
+  env: (profile) => ({ GEMINI_CLI_HOME: profile.configDir, GEMINI_FORCE_FILE_STORAGE: "true" }),
+  isolationProblem(version) {
+    if (version && versionAtLeast(version, GEMINI_ISOLATION_MIN)) return null;
+    return `Gemini CLI ${version ?? "(unknown version)"} ignores GEMINI_CLI_HOME and would use your own ~/.gemini; update it to ${GEMINI_ISOLATION_MIN} or newer`;
+  },
+  // "gemini-api-key" is AuthType.USE_GEMINI; Gemini reads the key from GEMINI_API_KEY.
+  authMethod: (profile, env) => (profile.credential.kind === "api_key" && env.GEMINI_API_KEY ? "gemini-api-key" : null),
+};
+
+export const AGENTS: AgentSpec[] = [gemini];

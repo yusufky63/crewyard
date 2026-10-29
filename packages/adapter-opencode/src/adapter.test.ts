@@ -108,6 +108,7 @@ describe("OpenCode adapter against a fake opencode serve", () => {
     expect(events.find((e) => e.type === "usage.update")).toMatchObject({ tokensIn: 100, tokensOut: 20, cacheRead: 10, reasoning: 5, contextUsed: 130, costUsd: 0.0123, costProvenance: "estimated" });
     expect(last(events)).toMatchObject({ type: "run.ended", reason: "completed" });
     expect(events.map((e) => e.seq)).toEqual(events.map((_, i) => i));
+    expect(events.every((e) => e.source.adapter === "opencode" && e.source.cliVersion === "1.19.5")).toBe(true);
 
     const log = await readLog(logFile);
     const launch = log.find((l) => l.kind === "launch");
