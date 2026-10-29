@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { TickMeter } from "@crewyard/ui";
+import { BrandIcon, TickMeter } from "@crewyard/ui";
 import { DEFAULT_THRESHOLDS, type AccountRow, type Thresholds } from "@crewyard/core";
 import { useDaemon } from "../../ipc.ts";
 import { useNav } from "../../nav.ts";
@@ -36,7 +36,7 @@ function Row({ row, thresholds }: { row: AccountRow; thresholds: Thresholds }) {
   const tone = pct === null ? "" : pct >= thresholds.critical ? " bad" : pct >= thresholds.warn ? " warn" : "";
   return (
     <button className="acct" title={title} onClick={() => go(row.kind === "local" ? "providers" : "limits")}>
-      <i className="dot" style={{ ["--c" as string]: color }} aria-hidden="true" />
+      <BrandIcon id={row.kind === "plan" && row.runner ? row.runner : row.providerId} size={14} />
       <span className="n">{label}</span>
       {row.kind === "local" ? <span /> : <TickMeter value={pct} ticks={8} size="xs" color={color} label={title} />}
       <span className={`v${value === "—" || row.kind === "local" ? " muted" : ""}${tone}`}>{value}</span>

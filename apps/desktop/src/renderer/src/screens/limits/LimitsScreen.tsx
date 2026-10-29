@@ -2,7 +2,7 @@ import { useMemo, useState, type ChangeEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Button, Dot, Label, Panel, TickMeter } from "@crewyard/ui";
+import { BrandIcon, Button, Dot, Label, Panel, TickMeter } from "@crewyard/ui";
 import type { CatalogProvider, CredentialSummary, ProfileSummary, Thresholds, UsageWindowView } from "@crewyard/core";
 import { call, useDaemon } from "../../ipc.ts";
 import { providerColor, ProvBadge, RUNNER_COLOR, useMoney, useProvidersLive, useWhen } from "../providers/shared.tsx";
@@ -29,7 +29,7 @@ function PlanAccount({ profile, provider, windows, thresholds }: { profile: Prof
   return (
     <div className="lim">
       <div className="lim-top">
-        <Dot color={color} />
+        <BrandIcon id={profile.runner} />
         <span className="name">{name}</span>
         <Label>{provider?.name ?? profile.providerId}</Label>
         <div className="end">
@@ -187,7 +187,7 @@ function CapRow({ credential, provider, todayUsd, todayProvenance }: { credentia
   return (
     <div className="lim">
       <div className="lim-top">
-        <Dot color={color} />
+        <BrandIcon id={credential.providerId} />
         <span className="name">{name}</span>
         <div className="end">
           {provider?.balance ? (

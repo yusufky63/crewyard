@@ -108,7 +108,7 @@ Icons inside buttons are 14 px.
   - Every item that has a screen opens it on click. Below 1180 px the lower-priority items (RAM, GitHub sync, Actions) hide.
 - **Sidebar** is two framed blocks:
   - **Nav:** six destinations, counters only on Inbox. The active item gets bright corner ticks.
-  - **Accounts:** pinned to the bottom. One 28 px line per account (dot, name, 8-tick meter, value: % for plan windows, $ for API keys, `—` for unknown), sorted most urgent first. It scrolls on its own above about 236 px (34% of the window height), so many accounts never push the nav away. `ALL LIMITS` opens Limits.
+  - **Accounts:** pinned to the bottom. One 28 px line per account (vendor mark, name, 8-tick meter, value: % for plan windows, $ for API keys, `—` for unknown), sorted most urgent first. It scrolls on its own above about 236 px (34% of the window height), so many accounts never push the nav away. `ALL LIMITS` opens Limits.
 - **Breakpoints:** below 1280 px the inspector overlays the main view; below 1180 px the sidebar becomes a 56 px icon rail (the accounts block hides; the status bar still shows near-limit counts). 960 px is the minimum supported width.
 
 ## 5. Components

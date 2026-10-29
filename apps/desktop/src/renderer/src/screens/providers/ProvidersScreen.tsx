@@ -2,11 +2,11 @@ import { useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Button, Dot, Label, Panel } from "@crewyard/ui";
+import { BrandIcon, Button, Label, Panel } from "@crewyard/ui";
 import { PROFILE_RUNNERS, runnerSupport, type BalanceView, type CatalogProvider, type CredentialSummary, type ProfileSummary, type SpendSlice } from "@crewyard/core";
 import { call, useDaemon } from "../../ipc.ts";
 import { AddProviderDialog, ManageDialog } from "./Dialogs.tsx";
-import { newestModels, providerColor, ProvBadge, useMoney, usePrice, useProvidersLive, useWhen } from "./shared.tsx";
+import { newestModels, ProvBadge, useMoney, usePrice, useProvidersLive, useWhen } from "./shared.tsx";
 import "./providers.css";
 
 type Filter = "all" | "connected" | CatalogProvider["group"];
@@ -211,7 +211,7 @@ export function ProvidersScreen() {
                 <tr key={p.id} className={on ? "" : "dim"}>
                   <td>
                     <div className="prov-name">
-                      <Dot color={providerColor(p.id)} />
+                      <BrandIcon id={p.id} />
                       {p.name}
                     </div>
                     <Label className="pv-group">
