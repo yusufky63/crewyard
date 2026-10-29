@@ -1,8 +1,10 @@
-# Mission Control
+# Crewyard
+
+Working name in the planning documents: Mission Control.
 
 A local, Windows-first desktop app that runs and supervises coding agents (Claude Code, Codex, Gemini CLI, OpenCode) across several of your own accounts and API keys. It proposes a crew for each task, waits for your approval, watches limits, hands work to a backup agent when you allow it, and keeps GitHub under your control.
 
-This folder is the plan and design package. There is no application code yet.
+The plan and design package is at the top level; the app lives in `apps/` and `packages/` (see AGENTS.md for the layout).
 
 | File | What it is |
 |---|---|
@@ -43,3 +45,23 @@ node design/check-contrast.mjs
 ## Replaces
 
 The 2026-10-29 draft package (`AI_MISSION_CONTROL_RESEARCH.md`, `UI_UX_DESIGN_SYSTEM.md`, `DESIGN_REFERENCE_LIBRARY.md`, `THEME_TOKENS.json`, `GITHUB_SOURCE_CATALOG.md`, `FEATURE_RESEARCH_TEMPLATE.md`, `AGENTS_RESEARCH_RULES.md`, `README_DESIGN_UPDATE.md`, `AI_MISSION_CONTROL_UI.svg`). PLAN.md §2 lists what changed and why.
+
+## Development
+
+```bash
+pnpm install
+```
+
+```bash
+node node_modules/.pnpm/electron@45.1.0/node_modules/electron/install.js
+```
+
+```bash
+pnpm dev
+```
+
+```bash
+pnpm check
+```
+
+`pnpm check` runs the token check, contrast check, typecheck, lint with zero warnings, tests and the build. CI runs the same on ubuntu for pull requests and pushes to `main`.

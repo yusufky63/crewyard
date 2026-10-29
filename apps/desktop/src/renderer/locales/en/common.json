@@ -1,0 +1,16 @@
+{
+  "app": { "name": "Crewyard" },
+  "titlebar": { "noProject": "No project open", "allProjects": "All projects" },
+  "nav": { "label": "Main" },
+  "status": {
+    "label": "Status",
+    "daemon": { "running": "Daemon running", "starting": "Daemon starting", "down": "Daemon stopped" },
+    "languageTitle": "Switch language",
+    "language": { "en": "English", "tr": "Türkçe" },
+    "themeTitle": "Switch theme",
+    "theme": { "system": "System", "dark": "Dark", "light": "Light" },
+    "densityTitle": "Switch density",
+    "density": { "comfortable": "Comfortable", "compact": "Compact" }
+  },
+  "errors": { "daemon": "The background service did not answer: {{message}}" }
+}

@@ -1,0 +1,137 @@
+/* Shared primitives. Screen-specific styles live next to each screen in apps/desktop.
+   Visual rules: DESIGN.md (square frames, corner ticks, mono labels, functional color). */
+
+:root {
+  /* Short aliases used by every screen; the values come from tokens.css. */
+  --canvas: var(--bg-canvas);
+  --surface: var(--bg-surface);
+  --raised: var(--bg-raised);
+  --sunken: var(--bg-sunken);
+  --scrim: var(--bg-scrim);
+  --line: var(--line-default);
+  --tick: var(--line-tick);
+  --ink: var(--ink-primary);
+  --ink-2: var(--ink-secondary);
+  --ink-3: var(--ink-muted);
+  --inv-bg: var(--inverse-bg);
+  --inv-fg: var(--inverse-fg);
+  --accent: var(--accent-default);
+  --ok: var(--state-success);
+  --ok-soft: var(--state-success-soft);
+  --warn: var(--state-warning);
+  --warn-soft: var(--state-warning-soft);
+  --bad: var(--state-danger);
+  --bad-soft: var(--state-danger-soft);
+  --ui: var(--font-family-ui);
+  --mono: var(--font-family-mono);
+  --fs: var(--density-body);
+  --ctl: var(--density-control);
+  --row: var(--density-row);
+  --pad: var(--density-panel-padding);
+  --tick-mask:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Cpath d='M.5 8V.5H8' fill='none' stroke='%23000'/%3E%3C/svg%3E") top left / 8px 8px no-repeat,
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Cpath d='M0 .5h7.5V8' fill='none' stroke='%23000'/%3E%3C/svg%3E") top right / 8px 8px no-repeat,
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Cpath d='M.5 0v7.5H8' fill='none' stroke='%23000'/%3E%3C/svg%3E") bottom left / 8px 8px no-repeat,
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Cpath d='M0 7.5h7.5V0' fill='none' stroke='%23000'/%3E%3C/svg%3E") bottom right / 8px 8px no-repeat;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body, #root { height: 100%; }
+body {
+  background: var(--canvas);
+  color: var(--ink);
+  font: 400 var(--fs) / 1.45 var(--ui);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+button, input, textarea, select { font: inherit; color: inherit; }
+button { background: none; border: 0; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+svg.i, .i { width: 16px; height: 16px; flex: none; }
+
+.mono { font-family: var(--mono); }
+.lbl { font: 500 11px / 1.2 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+.muted { color: var(--ink-3); }
+.sec { color: var(--ink-2); }
+.num { font-variant-numeric: tabular-nums; }
+.dot { width: 7px; height: 7px; border-radius: var(--radius-dot); background: var(--c, var(--ink-3)); flex: none; display: inline-block; }
+
+/* Frames with corner ticks (R1). One masked pseudo-element draws all four corners. */
+.panel, .spec, .frame, .btn, .seg, .tabs, .banner { position: relative; }
+.panel::before, .spec::before, .frame::before, .btn::before, .seg::before, .tabs::before, .banner::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  pointer-events: none;
+  z-index: 1;
+  background: var(--tk, var(--ink-3));
+  -webkit-mask: var(--tick-mask);
+  mask: var(--tick-mask);
+}
+.panel { background: var(--surface); border: 1px solid var(--line); }
+.spec, .frame { border: 1px solid var(--line); background: var(--surface); }
+.spec:hover { --tk: var(--ink); }
+.spec[aria-current], .spec.selected { border-color: var(--accent); --tk: var(--accent); }
+
+/* Buttons: primary (inverse fill, ticks outside), secondary (hairline + ticks), ghost and danger ([ LABEL ]). */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: var(--ctl); padding: 0 14px; border: 1px solid var(--line);
+  font: 500 12px / 1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase;
+  white-space: nowrap; color: var(--ink);
+}
+.btn svg { width: 14px; height: 14px; }
+.btn:hover { background: var(--raised); --tk: var(--ink); }
+.btn[disabled] { opacity: 0.45; cursor: not-allowed; }
+.btn-primary { background: var(--inv-bg); color: var(--inv-fg); border-color: var(--inv-bg); --tk: var(--ink-2); }
+.btn-primary:hover { background: var(--inv-bg); opacity: 0.92; --tk: var(--ink); }
+.btn-primary::before { inset: -4px; }
+.btn-ghost, .btn-danger { border-color: transparent; padding: 0 4px; gap: 6px; }
+.btn-ghost { color: var(--ink-2); }
+.btn-ghost:hover { background: none; color: var(--ink); }
+.btn-danger { color: var(--bad); }
+.btn-danger:hover { background: var(--bad-soft); }
+.btn-ghost::before, .btn-ghost::after, .btn-danger::before, .btn-danger::after {
+  content: "["; position: static; inset: auto; z-index: auto; -webkit-mask: none; mask: none; background: none; color: var(--ink-3); font-weight: 400;
+}
+.btn-ghost::after, .btn-danger::after { content: "]"; }
+.btn-danger::before, .btn-danger::after { color: inherit; opacity: 0.65; }
+.btn-sm { height: 28px; padding: 0 10px; font-size: 11px; }
+.btn-sm.btn-ghost, .btn-sm.btn-danger { padding: 0 4px; }
+
+.kbd { font: 500 11px / 1 var(--mono); color: var(--ink-2); border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: var(--radius-keycap); padding: 3px 5px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 9px; border: 1px solid var(--line); color: var(--ink-2); font-size: 13px; white-space: nowrap; }
+.chip:hover { border-color: var(--line-strong); color: var(--ink); }
+.chip b { font-weight: 500; color: var(--ink); }
+.seg { display: inline-flex; padding: 3px; border: 1px solid var(--line); gap: 2px; background: var(--canvas); }
+.seg button { height: 26px; padding: 0 12px; font: 500 11px / 1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+.seg button[aria-pressed="true"] { background: var(--raised); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.tabs { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--line); background: var(--surface); }
+.tabs button { height: 30px; padding: 0 12px; font-size: 13px; color: var(--ink-2); display: flex; gap: 7px; align-items: center; }
+.tabs button[aria-selected="true"] { background: var(--raised); color: var(--ink); }
+.badge { font: 500 10.5px / 1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; padding: 4px 6px; border: 1px solid var(--line-strong); color: var(--ink-2); white-space: nowrap; }
+.badge-reported { border-color: transparent; background: var(--ok-soft); color: var(--ok); }
+.badge-estimated { border-color: transparent; background: var(--accent-soft); color: var(--accent); }
+.badge-unknown { border-style: dashed; color: var(--ink-3); }
+.st { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 500; white-space: nowrap; }
+.st-run { color: var(--accent); } .st-wait { color: var(--warn); } .st-ok { color: var(--ok); } .st-bad { color: var(--bad); } .st-rev { color: var(--ink); }
+.banner { display: flex; align-items: center; gap: 12px; padding: 10px 12px; font-size: 13px; flex-wrap: wrap; border: 1px solid transparent; }
+.banner-warn { background: var(--warn-soft); color: var(--warn); --tk: var(--warn); }
+.spin { width: 13px; height: 13px; border: 1.75px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin 1s linear infinite; flex: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; border-right-color: currentColor; opacity: 0.6; } * { transition: none !important; } }
+
+/* Tick meter (R2). Fill = used share; amber past 80%, red past 95%; unknown never shows a fill. */
+.meter { position: relative; display: grid; grid-template-columns: repeat(var(--n, 48), 1fr); align-items: end; height: 18px; }
+.meter i { justify-self: center; width: 2px; height: 11px; background: var(--tick); }
+.meter i.tall { height: 16px; }
+.meter i.on { background: var(--c, var(--accent)); }
+.meter i.w { background: var(--warn); }
+.meter i.cr { background: var(--bad); }
+.meter i.th { height: 18px; background: var(--ink-3); }
+.meter .handle { position: absolute; bottom: -3px; width: 6px; height: 22px; margin-left: -3px; border-radius: 1px; background: var(--ink); outline: 2px solid var(--surface); }
+.meter.unknown i { background: none; border-left: 1px dashed var(--tick); width: 0; }
+.meter.sm { height: 12px; } .meter.sm i { height: 7px; } .meter.sm i.tall { height: 10px; } .meter.sm i.th { height: 12px; }
+.meter.xs { height: 10px; } .meter.xs i { height: 6px; } .meter.xs i.th { height: 10px; }
+.segbar { display: flex; gap: 4px; height: 8px; }
+.segbar span { background: var(--c); }

@@ -1,0 +1,30 @@
+{
+  "name": "crewyard",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.15.4",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @crewyard/desktop dev",
+    "build": "pnpm --filter @crewyard/desktop build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "eslint . --max-warnings=0",
+    "test": "vitest run",
+    "tokens": "node scripts/build-tokens.mjs",
+    "contrast": "node design/check-contrast.mjs",
+    "catalog:sync": "node catalog/sync-catalog.mjs",
+    "check": "pnpm tokens --check && pnpm contrast && pnpm typecheck && pnpm lint && pnpm test && pnpm build"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "^24.19.2",
+    "eslint": "10.13.0",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "globals": "17.13.0",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.1",
+    "vitest": "5.0.5"
+  }
+}

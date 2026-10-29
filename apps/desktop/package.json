@@ -1,0 +1,37 @@
+{
+  "name": "@crewyard/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Electron app: main process, preload bridge and React renderer.",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc -p tsconfig.node.json && tsc -p tsconfig.web.json"
+  },
+  "dependencies": {
+    "@crewyard/adapter-fake": "workspace:^",
+    "@crewyard/core": "workspace:^",
+    "@crewyard/ui": "workspace:^",
+    "@fontsource/geist-mono": "5.3.0",
+    "@fontsource/geist-sans": "5.3.0",
+    "@tanstack/react-query": "5.105.0",
+    "@xyflow/react": "12.12.0",
+    "i18next": "26.5.11",
+    "lucide-react": "1.64.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "react-i18next": "17.1.9",
+    "zustand": "5.0.16"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "electron": "45.1.0",
+    "electron-vite": "6.0.0",
+    "vite": "8.3.5"
+  }
+}

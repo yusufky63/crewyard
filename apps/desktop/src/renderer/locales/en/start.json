@@ -1,0 +1,48 @@
+{
+  "title": "Start",
+  "version": "Crewyard · v{{version}}",
+  "hero1": "Run your agent crews",
+  "hero2": "from one place.",
+  "lead": "Claude Code, Codex, Gemini CLI and OpenCode on your own accounts and keys. Nothing starts until you approve it.",
+  "openFolder": "Open folder",
+  "machine": {
+    "title": "This machine",
+    "checked": "Checked {{time}}",
+    "checking": "Checking…",
+    "again": "Check again",
+    "notFound": "not found",
+    "installed": "installed",
+    "version": "v{{version}}",
+    "ghSignedIn": "signed in as {{user}}",
+    "ghSignedOut": "not signed in",
+    "longPaths": "Windows long paths",
+    "longOn": "enabled",
+    "longOff": "disabled",
+    "tools": {
+      "claude": "Claude Code",
+      "codex": "Codex",
+      "gemini": "Gemini CLI",
+      "opencode": "OpenCode",
+      "git": "Git",
+      "gh": "GitHub CLI"
+    }
+  },
+  "recent": {
+    "title": "Recent projects",
+    "empty": "No projects yet. Open a folder or add one found in {{root}}.",
+    "opened": "Opened {{time}}",
+    "never": "Not opened yet"
+  },
+  "scan": {
+    "title": "Found in {{root}}",
+    "count_one": "{{count}} git repository not added yet",
+    "count_other": "{{count}} git repositories not added yet",
+    "none": "Every git repository in {{root}} is already added.",
+    "missing": "{{root}} does not exist or has no git repositories.",
+    "add": "Add",
+    "adding": "Adding…",
+    "filter": "Filter by name",
+    "showAll": "Show all {{count}}",
+    "showFewer": "Show fewer"
+  }
+}

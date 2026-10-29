@@ -1,0 +1,16 @@
+Crewyard
+Copyright 2026 Yusuf
+
+Third-party material used by this project:
+
+- Claude Agent SDK (@anthropic-ai/claude-agent-sdk): used as a dependency under Anthropic's
+  terms (see its README). Claude Code is driven with Anthropic or Anthropic-compatible API keys
+  only; claude.ai sign-in is never offered (PLAN.md §6).
+- catalog/providers.json: model and price data from models.dev (MIT,
+  https://github.com/anomalyco/models.dev). Anthropic-compatible endpoints and balance endpoints
+  in catalog/curated.json come from cc-switch (MIT, https://github.com/farion1231/cc-switch);
+  every entry cites its file and line.
+- Geist and Geist Mono fonts (SIL Open Font License 1.1), bundled through @fontsource.
+- Design and architecture ideas from OrchestratorInc/agent-orchestrator and BloopAI/vibe-kanban
+  (Apache-2.0). No code has been copied from them; any future port keeps its license header and
+  gets an entry here.

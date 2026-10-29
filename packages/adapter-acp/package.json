@@ -1,0 +1,17 @@
+{
+  "name": "@crewyard/adapter-acp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Generic Agent Client Protocol driver (Gemini CLI and future agents).",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "2.1.0",
+    "@crewyard/core": "workspace:^"
+  }
+}

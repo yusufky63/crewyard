@@ -1,0 +1,20 @@
+{
+  "name": "@crewyard/daemon",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Background process: store, machine check, process spawning, scheduler.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@crewyard/core": "workspace:^",
+    "cross-spawn": "7.0.6"
+  },
+  "devDependencies": {
+    "@types/cross-spawn": "6.0.6"
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "title": "Başlangıç",
+  "version": "Crewyard · v{{version}}",
+  "hero1": "Ajan ekiplerini",
+  "hero2": "tek yerden yönet.",
+  "lead": "Claude Code, Codex, Gemini CLI ve OpenCode kendi hesaplarınla ve anahtarlarınla çalışır. Sen onaylamadan hiçbir şey başlamaz.",
+  "openFolder": "Klasör aç",
+  "machine": {
+    "title": "Bu bilgisayar",
+    "checked": "{{time}} kontrol edildi",
+    "checking": "Kontrol ediliyor…",
+    "again": "Yeniden kontrol et",
+    "notFound": "bulunamadı",
+    "installed": "kurulu",
+    "version": "v{{version}}",
+    "ghSignedIn": "{{user}} olarak oturum açık",
+    "ghSignedOut": "oturum açık değil",
+    "longPaths": "Windows uzun yol desteği",
+    "longOn": "açık",
+    "longOff": "kapalı",
+    "tools": {
+      "claude": "Claude Code",
+      "codex": "Codex",
+      "gemini": "Gemini CLI",
+      "opencode": "OpenCode",
+      "git": "Git",
+      "gh": "GitHub CLI"
+    }
+  },
+  "recent": {
+    "title": "Son projeler",
+    "empty": "Henüz proje yok. Bir klasör aç ya da {{root}} içinde bulunan bir depoyu ekle.",
+    "opened": "{{time}} açıldı",
+    "never": "Henüz açılmadı"
+  },
+  "scan": {
+    "title": "{{root}} içinde bulunanlar",
+    "count_one": "Eklenmemiş {{count}} git deposu",
+    "count_other": "Eklenmemiş {{count}} git deposu",
+    "none": "{{root}} içindeki tüm git depoları zaten ekli.",
+    "missing": "{{root}} yok ya da içinde git deposu yok.",
+    "add": "Ekle",
+    "adding": "Ekleniyor…",
+    "filter": "Ada göre süz",
+    "showAll": "Tümünü göster ({{count}})",
+    "showFewer": "Daha az göster"
+  }
+}

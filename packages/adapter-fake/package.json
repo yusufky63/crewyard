@@ -1,0 +1,16 @@
+{
+  "name": "@crewyard/adapter-fake",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Scripted adapter for tests and UI development.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@crewyard/core": "workspace:^"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "app": { "name": "Crewyard" },
+  "titlebar": { "noProject": "Açık proje yok", "allProjects": "Tüm projeler" },
+  "nav": { "label": "Ana menü" },
+  "status": {
+    "label": "Durum",
+    "daemon": { "running": "Servis çalışıyor", "starting": "Servis başlıyor", "down": "Servis durdu" },
+    "languageTitle": "Dili değiştir",
+    "language": { "en": "English", "tr": "Türkçe" },
+    "themeTitle": "Temayı değiştir",
+    "theme": { "system": "Sistem", "dark": "Koyu", "light": "Açık" },
+    "densityTitle": "Yoğunluğu değiştir",
+    "density": { "comfortable": "Rahat", "compact": "Sıkı" }
+  },
+  "errors": { "daemon": "Arka plan servisi yanıt vermedi: {{message}}" }
+}

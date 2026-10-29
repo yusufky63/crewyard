@@ -5,12 +5,14 @@
       "ui": {
         "$type": "fontFamily",
         "$value": [
+          "Geist Sans",
           "Geist",
           "Segoe UI Variable Text",
           "Segoe UI",
           "system-ui",
           "sans-serif"
-        ]
+        ],
+        "$description": "Bundled with @fontsource/geist-sans, which registers the family as 'Geist Sans'"
       },
       "mono": {
         "$type": "fontFamily",
