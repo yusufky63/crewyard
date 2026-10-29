@@ -1,4 +1,4 @@
-# ADR 0002: Codex runner on `codex app-server`
+# ADR 0003: Codex runner on `codex app-server`
 
 Date: 2026-10-30. Status: accepted.
 

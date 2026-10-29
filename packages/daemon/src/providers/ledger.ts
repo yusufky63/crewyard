@@ -96,30 +96,30 @@ export function setThresholds(db: DatabaseSync, warn: number, critical: number):
   return t;
 }
 
-// usage_samples belongs to the orchestrator (PLAN.md §4.3). Until it exists, or when its columns
-// differ from what we read, plan windows are reported as Unknown rather than guessed.
-const SAMPLE_COLUMNS = ["profile_id", "window", "used_pct", "resets_at", "provenance", "observed_at"];
+// usage_samples is written by the orchestrator (PLAN.md §4.3, its migration in store.ts). If its
+// columns ever differ from what we read, plan windows are reported as Unknown rather than guessed.
+const SAMPLE_COLUMNS = ["id", "profile_id", "limit_window", "used_pct", "resets_at", "provenance", "observed_at"];
 
 export function usageSamplesAvailable(db: DatabaseSync): boolean {
   const cols = (db.prepare("select name from pragma_table_info('usage_samples')").all() as Array<{ name: string }>).map((c) => c.name);
   return SAMPLE_COLUMNS.every((c) => cols.includes(c));
 }
 
-/** Latest sample per profile and window. */
+/** Latest sample per profile and window; same tie-break as the orchestrator (observed_at, then id). */
 export function latestWindows(db: DatabaseSync): UsageWindowView[] {
   if (!usageSamplesAvailable(db)) return [];
   const rows = db
     .prepare(
-      `select s.profile_id, s.window, s.used_pct, s.resets_at, s.provenance, s.observed_at from usage_samples s
-       join (select profile_id, window, max(observed_at) as m from usage_samples group by profile_id, window) l
-         on l.profile_id = s.profile_id and l.window = s.window and l.m = s.observed_at`,
+      `select s.profile_id, s.limit_window, s.used_pct, s.resets_at, s.provenance, s.observed_at from usage_samples s
+       where s.id = (select x.id from usage_samples x where x.profile_id = s.profile_id and x.limit_window = s.limit_window
+                     order by x.observed_at desc, x.id desc limit 1)`,
     )
-    .all() as Array<{ profile_id: string; window: string; used_pct: number | null; resets_at: string | null; provenance: string; observed_at: string }>;
+    .all() as Array<{ profile_id: string; limit_window: string; used_pct: number | null; resets_at: string | null; provenance: string; observed_at: string }>;
   return rows.map((r) => {
     const provenance: Provenance = r.provenance === "reported" || r.provenance === "estimated" ? r.provenance : "unknown";
     return {
       profileId: r.profile_id,
-      window: r.window as LimitWindow,
+      window: r.limit_window as LimitWindow,
       usedPct: provenance === "unknown" ? null : r.used_pct,
       resetsAt: r.resets_at,
       provenance,

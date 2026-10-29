@@ -1,6 +1,6 @@
 # Codex app-server protocol notes
 
-`src/protocol/` is generated from codex-cli 0.147.0 by `node scripts/gen-protocol.mjs` (run it again after a CLI upgrade and read the diff). Decisions are in [ADR 0002](../../docs/adr/0002-codex-app-server-adapter.md).
+`src/protocol/` is generated from codex-cli 0.147.0 by `node scripts/gen-protocol.mjs` (run it again after a CLI upgrade and read the diff). Decisions are in [ADR 0003](../../docs/adr/0003-codex-app-server-adapter.md).
 
 ## Rate-limit payload recorded from codex-cli 0.147.0 (2026-10-30)
 

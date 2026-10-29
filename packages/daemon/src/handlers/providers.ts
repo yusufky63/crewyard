@@ -1,6 +1,8 @@
 import { PROVIDERS_CHANGED, type ProvidersIpc } from "@crewyard/core";
 import { defaultProtector } from "../providers/dpapi.ts";
 import { getThresholds, latestWindows, setThresholds, spendSummary, usageSamplesAvailable } from "../providers/ledger.ts";
+import { orchestratorFor } from "../orchestrator/index.ts";
+import { providersDirectory } from "../providers/directory.ts";
 import { ProvidersService } from "../providers/service.ts";
 import type { HandlerContext, HandlerMap } from "./types.ts";
 
@@ -8,6 +10,8 @@ import type { HandlerContext, HandlerMap } from "./types.ts";
 // `service` is injectable so tests can swap DPAPI and fetch for fakes.
 export function createProvidersHandlers(ctx: HandlerContext, service?: ProvidersService): HandlerMap<ProvidersIpc> {
   const svc = service ?? new ProvidersService({ db: ctx.store.db, dataDir: ctx.info.dataDir, protector: defaultProtector() });
+  // The app's real profiles feed crew proposals and runs; tests that inject a service stay unwired.
+  if (!service) orchestratorFor(ctx).setDirectory(providersDirectory(svc));
   const db = ctx.store.db;
   const changed = (what: string) => ctx.emit(PROVIDERS_CHANGED, { what });
   // Background refresh starts with the first request, so creating handlers in tests stays inert.

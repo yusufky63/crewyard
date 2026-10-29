@@ -7,7 +7,7 @@ import { Store } from "../store.ts";
 import { balanceKind, fetchBalance, parseBalance } from "./balances.ts";
 import { buildCatalog, CatalogService, curated } from "./catalog.ts";
 import { dpapi, type Protector } from "./dpapi.ts";
-import { checkBudget, recordSpend, setThresholds, spendSummary } from "./ledger.ts";
+import { checkBudget, recordSpend, setThresholds, spendSummary, usageSamplesAvailable } from "./ledger.ts";
 import { SecretStore } from "./secrets.ts";
 import { ProvidersService } from "./service.ts";
 import { checkAlias, validateProfile } from "./validate.ts";
@@ -290,12 +290,12 @@ describe("providers service", () => {
     expect(sum.todayByCredential.find((s) => s.key === d.id)?.usd).toBeCloseTo(4.2);
   });
 
-  it("reads plan windows only when usage_samples exists, and validates thresholds", () => {
+  it("reads the latest plan window from the orchestrator's usage_samples, and validates thresholds", () => {
     const { store, svc } = setup();
     const p = svc.createProfile({ alias: "work", runner: "codex", providerId: "openai", credentialId: null, defaultModel: null });
+    expect(usageSamplesAvailable(store.db)).toBe(true);
     expect(svc.accounts()[0]).toMatchObject({ kind: "plan", pct: null, provenance: "unknown" });
-    store.db.exec("create table usage_samples (profile_id text, window text, used_pct real, resets_at text, provenance text, observed_at text)");
-    const ins = store.db.prepare("insert into usage_samples values (?, ?, ?, ?, ?, ?)");
+    const ins = store.db.prepare("insert into usage_samples (profile_id, limit_window, used_pct, resets_at, provenance, observed_at) values (?, ?, ?, ?, ?, ?)");
     ins.run(p.id, "5h", 40, "2026-10-30T16:40:00Z", "reported", "2026-10-30T10:00:00Z");
     ins.run(p.id, "5h", 86, "2026-10-30T16:40:00Z", "reported", "2026-10-30T11:00:00Z");
     ins.run(p.id, "weekly", 41, null, "reported", "2026-10-30T11:00:00Z");
