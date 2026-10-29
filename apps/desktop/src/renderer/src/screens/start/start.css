@@ -25,3 +25,30 @@
 .start .import-filter { padding: 8px 16px; border-top: 1px solid var(--line); }
 .start .input { width: 100%; height: 30px; border: 1px solid var(--line-strong); background: var(--canvas); padding: 0 10px; font: 400 13px / 1 var(--ui); color: var(--ink); }
 .start .input::placeholder { color: var(--ink-3); }
+
+/* This machine: the note under a check says why it matters and what to run (never run for you). */
+.start .machine:focus { outline: none; }
+.start .machine:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.start .sysnote { display: grid; gap: 8px; padding: 0 16px 12px 44px; font-size: 13px; color: var(--ink-2); }
+.start .sysnote p { margin: 0; max-width: 60ch; }
+.start .sysfolders, .start .syssteps { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.start .sysfolders { list-style: none; padding-left: 0; }
+.start .sysfolders li { font-size: 12px; color: var(--ink); overflow-wrap: anywhere; }
+.start .cmd { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 4px 4px 4px 10px; border: 1px solid var(--line); background: var(--sunken); }
+.start .cmd code { flex: 1; min-width: 0; font: 400 12px / 1.4 var(--mono); color: var(--ink); overflow-wrap: anywhere; }
+
+/* Getting started. */
+.start .checklist { margin-bottom: 16px; }
+.start .cl-list { list-style: none; margin: 8px 0 0; padding: 0; }
+.start .cl-row { min-height: 48px; padding-top: 6px; padding-bottom: 6px; }
+.start .cl-text { display: grid; gap: 2px; min-width: 0; }
+.start .cl-label .lbl { margin-right: 6px; }
+.start .cl-hint { font-size: 12px; }
+.start .sr-only-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* Recent project tiles: branch, running agents, open questions. */
+.start .tile-state { display: grid; gap: 4px; font: 400 11px / 1.35 var(--mono); color: var(--ink-2); min-width: 0; }
+.start .tile-branch { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.start .tile-branch svg { flex: none; color: var(--ink-3); }
+.start .tile-branch-t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.start .tile-activity { display: flex; gap: 12px; color: var(--ink-3); }

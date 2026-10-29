@@ -15,6 +15,42 @@ export interface ToolCheck {
   path: string | null;
   version: string | null;
   detail: string | null;
+  /** Agent CLIs only: the installed version against the one its adapter was verified with. */
+  gate: VersionGate | null;
+}
+
+/**
+ * - `ok`: at or past the verified version (or exactly it, for an exact rule).
+ * - `outdated`: older than the adapter needs.
+ * - `untested`: a version the conformance suite has not passed yet (exact rule).
+ * - `isolation`: too old to keep profiles apart, so runs would use the user's own config folder.
+ * - `unknown`: installed, but no version could be read.
+ */
+export type VersionGateStatus = "ok" | "outdated" | "untested" | "isolation" | "unknown";
+
+export interface VersionGate {
+  status: VersionGateStatus;
+  /** The version the adapter was verified with. */
+  verified: string;
+  /** `min`: this version or newer; `exact`: only this version passed conformance. */
+  rule: "min" | "exact";
+  /** The command from the CLI's own docs that brings it to a verified version; null when ok. */
+  update: string | null;
+}
+
+/**
+ * Defender's view of the folders agents write in. Read-only: the app shows steps and never adds an
+ * exclusion itself. Windows hides the exclusion list from non-admin users, so `excluded` is often
+ * null ("could not read") rather than false.
+ */
+export interface DefenderCheck {
+  checkedAt: string;
+  /** `unavailable`: not Windows, or Defender is not the active antivirus. */
+  state: "excluded" | "not_excluded" | "unknown" | "realtime_off" | "unavailable";
+  realtime: boolean | null;
+  /** False when Windows answered "Must be an administrator to view exclusions". */
+  canReadExclusions: boolean;
+  folders: Array<{ path: string; excluded: boolean | null }>;
 }
 
 export interface MachineEnv {
@@ -55,6 +91,8 @@ export interface IpcMethods extends TasksIpc, ProvidersIpc, GithubIpc, SetupIpc,
   /** One tool at a time, so slow CLIs (gemini --version takes ~6 s) don't hold up the others. */
   "machine.tool": { params: { id: ToolId }; result: ToolCheck };
   "machine.env": { params: void; result: MachineEnv };
+  /** Worktree folders of the known projects; `scanRoot` stands in when none is added yet. */
+  "machine.defender": { params: { scanRoot: string }; result: DefenderCheck };
   "projects.list": { params: void; result: ProjectSummary[] };
   "projects.scan": { params: { root: string }; result: ScanResult };
   "projects.add": { params: { path: string; name?: string }; result: ProjectSummary };

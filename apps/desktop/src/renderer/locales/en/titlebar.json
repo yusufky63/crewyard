@@ -1,0 +1,49 @@
+{
+  "switcher": {
+    "label": "Switch project",
+    "labelWith": "Switch project, {{name}} is open",
+    "noProject": "No project open",
+    "recent": "Recent projects",
+    "start": "Start screen",
+    "openFolder": "Open folder…",
+    "newProject": "New project"
+  },
+  "search": {
+    "trigger": "Go to a screen, project or task",
+    "label": "Command search",
+    "placeholder": "Type a screen, project or task title",
+    "results": "Results",
+    "none": "Nothing matches “{{query}}”.",
+    "start": "Start screen",
+    "newTask": "New task",
+    "openFolder": "Open folder…",
+    "hintMove": "move",
+    "hintOpen": "open",
+    "hintClose": "close",
+    "group": {
+      "screen": "Screen",
+      "action": "Action",
+      "project": "Project",
+      "task": "Task"
+    }
+  },
+  "notifications": {
+    "label": "Notifications",
+    "labelCount_one": "Notifications, {{count}} new",
+    "labelCount_other": "Notifications, {{count}} new",
+    "title": "Notifications",
+    "context": "{{open}} open · {{notices}} limits",
+    "requests": "Waiting for you",
+    "limits": "Limits, last 24 hours",
+    "empty": "Nothing needs you, and no limit notices in the last 24 hours.",
+    "error": "Requests could not be loaded from the background service.",
+    "resets": "resets {{time}}",
+    "noReset": "reset time unknown",
+    "notice": {
+      "warn": "{{who}} at {{pct}}% of its {{window}}",
+      "critical": "{{who}} at {{pct}}% of its {{window}}",
+      "ahead_of_pace": "{{who}} fills its {{window}} in about {{minutes}} min at this pace",
+      "reached": "{{who}} reached its {{window}}"
+    }
+  }
+}

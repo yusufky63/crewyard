@@ -1,13 +1,16 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Check, FolderOpen, FolderSearch, FolderTree, GitPullRequest, Plus, RefreshCw } from "lucide-react";
+import { AlertTriangle, Check, CircleHelp, Copy, FolderOpen, FolderSearch, FolderTree, GitBranch, GitPullRequest, Minus, Plus, RefreshCw, ShieldCheck } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { BrandIcon, Button, Label, Panel } from "@crewyard/ui";
-import type { MachineEnv, ProjectSummary, ToolId } from "@crewyard/core";
+import type { DefenderCheck, MachineEnv, ProjectSummary, ToolId, VersionGate } from "@crewyard/core";
 import { call, useDaemon } from "../../ipc.ts";
 import { canOpenProjects, useNav } from "../../nav.ts";
 import { usePrefs } from "../../prefs.ts";
 import { openSetup } from "../setup/draft.ts";
+import { useWork } from "../tasks/data.ts";
+import { Checklist, MACHINE_PANEL_ID } from "./Checklist.tsx";
+import { branchParts, projectActivity } from "./tile.ts";
 import "./start.css";
 
 const TOOL_ORDER: ToolId[] = ["claude", "codex", "opencode", "gemini", "git", "gh"];
@@ -27,18 +30,67 @@ function useRelativeTime() {
   };
 }
 
-function CheckRow({ ok, pending, label, detail, glyph }: { ok: boolean; pending: boolean; label: string; detail: string; glyph: ReactNode }) {
+type RowState = "ok" | "warn" | "neutral" | "unknown";
+
+function RowIcon({ state, pending }: { state: RowState; pending: boolean }) {
+  if (pending) {
+    return (
+      <span className="st st-run">
+        <span className="spin" />
+      </span>
+    );
+  }
+  const icon = { ok: <Check size={16} strokeWidth={1.75} />, warn: <AlertTriangle size={16} strokeWidth={1.75} />, unknown: <CircleHelp size={16} strokeWidth={1.75} />, neutral: <Minus size={16} strokeWidth={1.75} /> }[state];
+  const cls = { ok: "st st-ok", warn: "st st-wait", unknown: "st st-wait", neutral: "st muted" }[state];
+  return <span className={cls}>{icon}</span>;
+}
+
+/** One machine check line; `children` is the note under it (why it matters and what to run). */
+function CheckRow({ state, pending, label, detail, glyph, children }: { state: RowState; pending: boolean; label: string; detail: string; glyph: ReactNode; children?: ReactNode }) {
   return (
-    <div className="sysrow">
-      <span className={pending ? "st st-run" : ok ? "st st-ok" : "st st-wait"}>
-        {pending ? <span className="spin" /> : ok ? <Check size={16} strokeWidth={1.75} /> : <AlertTriangle size={16} strokeWidth={1.75} />}
-      </span>
-      <span className="brand-name">
-        {glyph}
-        {label}
-      </span>
-      <span className="muted">{detail}</span>
+    <>
+      <div className="sysrow">
+        <RowIcon state={state} pending={pending} />
+        <span className="brand-name">
+          {glyph}
+          {label}
+        </span>
+        <span className="muted">{detail}</span>
+      </div>
+      {children && !pending && <div className="sysnote">{children}</div>}
+    </>
+  );
+}
+
+/** A command for the user to run themselves; the app never runs it. Copying is the only action. */
+function Cmd({ text }: { text: string }) {
+  const { t } = useTranslation("start");
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    void navigator.clipboard
+      .writeText(text)
+      .then(() => setCopied(true))
+      .catch(() => setCopied(false));
+  };
+  return (
+    <div className="cmd">
+      <code>{text}</code>
+      <Button size="sm" variant="ghost" onClick={copy} aria-label={t("machine.copyLabel", { command: text })}>
+        <Copy size={14} strokeWidth={1.75} aria-hidden="true" />
+        {copied ? t("machine.copied") : t("machine.copy")}
+      </Button>
     </div>
+  );
+}
+
+function GateNote({ id, gate }: { id: ToolId; gate: VersionGate }) {
+  const { t } = useTranslation("start");
+  if (gate.status === "ok" || !gate.update) return null;
+  return (
+    <>
+      <p>{t(`machine.gate.${gate.status}`, { tool: t(`machine.tools.${id}`), verified: gate.verified, need: t(`machine.gate.rule.${gate.rule}`, { verified: gate.verified }) })}</p>
+      <Cmd text={gate.update} />
+    </>
   );
 }
 
@@ -50,32 +102,87 @@ function ToolRow({ id, env }: { id: ToolId; env: MachineEnv | undefined }) {
   const q = useDaemon("machine.tool", { id }, { staleTime: MACHINE_STALE });
   const tool = q.data;
   const pending = q.isFetching || (id === "gh" && !env);
+  const gate = tool?.found ? tool.gate : null;
+  const gateOk = !gate || gate.status === "ok";
   let detail = t("machine.checking");
   if (q.isError) detail = t("common:errors.daemon", { message: String(q.error) });
   else if (tool && !pending) {
     if (!tool.found) detail = t("machine.notFound");
     else if (id === "gh") detail = env?.ghUser ? t("machine.ghSignedIn", { user: env.ghUser }) : t("machine.ghSignedOut");
     else detail = tool.version ? t("machine.version", { version: tool.version }) : t("machine.installed");
+    if (gate && !gateOk) detail = `${detail} · ${t(`machine.gateShort.${gate.status}`)}`;
   }
-  const ok = Boolean(tool?.found) && (id !== "gh" || Boolean(env?.ghUser));
-  return <CheckRow ok={ok} pending={pending} label={t(`machine.tools.${id}`)} detail={detail} glyph={<BrandIcon id={TOOL_BRAND[id]} />} />;
+  const ok = Boolean(tool?.found) && gateOk && (id !== "gh" || Boolean(env?.ghUser));
+  return (
+    <CheckRow state={ok ? "ok" : "warn"} pending={pending} label={t(`machine.tools.${id}`)} detail={detail} glyph={<BrandIcon id={TOOL_BRAND[id]} />}>
+      {gate && !gateOk ? <GateNote id={id} gate={gate} /> : null}
+    </CheckRow>
+  );
+}
+
+const DEFENDER_ROW: Record<DefenderCheck["state"], RowState> = { excluded: "ok", not_excluded: "warn", unknown: "unknown", realtime_off: "neutral", unavailable: "neutral" };
+
+/** Read-only: says whether the worktree folder is excluded and how to add it. It never adds it. */
+function DefenderRow({ check, pending, error }: { check: DefenderCheck | undefined; pending: boolean; error: Error | null }) {
+  const { t } = useTranslation("start");
+  const glyph = <ShieldCheck className="brand" size={16} strokeWidth={1.75} aria-hidden="true" />;
+  const label = t("machine.defender.label");
+  if (error) return <CheckRow state="unknown" pending={false} label={label} glyph={glyph} detail={t("common:errors.daemon", { message: error.message })} />;
+  const state = check?.state;
+  const open = state === "not_excluded" || state === "unknown";
+  const folders = check?.folders.filter((f) => f.excluded !== true) ?? [];
+  return (
+    <CheckRow state={state ? DEFENDER_ROW[state] : "unknown"} pending={pending || !check} label={label} glyph={glyph} detail={state ? t(`machine.defender.state.${state}`) : t("machine.checking")}>
+      {open ? (
+        <>
+          <p>{state === "unknown" ? t("machine.defender.whyUnknown") : t("machine.defender.why")}</p>
+          <ul className="sysfolders">
+            {folders.map((f) => (
+              <li key={f.path} className="mono">
+                {f.path}
+              </li>
+            ))}
+          </ul>
+          <ol className="syssteps">
+            <li>{t("machine.defender.step1")}</li>
+            <li>{t("machine.defender.step2")}</li>
+            <li>{t("machine.defender.step3")}</li>
+          </ol>
+          <p>{t("machine.defender.orAdmin")}</p>
+          {folders.map((f) => (
+            <Cmd key={f.path} text={`Add-MpPreference -ExclusionPath "${f.path}"`} />
+          ))}
+          {state === "unknown" && (
+            <>
+              <p>{t("machine.defender.checkAdmin")}</p>
+              <Cmd text="(Get-MpPreference).ExclusionPath" />
+            </>
+          )}
+          <p className="muted">{t("machine.defender.never")}</p>
+        </>
+      ) : null}
+    </CheckRow>
+  );
 }
 
 function MachineCheck() {
   const { t, i18n } = useTranslation("start");
   const qc = useQueryClient();
+  const scanRoot = usePrefs((s) => s.scanRoot);
   const env = useDaemon("machine.env", undefined, { staleTime: MACHINE_STALE });
+  const defender = useDaemon("machine.defender", { scanRoot }, { staleTime: MACHINE_STALE });
   const time = env.data ? new Intl.DateTimeFormat(i18n.language, { hour: "2-digit", minute: "2-digit" }).format(new Date(env.data.checkedAt)) : null;
   const checking = env.isFetching;
   const again = () => {
     void qc.invalidateQueries({ queryKey: ["machine.tool"] });
     void qc.invalidateQueries({ queryKey: ["machine.env"] });
+    void qc.invalidateQueries({ queryKey: ["machine.defender"] });
   };
 
   return (
-    <Panel>
+    <Panel id={MACHINE_PANEL_ID} tabIndex={-1} aria-labelledby={`${MACHINE_PANEL_ID}-title`} className="machine">
       <div className="ph">
-        <h2>{t("machine.title")}</h2>
+        <h2 id={`${MACHINE_PANEL_ID}-title`}>{t("machine.title")}</h2>
         <span className="end lbl">{checking ? t("machine.checking") : time ? t("machine.checked", { time }) : ""}</span>
       </div>
       <div style={{ height: 8 }} />
@@ -84,13 +191,14 @@ function MachineCheck() {
       ))}
       {env.data?.longPathsEnabled !== null && (
         <CheckRow
-          ok={Boolean(env.data?.longPathsEnabled)}
+          state={env.data?.longPathsEnabled ? "ok" : "warn"}
           pending={!env.data}
           label={t("machine.longPaths")}
           glyph={<FolderTree className="brand" size={16} strokeWidth={1.75} aria-hidden="true" />}
           detail={!env.data ? t("machine.checking") : env.data.longPathsEnabled ? t("machine.longOn") : t("machine.longOff")}
         />
       )}
+      {defender.data?.state !== "unavailable" && <DefenderRow check={defender.data} pending={defender.isFetching} error={defender.error} />}
       <div className="panel-foot">
         <Button size="sm" variant="ghost" onClick={again} disabled={checking}>
           <RefreshCw size={14} strokeWidth={1.75} />
@@ -98,6 +206,42 @@ function MachineCheck() {
         </Button>
       </div>
     </Panel>
+  );
+}
+
+/** Branch state, running agents and open questions (PLAN.md §11.1). */
+function TileState({ projectId }: { projectId: string }) {
+  const { t } = useTranslation("start");
+  const repo = useDaemon("github.repo", { projectId }, { staleTime: MACHINE_STALE });
+  const tasks = useWork("tasks.list", { projectId });
+  const requests = useWork("requests.list", { projectId });
+  const parts = branchParts(repo.data);
+  const activity = projectActivity(tasks.data, requests.data);
+  const words = parts.map((p) => t(`tile.${p.key}`, p.params));
+  return (
+    <div className="tile-state">
+      <span className="tile-branch" title={words.join(" · ")}>
+        <GitBranch size={13} strokeWidth={1.75} aria-hidden="true" />
+        <span className="tile-branch-t">
+          {repo.isError
+            ? t("tile.branchUnknown")
+            : parts.length === 0
+              ? t("tile.reading")
+              : parts.map((p, i) => (
+                  <span key={p.key}>
+                    {i > 0 ? " · " : ""}
+                    {words[i]}
+                  </span>
+                ))}
+        </span>
+      </span>
+      {activity && (
+        <span className="tile-activity">
+          <span className={activity.running > 0 ? "st-run" : undefined}>{t("tile.running", { count: activity.running })}</span>
+          <span className={activity.questions > 0 ? "st-wait" : undefined}>{t("tile.questions", { count: activity.questions })}</span>
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -121,13 +265,18 @@ function ProjectTile({ project, index }: { project: ProjectSummary; index: numbe
         </svg>
       </div>
       <div className="p-name">{project.name}</div>
-      <div className="p-path" title={project.path}>{project.path}</div>
+      <div className="p-path" title={project.path}>
+        {project.path}
+      </div>
+      <TileState projectId={project.id} />
       <Label>{project.lastOpenedAt ? t("recent.opened", { time: rel(project.lastOpenedAt) }) : t("recent.never")}</Label>
     </>
   );
   // Tiles become buttons once a project home screen exists to open into.
   return canOpenProjects ? (
-    <button className="spec ptile" onClick={() => void open()}>{body}</button>
+    <button className="spec ptile" onClick={() => void open()}>
+      {body}
+    </button>
   ) : (
     <div className="spec ptile">{body}</div>
   );
@@ -166,8 +315,20 @@ function ImportPanel() {
         <span className="end lbl">{scan.data && !missing ? t("scan.count", { count: fresh.length }) : ""}</span>
       </div>
       <div style={{ height: 8 }} />
-      {missing && <div className="sysrow"><span /><span className="muted">{t("scan.missing", { root })}</span><span /></div>}
-      {scan.data && !missing && fresh.length === 0 && <div className="sysrow"><span /><span className="muted">{t("scan.none", { root })}</span><span /></div>}
+      {missing && (
+        <div className="sysrow">
+          <span />
+          <span className="muted">{t("scan.missing", { root })}</span>
+          <span />
+        </div>
+      )}
+      {scan.data && !missing && fresh.length === 0 && (
+        <div className="sysrow">
+          <span />
+          <span className="muted">{t("scan.none", { root })}</span>
+          <span />
+        </div>
+      )}
       {fresh.length > IMPORT_PREVIEW && (
         <div className="import-filter">
           <input className="input" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={t("scan.filter")} aria-label={t("scan.filter")} />
@@ -239,6 +400,7 @@ export function StartScreen() {
               {t("setup:source.clone")}
             </Button>
           </div>
+          <Checklist />
           <MachineCheck />
         </div>
         <div>

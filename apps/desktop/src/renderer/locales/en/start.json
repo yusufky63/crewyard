@@ -25,6 +25,43 @@
       "opencode": "OpenCode",
       "git": "Git",
       "gh": "GitHub CLI"
+    },
+    "copy": "Copy",
+    "copied": "Copied",
+    "copyLabel": "Copy the command {{command}}",
+    "gateShort": {
+      "outdated": "update needed",
+      "untested": "not the checked version",
+      "isolation": "too old to keep profiles apart",
+      "unknown": "version unknown"
+    },
+    "gate": {
+      "rule": {
+        "min": "{{verified}} or newer",
+        "exact": "exactly {{verified}}"
+      },
+      "outdated": "Crewyard was checked with {{tool}} {{need}}. Older versions may miss events or fail to start. Update it in a terminal:",
+      "untested": "Only {{tool}} {{verified}} has passed Crewyard's conformance checks. Other versions may change the protocol without notice. Switch to the checked version:",
+      "isolation": "{{tool}} older than {{verified}} ignores the per-profile folder, so every run would use your own ~/.gemini sign-in and settings. Crewyard will not start it until you update:",
+      "unknown": "The installed version could not be read. Crewyard needs {{tool}} {{need}}. To be sure, run:"
+    },
+    "defender": {
+      "label": "Defender exclusion for worktrees",
+      "state": {
+        "excluded": "excluded",
+        "not_excluded": "not excluded",
+        "unknown": "needs an administrator to read",
+        "realtime_off": "real-time protection off",
+        "unavailable": "Defender not active"
+      },
+      "why": "Agents create and delete many files in their worktrees, and real-time scanning of every file slows that down. This folder is not excluded:",
+      "whyUnknown": "Windows shows the exclusion list only to administrators, so Crewyard cannot tell whether this folder is already excluded. Agents create and delete many files here, and real-time scanning slows that down:",
+      "step1": "Open Windows Security, then Virus & threat protection, then Manage settings.",
+      "step2": "Under Exclusions, select Add or remove exclusions, then Add an exclusion, then Folder.",
+      "step3": "Pick the folder above.",
+      "orAdmin": "Or run this in PowerShell opened as administrator:",
+      "checkAdmin": "To see the current list, run this in PowerShell opened as administrator:",
+      "never": "An exclusion is a gap in protection, so add it only if worktrees feel slow. Crewyard only reads these settings and never changes them."
     }
   },
   "recent": {
@@ -44,5 +81,61 @@
     "filter": "Filter by name",
     "showAll": "Show all {{count}}",
     "showFewer": "Show fewer"
+  },
+  "checklist": {
+    "title": "Getting started",
+    "left": "{{count}} of {{total}} left",
+    "allDone": "All set",
+    "doneSr": ", done",
+    "openSr": ", not done yet",
+    "checkingSr": ", checking",
+    "go": {
+      "machine": "This machine",
+      "providers": "Providers",
+      "github": "GitHub",
+      "task": "New task",
+      "project": "New project"
+    },
+    "items": {
+      "agents": {
+        "label": "An agent CLI is installed",
+        "hint": "Install Claude Code, Codex, Gemini CLI or OpenCode; This machine shows what was found."
+      },
+      "plan": {
+        "label": "A plan account is set up",
+        "hint": "Add a ChatGPT or Google plan profile; it signs in through the CLI's own login."
+      },
+      "github": {
+        "label": "GitHub is connected",
+        "hint": "Sign in with gh auth login, so pushes and pull requests can wait for your approval."
+      },
+      "claudeKey": {
+        "label": "A Claude Code API key is added",
+        "hint": "Claude Code runs on an Anthropic API key, stored encrypted on this machine."
+      },
+      "firstTask": {
+        "label": "A first task ran with a suggested crew",
+        "hint": "Describe a task, review the suggested crew and approve it."
+      }
+    }
+  },
+  "tile": {
+    "reading": "reading branch…",
+    "branchUnknown": "branch state unknown",
+    "notRepo": "not a git repository",
+    "branch": "{{branch}}",
+    "detached": "detached HEAD",
+    "localOnly": "no remote",
+    "noUpstream": "no upstream",
+    "ahead_one": "{{count}} ahead",
+    "ahead_other": "{{count}} ahead",
+    "behind_one": "{{count}} behind",
+    "behind_other": "{{count}} behind",
+    "dirty": "uncommitted changes",
+    "upToDate": "up to date",
+    "running_one": "{{count}} agent running",
+    "running_other": "{{count}} agents running",
+    "questions_one": "{{count}} open question",
+    "questions_other": "{{count}} open questions"
   }
 }

@@ -25,6 +25,43 @@
       "opencode": "OpenCode",
       "git": "Git",
       "gh": "GitHub CLI"
+    },
+    "copy": "Kopyala",
+    "copied": "Kopyalandı",
+    "copyLabel": "{{command}} komutunu kopyala",
+    "gateShort": {
+      "outdated": "güncellenmeli",
+      "untested": "denetlenen sürüm değil",
+      "isolation": "profilleri ayıramayacak kadar eski",
+      "unknown": "sürüm bilinmiyor"
+    },
+    "gate": {
+      "rule": {
+        "min": "{{verified}} veya daha yeni",
+        "exact": "tam olarak {{verified}}"
+      },
+      "outdated": "Crewyard, {{tool}} {{need}} sürümüyle denetlendi. Eski sürümler olayları kaçırabilir ya da hiç başlamayabilir. Bir terminalde güncelleyin:",
+      "untested": "Crewyard'ın uyumluluk denetiminden yalnızca {{tool}} {{verified}} geçti. Diğer sürümler protokolü haber vermeden değiştirebilir. Denetlenen sürüme geçin:",
+      "isolation": "{{verified}} sürümünden eski {{tool}}, profile özel klasörü yok sayar; her çalıştırma sizin kendi ~/.gemini oturumunuzu ve ayarlarınızı kullanır. Güncelleyene kadar Crewyard onu başlatmaz:",
+      "unknown": "Kurulu sürüm okunamadı. Crewyard için {{tool}} {{need}} gerekiyor. Emin olmak için şunu çalıştırın:"
+    },
+    "defender": {
+      "label": "Çalışma ağaçları için Defender istisnası",
+      "state": {
+        "excluded": "istisna ekli",
+        "not_excluded": "istisna yok",
+        "unknown": "okumak için yönetici gerekli",
+        "realtime_off": "gerçek zamanlı koruma kapalı",
+        "unavailable": "Defender etkin değil"
+      },
+      "why": "Ajanlar çalışma ağaçlarında çok sayıda dosya oluşturup siler; her dosyanın anında taranması bu işi yavaşlatır. Bu klasör istisna listesinde değil:",
+      "whyUnknown": "Windows istisna listesini yalnızca yöneticilere gösterir; bu yüzden Crewyard bu klasörün zaten ekli olup olmadığını bilemez. Ajanlar burada çok sayıda dosya oluşturup siler, anlık tarama da bunu yavaşlatır:",
+      "step1": "Windows Güvenliği'ni açın, Virüs ve tehdit koruması'na, ardından Ayarları yönet'e gidin.",
+      "step2": "Dışlamalar altında Dışlama ekle veya kaldır'ı, sonra Dışlama ekle'yi ve Klasör'ü seçin.",
+      "step3": "Yukarıdaki klasörü seçin.",
+      "orAdmin": "Ya da yönetici olarak açtığınız PowerShell'de şunu çalıştırın:",
+      "checkAdmin": "Mevcut listeyi görmek için yönetici olarak açtığınız PowerShell'de şunu çalıştırın:",
+      "never": "Her istisna korumada bir boşluktur; yalnızca çalışma ağaçları yavaş geliyorsa ekleyin. Crewyard bu ayarları sadece okur, hiçbir zaman değiştirmez."
     }
   },
   "recent": {
@@ -44,5 +81,61 @@
     "filter": "Ada göre süz",
     "showAll": "Tümünü göster ({{count}})",
     "showFewer": "Daha az göster"
+  },
+  "checklist": {
+    "title": "Başlarken",
+    "left": "{{total}} adımdan {{count}} tanesi kaldı",
+    "allDone": "Hepsi tamam",
+    "doneSr": ", tamamlandı",
+    "openSr": ", henüz yapılmadı",
+    "checkingSr": ", denetleniyor",
+    "go": {
+      "machine": "Bu makine",
+      "providers": "Sağlayıcılar",
+      "github": "GitHub",
+      "task": "Yeni görev",
+      "project": "Yeni proje"
+    },
+    "items": {
+      "agents": {
+        "label": "Bir ajan CLI'ı kurulu",
+        "hint": "Claude Code, Codex, Gemini CLI ya da OpenCode kurun; neyin bulunduğunu Bu makine bölümü gösterir."
+      },
+      "plan": {
+        "label": "Bir abonelik hesabı ayarlı",
+        "hint": "ChatGPT ya da Google aboneliği için profil ekleyin; oturum CLI'ın kendi girişiyle açılır."
+      },
+      "github": {
+        "label": "GitHub bağlı",
+        "hint": "gh auth login ile oturum açın; push ve pull request'ler onayınızı bekleyebilsin."
+      },
+      "claudeKey": {
+        "label": "Claude Code için API anahtarı eklendi",
+        "hint": "Claude Code bir Anthropic API anahtarıyla çalışır; anahtar bu makinede şifreli saklanır."
+      },
+      "firstTask": {
+        "label": "Önerilen ekiple ilk görev çalıştı",
+        "hint": "Bir görev yazın, önerilen ekibe göz atın ve onaylayın."
+      }
+    }
+  },
+  "tile": {
+    "reading": "dal okunuyor…",
+    "branchUnknown": "dal durumu bilinmiyor",
+    "notRepo": "git deposu değil",
+    "branch": "{{branch}}",
+    "detached": "ayrık HEAD",
+    "localOnly": "uzak depo yok",
+    "noUpstream": "upstream yok",
+    "ahead_one": "{{count}} ileride",
+    "ahead_other": "{{count}} ileride",
+    "behind_one": "{{count}} geride",
+    "behind_other": "{{count}} geride",
+    "dirty": "commit edilmemiş değişiklik",
+    "upToDate": "güncel",
+    "running_one": "{{count}} ajan çalışıyor",
+    "running_other": "{{count}} ajan çalışıyor",
+    "questions_one": "{{count}} açık soru",
+    "questions_other": "{{count}} açık soru"
   }
 }

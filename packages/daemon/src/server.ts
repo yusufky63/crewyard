@@ -6,8 +6,10 @@ import { createProvidersHandlers } from "./handlers/providers.ts";
 import { createSetupHandlers } from "./handlers/setup.ts";
 import { createTasksHandlers } from "./handlers/tasks.ts";
 import type { HandlerContext, HandlerMap } from "./handlers/types.ts";
-import { checkEnv, checkMachine, checkTool, TOOL_BINS } from "./machine.ts";
+import { checkDefender, checkEnv, checkMachine, checkTool, TOOL_BINS } from "./machine.ts";
 import { assertFolder, scanForRepos } from "./projects.ts";
+import { readProjectConfig } from "./setup/config.ts";
+import { defaultWorktreeRoot } from "./setup/detect.ts";
 
 export type Handlers = HandlerMap<IpcMethods>;
 
@@ -28,6 +30,7 @@ export function createHandlers(ctx: HandlerContext): Handlers {
       return checkTool(id);
     },
     "machine.env": () => checkEnv(),
+    "machine.defender": ({ scanRoot }) => checkDefender(store.listProjects().map((p) => readProjectConfig(p.path)?.worktreeRoot ?? defaultWorktreeRoot(p.path)), scanRoot),
     "projects.list": () => store.listProjects(),
     "projects.scan": ({ root }) => scanForRepos(root, store.knownPaths()),
     "projects.add": ({ path, name }) => {
