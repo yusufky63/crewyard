@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ensureSystemEnv, exitCodeWithin, isShutdownExit, start, WINDOWS_SHUTDOWN_EXIT, WINDOWS_SYSTEM_VARS } from "./index.ts";
+import { ensureSystemEnv, exitCodeWithin, isShutdownExit, POSIX_SYSTEM_VARS, start, systemEnvVars, WINDOWS_SHUTDOWN_EXIT, WINDOWS_SYSTEM_VARS } from "./index.ts";
 
 describe("shutdown exit", () => {
   it("recognises the status Windows gives processes it ends at shutdown, as Node reports it", async () => {
@@ -26,7 +26,7 @@ describe("ensureSystemEnv", () => {
   const source = { Path: "C:\\Windows;C:\\Program Files\\nodejs", SystemRoot: "C:\\Windows", SystemDrive: "C:", ProgramData: "C:\\ProgramData", windir: "C:\\Windows", TEMP: "C:\\Users\\a b\\Temp", TMP: "C:\\Users\\a b\\Temp", USERPROFILE: "C:\\Users\\a b", APPDATA: "C:\\Users\\a b\\AppData\\Roaming", LOCALAPPDATA: "C:\\Users\\a b\\AppData\\Local", PATHEXT: ".COM;.EXE;.CMD", ComSpec: "C:\\Windows\\system32\\cmd.exe", OTHER: "x" };
 
   it("adds every missing system variable once, under the source's own spelling", () => {
-    const env = ensureSystemEnv<Record<string, string>>({ OPENCODE_SERVER_PASSWORD: "p" }, source);
+    const env = ensureSystemEnv<Record<string, string>>({ OPENCODE_SERVER_PASSWORD: "p" }, source, "win32");
     for (const name of WINDOWS_SYSTEM_VARS) {
       const keys = Object.keys(env).filter((k) => k.toUpperCase() === name.toUpperCase());
       expect(keys, name).toHaveLength(1);
@@ -37,9 +37,19 @@ describe("ensureSystemEnv", () => {
   });
 
   it("never duplicates a name that differs only in case, and keeps an adapter's own value", () => {
-    const env = ensureSystemEnv({ PATH: "C:\\only", USERPROFILE: "D:\\profile dir" }, source);
+    const env = ensureSystemEnv({ PATH: "C:\\only", USERPROFILE: "D:\\profile dir" }, source, "win32");
     expect(Object.keys(env).filter((k) => k.toUpperCase() === "PATH")).toEqual(["PATH"]);
     expect(env.PATH).toBe("C:\\only");
     expect(env.USERPROFILE).toBe("D:\\profile dir");
+  });
+
+  it("on Linux and macOS copies the POSIX variables with exact names and keeps an adapter's HOME", () => {
+    const posix = { PATH: "/usr/bin:/home/a b/.local/bin", Path: "/wrong", HOME: "/home/a b", TMPDIR: "/var/folders/x y/T", SHELL: "/bin/zsh", DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1000/bus", SystemRoot: "C:\\Windows", OTHER: "x" };
+    for (const platform of ["linux", "darwin"] as const) {
+      const env = ensureSystemEnv<Record<string, string>>({ HOME: "/profiles/codex work" }, posix, platform);
+      expect(env).toEqual({ HOME: "/profiles/codex work", PATH: posix.PATH, TMPDIR: posix.TMPDIR, SHELL: posix.SHELL, DBUS_SESSION_BUS_ADDRESS: posix.DBUS_SESSION_BUS_ADDRESS });
+      expect(systemEnvVars(platform)).toBe(POSIX_SYSTEM_VARS);
+    }
+    expect(systemEnvVars("win32")).toBe(WINDOWS_SYSTEM_VARS);
   });
 });

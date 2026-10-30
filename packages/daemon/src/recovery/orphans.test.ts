@@ -4,7 +4,7 @@ import { killTree, run, start } from "@crewyard/proc";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanTemps, tempDir } from "../orchestrator/testing.ts";
 import { Store } from "../store.ts";
-import { cleanOrphans, listWindowsProcesses, recordDaemonStart, verifyOrphan, type OpenRunProcess, type ProcessInfo } from "./orphans.ts";
+import { cleanOrphans, listPosixProcesses, listWindowsProcesses, parseLstart, parsePsProcesses, processListerFor, recordDaemonStart, verifyOrphan, type OpenRunProcess, type ProcessInfo } from "./orphans.ts";
 
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -129,8 +129,15 @@ describe("cleanOrphans", () => {
       kill,
     });
     expect(failed.skipped).toEqual([{ runId: "run-1", pid: 4242, reason: "process_query_failed" }]);
-    expect((await cleanOrphans(store, { platform: "linux", kill })).skipped[0]!.reason).toBe("unsupported_platform");
+    expect((await cleanOrphans(store, { platform: "freebsd", kill })).skipped[0]!.reason).toBe("unsupported_platform");
     expect(kill).not.toHaveBeenCalled();
+  });
+
+  it("has a lister on Windows, Linux and macOS only", () => {
+    expect(processListerFor("win32")).toBe(listWindowsProcesses);
+    expect(processListerFor("linux")).toBeTypeOf("function");
+    expect(processListerFor("darwin")).toBeTypeOf("function");
+    expect(processListerFor("freebsd")).toBeNull();
   });
 
   it("kills each pid once, at most 16 per start, and stops after a kill that hangs", async () => {
@@ -167,6 +174,55 @@ describe("cleanOrphans", () => {
     for (let i = 0; i < 230; i++) recordDaemonStart(store, { pid: 1000 + i, startedAt: later(i * 1000) });
     recordDaemonStart(store, { pid: 1229, startedAt: later(229 * 1000) });
     expect((store.db.prepare("select count(*) n from daemon_sessions").get() as { n: number }).n).toBe(200);
+  });
+});
+
+describe("POSIX process query", () => {
+  const local = (y: number, mo: number, d: number, h: number, mi: number, s: number) => new Date(y, mo, d, h, mi, s).toISOString();
+
+  it("reads ps's lstart in local time and refuses anything else", () => {
+    expect(parseLstart("Thu Oct 30 10:00:07 2026")).toBe(local(2026, 9, 30, 10, 0, 7));
+    expect(parseLstart("Sat Nov  1 09:05:00 2026")).toBe(local(2026, 10, 1, 9, 5, 0));
+    expect(parseLstart("30.10.2026 10:00")).toBeNull();
+    expect(parseLstart("Thu Okt 30 10:00:07 2026")).toBeNull();
+  });
+
+  it("joins pid, parent, start, name and command line, with spaces in paths", () => {
+    const times = " 4242   900 Thu Oct 30 10:00:01 2026\n 5000     1 Thu Oct 30 09:00:00 2026\n";
+    // macOS prints comm as the full path; Linux as the bare name.
+    const comms = " 4242 /Users/me/My Tools/bin/codex\n 5000 node\n";
+    const args = " 4242 /Users/me/My Tools/bin/codex app-server --listen stdio://\n 5000 node /Users/me/Crewyard worktrees/demo repo/task-1/x.js\n";
+    expect(parsePsProcesses(times, comms, args)).toEqual([
+      { pid: 4242, parentPid: 900, name: "codex", commandLine: "/Users/me/My Tools/bin/codex app-server --listen stdio://", createdAt: local(2026, 9, 30, 10, 0, 1) },
+      { pid: 5000, parentPid: 1, name: "node", commandLine: "node /Users/me/Crewyard worktrees/demo repo/task-1/x.js", createdAt: local(2026, 9, 30, 9, 0, 0) },
+    ]);
+    // A pid that vanished between the calls is left out rather than guessed.
+    expect(parsePsProcesses(times, " 5000 node\n", args).map((p) => p.pid)).toEqual([5000]);
+  });
+
+  it("asks ps for the pids only, treats no match as none and a failed ps as a failed query", async () => {
+    const calls: string[][] = [];
+    const ok = listPosixProcesses(async (a) => {
+      calls.push(a);
+      return { code: 1, stdout: "", stderr: "" };
+    });
+    expect(await ok([4242, 4242, 0, -3, 77])).toEqual([]);
+    expect(calls).toEqual([
+      ["-o", "pid=,ppid=,lstart=", "-p", "4242,77"],
+      ["-o", "pid=,comm=", "-p", "4242,77"],
+      ["-o", "pid=,args=", "-p", "4242,77"],
+    ]);
+    const broken = listPosixProcesses(async () => ({ code: null, stdout: "", stderr: "spawn /bin/ps ENOENT" }));
+    await expect(broken([1234])).rejects.toThrow(/process query failed/);
+  });
+
+  it("keeps the Windows rules: a POSIX agent of a dead daemon is killed only when its command line names the run", () => {
+    const posixRun = runRow({ cwd: "/home/me/Crewyard worktrees/demo repo/task-1", configDir: "/home/me/.config/Crewyard/data/profiles/codex work" });
+    // After the daemon died its children moved to init (ppid 1), so the parent rule cannot match.
+    const orphan = proc({ name: "node", parentPid: 1, commandLine: "node /home/me/Crewyard worktrees/demo repo/task-1/run.js" });
+    expect(verifyOrphan(posixRun, orphan, owner, undefined)).toEqual({ action: "kill", by: "command_line" });
+    expect(verifyOrphan(posixRun, { ...orphan, commandLine: "codex app-server" }, owner, undefined)).toEqual({ action: "skip", reason: "identity_unverified" });
+    expect(verifyOrphan(posixRun, { ...orphan, name: "bash" }, owner, undefined)).toEqual({ action: "skip", reason: "image_mismatch" });
   });
 });
 

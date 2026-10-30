@@ -58,4 +58,31 @@ module.exports = {
     uninstallerIcon: "build/icon.ico",
     artifactName: "Crewyard-Setup-${version}-${arch}.${ext}",
   },
+  // Linux and macOS (docs/adr/0010-linux-macos-groundwork.md): prepared, not shipped. Unsigned and
+  // never published (publish: null above). Nothing builds them unless `pnpm package:mac` or
+  // `pnpm package:linux` runs on that OS: electronDist is the Electron pnpm installed for the
+  // machine it runs on. Known gaps before a first build, listed in the ADR: no .icns or Linux icon
+  // set yet (electron-builder falls back to Electron's), and deb needs a homepage and a maintainer
+  // email, which do not exist yet.
+  mac: {
+    target: [
+      { target: "dmg", arch: ["arm64", "x64"] },
+      { target: "zip", arch: ["arm64", "x64"] },
+    ],
+    category: "public.app-category.developer-tools",
+    // null skips signing entirely; Apple silicon then needs at least an ad-hoc signature to start.
+    identity: null,
+    notarize: false,
+    artifactName: "Crewyard-${version}-${arch}.${ext}",
+  },
+  linux: {
+    target: [
+      { target: "AppImage", arch: ["x64"] },
+      { target: "deb", arch: ["x64"] },
+    ],
+    category: "Development",
+    executableName: "crewyard",
+    synopsis: "Run and supervise crews of coding agents",
+    artifactName: "Crewyard-${version}-${arch}.${ext}",
+  },
 };

@@ -1,6 +1,6 @@
 import { readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
-import { app, BrowserWindow, dialog, ipcMain, Notification, powerMonitor, powerSaveBlocker, shell, type MessageBoxOptions } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Notification, powerMonitor, powerSaveBlocker, safeStorage, shell, type MessageBoxOptions } from "electron";
 import { inQuietHours, type AppSettings, type IpcMethod, type IpcParams, type IpcResult, type NotificationSettings } from "@crewyard/core";
 import type { AppInfo, NavigateTarget, StartupState, TitleBarColors } from "../shared/api.ts";
 import { DaemonHost } from "./daemon-host.ts";
@@ -8,6 +8,8 @@ import { e2eMode } from "./e2e.ts";
 import { pickMainLanguage, translator, type MainLanguage } from "./i18n.ts";
 import { batteryPct, KeepAwake } from "./keep-awake.ts";
 import { Toaster } from "./notify/toaster.ts";
+import { desktopFeatures } from "./platform.ts";
+import { secretHost } from "./secrets.ts";
 import { HIDDEN_ARG, readStartup, writeStartup } from "./startup.ts";
 import { AppTray } from "./tray.ts";
 import { EMPTY_WORK, quitDetail, summarize, type WorkSummary } from "./work.ts";
@@ -52,14 +54,16 @@ if (e2e.refused) console.error("CREWYARD_E2E is ignored in a packaged build");
 if (e2e.enabled) app.setPath("userData", e2e.profile);
 
 const smokeRun = process.env.CREWYARD_SMOKE === "1";
-/** Tray, toasts, close-to-tray and Start with Windows. Off for screenshot, smoke and e2e runs. */
-const desktop = isWin && !shotFile && !smokeRun && !e2e.enabled;
-const startHidden = desktop && process.argv.includes(HIDDEN_ARG);
+/** A real desktop session; off for screenshot, smoke and e2e runs. */
+const interactive = !shotFile && !smokeRun && !e2e.enabled;
+/** Tray, toasts, close-to-tray and Start at login, per platform (platform.ts, docs/adr/0010). */
+const features = desktopFeatures(process.platform, interactive);
+const startHidden = features.tray && process.argv.includes(HIDDEN_ARG);
 
 app.setAppUserModelId("dev.crewyard.app");
 // A fixed activator CLSID, so a toast pressed in the Action Center after a restart still comes
 // back to this app through Notification.handleActivation.
-if (desktop) app.setToastActivatorCLSID("{74B586E4-570F-475A-B191-B804BBB49D94}");
+if (features.toastActivator) app.setToastActivatorCLSID("{74B586E4-570F-475A-B191-B804BBB49D94}");
 if (!shotFile && !e2e.enabled && !app.requestSingleInstanceLock()) app.quit();
 
 let win: BrowserWindow | null = null;
@@ -84,10 +88,12 @@ const send = (topic: string, payload: unknown) => {
 // Opt-in; it only ever holds the machine in the real desktop app, never in screenshot or smoke runs.
 const keepAwake = new KeepAwake({ blocker: powerSaveBlocker, onChange: (s) => send("keepAwake.changed", s) });
 
+// Linux and macOS keep API keys with safeStorage, which only this process has; Windows keeps DPAPI in the daemon.
+const hostSecrets = isWin ? undefined : secretHost(safeStorage, process.platform);
 const daemon = new DaemonHost(join(here, "daemon.js"), join(app.getPath("userData"), "data"), (topic, payload) => {
   send(topic, payload);
-  if (!desktop) return;
-  toaster.onEvent(topic, payload);
+  if (!interactive) return;
+  if (features.notifications) toaster.onEvent(topic, payload);
   if (topic === "daemon.ready") {
     void refreshSettings();
     scheduleWork();
@@ -96,7 +102,7 @@ const daemon = new DaemonHost(join(here, "daemon.js"), join(app.getPath("userDat
     keepAwake.setSettings((payload as AppSettings).keepAwake);
     tray?.render();
   } else if (topic === "tasks.changed" || topic === "requests.changed") scheduleWork();
-});
+}, hostSecrets);
 
 const callDaemon = <M extends IpcMethod>(method: M, params: IpcParams<M>) => daemon.call(method, params) as Promise<IpcResult<M>>;
 
@@ -106,6 +112,7 @@ const toaster = new Toaster({
   t,
   locale: () => language,
   open: (target) => (target ? navigate(target) : showWindow()),
+  style: features.notifications === "basic" ? "basic" : "toast",
 });
 
 async function refreshSettings(): Promise<void> {
@@ -148,7 +155,7 @@ function createWindow(): BrowserWindow {
     title: "Crewyard",
     // Native Windows caption buttons over our own 40 px title bar.
     titleBarStyle: "hidden",
-    ...(isWin ? { titleBarOverlay: { color: "#0E0E10", symbolColor: "#A6A6AE", height: 40 } } : {}),
+    ...(features.titleBarOverlay ? { titleBarOverlay: { color: "#0E0E10", symbolColor: "#A6A6AE", height: 40 } } : {}),
     webPreferences: {
       preload: join(here, "../preload/index.cjs"),
       sandbox: true,
@@ -163,7 +170,7 @@ function createWindow(): BrowserWindow {
   });
   // Close is not stop (DESIGN.md §7): with agents running the window hides to the tray.
   w.on("close", (e) => {
-    if (quitting || !desktop) return;
+    if (quitting || !interactive) return;
     e.preventDefault();
     void onCloseRequested();
   });
@@ -217,7 +224,8 @@ function flushNav(): void {
 
 async function onCloseRequested(): Promise<void> {
   const current = await refreshWork().catch(() => work);
-  if (current.running === 0) return requestQuit();
+  // Without a tray there is nowhere to hide to, so the quit confirm names the agents instead.
+  if (current.running === 0 || !features.closeToTray) return requestQuit();
   win?.hide();
   if (!closeHintShown && notifications?.enabled !== false) {
     closeHintShown = true;
@@ -310,11 +318,11 @@ ipcMain.handle("crewyard:save-export", async (_e, kind: unknown, defaultName: un
   renameSync(tmp, res.filePath);
   return res.filePath;
 });
-ipcMain.handle("crewyard:startup", (): StartupState => readStartup(desktop));
+ipcMain.handle("crewyard:startup", (): StartupState => readStartup(features.openAtLogin));
 ipcMain.handle("crewyard:set-startup", (_e, next: unknown): StartupState => {
   const n = (next ?? {}) as { openAtLogin?: unknown; hidden?: unknown };
-  if (typeof n.openAtLogin !== "boolean" || typeof n.hidden !== "boolean") return readStartup(desktop);
-  return writeStartup(desktop, { openAtLogin: n.openAtLogin, hidden: n.hidden });
+  if (typeof n.openAtLogin !== "boolean" || typeof n.hidden !== "boolean") return readStartup(features.openAtLogin);
+  return writeStartup(features.openAtLogin, { openAtLogin: n.openAtLogin, hidden: n.hidden });
 });
 ipcMain.on("crewyard:reveal", (_e, path: unknown) => {
   const abs = insideProfile(path);
@@ -327,22 +335,23 @@ ipcMain.on("crewyard:language", (_e, lng: unknown) => {
   flushNav();
 });
 ipcMain.on("crewyard:test-toast", () => {
-  if (desktop) toaster.plain("toast.test", "toast.testBody");
+  if (features.notifications) toaster.plain("toast.test", "toast.testBody");
 });
 ipcMain.handle("crewyard:keep-awake", () => keepAwake.state());
 ipcMain.on("crewyard:battery", (_e, reading: unknown) => keepAwake.setBatteryPct(batteryPct(reading)));
 ipcMain.on("crewyard:titlebar", (_e, colors: TitleBarColors) => {
-  if (isWin && win && !win.isDestroyed()) win.setTitleBarOverlay({ ...colors, height: 40 });
+  if (features.titleBarOverlay && win && !win.isDestroyed()) win.setTitleBarOverlay({ ...colors, height: 40 });
 });
 
 app.on("second-instance", () => showWindow());
+if (features.dockReopen) app.on("activate", () => showWindow());
 
 void app.whenReady().then(() => {
   language = pickMainLanguage(app.getPreferredSystemLanguages());
   daemon.start();
-  if (desktop) {
-    // Every toast press arrives here, also when Windows started the app from the Action Center.
-    Notification.handleActivation((details) => void toaster.activate(details.arguments));
+  // Every toast press arrives here, also when Windows started the app from the Action Center.
+  if (features.notifications === "toast") Notification.handleActivation((details) => void toaster.activate(details.arguments));
+  if (features.tray) {
     tray = new AppTray({
       t,
       open: showWindow,
@@ -355,7 +364,9 @@ void app.whenReady().then(() => {
     });
     // Quiet hours start and end with the clock, not with an event.
     setInterval(() => tray?.render(), 60_000).unref();
-    // The battery guard follows the power source as Windows reports it; the charge comes from the renderer.
+  }
+  if (interactive) {
+    // The battery guard follows the power source as the system reports it; the charge comes from the renderer.
     keepAwake.setOnBattery(powerMonitor.isOnBatteryPower());
     powerMonitor.on("on-battery", () => keepAwake.setOnBattery(true));
     powerMonitor.on("on-ac", () => keepAwake.setOnBattery(false));
@@ -366,14 +377,15 @@ void app.whenReady().then(() => {
 
 // Any other quit (an installer, a second "quit" from the taskbar) goes through the same confirm.
 app.on("before-quit", (e) => {
-  if (!desktop || quitting) return;
+  if (!interactive || quitting) return;
   e.preventDefault();
   void requestQuit();
 });
 
 app.on("window-all-closed", () => {
-  // With the tray, quitting is decided by requestQuit; without it, closing the window quits.
-  if (desktop) return;
+  // In a real session quitting is decided by requestQuit, which stops the agents first; a
+  // screenshot, smoke or e2e run quits when its window closes.
+  if (interactive) return;
   daemon.stop();
   app.quit();
 });

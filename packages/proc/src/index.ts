@@ -1,12 +1,22 @@
 import { execFile } from "node:child_process";
-import { join } from "node:path";
+import { homedir } from "node:os";
+import { join, posix } from "node:path";
 import spawn from "cross-spawn";
 import type { ChildProcess, SpawnOptions } from "node:child_process";
+import { findOnPosixPath, isExecutableFile, isWindows, killTreePosix, posixSearchDirs, systemEnvVars, type Platform } from "./platform.ts";
+
+export * from "./platform.ts";
 
 // Windows rules from PLAN.md §12: resolve npm .cmd shims to real paths, never use a shell,
-// never flash a console window, and always kill the whole process tree.
+// never flash a console window, and always kill the whole process tree. The Linux and macOS
+// branches live in platform.ts (docs/adr/0010-linux-macos-groundwork.md).
 
 const isWin = process.platform === "win32";
+/**
+ * On Linux and macOS every child leads its own process group, so killTree can signal the whole
+ * group. On Windows `detached` means a new console, so it is never set there.
+ */
+const ownGroup = (opts: { detached?: boolean } = {}) => opts.detached ?? !isWin;
 
 export interface RunResult {
   code: number | null;
@@ -48,7 +58,7 @@ export function run(command: string, args: string[], opts: { cwd?: string; timeo
       clearTimeout(timer);
       resolve(r);
     };
-    const child = spawn(command, args, { cwd: opts.cwd, env: opts.env, shell: false, windowsHide: true });
+    const child = spawn(command, args, { cwd: opts.cwd, env: opts.env, shell: false, windowsHide: true, detached: ownGroup() });
     child.stdout?.setEncoding("utf8").on("data", (d: string) => {
       if (stdout.length < MAX_OUTPUT) stdout += d;
     });
@@ -82,11 +92,12 @@ const WHERE = join(process.env.SystemRoot ?? "C:\\Windows", "System32", "where.e
 
 /**
  * Finds an executable on PATH. On Windows `$PATH:` keeps where.exe from also searching the current
- * folder, so a git.exe planted in a repo is never picked up.
+ * folder, so a git.exe planted in a repo is never picked up. Linux and macOS search PATH and the
+ * runners' own install folders in-process (findOnPosixPath), with the same current-folder rule.
  */
 export async function which(name: string, opts: { env?: NodeJS.ProcessEnv } = {}): Promise<string | null> {
-  const hits = await pathHits(name, opts.env);
-  return isWin ? pickWindowsHit(hits) : (hits[0] ?? null);
+  if (!isWin) return findOnPosixPath(name, { pathValue: (opts.env ?? process.env).PATH });
+  return pickWindowsHit(await pathHits(name, opts.env));
 }
 
 /**
@@ -94,7 +105,7 @@ export async function which(name: string, opts: { env?: NodeJS.ProcessEnv } = {}
  * twice (`claude update` warns about an npm copy beside the native one) shows up as two entries.
  */
 export async function whichAll(name: string, opts: { env?: NodeJS.ProcessEnv } = {}): Promise<string[]> {
-  const hits = (await pathHits(name, opts.env)).filter((p) => !isWin || SPAWNABLE.test(p));
+  const hits = isWin ? (await pathHits(name, opts.env)).filter((p) => SPAWNABLE.test(p)) : await allOnPosixPath(name, (opts.env ?? process.env).PATH);
   const seen = new Set<string>();
   return hits.filter((p) => {
     const key = isWin ? p.toLowerCase() : p;
@@ -104,10 +115,22 @@ export async function whichAll(name: string, opts: { env?: NodeJS.ProcessEnv } =
   });
 }
 
+/** where.exe's hits in PATH order (Windows). */
 async function pathHits(name: string, env?: NodeJS.ProcessEnv): Promise<string[]> {
-  const res = await run(isWin ? WHERE : "which", isWin ? [`$PATH:${name}`] : ["-a", name], { timeoutMs: 5_000, env });
+  const res = await run(WHERE, [`$PATH:${name}`], { timeoutMs: 5_000, env });
   if (res.code !== 0) return [];
   return res.stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+}
+
+/** Every executable of that name on the POSIX search path, never the current folder (as findOnPosixPath). */
+async function allOnPosixPath(name: string, pathValue: string | undefined): Promise<string[]> {
+  if (!name || name.includes("/")) return [];
+  const out: string[] = [];
+  for (const dir of posixSearchDirs(pathValue, process.platform, homedir())) {
+    const candidate = posix.join(dir, name);
+    if (await isExecutableFile(candidate)) out.push(candidate);
+  }
+  return out;
 }
 
 /**
@@ -165,7 +188,7 @@ export function resolveBin(name: string, maxAgeMs = 30_000): Promise<string | nu
 export function start(command: string, args: string[], opts: SpawnOptions = {}): ChildProcess {
   const refused = shimArgsProblem(command, args);
   if (refused) throw new Error(refused);
-  return spawn(command, args, { ...opts, shell: false, windowsHide: true });
+  return spawn(command, args, { ...opts, shell: false, windowsHide: true, detached: ownGroup(opts) });
 }
 
 /**
@@ -227,44 +250,31 @@ export class LineSplitter {
   }
 }
 
-/** Kills a process and everything it started. On Windows a plain kill() leaves grandchildren running. */
+/**
+ * Kills a process and everything it started. On Windows a plain kill() leaves grandchildren
+ * running, so taskkill walks the tree; Linux and macOS signal the process group (killTreePosix).
+ */
 export function killTree(pid: number): Promise<void> {
-  if (!isWin) {
-    try {
-      process.kill(-pid, "SIGTERM");
-    } catch {
-      try {
-        process.kill(pid, "SIGTERM");
-      } catch {
-        // already gone
-      }
-    }
-    return Promise.resolve();
-  }
+  if (!isWin) return killTreePosix(pid);
   return new Promise((resolve) => {
     execFile("taskkill", ["/PID", String(pid), "/T", "/F"], { windowsHide: true, timeout: 10_000 }, () => resolve());
   });
 }
 
 /**
- * Windows system variables every child needs. Without SystemRoot, Winsock and crypto fail; without
- * SystemDrive or ProgramData, Node and git pick wrong paths (emdash #3315). Adapters build their
- * own child env, so each one passes it through ensureSystemEnv as the last step.
+ * Copies every system variable that `env` lacks from `source` (systemEnvVars). On Windows names
+ * compare without case, as Windows does: a copied process.env has "Path", and adding "PATH" next
+ * to it would give the child two entries of which only one wins. Linux and macOS names are exact.
+ * Values already in `env` are kept, so an adapter's own override (a profile USERPROFILE or HOME,
+ * say) stays.
  */
-export const WINDOWS_SYSTEM_VARS = ["SystemRoot", "SystemDrive", "ProgramData", "windir", "TEMP", "TMP", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "PATH", "PATHEXT", "COMSPEC"] as const;
-
-/**
- * Copies every Windows system variable that `env` lacks from `source`. Names compare without
- * case, as Windows does: a copied process.env has "Path", and adding "PATH" next to it would give
- * the child two entries of which only one wins. Values already in `env` are kept, so an
- * adapter's own override (a profile USERPROFILE, say) stays.
- */
-export function ensureSystemEnv<T extends Record<string, string | undefined>>(env: T, source: NodeJS.ProcessEnv = process.env): T {
-  const present = new Set(Object.keys(env).filter((k) => env[k] !== undefined).map((k) => k.toUpperCase()));
+export function ensureSystemEnv<T extends Record<string, string | undefined>>(env: T, source: NodeJS.ProcessEnv = process.env, platform: Platform = process.platform): T {
+  const fold = isWindows(platform) ? (k: string) => k.toUpperCase() : (k: string) => k;
+  const present = new Set(Object.keys(env).filter((k) => env[k] !== undefined).map(fold));
   const sourceKeys = Object.keys(source);
-  for (const name of WINDOWS_SYSTEM_VARS) {
-    if (present.has(name.toUpperCase())) continue;
-    const key = sourceKeys.find((k) => k.toUpperCase() === name.toUpperCase() && source[k] !== undefined);
+  for (const name of systemEnvVars(platform)) {
+    if (present.has(fold(name))) continue;
+    const key = sourceKeys.find((k) => fold(k) === fold(name) && source[k] !== undefined);
     if (key) (env as Record<string, string>)[key] = source[key] as string;
   }
   return env;

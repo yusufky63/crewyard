@@ -75,7 +75,14 @@
 ```
 
 - **Process ownership:** every agent process is a child of the daemon. The daemon tracks process trees and kills them with `taskkill /PID <pid> /T /F` on stop, so nothing respawns or lingers. Closing the window hides it to the tray; quitting from the tray asks first and names the running agents.
-- **Ingress:** besides IPC there is one named pipe `\\.\pipe\mission-control-<user-sid>`, restricted to the current user and protected by a token. It is used by Claude Code hooks (to observe sessions you started outside the app), by a small `mc` CLI, and by the report server every run gets (ADR 0007: a PowerShell byte relay the runner starts, one ticket per run process, a random pipe name per daemon start). No TCP port is opened.
+  - On Linux and macOS (prepared, not shipped; [ADR 0010](docs/adr/0010-linux-macos-groundwork.md)) every child leads its own process group. Stop sends SIGTERM to the group and to each descendant, then SIGKILL after 2 s.
+  - Without a tray (Linux), closing the window goes to the same quit confirm.
+- **Ingress:** besides IPC there is one per-user local endpoint protected by a token, never a TCP port.
+  - On Windows it is the named pipe `\\.\pipe\crewyard-<user-sid>`, restricted to the current user.
+  - On Linux and macOS it is a Unix domain socket, 0600, in a 0700 folder of the user's own: `$XDG_RUNTIME_DIR/crewyard` on Linux, the per-user temp folder otherwise (ADR 0010).
+  - It is used by Claude Code hooks (to observe sessions you started outside the app), by a small `mc` CLI, and by the report server every run gets.
+  - The report server (ADR 0007) is a byte relay the runner starts, one ticket per run process, a random endpoint name per daemon start: Windows PowerShell 5.1 on Windows, the system Perl (`/usr/bin/perl`) elsewhere.
+  - Only the report server is built so far.
 - **Recovery:** on start the daemon reloads facts, marks runs whose process is gone as `interrupted`, and offers native resume (Claude `resume`, Codex `thread/resume`, OpenCode session, ACP `session/load`) instead of silently restarting anything.
 
 ### 4.1 Repository layout
@@ -168,8 +175,8 @@ Start a run in a temp repo, receive a plan and a tool call, approve once, deny o
 ## 6. Accounts and credentials
 
 - **Claude is API-key only.** Anthropic's Agent SDK terms say third-party products may not offer claude.ai login or rate limits without Anthropic's approval. Because the app may be shared later, Claude profiles always use an Anthropic API key, from the first build. Several Claude profiles means several keys (for example one per Anthropic workspace), each with its own daily and per-task cap. If Anthropic ever approves claude.ai login for the app, it becomes a separate profile kind; nothing else changes.
-- **Adding a subscription account (Codex, Gemini CLI, OpenCode providers):** Settings → Accounts → Add → choose runner → Crewyard creates `%APPDATA%\MissionControl\profiles\<runner>\<alias>\` and starts that CLI's own login with the profile env set (for Codex through the app-server's `account/login/start`). When the probe sees a signed-in state, the account is ready. Removing an account deletes only that folder, after confirmation.
-- **Adding an API key:** stored encrypted with DPAPI (user scope) in `%APPDATA%\MissionControl\secrets\<alias>.bin`. Not Windows Credential Manager, which caps entries at about 2.5 KB (claude-swap #45). Keys reach child processes only through environment variables, never on a command line, never in logs (pino redaction + a secret scanner on debug logs).
+- **Adding a subscription account (Codex, Gemini CLI, OpenCode providers):** Settings → Accounts → Add → choose runner → Crewyard creates `<data>\profiles\<runner>\<alias>\` (`<data>` is `%APPDATA%\Crewyard\data` on Windows; §12.1 for the others) and starts that CLI's own login with the profile env set (for Codex through the app-server's `account/login/start`). When the probe sees a signed-in state, the account is ready. Removing an account deletes only that folder, after confirmation.
+- **Adding an API key:** stored encrypted with DPAPI (user scope) in `<data>\secrets\<credential id>.bin`; on Linux and macOS with Electron `safeStorage` (ADR 0010). Not Windows Credential Manager, which caps entries at about 2.5 KB (claude-swap #45). Keys reach child processes only through environment variables, never on a command line, never in logs (pino redaction + a secret scanner on debug logs).
 - **Keys stay with the runner process, not the agent's commands.** Each runner gets only the one variable it reads the key from. Each runner's own mechanism then keeps that variable from the commands the agent runs (checked 2026-10-30, live run in the PR notes):
   - **Claude Code:** we set `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1` (documented in code.claude.com/docs/en/env-vars). Claude Code then strips its Anthropic credentials and other credential-named variables from Bash commands, hooks and stdio MCP servers.
   - **Codex:** the profile's `config.toml` and every `thread/start` set `[shell_environment_policy] ignore_default_excludes = false`. That drops `*KEY*`, `*SECRET*` and `*TOKEN*`. `exclude` also names the key variables. codex 0.147 defaults to passing everything.
@@ -402,7 +409,7 @@ A run cannot create other runs. If an agent asks for more work, the request beco
    - an optional CI workflow template that already follows your CI rules (ubuntu, `push` on `main` only, `concurrency` with `cancel-in-progress`, `timeout-minutes`, no `schedule`);
    - Actions-minutes warning at 80%.
 
-The result is `.crewyard/project.json` in the repo: name, commands, allowed runners, profile ids, caps, rules, worktree path. It never contains keys or tokens. Secrets stay in the DPAPI store and profiles stay in `%APPDATA%\MissionControl`.
+The result is `.crewyard/project.json` in the repo: name, commands, allowed runners, profile ids, caps, rules, worktree path. It never contains keys or tokens. Secrets stay in the DPAPI store and profiles stay in Crewyard's own data folder (`%APPDATA%\Crewyard\data` on Windows).
 
 ## 12. Windows specifics
 
@@ -415,6 +422,37 @@ The result is `.crewyard/project.json` in the repo: name, commands, allowed runn
 - Keep the PC awake while runs are active, as an opt-in (Settings → Startup): Electron `powerSaveBlocker("prevent-app-suspension")` from the first active run to the last, released on battery at or below a threshold (default 30%) or with an unknown charge; its state shows in the status bar.
 - Detect and refuse WSL paths for Windows-native runs; WSL support is out of scope for v1.
 - Known risks to test: antivirus scanning slowing worktrees, Smart App Control blocking unsigned helpers, `node-pty` native build matching Electron.
+
+### 12.1 Linux and macOS (prepared, not shipped)
+
+Windows comes first and behaves exactly as above. Every Windows-only call has a POSIX branch next to it ([ADR 0010](docs/adr/0010-linux-macos-groundwork.md)). Each helper takes the platform as an argument, so both branches run under test on Windows.
+
+| Windows | Linux and macOS |
+|---|---|
+| `taskkill /T /F` | process group per child (`detached`), SIGTERM to the group and its descendants, SIGKILL after 2 s |
+| `where.exe $PATH:`, `.exe` beats `.cmd` | in-process PATH search without the current folder, then each runner's install folders (`~/.local/bin`, `~/.opencode/bin`, Homebrew), because Dock and launcher starts get a short PATH |
+| Windows system variables, compared without case | `HOME`, `PATH`, `TMPDIR`, `SHELL`, `LANG`, the D-Bus and display variables, exact case |
+| DPAPI from the daemon (ADR 0002) | Electron `safeStorage` (Keychain, Secret Service or KWallet), called by the main process for the daemon; Chromium's `basic_text` fallback is refused |
+| named pipe, PowerShell relay | Unix socket 0600 in a private 0700 folder, Perl relay |
+| orphan check through CIM | the same rules through `ps`; kills only when the command line names the run |
+| Defender, long paths | N/A: left out of the machine check |
+| case twins | still refused: Crewyard compares project paths without case on every platform |
+| tray, `toastXml` toasts, close-to-tray, Start with Windows | macOS: menu bar, plain notifications, Dock reopen, login item. Linux: plain notifications, no tray, so close asks to quit |
+| NSIS per-user | unsigned dmg and zip (macOS), AppImage and deb (Linux); never built or published yet |
+
+CI checks the POSIX branches on the existing ubuntu job. A macOS test workflow runs only by hand.
+
+What still blocks a Linux or macOS release:
+
+- conformance runs on real machines;
+- orphan identity by working folder;
+- icons;
+- signing (macOS);
+- the macOS title bar;
+- a Linux tray and autostart;
+- per-platform wording and default folders.
+
+The full list is in the ADR.
 
 ## 13. Canonical states
 
@@ -483,7 +521,7 @@ Each milestone ends with: typecheck, lint with `--max-warnings=0`, tests, build,
 - 2026-10-30: other projects, whatever their license, are read only to learn how they work; Crewyard's code is our own and nothing is copied or ported (AGENTS.md, D1).
 - 2026-10-30: automatic switching between accounts of the same provider exists, as an opt-in that is off by default. In the owner's words: "evet olsun kullanıcı isterse açık bıraksın ve otomatik geçiş olur" (yes, it should exist; if you want it, you leave it on and the switch happens automatically). Rules in §8.3, decision in [ADR 0009](docs/adr/0009-same-provider-auto-switch.md).
 - 2026-10-30: the name is Crewyard everywhere (owner: "crewyard olsun her yerde"). The working name Mission Control is gone; a project's config moved from `.mission\project.json` to `.crewyard\project.json` and new worktrees go to `.crewyard\worktrees`. Configs in the old place are still read and move on the next save; existing worktree roots stay where their config puts them.
-- 2026-10-30: the code is kept in a private GitHub repository, pushed when a piece of work is finished rather than after every step; releases come once everything is done. Windows stays first; Linux and macOS are prepared for but not shipped yet.
+- 2026-10-30: the code is kept in a private GitHub repository, pushed when a piece of work is finished rather than after every step; releases come once everything is done. Windows stays first; Linux and macOS are prepared for but not shipped yet (owner: "linux ve mac için hazırlıklar da yapabiliriz ama öncelik windows da"; the platform seams are in [ADR 0010](docs/adr/0010-linux-macos-groundwork.md) and §12.1).
 - 2026-10-30: the Crew graph hides React Flow's attribution link (`proOptions.hideAttribution`); React Flow is MIT and its licence notice ships with the app.
 
 **Open**

@@ -31,6 +31,8 @@ export interface ToasterDeps {
   locale(): string;
   /** Brings the window forward on a screen; null only focuses it. */
   open(target: ToastTarget | null): void;
+  /** "basic" off Windows: title and text only (platform.ts). Windows toasts when absent. */
+  style?: "toast" | "basic";
 }
 
 const BUTTON_KEY: Record<ToastAction, string> = { approve: "button.approve", open: "button.open", handoff: "button.handoff", wait: "button.wait" };
@@ -140,7 +142,11 @@ export class Toaster {
 
   private show(content: Parameters<typeof toastXml>[0]): void {
     if (!Notification.isSupported()) return;
-    const n = new Notification({ toastXml: toastXml(content) });
+    // Linux and macOS (docs/adr/0010): no toast XML and no buttons; a click opens the item, as
+    // pressing a toast's body does, so nothing is answered from outside the app there.
+    const basic = this.deps.style === "basic";
+    const n = basic ? new Notification({ title: content.title, body: content.lines.join("\n") }) : new Notification({ toastXml: toastXml(content) });
+    if (basic) n.on("click", () => void this.activate(content.launch));
     this.live.add(n);
     const drop = () => this.live.delete(n);
     n.on("close", drop);
