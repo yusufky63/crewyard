@@ -103,7 +103,7 @@
         "hint": "Install Claude Code, Codex, Gemini CLI or OpenCode; This machine shows what was found."
       },
       "plan": {
-        "label": "A plan account is set up",
+        "label": "A plan account is signed in",
         "hint": "Add a ChatGPT or Google plan profile; it signs in through the CLI's own login."
       },
       "github": {

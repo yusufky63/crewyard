@@ -2,6 +2,7 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, s
 import { basename, dirname, extname, isAbsolute, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { BackupEntry } from "@crewyard/core";
+import { appliedMigrationIds } from "../store.ts";
 
 // Backup, export and restore of the SQLite database (PLAN.md M6). Snapshots use VACUUM INTO, which
 // reads one consistent view through the WAL, so they are safe while agents write. A restore never
@@ -102,7 +103,7 @@ export function exportTo(db: DatabaseSync, path: string, liveDb: string, overwri
  * Opened read-write on purpose: it is always a private staged copy, and a WAL-mode file needs
  * its shared-memory file to be readable at all.
  */
-export function inspectDatabase(path: string, liveVersion: number): number {
+export function inspectDatabase(path: string, knownIds: readonly string[]): number {
   let db: DatabaseSync;
   try {
     db = new DatabaseSync(path);
@@ -110,19 +111,20 @@ export function inspectDatabase(path: string, liveVersion: number): number {
     return fail("restore.not_database");
   }
   try {
-    let version: number;
+    let applied: string[];
     let tables: Set<string>;
     try {
-      version = Number((db.prepare("pragma user_version").get() as { user_version: number }).user_version);
+      applied = appliedMigrationIds(db);
       tables = new Set((db.prepare("select name from sqlite_master where type = 'table'").all() as Array<{ name: string }>).map((r) => r.name));
     } catch {
       return fail("restore.not_database");
     }
     const check = db.prepare("pragma integrity_check").all() as Array<{ integrity_check: string }>;
     if (check.length !== 1 || check[0]?.integrity_check !== "ok") return fail("restore.integrity");
-    if (version === 0 || !REQUIRED_TABLES.every((t) => tables.has(t))) return fail("restore.not_crewyard");
-    if (version > liveVersion) return fail("restore.newer_schema");
-    return version;
+    if (applied.length === 0 || !REQUIRED_TABLES.every((t) => tables.has(t))) return fail("restore.not_crewyard");
+    // A migration this build does not know means a newer build wrote the file.
+    if (applied.some((id) => !knownIds.includes(id))) return fail("restore.newer_schema");
+    return applied.length;
   } finally {
     db.close();
   }
@@ -132,14 +134,14 @@ export function inspectDatabase(path: string, liveVersion: number): number {
  * Copies `source` to a private staging file and checks the copy, so a file that changes after the
  * check can never be what gets restored. Returns the staged path and its schema version.
  */
-export function stageRestore(source: string, dataDir: string, liveDb: string, liveVersion: number): { staged: string; version: number } {
+export function stageRestore(source: string, dataDir: string, liveDb: string, knownIds: readonly string[]): { staged: string; version: number } {
   const abs = checkDbPath(source, liveDb);
   if (!existsSync(abs) || !statSync(abs).isFile()) return fail("data.path");
   const tmp = join(dataDir, `${STAGED_RESTORE}.${process.pid}.tmp`);
   removeWithSidecars(tmp);
   try {
     copyFileSync(abs, tmp);
-    const version = inspectDatabase(tmp, liveVersion);
+    const version = inspectDatabase(tmp, knownIds);
     // Closing the check's connection checkpoints; any sidecar left is not part of the copy.
     ["-wal", "-shm", "-journal"].forEach((s) => rmSync(tmp + s, { force: true }));
     return { staged: tmp, version };

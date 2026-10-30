@@ -103,7 +103,7 @@
         "hint": "Claude Code, Codex, Gemini CLI ya da OpenCode kurun; neyin bulunduğunu Bu makine bölümü gösterir."
       },
       "plan": {
-        "label": "Bir abonelik hesabı ayarlı",
+        "label": "Bir abonelik hesabında oturum açık",
         "hint": "ChatGPT ya da Google aboneliği için profil ekleyin; oturum CLI'ın kendi girişiyle açılır."
       },
       "github": {

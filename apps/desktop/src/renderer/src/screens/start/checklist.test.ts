@@ -14,7 +14,19 @@ const profile = (id: string, runner: ProfileSummary["runner"], credentialId: str
   updatedAt: "2026-10-30T00:00:00Z",
 });
 const credential = (id: string, isSet: boolean): CredentialSummary => ({ id, alias: id, providerId: "anthropic", kind: "api_key", isSet, caps: { dailyUsd: null, taskUsd: null }, createdAt: "2026-10-30T00:00:00Z" });
-const account = (kind: AccountRow["kind"]): AccountRow => ({ key: kind, label: kind, providerId: "openai", runner: "codex", kind, pct: null, value: { kind: "none" }, provenance: "unknown", window: null, resetsAt: null });
+const account = (kind: AccountRow["kind"], signedIn = kind === "plan"): AccountRow => ({
+  key: kind,
+  label: kind,
+  providerId: "openai",
+  runner: "codex",
+  kind,
+  pct: null,
+  value: { kind: "none" },
+  provenance: "unknown",
+  window: null,
+  resetsAt: null,
+  signIn: kind === "plan" ? { state: signedIn ? "signed_in" : "signed_out", plan: null, probedAt: null } : null,
+});
 const task = (status: TaskStatus): TaskSummary => ({
   id: status,
   projectId: "p",
@@ -49,6 +61,7 @@ describe("checklist", () => {
   it("counts a plan account, not an API key account", () => {
     expect(done({ accounts: [account("api_key")] }).plan).toBe(false);
     expect(done({ accounts: [account("api_key"), account("plan")] }).plan).toBe(true);
+    expect(done({ accounts: [account("plan", false)] }).plan).toBe(false);
   });
 
   it("takes GitHub from the gh sign-in", () => {

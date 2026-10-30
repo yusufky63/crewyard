@@ -5,6 +5,7 @@ import { orchestratorFor } from "../orchestrator/index.ts";
 import { readProjectConfig } from "../setup/config.ts";
 import { backupsDir, backupTo, commitStaged, exportTo, listBackups, stageRestore } from "../settings/data.ts";
 import { applyPatch, NOTIFICATIONS_KEY, readNotifications } from "../settings/values.ts";
+import { appliedMigrationIds, MIGRATIONS } from "../store.ts";
 import type { HandlerContext, HandlerMap } from "./types.ts";
 
 // Handlers for the Settings screen and the desktop shell. Owned by the desktop settings work.
@@ -33,7 +34,9 @@ export function createSettingsHandlers(ctx: HandlerContext, opts: SettingsOption
     const row = db.prepare("select value from settings where key = ?").get(NOTIFICATIONS_KEY) as { value: string } | undefined;
     return { notifications: readNotifications(row?.value) };
   };
-  const schemaVersion = () => Number((db.prepare("pragma user_version").get() as { user_version: number }).user_version);
+  // How many migrations the live database has; restore accepts only files whose ids this build knows.
+  const schemaVersion = () => appliedMigrationIds(db).length;
+  const knownIds = MIGRATIONS.map((m) => m.id);
   const activeRuns = () => Number((db.prepare("select count(*) as n from runs where ended_at is null").get() as { n: number }).n);
 
   return {
@@ -59,7 +62,7 @@ export function createSettingsHandlers(ctx: HandlerContext, opts: SettingsOption
     "settings.export": ({ path, overwrite }) => exportTo(db, path, info.dbPath, overwrite === true),
     "settings.restore": ({ path }) => {
       if (activeRuns() > 0) throw new Error("restore.agents_running");
-      const { staged, version } = stageRestore(path, info.dataDir, info.dbPath, schemaVersion());
+      const { staged, version } = stageRestore(path, info.dataDir, info.dbPath, knownIds);
       // Taken after the check, so a file that cannot be restored leaves no extra snapshot behind.
       const safetyBackup = backupTo(db, info.dataDir, "safety");
       commitStaged(staged, info.dataDir);

@@ -338,6 +338,18 @@ export const MIGRATIONS: Migration[] = [
 /** What the positional scheme applied: a database at `user_version` N has the first N of these. */
 const LEGACY_IDS = ["core", "providers", "orchestrator"];
 
+/**
+ * The migration ids a database has, under either scheme: the `applied_migrations` records, or for
+ * a database from the positional scheme, the first `user_version` legacy ids. Restore uses it to
+ * tell a Crewyard database, and one from a newer build, from anything else.
+ */
+export function appliedMigrationIds(db: DatabaseSync): string[] {
+  const table = db.prepare("select 1 from sqlite_master where type = 'table' and name = 'applied_migrations'").get();
+  if (table) return (db.prepare("select id from applied_migrations order by rowid").all() as Array<{ id: string }>).map((r) => r.id);
+  const version = Number((db.prepare("pragma user_version").get() as { user_version: number }).user_version);
+  return LEGACY_IDS.slice(0, version);
+}
+
 /** Applies every migration whose id is not recorded yet, each in its own transaction; returns the ids it ran. */
 export function applyMigrations(db: DatabaseSync, migrations: readonly Migration[]): string[] {
   const ids = migrations.map((m) => m.id);

@@ -140,7 +140,12 @@ describe("restore", () => {
 
     const newer = join(dir, "newer.db");
     const n = new DatabaseSync(newer);
-    n.exec("create table projects (id text); create table events (seq integer); create table settings (key text); pragma user_version = 9999;");
+    // A newer build records a migration id this one has never heard of.
+    n.exec(
+      "create table projects (id text); create table events (seq integer); create table settings (key text); " +
+        "create table applied_migrations (id text primary key, applied_at text not null); " +
+        "insert into applied_migrations values ('core', 'x'), ('from-a-newer-build', 'x');",
+    );
     n.close();
     await expect(attempt(() => h["settings.restore"]({ path: newer }))).rejects.toThrow("restore.newer_schema");
 

@@ -43,7 +43,8 @@ function claudeKey(profiles: ProfileSummary[] | undefined, credentials: Credenti
 export function checklist(input: ChecklistInput): ChecklistItem[] {
   return [
     { id: "agents", done: agentsFound(input.agents) },
-    { id: "plan", done: input.accounts ? input.accounts.some((a) => a.kind === "plan") : null },
+    // PLAN.md §11.1 asks for a plan account that is signed in, not just added.
+    { id: "plan", done: input.accounts ? input.accounts.some((a) => a.kind === "plan" && a.signIn?.state === "signed_in") : null },
     { id: "github", done: input.githubSignedIn ?? null },
     { id: "claudeKey", done: claudeKey(input.profiles, input.credentials) },
     { id: "firstTask", done: input.tasks ? input.tasks.some((t) => STARTED.has(t.status)) : null },
