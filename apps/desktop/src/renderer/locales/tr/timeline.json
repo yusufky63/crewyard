@@ -22,6 +22,8 @@
     "open": ", hâlâ sürüyor"
   },
   "entry": {
+    "hibernated": "{{who}} uyudu: beklerken süreci durduruldu",
+    "woke": "{{who}} kendi oturumuyla uyandı ({{by}})",
     "started": "{{who}} başladı",
     "tools_one": "{{count}} araç çağrısı",
     "tools_other": "{{count}} araç çağrısı",
@@ -93,5 +95,6 @@
     "stop_no_change": "Döngü durdu: son denemeden beri hiçbir şey değişmedi",
     "stop_spend_cap": "Döngü durdu: {{cap}} doldu",
     "stop_no_resume": "Döngü durdu: {{runner}}, kodu yazan oturumu sürdüremiyor"
-  }
+  },
+  "wokeBy": {"answer": "yanıtınızla", "message": "mesajınızla", "resume": "adım devam etti"}
 }

@@ -659,8 +659,8 @@ export const MIGRATIONS: Migration[] = [
      hibernated_at text not null,
      idle_since text not null,
      request_id text,
-     approved_command text,
-     approved_cwd text,
+     approved_call text,
+     approved_until text,
      woke_at text,
      woke_by text
    );

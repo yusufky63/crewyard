@@ -71,7 +71,7 @@ import { forkPrompt, handoffPackage, rolePrompt } from "./prompts.ts";
 import { onlyDocPaths, ROLES } from "./roles.ts";
 import { capResetsAt, capWindow, credentialCaps, overCap, reachedCaps, recordRunSpend, reservedUsd, reserveSpend, settleReservation, spendCredential } from "./spend.ts";
 import { joinMessages } from "./queue.ts";
-import { answerAfterSleep, HibernationStore, idleSince, type WakeCause } from "./hibernation.ts";
+import { answerAfterSleep, canHibernate, HibernationStore, idleSince, type WakeCause } from "./hibernation.ts";
 import { Scheduler } from "./schedules.ts";
 import { StallMonitor } from "./stall.ts";
 import { snapshotTranscript, transcriptPath } from "./transcripts.ts";
@@ -530,7 +530,8 @@ export class Orchestrator {
             busy: Boolean(live.testing) || this.draining.has(runId) || this.drainRelease.has(runId) || this.stopping.has(runId) || this.hibernating.has(runId) || this.confirming.has(runId) || this.db.openHandoffs().some((h) => h.from_run_id === runId),
             paused: run.paused_at !== null,
             limited: run.limit_reached === 1,
-            resumable: Boolean(live.adapter.capabilities.resume && run.native_session_id),
+            // Only runners whose resume by session id is proven, or an ACP agent that reported loadSession.
+            resumable: Boolean(run.native_session_id) && canHibernate(run.runner, live.adapter.capabilities.resume, live.candidate.capabilities.resume),
             lastActivityAt: run.last_activity_at,
             startedAt: run.started_at,
             request: open && payload ? { id: open.id, createdAt: open.created_at, hibernatable: (payload.kind === "question" || (payload.kind === "approval" && !payload.bootstrap)) && open.native_id !== null } : null,
@@ -1237,6 +1238,8 @@ export class Orchestrator {
    */
   private async nextTurn(runId: string): Promise<string | null> {
     this.turns.end(runId);
+    // A one-time grant from a hibernated approval covers only the turn it woke into.
+    this.hibernation.dropGrant(runId);
     const live = this.live.get(runId);
     const run = this.db.run(runId);
     // A drain handoff waits for exactly this boundary: the source takes no further turn, and the
@@ -1551,7 +1554,8 @@ export class Orchestrator {
       if (next.denied && !this.db.run(next.denied).ended_at) this.endRun(next.denied, "failed", "bootstrap.denied");
     }
     if (asleep && run && (payload.kind === "question" || payload.kind === "approval") && answer.kind !== "handoff") {
-      if (payload.kind === "approval" && answer.kind === "approval" && answer.decision !== "deny" && payload.command) this.hibernation.approved(run.id, payload.command, payload.cwd);
+      // Only "allow once" grants the woken session's repeat; "allow always" uses the project allowlist, deny and cancel grant nothing.
+      if (payload.kind === "approval" && answer.kind === "approval" && answer.decision === "allow_once" && payload.command) this.hibernation.grant(run.id, { command: payload.command, cwd: payload.cwd, paths: payload.paths, network: payload.network });
       this.turns.queue.add(run.task_id, run.member_id, answerAfterSleep(payload, answer), "note");
       await this.wakeRun(run.id, "answer");
     }
@@ -1912,7 +1916,8 @@ export class Orchestrator {
     let finish!: () => void;
     // Every start and resume hands over a prompt, so a turn runs from here; its boundary takes what is queued.
     // A new process for a hibernated run is its wake-up, whoever started it (resume, retry, answer).
-    if (this.hibernation.wake(runId, this.pendingWake.get(runId) ?? "resume")) this.audit(this.db.run(runId).task_id, runId, "run.woke", {});
+    const wokeBy = this.pendingWake.get(runId) ?? "resume";
+    if (this.hibernation.wake(runId, wokeBy)) this.audit(this.db.run(runId).task_id, runId, "run.woke", { by: wokeBy });
     this.pendingWake.delete(runId);
     const live: Live = { adapter, handle, candidate, done: new Promise<void>((r) => (finish = r)), inTurn: true };
     this.live.set(runId, live);
@@ -2066,6 +2071,7 @@ export class Orchestrator {
     if (run.native_session_id) this.track(this.copyTranscript(runId));
     settleReservation(this.opts.store.db, runId, this.now());
     this.hibernation.wake(runId, "ended");
+    this.hibernation.dropGrant(runId);
     this.pendingWake.delete(runId);
     // A Best of N variant's diff is what you compare; read it from git once its run is over.
     const variant = this.bestOf.variantByTask(run.task_id);
@@ -2177,7 +2183,7 @@ export class Orchestrator {
     else if (policy.network === "denied" && ev.network) rule = "policy.role_no_network";
 
     // You approved this exact call while the run was hibernated; the woken session repeats it once.
-    const approvedAsleep = !rule && this.hibernation.takeApproval(run.id, ev.command, ev.cwd);
+    const approvedAsleep = !rule && this.hibernation.takeGrant(run.id, { command: ev.command, cwd: ev.cwd, paths: ev.paths, network: ev.network });
     const decision: "deny" | "allow_once" | null = rule ? "deny" : risk === "low" || approvedAsleep ? "allow_once" : null;
     const payload: RequestPayload = { kind: "approval", toolCallId: ev.toolCallId, command: ev.command, cwd: ev.cwd, paths: ev.paths, network: ev.network, policy: rule ?? (approvedAsleep ? "policy.approved_while_hibernated" : decision ? "policy.allowlisted" : null) };
     const answer: RequestAnswer | null = decision ? { kind: "approval", decision } : null;

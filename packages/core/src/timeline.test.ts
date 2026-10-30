@@ -24,6 +24,19 @@ const done = (min: number, runId: string, id: string, over: Record<string, unkno
   ev(min, runId, { kind: "tool.update", toolCallId: id, status: "completed", preview: null, truncatedBytes: null, keptAt: null, binary: false, ...over });
 
 describe("buildTimeline", () => {
+  it("marks where a run hibernated and where it woke, in order", () => {
+    const events = [
+      ev(5, "r1", { kind: "run.state", state: "waiting_input", detail: null }),
+      ev(40, "r1", { kind: "hibernation", phase: "hibernated", by: null }),
+      ev(90, "r1", { kind: "hibernation", phase: "woke", by: "answer" }),
+    ];
+    const tl = buildTimeline([run("r1", 0, null)], events, ms(100));
+    expect(tl.entries.filter((e) => e.kind === "hibernation").map((e) => (e.kind === "hibernation" ? [e.phase, e.by, (e.at - ms(0)) / 60_000] : null))).toEqual([
+      ["hibernated", null, 40],
+      ["woke", "answer", 90],
+    ]);
+  });
+
   it("draws a lane per run with its waits, merged and clipped to the run", () => {
     const events = [
       ev(5, "r1", { kind: "run.state", state: "waiting_approval", detail: null }),

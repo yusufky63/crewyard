@@ -51,12 +51,13 @@ function Item({ q, selected, onSelect }: { q: RequestView; selected: boolean; on
   const title = useTitle();
   const task = useWork("tasks.get", { taskId: q.taskId });
   const asker = useAsker(task.data, q);
+  const asleep = task.data?.runs.some((r) => r.id === q.runId && r.hibernatedAt && !r.endedAt);
   return (
     <button type="button" className="ib-item" role="option" aria-selected={selected} onClick={onSelect}>
       <KindIcon q={q} />
       <span className="ib-text">
         <span className={`t${q.payload.kind === "approval" && q.payload.command ? " mono" : ""}`}>{title(q)}</span>
-        <span className="s">{asker}</span>
+        <span className="s">{asleep ? `${asker} · ${f.t("tasks:step.hibernated")}` : asker}</span>
       </span>
       <span className="k">{f.when.ago(q.createdAt)}</span>
     </button>
@@ -266,6 +267,11 @@ function Detail({ q }: { q: RequestView }) {
             {task.data.title}
           </button>
           {step > 0 && ` · ${t("detail.step", { step, total: members.length, role: f.role(run!.role) })}`}
+        </p>
+      )}
+      {run?.hibernatedAt && !run.endedAt && (
+        <p className="ib-note" role="note">
+          {t("detail.hibernated")}
         </p>
       )}
       {p.kind === "approval" && <Approval q={q} p={p} task={task.data} answer={answer} />}

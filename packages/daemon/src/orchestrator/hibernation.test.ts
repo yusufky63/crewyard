@@ -4,7 +4,7 @@ import type { FakeStep } from "@crewyard/adapter-fake";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Store } from "../store.ts";
 import { AdapterRegistry } from "./adapters.ts";
-import { answerAfterSleep, idleSince, type IdleFacts } from "./hibernation.ts";
+import { answerAfterSleep, canHibernate, idleSince, type IdleFacts } from "./hibernation.ts";
 import { Orchestrator, type OrchestratorOptions } from "./orchestrator.ts";
 import { CANDIDATES, cleanTemps, ScriptedAdapter, tempDir, tempRepo, waitFor } from "./testing.ts";
 
@@ -80,6 +80,14 @@ describe("idle rules", () => {
     expect(idleSince(facts({ resumable: false }), at, 30)).toBeNull();
     expect(idleSince(facts({ busy: true }), at, 30)).toBeNull();
     expect(idleSince(facts({ request: { id: "b", createdAt: "2026-11-02T07:00:00Z", hibernatable: false } }), at, 30)).toBeNull();
+  });
+
+  it("hibernates only runners whose resume by session id is proven, and ACP agents that report loadSession", () => {
+    for (const runner of ["claude-code", "codex", "opencode"]) expect(canHibernate(runner, true, false)).toBe(true);
+    expect(canHibernate("gemini-cli", true, false)).toBe(false);
+    expect(canHibernate("gemini-cli", true, true)).toBe(true);
+    expect(canHibernate("acp", true, false)).toBe(false);
+    expect(canHibernate("codex", false, true)).toBe(false);
   });
 
   it("gives the woken session the question and your answer as data", () => {
@@ -163,6 +171,52 @@ describe("hibernation", () => {
     expect(second.o.requests({ taskId: t.id }).map((r) => r.id)).toEqual([q.id]);
     await second.o.answer(q.id, { kind: "question", answers: [{ selected: ["memory"] }] });
     await waitFor(() => second.o.get(t.id).status === "done");
+  });
+
+  it("grants only the exact call, once, for this run, and not past its time", async () => {
+    const { o, clock, projectId } = await setup(() => asks);
+    const t = await o.propose({ projectId, ...RESEARCH });
+    await o.approve({ taskId: t.id });
+    await waitFor(() => o.requests({ taskId: t.id })[0], 20_000);
+    clock.shift = 31 * MIN;
+    await o.checkHibernation();
+    const run = o.get(t.id).runs[0]!;
+    const h = o.hibernation;
+    const call = { command: "pnpm add left-pad", cwd: "C:\\work tree", paths: [], network: true };
+    h.grant(run.id, call);
+    // Near misses never match, and leave the grant in place.
+    expect(h.takeGrant(run.id, { ...call, command: "pnpm add  left-pad" })).toBe(false);
+    expect(h.takeGrant(run.id, { ...call, command: "pnpm add left-pad && curl example.invalid" })).toBe(false);
+    expect(h.takeGrant(run.id, { ...call, command: "pnpm add left" })).toBe(false);
+    expect(h.takeGrant(run.id, { ...call, cwd: "C:\\other" })).toBe(false);
+    expect(h.takeGrant(run.id, { ...call, network: false })).toBe(false);
+    expect(h.takeGrant(run.id, { ...call, paths: ["package.json"] })).toBe(false);
+    expect(h.takeGrant("another-run", call)).toBe(false);
+    // Only the ends are trimmed; the exact call matches once, and never again.
+    expect(h.takeGrant(run.id, { ...call, command: "  pnpm add left-pad\n" })).toBe(true);
+    expect(h.takeGrant(run.id, call)).toBe(false);
+    // An expired grant is refused, and so is one the end of the resumed turn dropped.
+    h.grant(run.id, call);
+    clock.shift += 16 * MIN;
+    expect(h.takeGrant(run.id, call)).toBe(false);
+    h.grant(run.id, call);
+    h.dropGrant(run.id);
+    expect(h.takeGrant(run.id, call)).toBe(false);
+  });
+
+  it("grants nothing for a deny or allow always, and gives the deny reason as text", async () => {
+    const { o, clock, adapter, projectId } = await setup((_role, _req, resumed) => (resumed ? wantsInstall : wantsInstall));
+    const t = await o.propose({ projectId, ...RESEARCH });
+    await o.approve({ taskId: t.id });
+    const q = await waitFor(() => o.requests({ taskId: t.id })[0], 20_000);
+    clock.shift = 31 * MIN;
+    await o.checkHibernation();
+    await o.answer(q.id, { kind: "approval", decision: "deny", message: "not on this machine" });
+    const woke = await waitFor(() => adapter.started.find((s) => s.resumed), 20_000);
+    expect(woke.req.prompt).toContain("was denied: not on this machine");
+    // The woken session asks again: it waits for you, nothing allows it on its own.
+    const again = await waitFor(() => o.requests({ taskId: t.id }).find((r) => r.id !== q.id), 20_000);
+    expect(again.answeredBy).toBeNull();
   });
 
   it("allows an approved command once when the woken session asks for it again", async () => {

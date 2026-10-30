@@ -18,13 +18,32 @@ export interface HibernationRow {
   hibernated_at: string;
   idle_since: string;
   request_id: string | null;
-  approved_command: string | null;
-  approved_cwd: string | null;
+  /** The call you allowed once while asleep (GrantedCall as JSON), until it is used or expires. */
+  approved_call: string | null;
+  approved_until: string | null;
   woke_at: string | null;
   woke_by: string | null;
 }
 
 export type WakeCause = "message" | "answer" | "resume" | "ended" | "handoff";
+
+/** The exact call an "allow once" answer covered: the agent's repeat must match every field. */
+export interface GrantedCall {
+  command: string;
+  cwd: string | null;
+  paths: string[];
+  network: boolean;
+}
+
+/** A one-time grant lasts until the resumed turn ends, and never longer than this. */
+export const GRANT_TTL_MS = 15 * 60_000;
+
+/**
+ * Runners whose resume by session id is proven (conformance and live runs). Gemini CLI and other
+ * ACP agents hibernate only when the agent reported `loadSession` at its probe.
+ */
+export const PROVEN_RESUME = new Set(["claude-code", "codex", "opencode", "fake"]);
+export const canHibernate = (runner: string, adapterResumes: boolean, probedResume: boolean) => adapterResumes && (PROVEN_RESUME.has(runner) || probedResume);
 
 export interface IdleFacts {
   /** A turn is running in the process (and no request holds it). */
@@ -102,7 +121,7 @@ export class HibernationStore {
   }
 
   sleep(runId: string, idleSince: string, requestId: string | null): HibernationRow {
-    const row: HibernationRow = { id: randomUUID(), run_id: runId, hibernated_at: this.now().toISOString(), idle_since: idleSince, request_id: requestId, approved_command: null, approved_cwd: null, woke_at: null, woke_by: null };
+    const row: HibernationRow = { id: randomUUID(), run_id: runId, hibernated_at: this.now().toISOString(), idle_since: idleSince, request_id: requestId, approved_call: null, approved_until: null, woke_at: null, woke_by: null };
     this.db.prepare("insert into run_hibernation (id, run_id, hibernated_at, idle_since, request_id) values (?, ?, ?, ?, ?)").run(row.id, runId, row.hibernated_at, idleSince, requestId);
     return row;
   }
@@ -112,19 +131,43 @@ export class HibernationStore {
     return Number(res.changes) > 0;
   }
 
-  /** You approved the command the sleeping run asked for; its repeat after waking is allowed once. */
-  approved(runId: string, command: string, cwd: string | null): void {
-    this.db.prepare("update run_hibernation set approved_command = ?, approved_cwd = ? where run_id = ? and id = (select id from run_hibernation where run_id = ? order by hibernated_at desc limit 1)").run(command, cwd, runId, runId);
+  /**
+   * You allowed once the command the sleeping run asked for: its repeat in the resumed session is
+   * allowed once more, for this run only. Only a command call qualifies; "allow always" goes through
+   * the project allowlist instead, and a deny or cancel grants nothing.
+   */
+  grant(runId: string, call: GrantedCall): void {
+    const until = new Date(this.now().getTime() + GRANT_TTL_MS).toISOString();
+    const stored: GrantedCall = { command: call.command.trim(), cwd: call.cwd, paths: [...call.paths], network: call.network };
+    this.db
+      .prepare("update run_hibernation set approved_call = ?, approved_until = ? where run_id = ? and id = (select id from run_hibernation where run_id = ? order by hibernated_at desc limit 1)")
+      .run(JSON.stringify(stored), until, runId, runId);
   }
 
-  /** Takes the one-time approval if the agent's new request is the same command in the same folder. */
-  takeApproval(runId: string, command: string | null, cwd: string | null): boolean {
-    if (!command) return false;
-    const row = this.db.prepare("select id, approved_command, approved_cwd from run_hibernation where run_id = ? and approved_command is not null order by hibernated_at desc limit 1").get(runId) as
-      | { id: string; approved_command: string; approved_cwd: string | null }
+  /**
+   * Uses the grant if the agent's new request is exactly the granted call: the same command text
+   * byte for byte apart from its ends, the same folder, the same paths and network flag. A miss
+   * leaves the grant in place; a use or an expired grant clears it.
+   */
+  takeGrant(runId: string, call: { command: string | null; cwd?: string | null; paths?: string[]; network?: boolean }): boolean {
+    const row = this.db.prepare("select id, approved_call, approved_until from run_hibernation where run_id = ? and approved_call is not null order by hibernated_at desc limit 1").get(runId) as
+      | { id: string; approved_call: string; approved_until: string | null }
       | undefined;
-    if (!row || row.approved_command.trim() !== command.trim() || (row.approved_cwd ?? null) !== (cwd ?? null)) return false;
-    this.db.prepare("update run_hibernation set approved_command = null, approved_cwd = null where id = ?").run(row.id);
+    if (!row) return false;
+    if (!row.approved_until || Date.parse(row.approved_until) <= this.now().getTime()) {
+      this.dropGrant(runId);
+      return false;
+    }
+    if (!call.command) return false;
+    const g = JSON.parse(row.approved_call) as GrantedCall;
+    const same = g.command === call.command.trim() && g.cwd === (call.cwd ?? null) && g.network === Boolean(call.network) && JSON.stringify(g.paths) === JSON.stringify(call.paths ?? []);
+    if (!same) return false;
+    this.db.prepare("update run_hibernation set approved_call = null, approved_until = null where id = ?").run(row.id);
     return true;
+  }
+
+  /** The resumed turn ended (or the run did): an unused grant goes with it. */
+  dropGrant(runId: string): void {
+    this.db.prepare("update run_hibernation set approved_call = null, approved_until = null where run_id = ? and approved_call is not null").run(runId);
   }
 }

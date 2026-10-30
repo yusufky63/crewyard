@@ -53,6 +53,7 @@
   "eyebrow": { "approval": "Araç onayı", "question": "Soru", "handoff": "Karar" },
   "risk": { "low": "Düşük risk", "medium": "Orta risk", "high": "Yüksek risk" },
   "detail": {
+    "hibernated": "Ajan uykuda: beklerken belleği boşaltmak için süreci durduruldu. Yanıtlamanız onu kendi oturumuyla sürdürür.",
     "askedIn": "Soran görev:",
     "step": "{{total}} adımın {{step}}. adımı, {{role}}",
     "cwd": "Çalışma klasörü",

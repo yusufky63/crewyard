@@ -53,6 +53,7 @@
   "eyebrow": { "approval": "Tool approval", "question": "Question", "handoff": "Decision" },
   "risk": { "low": "Low risk", "medium": "Medium risk", "high": "High risk" },
   "detail": {
+    "hibernated": "The agent is hibernated: its process was stopped to free memory while it waits. Answering resumes it with its own session.",
     "askedIn": "Asked in",
     "step": "step {{step}} of {{total}}, {{role}}",
     "cwd": "Working directory",

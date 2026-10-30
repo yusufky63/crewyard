@@ -201,6 +201,8 @@ const KINDS = [
   "run.retried",
   "run.auto_retry",
   "loop.decision",
+  "run.hibernated",
+  "run.woke",
 ];
 
 const TRUNCATED = /\n?\[truncated, (\d+) bytes(?:; full text in (.+))?\]$/;
@@ -289,6 +291,10 @@ function project(kind: string, p: Payload): TimelineEventBody | null {
     case "run.retried":
     case "run.auto_retry":
       return { kind: "retry", detail: str(p.after) };
+    case "run.hibernated":
+      return { kind: "hibernation", phase: "hibernated", by: null };
+    case "run.woke":
+      return { kind: "hibernation", phase: "woke", by: str(p.by) };
     case "loop.decision": {
       // A decision from a newer build with a kind this one does not know is left out, not guessed.
       const decision = str(p.kind);

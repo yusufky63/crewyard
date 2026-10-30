@@ -55,6 +55,7 @@ export type TimelineEntry =
   | { kind: "handoff"; at: number; runId: string | null; phase: "opened" | "completed" | "failed"; trigger: string | null }
   | { kind: "message"; at: number; runId: string | null; queued: boolean }
   | { kind: "retry"; at: number; runId: string | null }
+  | { kind: "hibernation"; at: number; runId: string | null; phase: "hibernated" | "woke"; by: string | null }
   | { kind: "loop"; at: number; runId: string | null; memberId: string | null; decision: LoopDecisionKind; iteration: number; max: number; reason: Reason }
   | { kind: "ended"; at: number; runId: string; reason: string | null };
 
@@ -204,6 +205,10 @@ export function buildTimeline(runs: TimelineRun[], events: TimelineEvent[], now:
         flush(e.runId);
         entries.push({ kind: "retry", at, runId: e.runId });
         break;
+      case "hibernation":
+        flush(e.runId);
+        entries.push({ kind: "hibernation", at, runId: e.runId, phase: e.phase, by: e.by });
+        break;
       case "loop":
         flush(e.runId);
         entries.push({ kind: "loop", at, runId: e.runId, memberId: e.memberId, decision: e.decision, iteration: e.iteration, max: e.max, reason: e.reason });
@@ -222,7 +227,7 @@ export function buildTimeline(runs: TimelineRun[], events: TimelineEvent[], now:
   for (const r of sortedRuns) if (r.endedAt) entries.push({ kind: "ended", at: ms(r.endedAt), runId: r.id, reason: r.endReason });
 
   // Stable order: by time, then so a run starts before its steps and ends after them.
-  const RANK: Record<TimelineEntry["kind"], number> = { started: 0, wait: 1, request: 2, handoff: 2, message: 2, retry: 2, tools: 3, ended: 4, loop: 5 };
+  const RANK: Record<TimelineEntry["kind"], number> = { started: 0, wait: 1, request: 2, handoff: 2, message: 2, retry: 2, hibernation: 2, tools: 3, ended: 4, loop: 5 };
   entries.sort((a, b) => a.at - b.at || RANK[a.kind] - RANK[b.kind]);
 
   const start = lanes.length ? Math.min(...lanes.map((l) => l.start)) : now;
