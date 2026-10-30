@@ -192,7 +192,7 @@
     "save": "Save",
     "cancel": "Cancel",
     "edit": "Edit",
-    "remove": "[ Remove ]",
+    "remove": "Remove",
     "removeConfirm": "Remove {{name}} and its stored secrets?",
     "enabled": "{{name}} enabled",
     "check": "Check tools",

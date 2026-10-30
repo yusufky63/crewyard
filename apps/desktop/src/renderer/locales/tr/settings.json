@@ -192,7 +192,7 @@
     "save": "Kaydet",
     "cancel": "Vazgeç",
     "edit": "Düzenle",
-    "remove": "[ Kaldır ]",
+    "remove": "Kaldır",
     "removeConfirm": "{{name}} ve kayıtlı gizli değerleri kaldırılsın mı?",
     "enabled": "{{name}} açık",
     "check": "Araçları kontrol et",
