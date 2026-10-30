@@ -36,6 +36,8 @@ export function useFormat() {
     if (typeof p.runner === "string") p.runner = runner(p.runner);
     if (typeof p.usd === "number") p.usd = usd(p.usd);
     if (typeof p.budget === "number") p.budget = usd(p.budget);
+    if (typeof p.reservedUsd === "number") p.reservedUsd = usd(p.reservedUsd);
+    if (typeof p.capUsd === "number") p.capUsd = usd(p.capUsd);
     if (typeof p.context === "number") p.context = `${Math.round(p.context / 1000)}k`;
     if (typeof p.needed === "number") p.needed = `${Math.round(p.needed / 1000)}k`;
     return t(`reason.${codeKey(r.code)}`, p);

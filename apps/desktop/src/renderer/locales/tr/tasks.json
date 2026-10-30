@@ -103,6 +103,7 @@
     "admission_memory": "Bellek bekleniyor: {{freeMb}} MB boş, {{neededMb}} MB gerekli",
     "admission_worktree_busy": "Worktree'ye başka bir çalışma yazıyor",
     "admission_no_profile": "Hesap seçilmedi; ekibi düzenleyin",
+    "admission_budget_reserved": "Bütçe bekleniyor: {{capUsd}} sınırın tahmini {{reservedUsd}} kadarı diğer çalışmalara ayrıldı",
     "admission_no_adapter": "{{runner}} bu sürümde yok"
   },
   "status": {
@@ -210,6 +211,7 @@
   "inspector": {
     "label": "Çalışma ayrıntıları",
     "close": "Paneli kapat (Esc)",
+    "approval": "Onayınızı bekliyor",
     "closeNote": "Bu paneli kapatmak ajanı durdurmaz.",
     "loading": "Yükleniyor…",
     "eyebrow": "Çalışma · {{index}} {{role}}",
@@ -259,13 +261,15 @@
     "run_resume_unsupported": "Bu çalıştırıcı oturumu sürdüremiyor.",
     "run_superseded": "Bu adımı zaten daha yeni bir çalışma sürdürüyor.",
     "run_still_limited": "Limit hâlâ dolu. Sıfırlandıktan sonra yeniden deneyin.",
+    "run_session_changed": "Siz baktıktan sonra bu adım başka bir oturuma geçti. Yeniden bakıp tekrar deneyin.",
+    "run_price_unknown": "Bu modelin fiyatı bilinmiyor ve görevde bir sınır var. Önce Gelen kutusunda onaylayın.",
     "request_not_found": "Bu istek artık yok.",
     "request_answered": "Bu istek zaten yanıtlandı.",
     "request_answer_kind": "Bu yanıt bu isteğe uymuyor.",
     "request_always_high_risk": "Yüksek riskli komutlar yalnızca tek seferlik onaylanabilir.",
     "request_no_target": "Devredilecek bir hesap seçin.",
     "request_no_reset": "Sıfırlanma zamanı bilinmediği için beklenemez.",
-    "request_not_budget": "Yalnızca harcama nedeniyle duran bir çalışma sınırın ötesine geçebilir.",
+    "request_not_budget": "Yalnızca harcama ya da bilinmeyen fiyat yüzünden duran bir çalışma devam ettirilebilir.",
     "handoff_same_profile": "Çalışma zaten bu hesabı kullanıyor.",
     "handoff_open": "Bu çalışma zaten devrediliyor.",
     "handoff_target_not_ready": "Bu hesabın oturumu açık değil ya da anahtarı yok.",

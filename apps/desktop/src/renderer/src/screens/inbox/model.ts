@@ -23,7 +23,8 @@ export function titleKey(p: RequestPayload): string {
     case "question":
       return "question";
     case "handoff":
-      if (p.trigger === "budget") return p.cap ? `cap_${p.cap.kind}` : "budget";
+      // A start that would pass a cap (its estimate on top of spend and other runs' holds) is not "reached" yet.
+      if (p.trigger === "budget") return p.cap ? `${p.cap.estimateUsd !== undefined ? "capWould" : "cap"}_${p.cap.kind}` : "budget";
       return `handoff_${p.trigger}`;
   }
 }
@@ -34,16 +35,22 @@ export const canAllowAlways = (risk: RiskLevel | null) => risk !== "high";
 export interface HandoffChoices {
   handOff: boolean;
   waitForReset: boolean;
-  /** Only a spend pause can be approved past; a provider limit cannot. */
+  /** Only a spend pause or an unknown price can be approved past; a provider limit cannot. */
   continuePastCap: boolean;
 }
 
 export function handoffChoices(p: Extract<RequestPayload, { kind: "handoff" }>): HandoffChoices {
-  return { handOff: p.candidates.length > 0, waitForReset: p.resetsAt !== null, continuePastCap: p.trigger === "budget" };
+  return { handOff: p.candidates.length > 0, waitForReset: p.resetsAt !== null, continuePastCap: p.trigger === "budget" || p.trigger === "unpriced" };
 }
 
 /** Ask mode names a target; Manual leaves the choice to you, and nothing is preselected. */
 export const defaultTarget = (p: Extract<RequestPayload, { kind: "handoff" }>): string | null => p.proposedTarget?.profileId ?? null;
+
+/** A deny carries your reason to the agent (feature scan F17); a blank reason is no reason. */
+export function denyAnswer(reason: string): Extract<RequestAnswer, { kind: "approval" }> {
+  const message = reason.trim();
+  return { kind: "approval", decision: "deny", ...(message ? { message } : {}) };
+}
 
 export type QuestionForm = Array<{ selected: string | null; text: string }>;
 

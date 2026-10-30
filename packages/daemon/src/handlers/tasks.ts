@@ -12,13 +12,13 @@ export function createTasksHandlers(ctx: HandlerContext, overrides?: Partial<Orc
     "tasks.propose": (params) => o.propose(params),
     "tasks.approve": (params) => o.approve(params),
     "tasks.cancel": ({ taskId }) => o.cancel(taskId),
-    "runs.pause": ({ runId }) => o.pause(runId),
+    "runs.pause": ({ runId, sessionId }) => o.pause(runId, { sessionId }),
     "runs.resume": ({ runId }) => o.resume(runId),
-    "runs.stop": ({ runId }) => o.stop(runId),
-    "runs.message": ({ runId, text }) => o.message(runId, text),
+    "runs.stop": ({ runId, sessionId }) => o.stop(runId, { sessionId }),
+    "runs.message": ({ runId, text, sessionId }) => o.message(runId, text, { sessionId }),
     "runs.handoff": ({ runId, targetProfileId }) => o.handoff(runId, targetProfileId),
     "runs.retry": ({ runId }) => o.retry(runId),
     "requests.list": (params) => o.requests(params),
-    "requests.answer": ({ requestId, answer }) => o.answer(requestId, answer),
+    "requests.answer": ({ requestId, answer, runId, sessionId }) => o.answer(requestId, answer, { runId, sessionId }),
   };
 }

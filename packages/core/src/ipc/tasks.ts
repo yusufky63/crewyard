@@ -59,6 +59,7 @@ export type ReasonCode =
   | "admission.memory" // { freeMb, neededMb }
   | "admission.worktree_busy" // another run is writing in the task's worktree
   | "admission.no_profile" // the step has no profile; edit the crew
+  | "admission.budget_reserved" // { reservedUsd, capUsd, cap }: unfinished runs hold the rest of a spend cap
   | "admission.no_adapter"; // { runner } is not wired in this build
 
 export type OrchestratorErrorCode =
@@ -81,7 +82,9 @@ export type OrchestratorErrorCode =
   | "request.always_high_risk" // "always allow" is never offered for high risk
   | "request.no_target" // a handoff answer without a target
   | "request.no_reset" // wait for reset without a known reset time
-  | "request.not_budget" // "continue" answers only a budget or spend-cap pause
+  | "request.not_budget" // "continue" answers only a budget, spend-cap or unknown-price pause
+  | "run.session_changed" // { runId }: a handoff or a later run took over the step since you looked; re-read and ask again
+  | "run.price_unknown" // continuing needs your approval in the Inbox: the model has no known price and the task has a cap
   | "run.superseded" // a later run already continues this step
   | "run.still_limited" // { window, resetsAt }: retry found the limit still in place
   | "handoff.same_profile" // the target is the profile the run already uses
@@ -274,7 +277,8 @@ export type RequestPayload =
     }
   | {
       kind: "handoff";
-      trigger: HandoffTrigger | "handoff_failed";
+      /** `unpriced`: the step's model has no known price and the task has a cap (see `unpriced`). */
+      trigger: HandoffTrigger | "handoff_failed" | "unpriced";
       window: LimitWindow | null;
       resetsAt: string | null;
       /** Filled in Ask mode; Manual leaves the choice to you. */
@@ -285,6 +289,8 @@ export type RequestPayload =
       detail: string | null;
       /** Set when spend paused the run (trigger "budget"); answering `continue` approves going past it. */
       cap?: SpendCap | null;
+      /** Set for trigger "unpriced"; answering `continue` approves unpriced spend for this run. */
+      unpriced?: UnpricedSpend | null;
     };
 
 /**
@@ -296,14 +302,28 @@ export interface SpendCap {
   spentUsd: number;
   capUsd: number;
   credentialId: string | null;
+  /** Held by other unfinished runs for their estimates; set only when some is. */
+  reservedUsd?: number;
+  /** This step's own estimate, reserved before it starts; set only for a start that did not fit. */
+  estimateUsd?: number;
+}
+
+/**
+ * Set on a request with trigger `unpriced`: the step's model has no catalog price and the runner
+ * reported none, so its spend would count against none of these caps until you approve it.
+ */
+export interface UnpricedSpend {
+  model: string | null;
+  caps: Array<SpendCap["kind"]>;
 }
 
 export type RequestAnswer =
   | { kind: "question"; answers: Array<{ selected: string[]; text?: string }> }
+  /** `message` goes with a deny to the agent, so it can change course instead of retrying the same call. */
   | { kind: "approval"; decision: "allow_once" | "allow_always" | "deny"; message?: string }
   /**
-   * `continue` is only for a budget pause: it approves spend past that cap for this run until it
-   * ends; a resumed or retried run asks again.
+   * `continue` is only for a budget or unknown-price pause: it approves spend past that cap (or
+   * without a price) for this run until it ends; a resumed or retried run asks again.
    */
   | { kind: "handoff"; decision: "hand_off" | "wait_for_reset" | "stop" | "continue"; targetProfileId?: string }
   | { kind: "cancel" };
@@ -313,6 +333,8 @@ export interface RequestView {
   taskId: string;
   projectId: string;
   runId: string | null;
+  /** The run's native session as the daemon has it now; send it back with the answer (see SessionSeen). */
+  sessionId: string | null;
   kind: RequestKind;
   /** Set for approvals by the daemon's classifier, never by the agent. */
   risk: RiskLevel | null;
@@ -345,6 +367,16 @@ export interface CrewEdit {
   profileId: string;
   /** Overrides the profile's default model. */
   model?: string;
+}
+
+/**
+ * What the UI saw when you clicked: the run and its native session. A stop, pause, message or
+ * answer that no longer matches (a handoff, resume or retry took over the step in between) is
+ * refused with `run.session_changed`, and the UI re-reads and asks again. A null session means
+ * the run had none yet and matches whatever it has now.
+ */
+export interface SessionSeen {
+  sessionId: string | null;
 }
 
 export interface TasksIpc {
@@ -381,20 +413,20 @@ export interface TasksIpc {
   /** Stops every run of the task and closes its open requests. Worktrees are kept. */
   "tasks.cancel": { params: { taskId: string }; result: TaskDetail };
   /** Interrupts at a turn boundary; the run stays open and holds no slot. */
-  "runs.pause": { params: { runId: string }; result: RunView };
+  "runs.pause": { params: { runId: string } & SessionSeen; result: RunView };
   /**
    * Continues a paused run, or resumes an ended (interrupted, stopped, failed) run natively as a new
    * run of the same step. Never restarts anything on its own.
    */
   "runs.resume": { params: { runId: string }; result: RunView };
   /** Ends the run and its process tree. Closing a panel never calls this. */
-  "runs.stop": { params: { runId: string }; result: RunView };
+  "runs.stop": { params: { runId: string } & SessionSeen; result: RunView };
   /**
    * Sends a message to a live run. While the step has no live process (paused, limited, handing
    * off, interrupted) the message waits in the step's outbox and goes to whichever run continues
    * the step: a resume, a reset or a handoff target. Fails with `run.ended` for a completed run.
    */
-  "runs.message": { params: { runId: string; text: string }; result: RunView };
+  "runs.message": { params: { runId: string; text: string } & SessionSeen; result: RunView };
   /**
    * Moves the step to another profile now (the Crew graph's "Change AI"), through the same durable
    * handoff as a limit, with trigger `manual`: stop at a turn boundary, checkpoint, package, start
@@ -412,7 +444,7 @@ export interface TasksIpc {
   /** Open requests by default, oldest first. */
   "requests.list": { params: { projectId?: string; taskId?: string; includeAnswered?: boolean }; result: RequestView[] };
   /** Resolves a request; the same record backs the Inbox, the inspector and toasts. */
-  "requests.answer": { params: { requestId: string; answer: RequestAnswer }; result: RequestView };
+  "requests.answer": { params: { requestId: string; answer: RequestAnswer; runId: string | null } & SessionSeen; result: RequestView };
 }
 
 /** Live topics pushed through ctx.emit; the renderer re-reads with tasks.get when it needs more. */

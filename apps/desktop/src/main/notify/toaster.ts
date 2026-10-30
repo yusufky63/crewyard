@@ -60,7 +60,7 @@ export class Toaster {
           const [open, policy] = await Promise.all([this.deps.call("requests.list", { taskId: grant.taskId }), this.deps.call("settings.toastPolicy", { projectId: grant.projectId })]);
           const answer = decideAction(grant, a.action, open.find((r) => r.id === grant.requestId), s, policy.toastApprovals);
           if (answer) {
-            await this.deps.call("requests.answer", { requestId: grant.requestId, answer });
+            await this.deps.call("requests.answer", { requestId: grant.requestId, answer, runId: grant.runId, sessionId: grant.sessionId });
             return;
           }
         } catch {
@@ -99,7 +99,7 @@ export class Toaster {
     const plan = requestToastPlan(req, s, policy.toastApprovals);
     const target: ToastTarget = { screen: "inbox", projectId: req.projectId, taskId: req.taskId, requestId: req.id };
     const acting = plan.actions.some((x) => x !== "open");
-    const grant = acting ? this.grants.issue({ requestId: req.id, taskId: req.taskId, projectId: req.projectId, actions: plan.actions, targetProfileId: plan.targetProfileId }) : null;
+    const grant = acting ? this.grants.issue({ requestId: req.id, runId: req.runId, sessionId: req.sessionId, taskId: req.taskId, projectId: req.projectId, actions: plan.actions, targetProfileId: plan.targetProfileId }) : null;
     const t = this.deps.t();
     const { title, lines } = this.describe(req, plan.kind, task.title, t);
     this.show({

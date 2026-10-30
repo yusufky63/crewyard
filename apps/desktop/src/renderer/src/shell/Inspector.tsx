@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { ArrowLeftRight, Pause, Play, RotateCw, Send, X } from "lucide-react";
-import type { CandidateView, RunView, TaskDetail } from "@crewyard/core";
+import type { CandidateView, RequestAnswer, RunView, TaskDetail } from "@crewyard/core";
 import { BrandIcon, Button, Label, TickMeter } from "@crewyard/ui";
 import { useInspector, type InspectorTarget } from "../inspector.ts";
 import { useNav } from "../nav.ts";
 import { TaskPullSection } from "../screens/github/TaskPull.tsx";
 import { ProvBadge } from "../screens/providers/shared.tsx";
-import { act, useErrorText, useWork } from "../screens/tasks/data.ts";
+import { ApprovalActions } from "../screens/inbox/ApprovalActions.tsx";
+import { act, useErrorText, useRecheck, useWork } from "../screens/tasks/data.ts";
 import { useActivity } from "../screens/tasks/live.ts";
 import { formatDuration, latestRunOf, limitBanner, profileNames, resolveTarget, runDuration, stepState } from "../screens/tasks/model.ts";
 import { ConfirmButton, ErrorLine, LimitBanner, useFormat, useNow } from "../screens/tasks/parts.tsx";
@@ -47,7 +48,7 @@ function Actions({ detail, run, onError }: { detail: TaskDetail; run: RunView; o
             e.preventDefault();
             if (!text.trim()) return;
             void go(async () => {
-              await act("runs.message", { runId: run.id, text: text.trim() });
+              await act("runs.message", { runId: run.id, text: text.trim(), sessionId: run.nativeSessionId });
               setText("");
             });
           }}
@@ -64,7 +65,7 @@ function Actions({ detail, run, onError }: { detail: TaskDetail; run: RunView; o
       )}
       <div className="ins-buttons">
         {open && !run.pausedAt && (
-          <Button onClick={() => void go(() => act("runs.pause", { runId: run.id }))}>
+          <Button onClick={() => void go(() => act("runs.pause", { runId: run.id, sessionId: run.nativeSessionId }))}>
             <Pause aria-hidden="true" />
             {f.t("action.pause")}
           </Button>
@@ -107,9 +108,31 @@ function Actions({ detail, run, onError }: { detail: TaskDetail; run: RunView; o
           size="md"
           label={f.t("inspector.stop")}
           confirm={f.t("inspector.stopConfirm", { who: `${f.role(run.role)} · ${f.runner(run.runner)}` })}
-          onConfirm={() => go(() => act("runs.stop", { runId: run.id }))}
+          onConfirm={() => go(() => act("runs.stop", { runId: run.id, sessionId: run.nativeSessionId }))}
         />
       )}
+    </div>
+  );
+}
+
+/** The run's open tool approval, answerable here with the same buttons and deny reason as the Inbox. */
+function PendingApproval({ detail, run, onError }: { detail: TaskDetail; run: RunView; onError: (err: unknown) => void }) {
+  const f = useFormat();
+  const requests = useWork("requests.list", { taskId: detail.id }, { enabled: run.pendingRequestId !== null });
+  const q = requests.data?.find((r) => r.id === run.pendingRequestId);
+  if (!q || q.payload.kind !== "approval") return null;
+  const answer = async (a: RequestAnswer) => {
+    try {
+      await act("requests.answer", { requestId: q.id, answer: a, runId: q.runId, sessionId: q.sessionId });
+    } catch (err) {
+      onError(err);
+    }
+  };
+  return (
+    <div className="ins-sec">
+      <Label>{f.t("inspector.approval")}</Label>
+      {q.payload.command && <pre className="ib-code">{q.payload.command}</pre>}
+      <ApprovalActions key={q.id} q={q} answer={answer} />
     </div>
   );
 }
@@ -117,6 +140,7 @@ function Actions({ detail, run, onError }: { detail: TaskDetail; run: RunView; o
 function Body({ detail, target }: { detail: TaskDetail; target: InspectorTarget }) {
   const f = useFormat();
   const errorText = useErrorText();
+  const recheck = useRecheck();
   const inspect = useInspector((s) => s.open);
   const { selectTask, go } = useNav();
   const [tab, setTab] = useState<Tab>("details");
@@ -305,7 +329,27 @@ function Body({ detail, target }: { detail: TaskDetail; target: InspectorTarget 
           </div>
         </>
       )}
-      {run && <Actions key={run.id} detail={detail} run={run} onError={(e) => setError(errorText(e))} />}
+      {run && !run.endedAt && (
+        <PendingApproval
+          detail={detail}
+          run={run}
+          onError={(e) => {
+            setError(errorText(e));
+            recheck(e);
+          }}
+        />
+      )}
+      {run && (
+        <Actions
+          key={run.id}
+          detail={detail}
+          run={run}
+          onError={(e) => {
+            setError(errorText(e));
+            recheck(e);
+          }}
+        />
+      )}
       <div className="ins-pad">
         <ErrorLine>{error}</ErrorLine>
       </div>

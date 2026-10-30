@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { CandidateView, LimitNoticePayload, RequestPayload, RequestView } from "@crewyard/core";
-import { canAllowAlways, defaultTarget, emptyForm, formAnswer, formReady, handoffChoices, infoNotices, orderRequests, titleKey } from "./model.ts";
+import { canAllowAlways, defaultTarget, denyAnswer, emptyForm, formAnswer, formReady, handoffChoices, infoNotices, orderRequests, titleKey } from "./model.ts";
 
 type Handoff = Extract<RequestPayload, { kind: "handoff" }>;
 const req = (id: string, taskId: string, createdAt: string): RequestView =>
-  ({ id, taskId, projectId: "p", runId: null, kind: "question", risk: null, payload: { kind: "question", questions: [] }, createdAt, answeredAt: null, answer: null, answeredBy: null }) as RequestView;
+  ({ id, taskId, projectId: "p", runId: null, sessionId: null, kind: "question", risk: null, payload: { kind: "question", questions: [] }, createdAt, answeredAt: null, answer: null, answeredBy: null }) as RequestView;
 const target = { profileId: "b" } as CandidateView;
 const handoff = (over: Partial<Handoff>): Handoff => ({ kind: "handoff", trigger: "limit", window: "5h", resetsAt: null, proposedTarget: null, candidates: [target], detail: null, ...over });
 
@@ -22,15 +22,23 @@ describe("inbox", () => {
     expect(titleKey({ ...approval, network: true })).toBe("approvalNetwork");
     expect(titleKey(handoff({ trigger: "budget", cap: { kind: "daily_cap", spentUsd: 2, capUsd: 2, credentialId: "c" } }))).toBe("cap_daily_cap");
     expect(titleKey(handoff({ trigger: "crashed" }))).toBe("handoff_crashed");
+    expect(titleKey(handoff({ trigger: "budget", cap: { kind: "task_cap", spentUsd: 0, capUsd: 1, credentialId: "c", reservedUsd: 0.6, estimateUsd: 0.5 } }))).toBe("capWould_task_cap");
+    expect(titleKey(handoff({ trigger: "unpriced", unpriced: { model: "m", caps: ["task_budget"] } }))).toBe("handoff_unpriced");
   });
 
   it("never offers always-allow for high risk, and continue only for a spend pause", () => {
     expect([canAllowAlways("low"), canAllowAlways("medium"), canAllowAlways("high")]).toEqual([true, true, false]);
     expect(handoffChoices(handoff({}))).toEqual({ handOff: true, waitForReset: false, continuePastCap: false });
     expect(handoffChoices(handoff({ trigger: "budget", resetsAt: "x", candidates: [] }))).toEqual({ handOff: false, waitForReset: true, continuePastCap: true });
+    expect(handoffChoices(handoff({ trigger: "unpriced" })).continuePastCap).toBe(true);
     // Manual mode preselects nothing; Ask names its target.
     expect(defaultTarget(handoff({}))).toBeNull();
     expect(defaultTarget(handoff({ proposedTarget: target }))).toBe("b");
+  });
+
+  it("sends a deny's reason only when you wrote one", () => {
+    expect(denyAnswer("  use pnpm ")).toEqual({ kind: "approval", decision: "deny", message: "use pnpm" });
+    expect(denyAnswer("   ")).toEqual({ kind: "approval", decision: "deny" });
   });
 
   it("turns a question form into an answer once every question has one", () => {

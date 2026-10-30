@@ -28,6 +28,7 @@ import {
   type RunHandle,
   type RunnerId,
   type RunView,
+  type SessionSeen,
   type SpendCap,
   type StartRequest,
   type TaskChangeCause,
@@ -36,20 +37,22 @@ import {
   type TaskSummary,
   type TasksIpc,
   type TasksTopics,
+  type UnpricedSpend,
 } from "@crewyard/core";
 import type { Store } from "../store.ts";
 import { admit, DEFAULT_LIMITS, type AdmissionLimits } from "./admission.ts";
 import { AdapterRegistry } from "./adapters.ts";
 import { classifyTask } from "./classify.ts";
-import { eligible, MIN_HEADROOM, modelKey, proposeCrew, rankForRole, sameModel, scoreCandidate, sumEstimates, type ScoringContext } from "./crew.ts";
+import { eligible, estimateFor, MIN_HEADROOM, modelKey, proposeCrew, rankForRole, sameModel, scoreCandidate, sumEstimates, type ScoringContext } from "./crew.ts";
 import { OrchestratorDb, type MemberRow, type ProjectRow, type RequestRow, type RunRow, type TaskRow, type WorktreeRow } from "./db.ts";
 import { EMPTY_DIRECTORY, type Candidate, type ProfileDirectory } from "./directory.ts";
 import { errorCode, OrchestratorError } from "./errors.ts";
+import { classifyFailure, RETRY, retryDelayMs, type Failure } from "./failures.ts";
 import { checkpoint, defaultWorktreeRoot, diffStat, ensureWorktree, headSha, taskSlug, writeFileAtomic } from "./git.ts";
 import { LimitMonitor } from "./limits.ts";
 import { handoffPackage, rolePrompt } from "./prompts.ts";
 import { onlyDocPaths, ROLES } from "./roles.ts";
-import { capResetsAt, capWindow, reachedCaps, recordRunSpend, spendCredential } from "./spend.ts";
+import { capResetsAt, capWindow, credentialCaps, overCap, reachedCaps, recordRunSpend, reservedUsd, reserveSpend, settleReservation, spendCredential } from "./spend.ts";
 
 // The deterministic scheduler (PLAN.md D7, D8, §8, §9): it runs the crew you approved as a DAG,
 // under admission control, and never lets an agent start another agent. All state lives in the
@@ -82,8 +85,10 @@ interface Live {
 
 type ProposeParams = TasksIpc["tasks.propose"]["params"];
 type Ended = { reason: EndReason; detail: string | null };
-type HandoffInfo = { trigger: HandoffTrigger; window: LimitWindow | null; resetsAt: string | null; cap?: SpendCap | null };
+type HandoffInfo = { trigger: HandoffTrigger | "unpriced"; window: LimitWindow | null; resetsAt: string | null; cap?: SpendCap | null; unpriced?: UnpricedSpend | null };
 type LaunchSpec = {
+  /** Set when the caller must record something about the run before it can fail (a retry). */
+  runId?: string;
   task: TaskRow;
   member: MemberRow;
   target: Pick<CandidateView, "profileId" | "runner" | "model">;
@@ -297,6 +302,7 @@ export class Orchestrator {
     const task = this.db.task(taskId);
     if (!task.cancelled_at) {
       this.db.exec("update tasks set cancelled_at = ? where id = ?", this.iso(), task.id);
+      for (const r of this.db.runs(task.id).filter((r) => r.ended_at && r.resume_at)) this.cancelAutoRetry(r.id);
       for (const r of this.db.runs(task.id).filter((r) => !r.ended_at)) await this.stopRun(r.id, "task_cancelled");
       for (const q of this.db.requests({ taskId: task.id })) this.closeRequest(q, "system");
       for (const h of this.db.handoffs(task.id).filter((h) => !h.closed_at)) this.closeHandoff(h.id, "cancelled", null);
@@ -308,8 +314,9 @@ export class Orchestrator {
 
   // ---------------------------------------------------------------- runs
 
-  async pause(runId: string): Promise<RunView> {
+  async pause(runId: string, seen?: SessionSeen): Promise<RunView> {
     const run = this.db.run(runId);
+    this.checkSeen(run, seen);
     if (run.ended_at) throw new OrchestratorError("run.ended");
     if (!run.paused_at) {
       this.db.exec("update runs set paused_at = ? where id = ?", this.iso(), runId);
@@ -333,7 +340,8 @@ export class Orchestrator {
     if (task.cancelled_at) throw new OrchestratorError("task.cancelled");
     if (!run.ended_at) {
       if (!run.paused_at) return this.db.runView(run);
-      // Going past a spend cap needs its own approval in the Inbox; resume never skips it.
+      // Going past a spend cap, or spending without a price, needs its own approval in the Inbox; resume never skips it.
+      if (run.limit_reached && this.unpricedOpen(runId)) throw new OrchestratorError("run.price_unknown");
       const cap = run.limit_reached ? this.capFor(task.id, runId, await this.candidateFor(run)) : null;
       if (cap) throw new OrchestratorError("run.still_limited", { window: capWindow(cap), resetsAt: capResetsAt(cap, this.now()) ?? "" });
       this.clearTimer(runId);
@@ -347,6 +355,7 @@ export class Orchestrator {
     if (superseded || !["interrupted", "stopped", "failed"].includes(run.end_reason ?? "")) throw new OrchestratorError("run.not_resumable");
     const adapter = this.adapters.get(run.runner);
     if (!adapter?.capabilities.resume || !run.native_session_id) throw new OrchestratorError("run.resume_unsupported", { runner: run.runner });
+    this.cancelAutoRetry(run.id);
     const newId = await this.launch({
       task,
       member: this.db.member(run.member_id),
@@ -359,8 +368,10 @@ export class Orchestrator {
     return this.db.runView(this.db.run(newId));
   }
 
-  async stop(runId: string): Promise<RunView> {
+  async stop(runId: string, seen?: SessionSeen): Promise<RunView> {
     const run = this.db.run(runId);
+    this.checkSeen(run, seen);
+    if (run.ended_at && run.resume_at) this.cancelAutoRetry(runId);
     if (!run.ended_at) await this.stopRun(runId, "user_stop");
     return this.db.runView(this.db.run(runId));
   }
@@ -380,6 +391,7 @@ export class Orchestrator {
     const target = await this.preflightTarget(source, task, targetProfileId);
     const handoffId = this.claimHandoff(source, task, target, "manual");
     if (!handoffId) throw new OrchestratorError("handoff.open");
+    this.cancelAutoRetry(source.id);
     // Your choice answers any limit or crash question still open for this run.
     for (const q of this.db.openRequestsForRun(source.id).filter((q) => q.kind === "handoff")) this.closeRequest(q, "system");
     this.track(this.executeHandoff(handoffId, source.id, target, "manual"));
@@ -398,6 +410,7 @@ export class Orchestrator {
     if (run.end_reason === "completed") throw new OrchestratorError("run.ended");
     if (this.superseded(run)) throw new OrchestratorError("run.superseded");
     if (run.ended_at) {
+      this.cancelAutoRetry(run.id);
       // The crash or limit question about the old run is answered by retrying it.
       for (const q of this.db.openRequestsForRun(run.id).filter((q) => q.kind === "handoff")) this.closeRequest(q, "system");
       const id = await this.launch({ task, member: this.db.member(run.member_id), target: { profileId: run.profile_id, runner: run.runner, model: run.model }, resumedFrom: run.id });
@@ -406,6 +419,7 @@ export class Orchestrator {
       return this.db.runView(this.db.run(id));
     }
     if (run.limit_reached || run.resume_at) {
+      if (this.unpricedOpen(run.id)) throw new OrchestratorError("run.price_unknown");
       const cap = this.capFor(task.id, run.id, await this.candidateFor(run));
       if (cap) throw new OrchestratorError("run.still_limited", { window: capWindow(cap), resetsAt: capResetsAt(cap, this.now()) ?? "" });
       const reached = this.db.reachedWindow(run.profile_id, this.now());
@@ -428,8 +442,9 @@ export class Orchestrator {
     return this.db.runView(this.db.run(run.id));
   }
 
-  async message(runId: string, text: string): Promise<RunView> {
+  async message(runId: string, text: string, seen?: SessionSeen): Promise<RunView> {
     const run = this.db.run(runId);
+    this.checkSeen(run, seen);
     if (run.end_reason === "completed" || this.db.task(run.task_id).cancelled_at) throw new OrchestratorError("run.ended");
     const live = this.live.get(runId);
     // A paused run keeps its message until resume; sending it now would start a new turn.
@@ -496,12 +511,16 @@ export class Orchestrator {
     return this.db.requests(filter).map((q) => this.db.requestView(q));
   }
 
-  async answer(requestId: string, answer: RequestAnswer): Promise<RequestView> {
+  async answer(requestId: string, answer: RequestAnswer, seen?: SessionSeen & { runId: string | null }): Promise<RequestView> {
     const q = this.db.request(requestId);
     if (q.answered_at) throw new OrchestratorError("request.answered");
     if (answer.kind !== "cancel" && answer.kind !== q.kind) throw new OrchestratorError("request.answer_kind");
     const payload = JSON.parse(q.payload) as RequestPayload;
     const run = q.run_id ? this.db.run(q.run_id) : null;
+    if (seen && seen.runId !== q.run_id) throw new OrchestratorError("run.session_changed", { runId: q.run_id ?? "" });
+    if (run) this.checkSeen(run, seen);
+    // A reason goes to the agent as typed, trimmed and bounded; an empty one is no reason.
+    if (answer.kind === "approval") answer = withReason(answer);
     const live = run ? this.live.get(run.id) : undefined;
 
     if (answer.kind === "approval" && answer.decision === "allow_always" && q.risk === "high") throw new OrchestratorError("request.always_high_risk");
@@ -513,12 +532,12 @@ export class Orchestrator {
         if (!target) throw new OrchestratorError("request.no_target");
       }
       if (answer.decision === "wait_for_reset" && !payload.resetsAt) throw new OrchestratorError("request.no_reset");
-      if (answer.decision === "continue" && (payload.trigger !== "budget" || !run)) throw new OrchestratorError("request.not_budget");
+      if (answer.decision === "continue" && ((payload.trigger !== "budget" && payload.trigger !== "unpriced") || !run)) throw new OrchestratorError("request.not_budget");
     }
 
     this.db.exec("update requests set answered_at = ?, answer = ?, answered_by = 'user' where id = ?", this.iso(), JSON.stringify(answer), q.id);
     this.emitRequest(q.id);
-    this.audit(q.task_id, q.run_id, "request.answered", { requestId: q.id, kind: answer.kind });
+    this.audit(q.task_id, q.run_id, "request.answered", { requestId: q.id, kind: answer.kind, ...(answer.kind === "approval" ? { decision: answer.decision, reason: Boolean(answer.message) } : {}) });
 
     if (live && run && q.native_id && (answer.kind === "approval" || answer.kind === "question" || answer.kind === "cancel")) {
       await this.safe(() => live.adapter.answer(live.handle, q.native_id!, toCoreAnswer(answer)));
@@ -528,7 +547,7 @@ export class Orchestrator {
       this.db.exec("insert or ignore into allow_rules (project_id, command, added_at) values (?, ?, ?)", task.project_id, payload.command.trim(), this.iso());
     }
     if (answer.kind === "handoff" && run && payload.kind === "handoff") {
-      if (answer.decision === "hand_off" && target) this.track(this.performHandoff(run.id, target, payload.trigger === "handoff_failed" ? "limit" : payload.trigger));
+      if (answer.decision === "hand_off" && target) this.track(this.performHandoff(run.id, target, payload.trigger === "handoff_failed" ? "limit" : payload.trigger === "unpriced" ? "budget" : payload.trigger));
       else if (answer.decision === "wait_for_reset" && payload.resetsAt) this.scheduleResume(run.id, payload.resetsAt);
       else if (answer.decision === "stop" && !run.ended_at) await this.stopRun(run.id, "user_stop", "limit");
       else if (answer.decision === "continue" && !run.ended_at) await this.continuePastCap(run.id);
@@ -568,6 +587,7 @@ export class Orchestrator {
       const members = this.db.members(crew.id);
       const project = this.db.project(task.project_id);
       const { config } = this.config(project);
+      let candidates: Candidate[] | null = null;
       for (const m of members) {
         const runs = this.db.runs(task.id);
         if (runs.some((r) => r.member_id === m.id)) {
@@ -587,7 +607,7 @@ export class Orchestrator {
             ? ({ code: "admission.no_adapter", params: { runner: chosen.runner } } as Reason)
             : this.ranModels(m).has((chosen.model ?? `profile:${chosen.profileId}`).toLowerCase())
               ? ({ code: "no_independent_candidate" } as Reason)
-              : this.admission(task, m, chosen.profileId, config.rules.slots);
+              : (this.admission(task, m, chosen.profileId, config.rules.slots) ?? this.budgetHold(task, m, (candidates ??= await this.candidates(project)).find((c) => c.profile.id === chosen.profileId)));
         if (reason) {
           const prev = this.blocked.get(m.id);
           this.blocked.set(m.id, reason);
@@ -598,6 +618,26 @@ export class Orchestrator {
         await this.launch({ task, member: m, target: chosen! });
       }
     }
+  }
+
+  /**
+   * A paid step waits in the queue while other unfinished runs hold the part of a cap it needs
+   * (feature scan F3). If it would not fit even once they finish, it is not held here: it starts
+   * and pauses with a cap request in the Inbox, as before.
+   */
+  private budgetHold(task: TaskRow, m: MemberRow, candidate: Candidate | undefined): Reason | null {
+    if (candidate?.profile.credential.kind !== "api_key") return null;
+    const amount = this.reservationFor(task, m, candidate);
+    const cap = this.capFor(task.id, null, candidate, amount);
+    if (!cap?.reservedUsd || overCap(cap.spentUsd, 0, amount, cap.capUsd)) return null;
+    return { code: "admission.budget_reserved", params: { reservedUsd: cap.reservedUsd, capUsd: cap.capUsd, cap: cap.kind } };
+  }
+
+  /** What a paid step holds before it starts: its estimate less what earlier runs of the step already spent. */
+  private reservationFor(task: TaskRow, m: MemberRow, candidate: Candidate): number {
+    const usd = estimateFor(candidate, m.role, task.size).usd ?? 0;
+    const spent = this.db.runs(task.id).filter((r) => r.member_id === m.id).reduce((n, r) => n + (r.cost_usd ?? 0), 0);
+    return Math.max(0, usd - spent);
   }
 
   private admission(task: TaskRow, m: MemberRow, profileId: string, projectSlots: number): Reason | null {
@@ -624,7 +664,7 @@ export class Orchestrator {
   private async launch(spec: LaunchSpec): Promise<string> {
     const { task, member, target } = spec;
     const project = this.db.project(task.project_id);
-    const runId = randomUUID();
+    const runId = spec.runId ?? randomUUID();
     this.db.exec(
       `insert into runs (id, task_id, member_id, role, profile_id, runner, model, cwd, started_at, last_state, resumed_from, handoff_id)
        values (?, ?, ?, ?, ?, ?, ?, ?, ?, 'starting', ?, ?)`,
@@ -667,13 +707,23 @@ export class Orchestrator {
       if (!candidate) throw new OrchestratorError("crew.unknown_profile", { profileId: target.profileId });
       const adapter = this.adapters.get(target.runner);
       if (!adapter) throw new OrchestratorError("adapter.failed", { detail: "no_adapter" });
-      const cap = this.capFor(task.id, runId, candidate);
+      // A capped task never starts on a model nobody can price without your click (feature scan F4).
+      const unpriced = this.unpricedFor(task, runId, candidate, target.model, estimateFor(candidate, member.role, task.size).usd === null);
+      if (unpriced) {
+        this.held.set(runId, spec);
+        await this.onLimitReached(runId, { trigger: "unpriced", window: null, resetsAt: null, unpriced });
+        return;
+      }
+      // Check and hold in one synchronous step, so a parallel step cannot slip in between (F3).
+      const amount = candidate.profile.credential.kind === "api_key" ? this.reservationFor(task, member, candidate) : 0;
+      const cap = this.capFor(task.id, runId, candidate, amount);
       if (cap) {
         this.held.set(runId, spec);
         await this.pauseForCap(runId, cap, this.iso());
         return;
       }
       this.held.delete(runId);
+      if (candidate.profile.credential.kind === "api_key") reserveSpend(this.opts.store.db, { runId, taskId: task.id, credentialId: spendCredential(candidate), amountUsd: amount }, this.now());
       const req: StartRequest = {
         profile: candidate.profile,
         cwd,
@@ -809,7 +859,7 @@ export class Orchestrator {
       return;
     }
     this.endRun(runId, ended.reason, ended.detail);
-    if (ended.reason === "failed") await this.onCrash(runId);
+    if (ended.reason === "failed") await this.onFailure(runId, ended.detail);
   }
 
   private endRun(runId: string, reason: EndReason, detail: string | null): void {
@@ -818,6 +868,7 @@ export class Orchestrator {
     this.db.exec("update runs set ended_at = ?, end_reason = ?, end_detail = ? where id = ? and ended_at is null", this.iso(), reason, detail, runId);
     this.clearTimer(runId);
     this.held.delete(runId);
+    settleReservation(this.opts.store.db, runId, this.now());
     // A handoff target that ends before it confirmed leaves the source paused and asks you.
     const pendingHandoff = this.confirming.get(runId);
     if (pendingHandoff) {
@@ -923,7 +974,7 @@ export class Orchestrator {
     this.insertRequest(task.id, run.id, ev.requestId, risk, payload, answer);
     if (decision) {
       const live = this.live.get(run.id);
-      if (live) await this.safe(() => live.adapter.answer(live.handle, ev.requestId, { kind: "approval", decision, ...(rule ? { message: rule } : {}) }));
+      if (live) await this.safe(() => live.adapter.answer(live.handle, ev.requestId, { kind: "approval", decision, ...(rule ? { message: POLICY_DENIAL[rule] ?? rule } : {}) }));
     }
   }
 
@@ -1021,26 +1072,67 @@ export class Orchestrator {
       );
     }
     if (run.limit_reached === 0) {
-      const cap = this.capFor(task.id, run.id, live?.candidate);
-      if (cap) await this.pauseForCap(run.id, cap, ev.at);
+      // Tokens nobody could price count against no cap, so a capped task stops and asks (F4).
+      const unpriced = dCost === null && dIn + dOut + dCache > 0 ? this.unpricedFor(task, run.id, live?.candidate, run.model, true) : null;
+      const cap = unpriced ? null : this.capFor(task.id, run.id, live?.candidate);
+      if (unpriced) await this.onLimitReached(run.id, { trigger: "unpriced", window: null, resetsAt: null, unpriced });
+      else if (cap) await this.pauseForCap(run.id, cap, ev.at);
     }
   }
 
   /**
    * The first spend limit this run may not pass: the key's daily cap, its per-task cap, then the
-   * task's own budget. Caps you approved for this run with "continue" are skipped; plans and
-   * local models never spend, so only paid keys are held.
+   * task's own budget. Committed spend counts what other unfinished runs still hold, and `addUsd`
+   * (a step's estimate before it starts) must fit too. Caps you approved for this run with
+   * "continue" are skipped; plans and local models never spend, so only paid keys are held.
    */
-  private capFor(taskId: string, runId: string | null, candidate: Candidate | undefined): SpendCap | null {
+  private capFor(taskId: string, runId: string | null, candidate: Candidate | undefined, addUsd = 0): SpendCap | null {
     if (candidate?.profile.credential.kind !== "api_key") return null;
     const approved = runId ? this.db.approvedCaps(runId) : new Set<string>();
-    const caps = reachedCaps(this.opts.store.db, spendCredential(candidate), taskId, this.now());
+    const db = this.opts.store.db;
+    const caps = reachedCaps(db, spendCredential(candidate), taskId, this.now(), { addUsd, excludeRunId: runId });
     const task = this.db.task(taskId);
     if (task.budget_usd !== null) {
       const spent = this.db.spend(this.db.runs(taskId)).usd;
-      if (spent !== null && spent >= task.budget_usd) caps.push({ kind: "task_budget", spentUsd: spent, capUsd: task.budget_usd, credentialId: null });
+      const held = reservedUsd(db, { taskId, excludeRunId: runId });
+      if (spent !== null && overCap(spent, held, addUsd, task.budget_usd)) {
+        caps.push({ kind: "task_budget", spentUsd: spent, capUsd: task.budget_usd, credentialId: null, ...(held > 0 ? { reservedUsd: held } : {}), ...(addUsd > 0 ? { estimateUsd: addUsd } : {}) });
+      }
     }
     return caps.find((c) => !approved.has(c.kind)) ?? null;
+  }
+
+  /**
+   * Feature scan F4: spend on a model without a price (no catalog price, and the runner gave none)
+   * counts against no cap. So on a paid key, a task with any cap (its budget, the key's daily or
+   * per-task cap) needs your "continue" in the Inbox first. Without any cap there is nothing to protect.
+   */
+  private unpricedFor(task: TaskRow, runId: string, candidate: Candidate | undefined, model: string | null, unknownPrice: boolean): UnpricedSpend | null {
+    if (!unknownPrice || candidate?.profile.credential.kind !== "api_key") return null;
+    if (this.db.approvedCaps(runId).has("unpriced")) return null;
+    const keyCaps = credentialCaps(this.opts.store.db, spendCredential(candidate));
+    const caps: UnpricedSpend["caps"] = [];
+    if (keyCaps?.dailyUsd != null) caps.push("daily_cap");
+    if (keyCaps?.taskUsd != null) caps.push("task_cap");
+    if (task.budget_usd !== null) caps.push("task_budget");
+    return caps.length > 0 ? { model: model ?? candidate.model?.id ?? candidate.profile.defaultModel, caps } : null;
+  }
+
+  /** The run waits on an unanswered unknown-price request; only that answer lets it go on. */
+  private unpricedOpen(runId: string): boolean {
+    return this.db.openRequestsForRun(runId).some((q) => q.kind === "handoff" && (JSON.parse(q.payload) as Extract<RequestPayload, { kind: "handoff" }>).trigger === "unpriced");
+  }
+
+  /**
+   * Feature scan F11: a stop, pause, message or answer acts only on the run and session you saw. If
+   * a handoff, resume or retry took over the step, or the native session changed, it is refused
+   * and the UI re-reads. Internal callers pass nothing and are not checked.
+   */
+  private checkSeen(run: RunRow, seen: SessionSeen | undefined): void {
+    if (!seen) return;
+    const next = this.db.runs(run.task_id).find((r) => r.resumed_from === run.id);
+    if (next) throw new OrchestratorError("run.session_changed", { runId: next.id });
+    if (seen.sessionId !== null && run.native_session_id !== seen.sessionId) throw new OrchestratorError("run.session_changed", { runId: run.id });
   }
 
   private async pauseForCap(runId: string, cap: SpendCap, at: string): Promise<void> {
@@ -1080,8 +1172,8 @@ export class Orchestrator {
     this.emitTask(run.task_id, "limit");
 
     const task = this.db.task(run.task_id);
-    // A budget cap never continues on a paid key without your click.
-    let mode: FallbackMode = info.trigger === "budget" ? "manual" : task.fallback;
+    // A budget cap, or a model without a price, never continues on a paid key without your click.
+    let mode: FallbackMode = info.trigger === "budget" || info.trigger === "unpriced" ? "manual" : task.fallback;
     if (mode === "wait_for_reset") {
       if (info.resetsAt && Date.parse(info.resetsAt) - this.now().getTime() <= task.wait_reset_minutes * 60_000) {
         this.scheduleResume(runId, info.resetsAt);
@@ -1092,20 +1184,82 @@ export class Orchestrator {
     await this.offerHandoff(this.db.run(runId), task, mode, info, null);
   }
 
-  /** A crashed run (not a start failure) is handed off like a limit, per the task's mode. */
-  private async onCrash(runId: string): Promise<void> {
+  /**
+   * A run that failed after it started (feature scan F8). A request every provider would refuse
+   * stays failed: no handoff, no fallback, no retry. A transient error moves to the next profile at
+   * once when Auto has one, and otherwise retries the same profile after a jittered backoff, a few
+   * times. Anything else, and a transient error out of retries, is handed off like a limit, per
+   * the task's mode.
+   */
+  private async onFailure(runId: string, detail: string | null): Promise<void> {
     const run = this.db.run(runId);
     const task = this.db.task(run.task_id);
     if (task.cancelled_at) return;
+    const failure = classifyFailure(detail);
+    this.audit(task.id, runId, "run.failure", { kind: failure.kind, status: failure.status, retryAfterMs: failure.retryAfterMs });
+    if (failure.kind === "request_invalid") return;
     const mode = task.fallback === "wait_for_reset" ? "ask" : task.fallback;
+    if (failure.kind === "transient") {
+      // Never wait when the next step is another profile: Auto with a target switches now.
+      const switching = mode === "auto" && this.handoffsTaken(run) < MAX_AUTO_HANDOFFS && (await this.handoffCandidates(run, task)).length > 0;
+      const attempt = this.db.retryAttempt(run.id) + 1;
+      const delay = !switching && attempt <= RETRY.max ? retryDelayMs(attempt, failure.retryAfterMs) : null;
+      if (delay !== null) {
+        this.scheduleRetry(run, attempt, delay, failure);
+        return;
+      }
+    }
     await this.offerHandoff(run, task, mode, { trigger: "crashed", window: null, resetsAt: null }, null);
+  }
+
+  private handoffsTaken(run: RunRow): number {
+    return this.db.handoffs(run.task_id).filter((h) => this.db.run(h.from_run_id).member_id === run.member_id).length;
+  }
+
+  /** Same-profile retry after a transient error; the failed run shows when (resumeAt) until it starts. */
+  private scheduleRetry(run: RunRow, attempt: number, delayMs: number, failure: Failure): void {
+    const at = new Date(this.now().getTime() + delayMs).toISOString();
+    this.clearTimer(run.id);
+    this.db.exec("update runs set resume_at = ? where id = ?", at, run.id);
+    this.audit(run.task_id, run.id, "run.retry_scheduled", { attempt, delayMs, failure: failure.kind, status: failure.status });
+    const timer = setTimeout(() => {
+      this.timers.delete(run.id);
+      this.track(this.autoRetry(run.id, attempt, delayMs, failure));
+    }, delayMs);
+    timer.unref();
+    this.timers.set(run.id, timer);
+    this.emitTask(run.task_id, "retried");
+  }
+
+  private async autoRetry(runId: string, attempt: number, delayMs: number, failure: Failure): Promise<void> {
+    const run = this.db.run(runId);
+    const task = this.db.task(run.task_id);
+    // A stop, retry, resume, handoff or cancel in the meantime cleared resume_at.
+    if (run.resume_at === null || task.cancelled_at || this.superseded(run)) return;
+    this.db.exec("update runs set resume_at = null where id = ?", runId);
+    const adapter = this.adapters.get(run.runner);
+    const native = Boolean(adapter?.capabilities.resume && run.native_session_id);
+    const id = randomUUID();
+    // Recorded before the run exists, so a run that fails at once already counts as this attempt.
+    this.db.exec("insert into run_retries (run_id, from_run_id, attempt, failure, status, delay_ms, created_at) values (?, ?, ?, ?, ?, ?, ?)", id, run.id, attempt, failure.kind, failure.status, delayMs, this.iso());
+    const resume = native
+      ? { cwd: run.cwd, prompt: "The last attempt stopped on a temporary provider error. Check `git status`, then continue the task where you stopped.", resumeRef: { runner: run.runner, sessionId: run.native_session_id! } }
+      : {};
+    await this.launch({ runId: id, task, member: this.db.member(run.member_id), target: { profileId: run.profile_id, runner: run.runner, model: run.model }, ...resume, resumedFrom: run.id });
+    this.audit(task.id, id, "run.auto_retry", { from: run.id, attempt, delayMs, native });
+    this.emitTask(task.id, "retried");
+  }
+
+  /** Drops a pending same-profile retry; whatever you chose instead takes over the step. */
+  private cancelAutoRetry(runId: string): void {
+    this.clearTimer(runId);
+    this.db.exec("update runs set resume_at = null where id = ? and ended_at is not null", runId);
   }
 
   private async offerHandoff(run: RunRow, task: TaskRow, mode: FallbackMode, info: HandoffInfo, detail: string | null): Promise<void> {
     const candidates = await this.handoffCandidates(run, task);
-    const taken = this.db.handoffs(task.id).filter((h) => this.db.run(h.from_run_id).member_id === run.member_id).length;
-    if (mode === "auto" && candidates[0] && taken < MAX_AUTO_HANDOFFS) {
-      this.track(this.performHandoff(run.id, candidates[0], info.trigger));
+    if (mode === "auto" && candidates[0] && this.handoffsTaken(run) < MAX_AUTO_HANDOFFS) {
+      this.track(this.performHandoff(run.id, candidates[0], info.trigger === "unpriced" ? "budget" : info.trigger));
       return;
     }
     this.insertRequest(task.id, run.id, null, null, {
@@ -1117,6 +1271,7 @@ export class Orchestrator {
       candidates,
       detail: candidates.length === 0 ? "no_target" : detail,
       cap: info.cap ?? null,
+      ...(info.unpriced ? { unpriced: info.unpriced } : {}),
     });
   }
 
@@ -1139,7 +1294,7 @@ export class Orchestrator {
       .map((id) => all.find((c) => c.profile.id === id))
       .filter((c): c is Candidate => c !== undefined && eligible(c, member.role, ctx) && !avoid.models.has(modelKey(c)))
       // Budget left (PLAN.md §8.2 step 2): a key past its daily or task cap is no target.
-      .filter((c) => reachedCaps(this.opts.store.db, spendCredential(c), task.id, this.now()).length === 0)
+      .filter((c) => reachedCaps(this.opts.store.db, spendCredential(c), task.id, this.now(), { excludeRunId: run.id }).length === 0)
       .map((c) => scoreCandidate(c, member.role, ctx, avoid))
       .filter((v) => (v.headroom.pct === null || v.headroom.pct > MIN_HEADROOM) && (task.budget_usd === null || v.estimate.usd === 0 || spent < task.budget_usd));
   }
@@ -1261,6 +1416,8 @@ export class Orchestrator {
       // A source a cap held before it ever started has nothing to hand over: the target starts the step fresh.
       const neverStarted = !live && source.native_session_id === null && source.tokens_in + source.tokens_out === 0;
       this.held.delete(source.id);
+      // The stopped source spends no more; its hold must not block the target on the same key.
+      settleReservation(this.opts.store.db, source.id, this.now());
 
       phase("checkpoint");
       const wt = this.db.worktree(task.id);
@@ -1390,8 +1547,14 @@ export class Orchestrator {
       // We never kill a recorded pid: Windows reuses pids, and the number may belong to something else now.
       const detail = r.pid !== null && alive(r.pid) ? "process_orphaned" : "process_gone";
       this.db.exec("update runs set ended_at = ?, end_reason = 'interrupted', end_detail = ?, resume_at = null where id = ?", this.iso(), detail, r.id);
+      settleReservation(this.opts.store.db, r.id, this.now());
       for (const q of this.db.openRequestsForRun(r.id)) this.closeRequest(q, "system");
       this.audit(r.task_id, r.id, "run.recovered", { detail });
+      tasks.add(r.task_id);
+    }
+    // Same-profile retries were timers of the last daemon; the failed run is offered for Retry instead.
+    for (const r of this.db.pendingRetries()) {
+      this.db.exec("update runs set resume_at = null where id = ?", r.id);
       tasks.add(r.task_id);
     }
     for (const h of this.db.openHandoffs()) {
@@ -1515,6 +1678,21 @@ export class Orchestrator {
 
 const RANK: Record<Provenance, number> = { reported: 2, estimated: 1, unknown: 0 };
 const weakest = (a: Provenance, b: Provenance): Provenance => (RANK[a] <= RANK[b] ? a : b);
+
+/** Plain words for the agent when a role policy denies a call, so it adapts instead of retrying. */
+const POLICY_DENIAL: Record<string, string> = {
+  "policy.role_read_only": "Denied by Crewyard: this role is read-only and may not change files.",
+  "policy.role_docs_only": "Denied by Crewyard: this role may only change documentation files.",
+  "policy.role_no_network": "Denied by Crewyard: this role has no network access.",
+};
+
+/** Longest deny reason passed on; a reason is a sentence or two, not a document. */
+const MAX_REASON = 2_000;
+
+function withReason(a: Extract<RequestAnswer, { kind: "approval" }>): Extract<RequestAnswer, { kind: "approval" }> {
+  const reason = a.decision === "deny" ? a.message?.trim().slice(0, MAX_REASON) : undefined;
+  return { kind: "approval", decision: a.decision, ...(reason ? { message: reason } : {}) };
+}
 
 function toCoreAnswer(a: RequestAnswer): Answer {
   switch (a.kind) {

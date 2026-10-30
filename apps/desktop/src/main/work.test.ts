@@ -26,6 +26,7 @@ const request = (id: string, createdAt: string, answeredAt: string | null = null
   taskId: "t1",
   projectId: "p1",
   runId: "r1",
+  sessionId: "s1",
   kind: "question",
   risk: null,
   payload: { kind: "question", questions: [] },

@@ -1,17 +1,18 @@
 import { useState } from "react";
-import { ArrowLeftRight, CircleHelp, Gauge, Terminal, Wallet } from "lucide-react";
+import { ArrowLeftRight, CircleDollarSign, CircleHelp, Gauge, Terminal, Wallet } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { LimitNoticePayload, RequestAnswer, RequestPayload, RequestView, TaskDetail } from "@crewyard/core";
 import { Button, Label, Panel } from "@crewyard/ui";
 import { useDaemon } from "../../ipc.ts";
 import { useNav } from "../../nav.ts";
 import { ProvBadge } from "../providers/shared.tsx";
-import { act, useErrorText, useWork } from "../tasks/data.ts";
+import { act, useErrorText, useRecheck, useWork } from "../tasks/data.ts";
 import { useFixtureState } from "../tasks/fixtureState.ts";
 import { useActivity } from "../tasks/live.ts";
 import { codeKey, profileNames } from "../tasks/model.ts";
 import { ConfirmButton, ErrorLine, useFormat, Who } from "../tasks/parts.tsx";
-import { canAllowAlways, defaultTarget, emptyForm, formAnswer, formReady, handoffChoices, infoNotices, orderRequests, titleKey, type QuestionForm } from "./model.ts";
+import { ApprovalActions } from "./ApprovalActions.tsx";
+import { defaultTarget, emptyForm, formAnswer, formReady, handoffChoices, infoNotices, orderRequests, titleKey, type QuestionForm } from "./model.ts";
 import "../tasks/tasks.css";
 import "./inbox.css";
 
@@ -19,7 +20,7 @@ type Payload<K extends RequestPayload["kind"]> = Extract<RequestPayload, { kind:
 
 function KindIcon({ q }: { q: RequestView }) {
   const p = q.payload;
-  const Icon = p.kind === "approval" ? Terminal : p.kind === "question" ? CircleHelp : p.trigger === "budget" ? Wallet : p.trigger === "manual" ? ArrowLeftRight : Gauge;
+  const Icon = p.kind === "approval" ? Terminal : p.kind === "question" ? CircleHelp : p.trigger === "budget" ? Wallet : p.trigger === "unpriced" ? CircleDollarSign : p.trigger === "manual" ? ArrowLeftRight : Gauge;
   return <Icon size={16} strokeWidth={1.75} aria-hidden="true" className={q.risk === "high" ? "ib-high" : "ib-icon"} />;
 }
 
@@ -30,7 +31,7 @@ function useTitle() {
     const p = q.payload;
     if (p.kind === "question") return p.questions[0]?.prompt ?? t("title.question");
     if (p.kind === "approval") return t(`title.${titleKey(p)}`, { command: p.command ?? "", count: p.paths.length });
-    return t(`title.${titleKey(p)}`, { window: f.window(p.window), usd: p.cap ? f.usd(p.cap.capUsd) : "" });
+    return t(`title.${titleKey(p)}`, { window: f.window(p.window), usd: p.cap ? f.usd(p.cap.capUsd) : "", model: p.unpriced?.model ?? t("detail.unknownModel") });
   };
 }
 
@@ -96,20 +97,7 @@ function Approval({ q, p, task, answer }: { q: RequestView; p: Payload<"approval
           </>
         )}
       </dl>
-      <div className="ib-actions">
-        <Button variant="primary" onClick={() => void answer({ kind: "approval", decision: "allow_once" })}>
-          {t("action.approveOnce")}
-        </Button>
-        {canAllowAlways(q.risk) && p.command && (
-          <Button onClick={() => void answer({ kind: "approval", decision: "allow_always" })} title={t("action.allowAlwaysTitle", { command: p.command })}>
-            {t("action.allowAlways")}
-          </Button>
-        )}
-        <Button variant="ghost" onClick={() => void answer({ kind: "approval", decision: "deny" })}>
-          {t("action.deny")}
-        </Button>
-      </div>
-      {!canAllowAlways(q.risk) && <p className="ib-note">{t("detail.noAlwaysHigh")}</p>}
+      <ApprovalActions q={q} answer={answer} />
     </>
   );
 }
@@ -161,8 +149,36 @@ function Handoff({ p, answer }: { p: Payload<"handoff">; answer: (a: RequestAnsw
           <dd>
             <span className="num">{f.usd(p.cap.spentUsd)}</span> / <span className="num">{f.usd(p.cap.capUsd)}</span> <ProvBadge value="estimated" />
           </dd>
+          {p.cap.reservedUsd !== undefined && (
+            <>
+              <dt>{t("detail.reserved")}</dt>
+              <dd>
+                <span className="num">{f.usd(p.cap.reservedUsd)}</span> <ProvBadge value="estimated" />
+              </dd>
+            </>
+          )}
+          {p.cap.estimateUsd !== undefined && (
+            <>
+              <dt>{t("detail.stepEstimate")}</dt>
+              <dd>
+                <span className="num">{f.usd(p.cap.estimateUsd)}</span> <ProvBadge value="estimated" />
+              </dd>
+            </>
+          )}
           <dt>{t("detail.cap")}</dt>
           <dd>{t(`cap.${p.cap.kind}`)}</dd>
+        </dl>
+      )}
+      {p.unpriced && (
+        <dl className="ib-kv">
+          <dt>{t("detail.model")}</dt>
+          <dd className="mono">{p.unpriced.model ?? t("detail.unknownModel")}</dd>
+          <dt>{t("detail.price")}</dt>
+          <dd>
+            <ProvBadge value="unknown" />
+          </dd>
+          <dt>{t("detail.capsOnTask")}</dt>
+          <dd>{p.unpriced.caps.map((c) => t(`cap.${c}`)).join(" · ")}</dd>
         </dl>
       )}
       {p.resetsAt && <p className="sec ib-line">{t("detail.resets", { time: f.when.at(p.resetsAt) })}</p>}
@@ -196,10 +212,10 @@ function Handoff({ p, answer }: { p: Payload<"handoff">; answer: (a: RequestAnsw
           </Button>
         )}
         {choices.waitForReset && p.resetsAt && <Button onClick={() => void answer({ kind: "handoff", decision: "wait_for_reset" })}>{t("action.waitForReset", { time: f.when.at(p.resetsAt) })}</Button>}
-        {choices.continuePastCap && <Button onClick={() => void answer({ kind: "handoff", decision: "continue" })}>{t("action.continuePastCap")}</Button>}
+        {choices.continuePastCap && <Button onClick={() => void answer({ kind: "handoff", decision: "continue" })}>{p.trigger === "unpriced" ? t("action.continueUnpriced") : t("action.continuePastCap")}</Button>}
         <ConfirmButton label={t("action.stop")} confirm={t("action.stopConfirm")} onConfirm={() => answer({ kind: "handoff", decision: "stop" })} size="md" />
       </div>
-      {choices.continuePastCap && <p className="ib-note">{t("detail.continueNote")}</p>}
+      {choices.continuePastCap && <p className="ib-note">{p.trigger === "unpriced" ? t("detail.unpricedNote") : t("detail.continueNote")}</p>}
     </>
   );
 }
@@ -209,6 +225,7 @@ function Detail({ q }: { q: RequestView }) {
   const f = useFormat();
   const title = useTitle();
   const errorText = useErrorText();
+  const recheck = useRecheck();
   const { selectTask, go } = useNav();
   const task = useWork("tasks.get", { taskId: q.taskId });
   const [error, setError] = useState<string | null>(null);
@@ -219,9 +236,11 @@ function Detail({ q }: { q: RequestView }) {
   const answer = async (a: RequestAnswer) => {
     setError(null);
     try {
-      await act("requests.answer", { requestId: q.id, answer: a });
+      // The run and session you saw go along; if a handoff replaced them, the daemon refuses and we re-read.
+      await act("requests.answer", { requestId: q.id, answer: a, runId: q.runId, sessionId: q.sessionId });
     } catch (err) {
       setError(errorText(err));
+      recheck(err);
     }
   };
   return (

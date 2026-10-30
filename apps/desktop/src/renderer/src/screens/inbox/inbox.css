@@ -40,6 +40,7 @@ button.ib-item:hover { background: var(--raised); }
 .ib-opt .t { font-size: 13px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .ib-opt .s { font-size: 12px; color: var(--ink-3); }
 .ib-proposed { color: var(--ink); }
+.ib-reason { display: grid; gap: 6px; margin-top: 16px; }
 .ib-note-input { width: 100%; border: 1px solid var(--line-strong); background: var(--surface); padding: 8px 10px; font-size: 13px; resize: vertical; }
 
 @media (max-width: 1279.98px) {

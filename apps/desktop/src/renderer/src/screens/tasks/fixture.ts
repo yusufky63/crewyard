@@ -135,6 +135,11 @@ function build(projectId: string): { tasks: TaskDetail[]; requests: RequestView[
   const cappedRun = run("t-capped", c[0]!, OPUS, { state: "rate_limited", startedAt: ago(48), limitReached: true, pausedAt: ago(3), pendingRequestId: "q-cap", tokensIn: 512000, tokensOut: 41000, cost: { usd: 2.03, provenance: "estimated" } });
   const capped = detail(summary("t-capped", "Move settings to the new config loader", { status: "needs_input", openRequests: 1, activeRuns: 1, spend: { usd: 2.03, provenance: "estimated" }, createdAt: ago(50) }), c, [cappedRun]);
 
+  // 4b. A capped task on a model without a price waits for your approval before it starts.
+  const u = [member("researcher", 1, ARGON, [OPUS])];
+  const unpricedRun = run("t-unpriced", u[0]!, ARGON, { state: "rate_limited", startedAt: ago(4), limitReached: true, pausedAt: ago(4), pendingRequestId: "q-unpriced", nativeSessionId: null, cwd: "C:\\Projeler\\crewyard", worktreeId: null });
+  const unpriced = detail(summary("t-unpriced", "Compare the retry policies of three HTTP clients", { kind: "research", size: "S", status: "needs_input", openRequests: 1, activeRuns: 1, budgetUsd: 1, createdAt: ago(5) }), u, [unpricedRun], { worktree: null });
+
   // 5. Ready for review.
   const v = [member("implementer", 1, SOL, [OPUS], [], true), member("reviewer", 2, OPUS, [GLM], ["implementer"])];
   const reviewRuns = [
@@ -154,6 +159,7 @@ function build(projectId: string): { tasks: TaskDetail[]; requests: RequestView[
       taskId: "t-approval",
       projectId,
       runId: approvalRun.id,
+      sessionId: approvalRun.nativeSessionId,
       kind: "approval",
       risk: "medium",
       payload: { kind: "approval", toolCallId: "tc1", command: "pnpm vitest run src/auth", cwd: "C:\\Projeler\\.mc\\worktrees\\crewyard\\t-approval", paths: [], network: false, policy: null },
@@ -167,6 +173,7 @@ function build(projectId: string): { tasks: TaskDetail[]; requests: RequestView[
       taskId: "t-capped",
       projectId,
       runId: cappedRun.id,
+      sessionId: cappedRun.nativeSessionId,
       kind: "handoff",
       risk: null,
       payload: { kind: "handoff", trigger: "budget", window: "budget-day", resetsAt: ahead(9 * 60), proposedTarget: null, candidates: [FLASH, SOL], detail: null, cap: { kind: "daily_cap", spentUsd: 2.03, capUsd: 2, credentialId: "cred-anthropic" } },
@@ -175,8 +182,22 @@ function build(projectId: string): { tasks: TaskDetail[]; requests: RequestView[
       answer: null,
       answeredBy: null,
     },
+    {
+      id: "q-unpriced",
+      taskId: "t-unpriced",
+      projectId,
+      runId: unpricedRun.id,
+      sessionId: null,
+      kind: "handoff",
+      risk: null,
+      payload: { kind: "handoff", trigger: "unpriced", window: null, resetsAt: null, proposedTarget: null, candidates: [OPUS], detail: null, cap: null, unpriced: { model: ARGON.model, caps: ["daily_cap", "task_budget"] } },
+      createdAt: ago(4),
+      answeredAt: null,
+      answer: null,
+      answeredBy: null,
+    },
   ];
-  return { tasks: [proposed, running, approval, capped, review, done], requests };
+  return { tasks: [proposed, running, approval, capped, unpriced, review, done], requests };
 }
 
 let cache: { projectId: string; data: ReturnType<typeof build> } | null = null;

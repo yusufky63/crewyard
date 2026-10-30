@@ -243,7 +243,7 @@ describe("risk routing", () => {
     const impl = adapter.started.find((s) => s.role === "implementer")!;
     expect(adapter.inspect(impl.runId).answers.map((a) => (a.kind === "approval" ? a.decision : a.kind))).toEqual(["allow_once", "deny", "allow_once"]);
     const rev = adapter.started.find((s) => s.role === "reviewer")!;
-    expect(adapter.inspect(rev.runId).answers).toEqual([{ kind: "approval", decision: "deny", message: "policy.role_read_only" }]);
+    expect(adapter.inspect(rev.runId).answers).toEqual([{ kind: "approval", decision: "deny", message: "Denied by Crewyard: this role is read-only and may not change files." }]);
 
     const byPolicy = o.requests({ taskId: t.id, includeAnswered: true }).filter((q) => q.answeredBy === "policy");
     expect(byPolicy.map((q) => [q.payload.kind === "approval" ? q.payload.policy : null, q.risk])).toEqual([
@@ -662,5 +662,191 @@ describe("ipc handlers", () => {
     expect(await call(3, "tasks.list", {})).toMatchObject({ ok: true, result: [{ id: proposed.result.id, status: "proposed" }] });
     expect(await call(4, "requests.list", {})).toMatchObject({ ok: true, result: [] });
     expect(await call(5, "tasks.get", { taskId: "missing" })).toMatchObject({ ok: false, error: "task.not_found" });
+  });
+});
+
+describe("safety (feature scan F3, F4, F8, F11, F17)", () => {
+  const usageOf = (tokensIn: number): FakeStep => ({
+    emit: { type: "usage.update", tokensIn, tokensOut: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, contextUsed: null, contextSize: null, costUsd: null, costProvenance: "unknown" },
+  });
+  const failWith = (detail: string): FakeStep => ({ emit: { type: "run.ended", reason: "failed", detail } });
+  const addCredential = (store: Store, id: string, daily: number | null, task: number | null = null) =>
+    store.db.prepare("insert into credentials (id, alias, provider_id, kind, daily_cap_usd, task_cap_usd, created_at) values (?, ?, 'x', 'api_key', ?, ?, '2026-10-30T00:00:00Z')").run(id, id, daily, task);
+  const reservations = (store: Store) =>
+    store.db.prepare("select run_id, amount_usd, settled_at is not null as settled, actual_usd from spend_reservations order by created_at").all() as Array<{ run_id: string; amount_usd: number; settled: number; actual_usd: number | null }>;
+
+  it("F3: parallel steps on one key never overshoot its daily cap together", async () => {
+    // Test and Review share one key; each estimate fits the cap alone, both together do not.
+    const shared = (c: Candidate): Candidate => (c.profile.id === "anthropic-key" ? c : { ...c, credentialId: "cred-shared" });
+    const pick: Picker = (role) => (role === "tester" ? [running, usageOf(10_000), ...question("hold-t"), say("tests pass")] : role === "reviewer" ? [running, say("looks good")] : [running, say(`${role} done`)]);
+    const { o, project, store, adapter } = await setup({ pick, candidates: CANDIDATES().map(shared) });
+    const t = await o.propose({ projectId: project.id, ...CODE_M, pins: { planner: "anthropic-key", implementer: "anthropic-key", tester: "openai-key", reviewer: "deepseek-key" } });
+    const est = (role: string) => t.crew!.members.find((m) => m.role === role)!.chosen!.estimate.usd!;
+    const [tester, reviewer] = [est("tester"), est("reviewer")];
+    const cap = Math.max(tester, reviewer) + Math.min(tester, reviewer) / 2;
+    expect(tester + reviewer).toBeGreaterThan(cap);
+    addCredential(store, "cred-shared", cap);
+    await o.approve({ taskId: t.id });
+
+    // The tester holds its estimate, so the reviewer waits in the queue instead of starting too.
+    await waitFor(() => o.requests({ taskId: t.id })[0]);
+    const waiting = o.get(t.id).crew!.members.find((m) => m.role === "reviewer")!;
+    expect(waiting.blockedBy).toMatchObject({ code: "admission.budget_reserved", params: { capUsd: cap, cap: "daily_cap" } });
+    expect(o.get(t.id).runs.filter((r) => r.role === "reviewer")).toEqual([]);
+    const testRun = o.get(t.id).runs.find((r) => r.role === "tester")!;
+    expect(reservations(store).find((r) => r.run_id === testRun.id)).toMatchObject({ amount_usd: tester, settled: 0 });
+
+    // The tester ends and settles to what it spent ($0.0125 of gpt-5 input); then the reviewer fits.
+    await o.answer(o.requests({ taskId: t.id })[0]!.id, { kind: "question", answers: [{ selected: ["redis"] }] });
+    await waitFor(() => o.get(t.id).status === "review");
+    expect(reservations(store).find((r) => r.run_id === testRun.id)).toMatchObject({ settled: 1, actual_usd: 0.0125 });
+    expect(reservations(store).every((r) => r.settled === 1)).toBe(true);
+    expect(adapter.started.map((s) => s.role)).toEqual(["planner", "implementer", "tester", "reviewer"]);
+    expect(o.requests({ taskId: t.id })).toEqual([]);
+  });
+
+  it("F3: a step that would pass a cap even alone asks in the Inbox with the reservation shown", async () => {
+    const paid = CANDIDATES().map((c) => ({ ...c, credentialId: "cred-small" }));
+    const { o, project, store, adapter } = await setup({ pick: () => [running, say("done")], candidates: paid });
+    const t = await o.propose({ projectId: project.id, title: "Research A", pins: { researcher: "openai-key" } });
+    addCredential(store, "cred-small", t.crew!.members[0]!.chosen!.estimate.usd! / 2);
+    await o.approve({ taskId: t.id });
+    const q = await waitFor(() => o.requests({ taskId: t.id }).find((r) => r.kind === "handoff"));
+    expect(q.payload).toMatchObject({ trigger: "budget", cap: { kind: "daily_cap", spentUsd: 0, estimateUsd: t.crew!.members[0]!.chosen!.estimate.usd } });
+    expect(adapter.started).toEqual([]);
+    await o.answer(q.id, { kind: "handoff", decision: "continue" });
+    await waitFor(() => o.get(t.id).status === "done");
+  });
+
+  it("F4: a capped task never starts on a model without a price until you approve it", async () => {
+    const cands = [...CANDIDATES(), { ...candidate("mystery-key", "custom", null), credentialId: "cred-m" }];
+    const { o, project, store, adapter } = await setup({ pick: () => [running, usageOf(1_000), say("done")], candidates: cands });
+    addCredential(store, "cred-m", 5);
+    const t = await o.propose({ projectId: project.id, title: "Research A", pins: { researcher: "mystery-key" }, budgetUsd: 1 });
+    await o.approve({ taskId: t.id });
+
+    const q = await waitFor(() => o.requests({ taskId: t.id }).find((r) => r.kind === "handoff"));
+    expect(q.payload).toMatchObject({ kind: "handoff", trigger: "unpriced", proposedTarget: null, unpriced: { caps: ["daily_cap", "task_budget"] } });
+    expect(adapter.started).toEqual([]);
+    const run = o.get(t.id).runs[0]!;
+    expect(run.state).toBe("rate_limited");
+    await expect(o.resume(run.id)).rejects.toThrow("run.price_unknown");
+    await expect(o.retry(run.id)).rejects.toThrow("run.price_unknown");
+
+    await o.answer(q.id, { kind: "handoff", decision: "continue" });
+    await waitFor(() => o.get(t.id).status === "done");
+    // Approved for this run: the unpriced usage report does not ask a second time.
+    expect(o.requests({ taskId: t.id })).toEqual([]);
+    expect(o.get(t.id).runs[0]!.cost).toEqual({ usd: null, provenance: "unknown" });
+  });
+
+  it("F4: a run that turns out unpriced after a cap appears stops and asks before it continues", async () => {
+    const cands = [...CANDIDATES(), { ...candidate("mystery-key", "custom", null), credentialId: "cred-m" }];
+    const pick: Picker = () => [running, ...question("hold"), usageOf(1_000), { awaitAnswer: "never" }];
+    const { o, project, store } = await setup({ pick, candidates: cands });
+    addCredential(store, "cred-m", null);
+    const t = await o.propose({ projectId: project.id, title: "Research A", pins: { researcher: "mystery-key" } });
+    await o.approve({ taskId: t.id });
+    const hold = await waitFor(() => o.requests({ taskId: t.id })[0]);
+    // A daily cap set while the run works: the next unpriced report must not slip past it.
+    store.db.prepare("update credentials set daily_cap_usd = 2 where id = 'cred-m'").run();
+    await o.answer(hold.id, { kind: "question", answers: [{ selected: ["redis"] }] });
+    const q = await waitFor(() => o.requests({ taskId: t.id }).find((r) => r.kind === "handoff"));
+    expect(q.payload).toMatchObject({ trigger: "unpriced", unpriced: { caps: ["daily_cap"] } });
+    expect(o.get(t.id).status).toBe("needs_input");
+  });
+
+  it("F8: a request every provider would refuse never hands off, falls back or retries", async () => {
+    const { o, project, adapter } = await setup({ pick: () => [running, failWith('API Error: 400 {"type":"invalid_request_error"}')] });
+    const t = await o.propose({ projectId: project.id, title: "Research A", fallback: "auto" });
+    await o.approve({ taskId: t.id });
+    await waitFor(() => o.get(t.id).status === "failed");
+    await o.settle();
+    expect(adapter.started).toHaveLength(1);
+    expect(o.get(t.id).handoffs).toEqual([]);
+    expect(o.requests({ taskId: t.id, includeAnswered: true })).toEqual([]);
+    expect(o.get(t.id).runs[0]!.resumeAt).toBeNull();
+  });
+
+  it("F8: a transient error retries the same profile after Retry-After, then continues", async () => {
+    let first = true;
+    const pick: Picker = () => (first ? ((first = false), [running, failWith("API Error: 503 Service Unavailable, retry-after: 1")]) : [running, say("ok")]);
+    const { o, project, adapter, store } = await setup({ pick });
+    const t = await o.propose({ projectId: project.id, title: "Research A", fallback: "manual" });
+    await o.approve({ taskId: t.id });
+    const failed = await waitFor(() => o.get(t.id).runs.find((r) => r.endReason === "failed" && r.resumeAt));
+    // Waiting for its retry is not failed, and nobody is asked yet.
+    expect(o.get(t.id).status).not.toBe("failed");
+    expect(Date.parse(failed.resumeAt!) - Date.parse(failed.endedAt!)).toBeGreaterThanOrEqual(900);
+    expect(o.requests({ taskId: t.id })).toEqual([]);
+    await waitFor(() => o.get(t.id).status === "done", 5_000);
+    expect(adapter.started.map((s) => s.resumed)).toEqual([false, true]);
+    const retried = o.get(t.id).runs.find((r) => r.resumedFrom === failed.id)!;
+    expect([retried.profileId, retried.nativeSessionId]).toEqual([failed.profileId, failed.nativeSessionId]);
+    expect(store.db.prepare("select attempt, failure, status, delay_ms from run_retries").all()).toEqual([{ attempt: 1, failure: "transient", status: 503, delay_ms: 1000 }]);
+  });
+
+  it("F8: a transient error asks after three same-profile retries", async () => {
+    const { o, project, adapter } = await setup({ pick: () => [running, failWith("HTTP status 502 Bad Gateway retry-after: 1")] });
+    const t = await o.propose({ projectId: project.id, title: "Research A", fallback: "manual" });
+    await o.approve({ taskId: t.id });
+    const q = await waitFor(() => o.requests({ taskId: t.id }).find((r) => r.kind === "handoff"), 10_000);
+    expect(q.payload).toMatchObject({ trigger: "crashed" });
+    expect(adapter.started).toHaveLength(4);
+  });
+
+  it("F8: a transient error in Auto mode switches profile at once, without waiting", async () => {
+    let first = true;
+    const pick: Picker = () => (first ? ((first = false), [running, failWith("API Error: 429 rate_limit_error, retry-after: 30")]) : [running, say("ok")]);
+    const { o, project } = await setup({ pick });
+    const t = await o.propose({ projectId: project.id, title: "Research A", fallback: "auto" });
+    await o.approve({ taskId: t.id });
+    const started = Date.now();
+    await waitFor(() => o.get(t.id).status === "done");
+    expect(Date.now() - started).toBeLessThan(10_000);
+    const [source, target] = o.get(t.id).runs;
+    expect(source!.resumeAt).toBeNull();
+    expect(target!.profileId).not.toBe(source!.profileId);
+    expect(o.get(t.id).handoffs[0]).toMatchObject({ trigger: "crashed", outcome: "completed" });
+  });
+
+  it("F11: stop, message and answer refuse a session a handoff replaced since you looked", async () => {
+    let starts = 0;
+    const pick: Picker = () => (starts++ === 0 ? [running, ...question("hold")] : [running, ...question("again"), say("moved")]);
+    const { o, project } = await setup({ pick });
+    const t = await o.propose({ projectId: project.id, title: "Research A", pins: { researcher: "anthropic-key" } });
+    await o.approve({ taskId: t.id });
+    const asked = await waitFor(() => o.requests({ taskId: t.id })[0]);
+    const seen = o.get(t.id).runs[0]!;
+    expect(asked.sessionId).toBe(seen.nativeSessionId);
+    await expect(o.stop(seen.id, { sessionId: "another-session" })).rejects.toThrow("run.session_changed");
+
+    await o.handoff(seen.id, "openai-key");
+    const target = await waitFor(() => o.get(t.id).runs.find((r) => r.resumedFrom === seen.id && r.nativeSessionId));
+    await expect(o.stop(seen.id, { sessionId: seen.nativeSessionId })).rejects.toThrow("run.session_changed");
+    await expect(o.pause(seen.id, { sessionId: seen.nativeSessionId })).rejects.toThrow("run.session_changed");
+    await expect(o.message(seen.id, "hi", { sessionId: seen.nativeSessionId })).rejects.toThrow("run.session_changed");
+
+    const again = await waitFor(() => o.requests({ taskId: t.id }).find((q) => q.runId === target.id));
+    await expect(o.answer(again.id, { kind: "question", answers: [{ selected: ["redis"] }] }, { runId: seen.id, sessionId: seen.nativeSessionId })).rejects.toThrow("run.session_changed");
+    await o.answer(again.id, { kind: "question", answers: [{ selected: ["redis"] }] }, { runId: again.runId, sessionId: again.sessionId });
+    await waitFor(() => o.get(t.id).status === "done");
+  });
+
+  it("F17: a denial carries your reason to the agent, trimmed; an approval carries none", async () => {
+    const pick: Picker = () => [running, ...approval("a1", "npm install left-pad"), ...approval("a2", "npm test"), say("done")];
+    const { o, project, adapter } = await setup({ pick });
+    const t = await o.propose({ projectId: project.id, title: "Research A" });
+    await o.approve({ taskId: t.id });
+    const first = await waitFor(() => o.requests({ taskId: t.id })[0]);
+    await o.answer(first.id, { kind: "approval", decision: "deny", message: "  Use pnpm; this repo has no npm lockfile.  " }, { runId: first.runId, sessionId: first.sessionId });
+    const second = await waitFor(() => o.requests({ taskId: t.id })[0]);
+    await o.answer(second.id, { kind: "approval", decision: "allow_once", message: "ignored" }, { runId: second.runId, sessionId: second.sessionId });
+    await waitFor(() => o.get(t.id).status === "done");
+    expect(adapter.inspect(adapter.started[0]!.runId).answers).toEqual([
+      { kind: "approval", decision: "deny", message: "Use pnpm; this repo has no npm lockfile." },
+      { kind: "approval", decision: "allow_once" },
+    ]);
+    expect(o.requests({ taskId: t.id, includeAnswered: true })[0]!.answer).toEqual({ kind: "approval", decision: "deny", message: "Use pnpm; this repo has no npm lockfile." });
   });
 });
