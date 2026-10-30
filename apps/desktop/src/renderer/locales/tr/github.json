@@ -323,7 +323,37 @@
       "feedback_no_owner": "Bu görevde dalın sahibi olan bir adım yok.",
       "merge_dirty": "GitHub temel dalla çakışma bildiriyor. Önce çakışmaları dalda çöz.",
       "merge_behind": "Dal, temel dalın gerisinde ve dal kuralları güncel olmasını istiyor. Önce dalı güncelle.",
-      "merge_gate": "Birleştirme kapısı henüz geçilmedi. Hangi maddenin beklettiğini yukarıdaki işaretler gösteriyor."
+      "merge_gate": "Birleştirme kapısı henüz geçilmedi. Hangi maddenin beklettiğini yukarıdaki işaretler gösteriyor.",
+      "checks_busy": "Bu görevin başarısız kontrolleri zaten toplanıyor.",
+      "checks_no_pull": "Açık bir pull request yok.",
+      "checks_no_owner": "Bu görevde dalın sahibi olan bir çalışma yok.",
+      "checks_moved": "Siz baktıktan sonra pull request'e yeni bir commit geldi. Yeniden kontrol edin.",
+      "checks_none_failing": "Son commit'te artık başarısız kontrol yok.",
+      "checks_all_sent": "Son commit'teki başarısız kontrollerin hepsi zaten ajana gitti.",
+      "checks_not_finished": "Adım hâlâ çalışıyor; kuyruğu bir sonraki turunda alır.",
+      "checks_nothing_queued": "Bu adım için kuyrukta bir şey yok."
+    },
+    "checks": {
+      "send": "Başarısız kontrolleri ajana gönder",
+      "sendTitle": "Başarısız her kontrolün hata veren adımlarını okur ve ajanın kuyruğuna koyar. Siz görmeden ajana hiçbir şey gitmez.",
+      "note": "Hata veren her adımın son satırları, CI çıktısı olarak alıntılanıp bu dalı yazan adımın kuyruğuna girer. Önce orada okuyabilir, düzenleyebilir ya da silebilirsiniz.",
+      "reason": {
+        "no_pull": "Açık bir pull request yok.",
+        "not_read": "Bu pull request'in kontrolleri henüz okunmadı.",
+        "no_owner": "Bu görevde dalın sahibi olan bir çalışma yok.",
+        "none_failing": "Son commit'te başarısız kontrol yok.",
+        "all_sent": "Son commit'teki başarısız kontrollerin hepsi zaten ajana gitti."
+      },
+      "queuedLive_one": "1 başarısız kontrol kuyruğa eklendi. Ajan bunu şu anki turu bitince alır; o zamana kadar denetçide düzenleyebilir ya da silebilirsiniz.",
+      "queuedLive_other": "{{count}} başarısız kontrol kuyruğa eklendi. Ajan bunları şu anki turu bitince alır; o zamana kadar denetçide düzenleyebilir ya da silebilirsiniz.",
+      "queuedFinished_one": "1 başarısız kontrol kuyruğa eklendi. Adım bittiği için, siz adımı sürdürene kadar denetçide bekler.",
+      "queuedFinished_other": "{{count}} başarısız kontrol kuyruğa eklendi. Adım bittiği için, siz adımı sürdürene kadar denetçide beklerler.",
+      "skipped_one": "Daha önce gönderilmiş 1 kontrol dışarıda bırakıldı.",
+      "skipped_other": "Daha önce gönderilmiş {{count}} kontrol dışarıda bırakıldı.",
+      "continue_one": "Kuyruktaki mesajla sürdür",
+      "continue_other": "Kuyruktaki {{count}} mesajla sürdür",
+      "continueNote": "Bu dalı yazan adım bitti. Sürdürürseniz adım, kuyruktakilerle aynı profilde yeniden başlar.",
+      "continued": "Adım, kuyruktaki mesajlarla sürüyor."
     }
   }
 }

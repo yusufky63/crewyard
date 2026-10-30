@@ -782,6 +782,16 @@ export const MIGRATIONS: Migration[] = [
      updated_at text not null
    );`,
   },
+  // "Send failing checks to the agent" (PLAN.md §10): the check run a check feedback item came
+  // from, so a manual send skips exactly the runs already sent for a head and a re-run is new. A
+  // table of its own for the same reason as native_usage_reasoning.
+  {
+    id: "pull-feedback-check-run",
+    sql: `create table if not exists pull_feedback_runs (
+     feedback_id text primary key references pull_feedback(id),
+     check_run_id integer not null
+   );`,
+  },
 ];
 
 /** What the positional scheme applied: a database at `user_version` N has the first N of these. */

@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import type { CleanupVerdict, FeedbackItem, FeedbackKind, MergeMethod, PullsResult, ReviewedHead, RunView, TaskDetail, TaskPull, TaskPullDraft, TaskPullState, TaskPullView, TaskSummary } from "@crewyard/core";
+import type { CleanupVerdict, FeedbackItem, FeedbackKind, MergeMethod, PullsResult, PullSummary, ReviewedHead, RunView, SendChecksResult, SendChecksState, TaskDetail, TaskPull, TaskPullDraft, TaskPullState, TaskPullView, TaskSummary } from "@crewyard/core";
 import type { Store } from "../store.ts";
+import { checksMessage, failedStepLines, LOG_TAILS, sendChecksState, unsentChecks, type CheckItem, type SentCheck } from "./checks.ts";
 import type { GithubClient } from "./client.ts";
 import * as git from "./git.ts";
 import { clip, cleanupVerdict, feedbackKey, feedbackMessage, finalMessage, logExcerpt, newFeedback, pullBody, pullGate, samePath, type FeedbackDraft } from "./pr.ts";
@@ -18,6 +19,8 @@ export interface TaskSource {
   get(taskId: string): TaskDetail;
   message(runId: string, text: string): Promise<RunView>;
   followUp(runId: string, text: string): Promise<RunView>;
+  /** Queues a message for the run's step without starting a turn (failing checks you read first). */
+  enqueue(runId: string, text: string): { run: RunView; messageId: string };
   /** Worktree bootstrap: runs the project's cleanup steps before a task worktree is removed; throws to keep it. */
   bootstrap?: { cleanupAt(projectId: string, path: string): Promise<void> };
 }
@@ -88,10 +91,14 @@ interface RestCheckRun {
   app?: { slug?: string } | null;
 }
 
+interface RestJob {
+  name?: string;
+  html_url?: string | null;
+  steps?: Array<{ name: string; number: number; conclusion: string | null }> | null;
+}
+
 const PASSING = new Set(["success", "neutral", "skipped"]);
 const FEEDBACK_SHOWN = 50;
-/** Job logs downloaded per PR per refresh; further failing jobs are routed with their check summary only. */
-const LOG_TAILS = 5;
 const THREADS_QUERY =
   "query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){nodes{isResolved isOutdated comments(first:100){nodes{databaseId}}}}}}}";
 
@@ -145,6 +152,9 @@ export class PrFlow {
   private readonly creating = new Set<string>();
   private readonly removing = new Set<string>();
   private readonly sending = new Set<string>();
+  /** Tasks whose failing checks are collected by hand, and tasks automatic routing delivers to; each waits for the other. */
+  private readonly checking = new Set<string>();
+  private readonly delivering = new Set<string>();
   private readonly deps: PrFlowDeps;
   private readonly now: () => Date;
 
@@ -238,6 +248,7 @@ export class PrFlow {
     const wt = detail.worktree;
     const cleanup = row?.state === "merged" && !row.worktree_removed_at && wt && existsSync(wt.path) ? await this.verdict(detail.projectId, wt.path) : null;
     const feedback = (this.db.prepare("select * from pull_feedback where task_id = ? order by observed_at desc, rowid desc limit ?").all(detail.id, FEEDBACK_SHOWN) as unknown as FeedbackRow[]).map(toFeedback);
+    const owner = detail.cancelledAt ? null : ownerRun(detail);
     return {
       taskId: detail.id,
       projectId: detail.projectId,
@@ -250,8 +261,32 @@ export class PrFlow {
       cleanup,
       feedback,
       routing: this.routing(detail.projectId),
+      sendChecks: this.sendChecksState(detail, row, live),
+      owner: owner ? { runId: owner.id, role: owner.role, finished: owner.endReason === "completed", queued: owner.queue.length } : null,
       problem: pulls?.problem ?? null,
     };
+  }
+
+  private sentChecks(taskId: string): SentCheck[] {
+    const rows = this.db
+      .prepare("select f.dedupe_key, r.check_run_id from pull_feedback f left join pull_feedback_runs r on r.feedback_id = f.id where f.task_id = ? and f.kind = 'check' and f.state = 'sent'")
+      .all(taskId) as Array<{ dedupe_key: string; check_run_id: number | null }>;
+    return rows.map((r) => ({ key: r.dedupe_key, checkRunId: r.check_run_id }));
+  }
+
+  /** From the cached checks summary; the click reads the checks again before it queues anything. */
+  private sendChecksState(detail: TaskDetail, row: PullRow | null, live: PullSummary | null): SendChecksState {
+    const checks = live?.checks;
+    const runNames = new Set(checks?.failingRuns.map((r) => r.name) ?? []);
+    const statuses = checks?.failingNames.filter((n) => !runNames.has(n)) ?? [];
+    const unsent = live && checks ? unsentChecks(live.headSha, checks.failingRuns, statuses, this.sentChecks(detail.id)) : { runs: [], statuses: [] };
+    return sendChecksState({
+      open: row !== null && (row.state === "open" || row.state === "draft"),
+      read: live !== null,
+      owner: ownerRun(detail) !== null && !detail.cancelledAt,
+      failing: checks?.failing ?? 0,
+      unsent: unsent.runs.length + unsent.statuses.length,
+    });
   }
 
   private async remoteName(repoPath: string): Promise<string> {
@@ -429,6 +464,112 @@ export class PrFlow {
     }
   }
 
+  /**
+   * "Send failing checks to the agent": reads the head's checks again, the failed steps of up to
+   * LOG_TAILS Actions jobs, and puts one message into the owning step's queue. Nothing reaches the
+   * agent here; the message waits in the queue, where you read, edit or delete it. Failures already
+   * sent for this head, by automatic routing or an earlier click, are left out.
+   */
+  async sendChecks(taskId: string, headSha: string): Promise<SendChecksResult> {
+    if (this.checking.has(taskId) || this.delivering.has(taskId)) throw new Error("checks.busy");
+    this.checking.add(taskId);
+    try {
+      const detail = this.deps.tasks().get(taskId);
+      const row = this.row(taskId);
+      if (!row || (row.state !== "open" && row.state !== "draft")) throw new Error("checks.no_pull");
+      const owner = ownerRun(detail);
+      if (!owner || detail.cancelledAt) throw new Error("checks.no_owner");
+      const ref = this.deps.service.repoRef(detail.projectId);
+      if (!ref) throw new Error("pull.no_github");
+      const base = `/repos/${ref.owner}/${ref.repo}`;
+      // The PR head now, not the cached one: a push since the last refresh makes these failures old.
+      const pr = await this.deps.client.get<RestPull>(`${base}/pulls/${row.number}`);
+      if (pr.data.head.sha !== headSha) throw new Error("checks.moved");
+      const [runs, statuses] = await Promise.all([
+        this.deps.client.get<{ check_runs: RestCheckRun[] }>(`${base}/commits/${headSha}/check-runs?per_page=100`),
+        this.deps.client.get<Array<{ context: string; state: string; target_url?: string | null }>>(`${base}/commits/${headSha}/statuses?per_page=100`),
+      ]);
+      const failedRuns = (runs.data.check_runs ?? []).filter((r) => r.status === "completed" && !PASSING.has(r.conclusion ?? ""));
+      const latest = new Map<string, { state: string; url: string | null }>();
+      for (const st of statuses.data ?? []) if (!latest.has(st.context)) latest.set(st.context, { state: st.state, url: st.target_url ?? null });
+      const failedStatuses = [...latest].filter(([, v]) => v.state === "failure" || v.state === "error").map(([context, v]) => ({ context, url: v.url }));
+      if (failedRuns.length + failedStatuses.length === 0) throw new Error("checks.none_failing");
+      const unsent = unsentChecks(headSha, failedRuns, failedStatuses.map((s) => s.context), this.sentChecks(taskId));
+      const todo = { runs: failedRuns.filter((r) => unsent.runs.some((u) => u.id === r.id)), statuses: failedStatuses.filter((s) => unsent.statuses.includes(s.context)) };
+      if (todo.runs.length + todo.statuses.length === 0) throw new Error("checks.all_sent");
+
+      const items: CheckItem[] = [];
+      let tails = 0;
+      for (const run of todo.runs) {
+        const actions = run.app?.slug === "github-actions";
+        const item: CheckItem = { name: run.name, url: run.html_url ?? null, job: null, failedSteps: [], lines: null, actions };
+        // An Actions check run id is its job id; the same per-PR cap as automatic routing.
+        if (actions && tails < LOG_TAILS) {
+          tails++;
+          try {
+            const job = await this.deps.client.get<RestJob>(`${base}/actions/jobs/${run.id}`);
+            item.job = job.data.name ?? null;
+            item.url = job.data.html_url ?? item.url;
+            item.failedSteps = (job.data.steps ?? []).filter((s) => s.conclusion !== null && !PASSING.has(s.conclusion)).map((s) => s.name);
+            item.lines = failedStepLines(await this.deps.client.text(`${base}/actions/jobs/${run.id}/logs`));
+          } catch {
+            // the name and the link still say which job failed
+          }
+        }
+        items.push(item);
+      }
+      for (const st of todo.statuses) items.push({ name: st.context, url: st.url, job: null, failedSteps: [], lines: null, actions: false });
+
+      const queued = this.deps.tasks().enqueue(owner.id, checksMessage({ number: row.number, url: row.url, head: row.head }, headSha, items));
+      const now = this.iso();
+      const upsert = this.db.prepare(
+        `insert into pull_feedback (id, task_id, dedupe_key, kind, source, excerpt, url, path, line, observed_at, state, run_id, sent_at)
+         values (?, ?, ?, 'check', ?, ?, ?, null, null, ?, 'sent', ?, ?)
+         on conflict(task_id, dedupe_key) do update set state = 'sent', excerpt = excluded.excerpt, url = excluded.url, run_id = excluded.run_id, sent_at = excluded.sent_at`,
+      );
+      todo.runs.forEach((run, i) => {
+        const it = items[i]!;
+        const key = feedbackKey.check(headSha, run.name);
+        upsert.run(randomUUID(), taskId, key, run.name, (it.lines ?? []).slice(-12).join("\n"), it.url, now, queued.run.id, now);
+        this.recordRun(taskId, key, run.id);
+      });
+      for (const st of todo.statuses) upsert.run(randomUUID(), taskId, feedbackKey.status(headSha, st.context), st.context, "", st.url, now, queued.run.id, now);
+      this.deps.store.appendEvent({ kind: "github.checks_queued", source: "github", payload: { number: row.number, headSha, checks: items.length, logs: tails }, projectId: detail.projectId, taskId });
+      this.deps.emit("github.changed", { projectId: detail.projectId });
+      return { checks: items.length, skipped: failedRuns.length + failedStatuses.length - items.length, runId: queued.run.id, messageId: queued.messageId };
+    } finally {
+      this.checking.delete(taskId);
+    }
+  }
+
+  /**
+   * A finished owning step takes its queue only when it runs again; this is that click. An
+   * unfinished one takes it at its next turn boundary on its own, so it is refused here.
+   */
+  async continueQueued(taskId: string): Promise<{ runId: string }> {
+    if (this.sending.has(taskId)) throw new Error("feedback.busy");
+    this.sending.add(taskId);
+    try {
+      const detail = this.deps.tasks().get(taskId);
+      const owner = detail.cancelledAt ? null : ownerRun(detail);
+      if (!owner) throw new Error("checks.no_owner");
+      if (owner.endReason !== "completed") throw new Error("checks.not_finished");
+      if (owner.queue.length === 0) throw new Error("checks.nothing_queued");
+      // An empty text: the new run's prompt is the queue itself (the orchestrator adds it on launch).
+      const view = await this.deps.tasks().followUp(owner.id, "");
+      this.deps.emit("github.changed", { projectId: detail.projectId });
+      return { runId: view.id };
+    } finally {
+      this.sending.delete(taskId);
+    }
+  }
+
+  /** The check run a check item stands for now; a re-run sent by hand replaces it. */
+  private recordRun(taskId: string, key: string, checkRunId: number): void {
+    const row = this.db.prepare("select id from pull_feedback where task_id = ? and dedupe_key = ?").get(taskId, key) as { id: string } | undefined;
+    if (row) this.db.prepare("insert into pull_feedback_runs (feedback_id, check_run_id) values (?, ?) on conflict(feedback_id) do update set check_run_id = excluded.check_run_id").run(row.id, checkRunId);
+  }
+
   private markSent(items: FeedbackRow[], runId: string): void {
     const now = this.iso();
     const stmt = this.db.prepare("update pull_feedback set state = 'sent', run_id = ?, sent_at = ? where id = ?");
@@ -494,6 +635,8 @@ export class PrFlow {
   private async route(projectId: string, ref: RepoRef, pulls: PullsResult): Promise<void> {
     const rows = this.db.prepare("select * from task_pulls where project_id = ? and state in ('open', 'draft')").all(projectId) as unknown as PullRow[];
     for (const row of rows) {
+      // A manual send is collecting this task's checks; the next refresh routes what it left.
+      if (this.checking.has(row.task_id)) continue;
       const seen = new Set((this.db.prepare("select dedupe_key from pull_feedback where task_id = ?").all(row.task_id) as Array<{ dedupe_key: string }>).map((r) => r.dedupe_key));
       const live = pulls.pulls.find((p) => p.number === row.number);
       const drafts: FeedbackDraft[] = [];
@@ -508,9 +651,15 @@ export class PrFlow {
       const ids = fresh.map((d) => {
         const id = randomUUID();
         insert.run(id, row.task_id, d.key, d.kind, d.source, d.excerpt, d.url, d.path, d.line, now);
+        if (d.checkRunId !== undefined) this.recordRun(row.task_id, d.key, d.checkRunId);
         return id;
       });
-      await this.deliver(row, ids);
+      this.delivering.add(row.task_id);
+      try {
+        await this.deliver(row, ids);
+      } finally {
+        this.delivering.delete(row.task_id);
+      }
     }
   }
 
@@ -554,7 +703,7 @@ export class PrFlow {
             // the summary alone still says which job failed
           }
         }
-        out.push({ key, kind: "check", source: run.name, excerpt: parts.join("\n"), url: run.html_url ?? null, path: null, line: null });
+        out.push({ key, kind: "check", source: run.name, excerpt: parts.join("\n"), url: run.html_url ?? null, path: null, line: null, checkRunId: run.id });
       }
       const statuses = await this.deps.client.get<Array<{ context: string; state: string; description?: string | null; target_url?: string | null }>>(`${base}/commits/${sha}/statuses?per_page=100`);
       const latest = new Set<string>();

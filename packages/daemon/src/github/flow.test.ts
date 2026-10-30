@@ -37,6 +37,7 @@ function github() {
   const s = {
     pulls: [] as Array<Record<string, unknown>>,
     checks: [] as Array<Record<string, unknown>>,
+    statuses: [] as Array<Record<string, unknown>>,
     comments: [] as Array<Record<string, unknown>>,
     reviews: [] as Array<Record<string, unknown>>,
     threads: [] as Array<{ isResolved: boolean; isOutdated: boolean; comments: { nodes: Array<{ databaseId: number }> } }>,
@@ -69,7 +70,7 @@ function github() {
     if (path.startsWith("/repos/octo/app/pulls?state=open")) return json(s.pulls.filter((p) => !p.merged_at));
     if (path.startsWith("/repos/octo/app/pulls?state=closed")) return json(s.pulls.filter((p) => p.merged_at));
     if (/\/commits\/[^/]+\/check-runs/.test(path)) return json({ check_runs: s.checks });
-    if (/\/commits\/[^/]+\/statuses/.test(path)) return json([]);
+    if (/\/commits\/[^/]+\/statuses/.test(path)) return json(s.statuses);
     if (path.startsWith("/repos/octo/app/compare/")) return json({ ahead_by: 1, behind_by: s.behind });
     if (path === "/repos/octo/app/pulls/41") {
       const pr = s.pulls.find((p) => p.number === 41);
@@ -77,6 +78,8 @@ function github() {
     }
     if (path.startsWith("/repos/octo/app/pulls/41/comments")) return json(s.comments);
     if (path.startsWith("/repos/octo/app/pulls/41/reviews")) return json(s.reviews);
+    const job = /^\/repos\/octo\/app\/actions\/jobs\/(\d+)$/.exec(path);
+    if (job) return json({ name: `job ${job[1]}`, html_url: `https://github.com/octo/app/actions/runs/1/job/${job[1]}`, steps: [{ name: "Set up job", number: 1, conclusion: "success" }, { name: "Run pnpm test", number: 2, conclusion: "failure" }] });
     if (/^\/repos\/octo\/app\/actions\/jobs\/\d+\/logs$/.test(path)) return new Response("2026-10-30T10:00:00.0000000Z FAIL src/limiter.test.ts\n2026-10-30T10:00:01.0000000Z expected 200 to be 429\n", { status: 200 });
     return json({ message: "Not Found" }, 404);
   };
@@ -305,5 +308,89 @@ describe("task PR flow", () => {
     gh.s.checks = [{ id: 100, name: "test", status: "completed", conclusion: "success" }];
     await expect(svc.merge(project.id, 41, "abc")).rejects.toThrow(/questions/);
     expect(gh.seen.some((x) => x.startsWith("PUT"))).toBe(false);
+  });
+
+  it("queues failing checks for the owning step on your click, never sends them, and never repeats what was already sent", async () => {
+    const { project, o, adapter, gh, svc, flow, store } = await setup();
+    const proposed = await o.propose({ projectId: project.id, title: "Implement rate limiting for the login endpoint", description: "" });
+    await o.approve({ taskId: proposed.id });
+    await waitFor(() => o.get(proposed.id).status === "review");
+    const detail = o.get(proposed.id);
+    const wt = detail.worktree!;
+    const impl = detail.runs.find((r) => r.role === "implementer")!;
+    const queued = () => o.get(proposed.id).runs.find((r) => r.id === impl.id)!.queue;
+
+    // Before GitHub was read: no PR, so the control is off with its reason.
+    expect((await flow.view(proposed.id)).sendChecks).toEqual({ ok: false, reason: "no_pull" });
+
+    gh.s.pulls = [{ number: 41, title: "x", html_url: "https://github.com/octo/app/pull/41", user: { login: "me" }, head: { ref: wt.branch, sha: "abc" }, base: { ref: "main" } }];
+    gh.s.checks = [{ id: 100, name: "test", status: "completed", conclusion: "success", app: { slug: "github-actions" } }];
+    await svc.refresh(project.id);
+    expect((await flow.view(proposed.id)).sendChecks).toEqual({ ok: false, reason: "none_failing" });
+    await expect(flow.sendChecks(proposed.id, "abc")).rejects.toThrow("checks.none_failing");
+
+    gh.s.checks = [
+      { id: 99, name: "test", status: "completed", conclusion: "failure", html_url: "https://github.com/octo/app/runs/99", app: { slug: "github-actions" } },
+      { id: 98, name: "lint", status: "completed", conclusion: "failure", app: { slug: "github-actions" } },
+      { id: 97, name: "sonar", status: "completed", conclusion: "failure", html_url: "https://sonar.example/97", app: { slug: "sonarcloud" } },
+    ];
+    gh.s.statuses = [{ context: "codecov/patch", state: "failure", target_url: "https://codecov.io/x" }];
+    // Automatic routing found them first; the implementer had finished, so they wait as held.
+    flow.setRouting(project.id, true);
+    await svc.refresh(project.id);
+    expect((await flow.view(proposed.id)).feedback.filter((f) => f.kind === "check").map((f) => f.state)).toEqual(["held", "held", "held", "held"]);
+    // Pretend routing already delivered "lint" before check run ids were kept.
+    store.db.prepare("update pull_feedback set state = 'sent', run_id = ?, sent_at = ? where source = 'lint'").run(impl.id, new Date().toISOString());
+    store.db.prepare("delete from pull_feedback_runs where feedback_id = (select id from pull_feedback where source = 'lint')").run();
+    expect((await flow.view(proposed.id)).sendChecks).toEqual({ ok: true, reason: null });
+
+    // The head moved since the view was read: nothing is queued.
+    await expect(flow.sendChecks(proposed.id, "0".repeat(40))).rejects.toThrow("checks.moved");
+    expect(queued()).toEqual([]);
+
+    const jobsBefore = gh.seen.filter((x) => /\/actions\/jobs\/\d+$/.test(x)).length;
+    const res = await flow.sendChecks(proposed.id, "abc");
+    expect(res).toMatchObject({ checks: 3, skipped: 1, runId: impl.id });
+    // Only the Actions job had its job and log read; the other app's check goes with its link.
+    expect(gh.seen.filter((x) => /\/actions\/jobs\/\d+$/.test(x)).length - jobsBefore).toBe(1);
+    const q = queued();
+    expect(q).toHaveLength(1);
+    expect(q[0]!.id).toBe(res.messageId);
+    expect(q[0]!.text).toContain('1. Check "test" failed.\n   Job: job 99\n   Failed step: Run pnpm test\n   Link: https://github.com/octo/app/actions/runs/1/job/99');
+    expect(q[0]!.text).toContain("expected 200 to be 429");
+    expect(q[0]!.text).toContain('2. Check "sonar" failed.\n   Link: https://sonar.example/97\n   Not a GitHub Actions check');
+    expect(q[0]!.text).toContain('3. Check "codecov/patch" failed.\n   Link: https://codecov.io/x');
+    expect(q[0]!.text).not.toContain('"lint"');
+    // Queued, not sent: no run started with it.
+    expect(adapter.started.some((s) => s.req.prompt.includes("Failing checks"))).toBe(false);
+
+    let view = await flow.view(proposed.id);
+    expect(view.feedback.filter((f) => f.kind === "check").every((f) => f.state === "sent")).toBe(true);
+    expect(view.sendChecks).toEqual({ ok: false, reason: "all_sent" });
+    await expect(flow.sendChecks(proposed.id, "abc")).rejects.toThrow("checks.all_sent");
+    // Automatic routing does not send them again either.
+    await svc.refresh(project.id);
+    expect(queued()).toHaveLength(1);
+    expect(await flow.sendHeld(proposed.id)).toBe(0);
+
+    // A re-run of "test" that fails again is a new check run: only it goes.
+    gh.s.checks = [{ ...gh.s.checks[0]!, id: 101 }, gh.s.checks[1]!, gh.s.checks[2]!];
+    await svc.refresh(project.id);
+    view = await flow.view(proposed.id);
+    expect(view.sendChecks.ok).toBe(true);
+    expect(await flow.sendChecks(proposed.id, "abc")).toMatchObject({ checks: 1, skipped: 3 });
+    expect(queued()).toHaveLength(2);
+    expect(queued()[1]!.text).toContain("job/101");
+
+    // The implementer had finished, so the queue goes only when you continue the step.
+    expect((await flow.view(proposed.id)).owner).toEqual({ runId: impl.id, role: "implementer", finished: true, queued: 2 });
+    const before = adapter.started.length;
+    const next = await flow.continueQueued(proposed.id);
+    const started = adapter.started[before]!;
+    expect(started.req.prompt).toContain("Failing checks on pull request #41");
+    expect(started.req.prompt).toContain("job/101");
+    await waitFor(() => o.get(proposed.id).status === "review");
+    expect(o.get(proposed.id).runs.find((r) => r.id === next.runId)?.queue).toEqual([]);
+    await expect(flow.continueQueued(proposed.id)).rejects.toThrow("checks.nothing_queued");
   });
 });

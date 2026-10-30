@@ -102,6 +102,7 @@ export function toMergeState(raw: string | null | undefined): MergeState {
 }
 
 export interface CheckRunLike {
+  id?: number;
   name: string;
   status: string;
   conclusion: string | null;
@@ -117,9 +118,12 @@ const PASSING = new Set(["success", "neutral", "skipped"]);
 /** One summary from check runs and legacy commit statuses. A re-run of a job replaces its earlier result. */
 export function summarizeChecks(runs: CheckRunLike[], statuses: StatusLike[]): ChecksSummary {
   const latest = new Map<string, "passed" | "failing" | "pending">();
+  const ids = new Map<string, number>();
   for (const r of runs) {
     const s = r.status !== "completed" ? "pending" : PASSING.has(r.conclusion ?? "") ? "passed" : "failing";
     latest.set(`run:${r.name}`, s);
+    if (r.id !== undefined) ids.set(r.name, r.id);
+    else ids.delete(r.name);
   }
   // The statuses API lists newest first; keep the first entry per context.
   for (const st of statuses) {
@@ -134,5 +138,10 @@ export function summarizeChecks(runs: CheckRunLike[], statuses: StatusLike[]): C
   const failing = count("failing");
   const pending = count("pending");
   const state = total === 0 ? "none" : failing > 0 ? "failing" : pending > 0 ? "pending" : "passed";
-  return { state, total, passed: count("passed"), failing, pending, failingNames };
+  const failingRuns = values.flatMap(([k, v]) => {
+    const name = k.slice(4);
+    const id = ids.get(name);
+    return v === "failing" && k.startsWith("run:") && id !== undefined ? [{ id, name }] : [];
+  });
+  return { state, total, passed: count("passed"), failing, pending, failingNames, failingRuns };
 }

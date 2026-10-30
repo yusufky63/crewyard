@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { run } from "@crewyard/proc";
 import { GithubClient, type FetchLike } from "./client.ts";
-import { GithubService } from "./service.ts";
+import { focusDue, GithubService } from "./service.ts";
 
 let root = "";
 let repo = "";
@@ -169,5 +169,47 @@ describe("background refresh", { timeout: 30_000 }, () => {
     await svc.backgroundTick();
     expect(seen.some((s) => s.startsWith("GET /repos/octo/app/pulls"))).toBe(true);
     expect(order).toEqual(["after:p", "github.changed"]);
+  });
+});
+
+describe("focus refresh", { timeout: 30_000 }, () => {
+  it("is due at first, then not again within 30 s", () => {
+    expect(focusDue(null, 1_000)).toBe(true);
+    expect(focusDue(1_000, 30_999)).toBe(false);
+    expect(focusDue(1_000, 31_000)).toBe(true);
+    // A clock that went back (sleep, time zone fix) never blocks focus refreshes for good.
+    expect(focusDue(50_000, 10_000)).toBe(true);
+  });
+
+  it("reads the watched projects once per focus, at most every 30 s", async () => {
+    const { fn, seen } = routes({
+      "/repos/octo/app": { private: true, default_branch: "main", owner: { type: "User" } },
+      "/repos/octo/app/pulls": [],
+    });
+    let now = 100_000;
+    const svc = new GithubService({
+      projectPath: () => repo,
+      emit: () => undefined,
+      client: new GithubClient(async () => "t", fn),
+      tokenState: () => "ok",
+      resetToken: () => undefined,
+      watched: () => ["p"],
+      now: () => now,
+    });
+    expect(await svc.focused(null)).toEqual(["p"]);
+    const reads = seen.length;
+    expect(reads).toBeGreaterThan(0);
+    now += 10_000;
+    expect(await svc.focused(null)).toEqual([]);
+    expect(seen).toHaveLength(reads);
+    now += 20_000;
+    expect(await svc.focused(null)).toEqual(["p"]);
+  });
+
+  it("skips a project on screen without open PRs and reads nothing when no task is in review", async () => {
+    const { fn, seen } = routes({ "/repos/octo/app/pulls": [] });
+    const svc = new GithubService({ projectPath: () => repo, emit: () => undefined, client: new GithubClient(async () => "t", fn), tokenState: () => "ok", resetToken: () => undefined, watched: () => [] });
+    expect(await svc.focused("p")).toEqual([]);
+    expect(seen).toEqual([]);
   });
 });
