@@ -50,3 +50,41 @@
 .limits .lim-bucket-name { color: var(--ink-3); }
 .limits .lim-idle-next { margin-top: 8px; }
 .limits .lim-endpoints { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+
+/* Usage (A17): totals, a segmented bar with its legend and the ledger. Full width under the panels. */
+.limits .us { margin-top: 16px; }
+.limits .us-head { flex-wrap: wrap; row-gap: 8px; }
+.limits .us-sub { color: var(--ink-3); }
+.limits .us-export { display: flex; gap: 8px; }
+.limits .us-pad { padding: 12px 16px; font-size: 13px; }
+.limits .us-saved { padding: 8px 16px 0; font-size: 12px; overflow-wrap: anywhere; }
+.limits .us-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; padding: 16px; }
+.limits .us-tile { padding: 12px; display: grid; gap: 6px; align-content: start; min-width: 0; }
+.limits .us-val { font: 500 22px / 1.1 var(--mono); }
+.limits .us-tile-foot { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 11.5px; }
+.limits .us-controls { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 16px; }
+.limits .us-controls .seg button:disabled { opacity: 0.45; cursor: not-allowed; }
+.limits .us-bar { padding: 16px 16px 4px; }
+.limits .us-legend { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+.limits .us-legend .k { min-width: 0; }
+.limits .us-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.limits .us-table-wrap { padding: 8px 16px 0; overflow-x: auto; }
+.limits .us-table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
+.limits .us-table th, .limits .us-table td { padding: 0 8px; height: calc(var(--ctl) + 4px); border-top: 1px solid var(--line); text-align: left; font-weight: 400; }
+.limits .us-table thead th { font: 500 11px / 1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); border-top: 0; height: 30px; }
+.limits .us-table th:first-child, .limits .us-table td:first-child { padding-left: 0; width: 34%; }
+.limits .us-table .num { text-align: right; font-family: var(--mono); font-size: 12px; white-space: nowrap; }
+.limits .us-table .us-c-share { width: 22%; }
+.limits .us-table .us-c-src { width: 104px; }
+.limits .us-table tr.quiet { color: var(--ink-3); }
+.limits .us-name { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.limits .us-usd { display: inline-flex; align-items: center; gap: 6px; }
+.limits .us-note { padding: 12px 16px 16px; }
+
+/* Narrow main view (960 px window, inspector open, or 200% scaling): drop the bar column first, then cache. */
+@media (max-width: 1180px) {
+  .limits .us-table .us-c-share { display: none; }
+}
+@media (max-width: 1000px) {
+  .limits .us-table .us-c-src { display: none; }
+}

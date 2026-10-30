@@ -1,4 +1,4 @@
-import { readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { app, BrowserWindow, dialog, ipcMain, Notification, shell, type MessageBoxOptions } from "electron";
 import { inQuietHours, type IpcMethod, type IpcParams, type IpcResult, type NotificationSettings } from "@crewyard/core";
@@ -276,6 +276,21 @@ ipcMain.handle("crewyard:pick-database", async (_e, mode: unknown, defaultName: 
   if (mode !== "open") return null;
   const res = await dialog.showOpenDialog({ title: t()("dialog.restoreTitle"), properties: ["openFile"], filters });
   return res.canceled ? null : (res.filePaths[0] ?? null);
+});
+/** Usage exports (Limits & usage): the renderer builds the text, only a path you picked is written. */
+const EXPORT_MAX = 64 * 1024 * 1024;
+ipcMain.handle("crewyard:save-export", async (_e, kind: unknown, defaultName: unknown, content: unknown) => {
+  if ((kind !== "csv" && kind !== "json") || typeof content !== "string" || content.length > EXPORT_MAX) return null;
+  const name = typeof defaultName === "string" && /^[\w .-]{1,80}$/.test(defaultName) ? `${defaultName}.${kind}` : `crewyard-usage.${kind}`;
+  const filters = [{ name: t()(kind === "csv" ? "dialog.csvFilter" : "dialog.jsonFilter"), extensions: [kind] }];
+  const res = await dialog.showSaveDialog({ title: t()("dialog.usageTitle"), defaultPath: join(app.getPath("documents"), name), filters });
+  if (res.canceled || !res.filePath) return null;
+  // Written beside the target and renamed, so a failed write never leaves half a file.
+  const tmp = `${res.filePath}.${process.pid}.tmp`;
+  // Excel reads a CSV as UTF-8 only when it starts with a byte order mark.
+  writeFileSync(tmp, kind === "csv" ? `﻿${content}` : content, "utf8");
+  renameSync(tmp, res.filePath);
+  return res.filePath;
 });
 ipcMain.handle("crewyard:startup", (): StartupState => readStartup(desktop));
 ipcMain.handle("crewyard:set-startup", (_e, next: unknown): StartupState => {

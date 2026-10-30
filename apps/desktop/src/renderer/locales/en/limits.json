@@ -133,5 +133,60 @@
     },
     "meta": "{{provenance}} · resets {{time}}",
     "capMeta": "{{provenance}} · cap {{cap}}"
+  },
+  "usage": {
+    "title": "Usage",
+    "sub": "{{range}} · tokens as runners reported them",
+    "exportCsv": "Export CSV",
+    "exportJson": "Export JSON",
+    "saved": "Saved to {{path}}",
+    "saveFailed": "Could not save the export: {{error}}",
+    "loadFailed": "Usage could not be read from the daemon.",
+    "empty": "No tokens in this range yet. Runs add to this view as they report usage.",
+    "spend": "Spend on keys",
+    "spendNote": "per-token keys only",
+    "noKeySpend": "No pay-as-you-go key was used in this range",
+    "tokensIn": "Tokens in",
+    "tokensOut": "Tokens out",
+    "cacheRead": "Cache reads",
+    "cachePartial": "some runs did not report it",
+    "unbilled": "Plan and local tokens",
+    "unbilledNote": "never shown as dollars",
+    "byLabel": "Group by",
+    "by": {
+      "day": "By day",
+      "model": "By model",
+      "provider": "By provider",
+      "task": "By task"
+    },
+    "metricLabel": "Measure",
+    "metric": {
+      "tokens": "Tokens",
+      "usd": "Dollars"
+    },
+    "barAria": "{{metric}} {{by}}: {{parts}}",
+    "shareAria": "{{name}}: {{value}}, {{pct}} percent of the range",
+    "caption": "Usage {{by}}, {{range}}",
+    "col": {
+      "day": "Day",
+      "model": "Model",
+      "provider": "Provider",
+      "task": "Task",
+      "share": "Share",
+      "in": "In",
+      "out": "Out",
+      "cache": "Cache",
+      "source": "Source",
+      "usd": "Dollars"
+    },
+    "other": "Other",
+    "noModel": "Model not reported",
+    "noTask": "No task",
+    "unknown": "Unknown",
+    "noDollars": "Plan",
+    "noDollarsHint": "Subscription plans, coding plans, local models and unpriced models have no per-token bill",
+    "showAll": "Show all {{count}}",
+    "showFewer": "Show fewer",
+    "note": "{{tokens}} tokens in and out. Dollars are the spend ledger of per-token keys: Estimated from the catalog price table, Reported when the provider billed them. Cache reads are counted apart from input."
   }
 }

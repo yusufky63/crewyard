@@ -9,6 +9,7 @@ import { useProvidersQuery as useDaemon } from "../providers/data.ts";
 import { providerColor, ProvBadge, RUNNER_COLOR, useMoney, useProvidersLive, useWhen } from "../providers/shared.tsx";
 import { SignInBadge, SignInControl, useSignIn } from "../providers/SignIn.tsx";
 import "../providers/providers.css";
+import { UsagePanel } from "./Usage.tsx";
 import "./limits.css";
 
 const RANGES = [1, 7, 30] as const;
@@ -549,6 +550,7 @@ export function LimitsScreen() {
           <AlertsPanel />
         </div>
       </div>
+      <UsagePanel days={days} providers={providers} />
     </section>
   );
 }

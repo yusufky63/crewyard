@@ -133,5 +133,60 @@
     },
     "meta": "{{provenance}} · {{time}} sıfırlanır",
     "capMeta": "{{provenance}} · sınır {{cap}}"
+  },
+  "usage": {
+    "title": "Kullanım",
+    "sub": "{{range}} · token sayıları çalıştırıcıların bildirdiği gibi",
+    "exportCsv": "CSV olarak aktar",
+    "exportJson": "JSON olarak aktar",
+    "saved": "{{path}} konumuna kaydedildi",
+    "saveFailed": "Dışa aktarma kaydedilemedi: {{error}}",
+    "loadFailed": "Kullanım bilgisi arka plan hizmetinden okunamadı.",
+    "empty": "Bu aralıkta henüz token yok. Çalışmalar kullanım bildirdikçe burada görünür.",
+    "spend": "Anahtar harcaması",
+    "spendNote": "yalnızca token başına ücretli anahtarlar",
+    "noKeySpend": "Bu aralıkta kullandıkça öde anahtarı kullanılmadı",
+    "tokensIn": "Girdi tokenı",
+    "tokensOut": "Çıktı tokenı",
+    "cacheRead": "Önbellekten okunan",
+    "cachePartial": "bazı çalışmalar bildirmedi",
+    "unbilled": "Plan ve yerel token",
+    "unbilledNote": "hiçbir zaman dolar olarak gösterilmez",
+    "byLabel": "Gruplama",
+    "by": {
+      "day": "Güne göre",
+      "model": "Modele göre",
+      "provider": "Sağlayıcıya göre",
+      "task": "Göreve göre"
+    },
+    "metricLabel": "Ölçü",
+    "metric": {
+      "tokens": "Token",
+      "usd": "Dolar"
+    },
+    "barAria": "{{by}} {{metric}}: {{parts}}",
+    "shareAria": "{{name}}: {{value}}, aralığın yüzde {{pct}} kadarı",
+    "caption": "{{range}} için {{by}} kullanım",
+    "col": {
+      "day": "Gün",
+      "model": "Model",
+      "provider": "Sağlayıcı",
+      "task": "Görev",
+      "share": "Pay",
+      "in": "Girdi",
+      "out": "Çıktı",
+      "cache": "Önbellek",
+      "source": "Kaynak",
+      "usd": "Dolar"
+    },
+    "other": "Diğer",
+    "noModel": "Model bildirilmedi",
+    "noTask": "Görevsiz",
+    "unknown": "Bilinmiyor",
+    "noDollars": "Plan",
+    "noDollarsHint": "Abonelik planları, kodlama planları, yerel modeller ve fiyatı bilinmeyen modeller token başına faturalanmaz",
+    "showAll": "{{count}} satırın hepsini göster",
+    "showFewer": "Daha az göster",
+    "note": "Toplam {{tokens}} girdi ve çıktı tokenı. Dolarlar token başına ücretli anahtarların harcama defterinden gelir: katalog fiyat tablosuyla hesaplananlar Tahmini, sağlayıcının faturaladıkları Bildirilen olarak işaretlenir. Önbellekten okunanlar girdiden ayrı sayılır."
   }
 }

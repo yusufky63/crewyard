@@ -48,6 +48,8 @@ export interface CrewyardApi {
   setStartup(next: { openAtLogin: boolean; hidden: boolean }): Promise<StartupState>;
   /** Native file dialog for a database file; "save" asks before overwriting. */
   pickDatabase(mode: "open" | "save", defaultName?: string): Promise<string | null>;
+  /** Save dialog for a usage export; resolves to the written path, or null when cancelled. */
+  saveExport(kind: "csv" | "json", defaultName: string, content: string): Promise<string | null>;
   /** Shows a file or folder in Explorer. Only paths inside the Crewyard profile are honoured. */
   revealPath(path: string): void;
   /** Keeps the tray, toasts and dialogs in the language the renderer shows. */
