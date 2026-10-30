@@ -25,4 +25,10 @@ export default tseslint.config(
     files: ["**/*.mjs", "**/*.js"],
     rules: { "@typescript-eslint/consistent-type-imports": "off" },
   },
+  // electron-builder loads its config and signing hook as CommonJS (apps/desktop/scripts/*.cjs).
+  {
+    files: ["**/*.cjs"],
+    languageOptions: { sourceType: "commonjs" },
+    rules: { "@typescript-eslint/consistent-type-imports": "off", "@typescript-eslint/no-require-imports": "off" },
+  },
 );
