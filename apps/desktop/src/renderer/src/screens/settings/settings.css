@@ -5,9 +5,11 @@
 .settings .st-index-item { display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 10px; color: var(--ink-2); font-size: 14px; text-align: left; border: 1px solid transparent; }
 .settings .st-index-item:hover { background: var(--raised); color: var(--ink); }
 .settings .st-index-item[aria-current] { background: var(--raised); color: var(--ink); border-color: var(--line); }
-.settings .st-sections { display: grid; gap: 16px; min-width: 0; }
+/* minmax(0, 1fr) tracks down to .st-list: an `auto` track grows to its widest item's min-content, so one
+   long project path in a nowrap row widened every section and scrolled the screen sideways at 1280 px. */
+.settings .st-sections { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; min-width: 0; }
 .settings .st-section { scroll-margin-top: 16px; }
-.settings .st-body { padding: 8px 16px 16px; display: grid; }
+.settings .st-body { padding: 8px 16px 16px; display: grid; grid-template-columns: minmax(0, 1fr); }
 
 .settings .st-row { display: flex; align-items: center; gap: 16px; min-height: var(--density-row); padding: 10px 0; border-top: 1px solid var(--line); }
 .settings .st-body > .st-row:first-child { border-top: 0; }
@@ -28,7 +30,7 @@
 .settings .st-number .pv-input { width: 84px; text-align: right; }
 .settings .st-number .pv-input[aria-invalid="true"] { border-color: var(--bad); }
 
-.settings .st-list { display: grid; border: 1px solid var(--line); margin: 0 0 10px; }
+.settings .st-list { display: grid; grid-template-columns: minmax(0, 1fr); border: 1px solid var(--line); margin: 0 0 10px; }
 .settings .st-list:empty { display: none; }
 .settings .st-list > .st-note { padding: 10px 12px; }
 .settings .st-item { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 6px 12px; border-top: 1px solid var(--line); font-size: 13px; }
