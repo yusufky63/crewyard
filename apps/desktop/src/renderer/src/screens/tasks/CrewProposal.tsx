@@ -1,5 +1,5 @@
 import { useState, type KeyboardEvent } from "react";
-import { ArrowRight, ClipboardList, Code, FileText, FlaskConical, Search, Shield, ShieldCheck } from "lucide-react";
+import { AlertTriangle, ArrowRight, ClipboardList, Code, FileText, FlaskConical, Search, Shield, ShieldCheck } from "lucide-react";
 import type { CandidateView, CrewEdit, CrewMemberView, FallbackMode, RoleId, TaskDetail } from "@crewyard/core";
 import { Button, Label, TickMeter } from "@crewyard/ui";
 import { ProvBadge } from "../providers/shared.tsx";
@@ -24,7 +24,9 @@ function RoleTile({ index, member, chosen, budget, hideReasons, onSwap }: { inde
   const f = useFormat();
   const Icon = ROLE_ICON[member.role];
   const options = [member.chosen, ...member.standby].filter((c): c is CandidateView => Boolean(c));
-  const why = chosen?.reasons[0] ?? member.reasons[0];
+  // A pin the proposal could not keep is said out loud, never swapped silently.
+  const dropped = member.reasons.find((r) => r.code === "pin.dropped");
+  const why = chosen?.reasons[0] ?? member.reasons.find((r) => r !== dropped);
   const name = f.role(member.role);
   return (
     <div className="spec tk-role">
@@ -42,6 +44,12 @@ function RoleTile({ index, member, chosen, budget, hideReasons, onSwap }: { inde
         </>
       ) : (
         <div className="st st-wait">{f.t("proposal.noAccount")}</div>
+      )}
+      {dropped && (
+        <div className="tk-pin-dropped" role="note">
+          <AlertTriangle size={13} strokeWidth={1.75} aria-hidden="true" />
+          <span>{f.t(`pinDropped.${dropped.params?.cause ?? "unavailable"}`, { alias: dropped.params?.alias ?? "", defaultValue: f.reason(dropped) })}</span>
+        </div>
       )}
       {!hideReasons && why && <div className="tk-why">{f.reason(why)}</div>}
       {chosen && (

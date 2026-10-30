@@ -48,11 +48,11 @@ import { Bootstrapper } from "../worktrees/bootstrap.ts";
 import { admit, DEFAULT_LIMITS, type AdmissionLimits } from "./admission.ts";
 import { AdapterRegistry } from "./adapters.ts";
 import { classifyTask } from "./classify.ts";
-import { eligible, estimateFor, MIN_HEADROOM, modelKey, proposeCrew, rankForRole, sameModel, scoreCandidate, sumEstimates, type ScoringContext } from "./crew.ts";
+import { eligible, estimateFor, MIN_HEADROOM, modelKey, proposeCrew, rankForRole, readOnlyConflict, sameModel, scoreCandidate, sumEstimates, type ScoringContext } from "./crew.ts";
 import { OrchestratorDb, type MemberRow, type ProjectRow, type RequestRow, type RunRow, type TaskRow, type WorktreeRow } from "./db.ts";
 import { EMPTY_DIRECTORY, type Candidate, type ProfileDirectory } from "./directory.ts";
-import { errorCode, OrchestratorError } from "./errors.ts";
-import { classifyFailure, RETRY, retryDelayMs, type Failure } from "./failures.ts";
+import { errorCode, errorDetail, OrchestratorError, redactDetail } from "./errors.ts";
+import { classifyFailure, RETRY, retryDelayMs, type Failure, type FailureClass } from "./failures.ts";
 import { checkpoint, defaultWorktreeRoot, diffStat, ensureWorktree, headSha, taskSlug, writeFileAtomic } from "./git.ts";
 import { applyResult, outputSchemaFor } from "./results.ts";
 import { LimitMonitor } from "./limits.ts";
@@ -99,7 +99,7 @@ interface Live {
 
 type ProposeParams = TasksIpc["tasks.propose"]["params"];
 type Ended = { reason: EndReason; detail: string | null };
-type HandoffInfo = { trigger: HandoffTrigger | "unpriced"; window: LimitWindow | null; resetsAt: string | null; cap?: SpendCap | null; unpriced?: UnpricedSpend | null };
+type HandoffInfo = { trigger: HandoffTrigger | "unpriced"; window: LimitWindow | null; resetsAt: string | null; cap?: SpendCap | null; unpriced?: UnpricedSpend | null; failure?: FailureClass };
 type LaunchSpec = {
   /** Set when the caller must record something about the run before it can fail (a retry). */
   runId?: string;
@@ -311,13 +311,14 @@ export class Orchestrator {
     const members = this.db.members(crew.id);
     const views = new Map(members.map((m) => [m.id, m.chosen ? (JSON.parse(m.chosen) as CandidateView) : null]));
 
+    const candidates = await this.candidates(project);
     if (p.edits?.length) {
-      const candidates = await this.candidates(project);
       const ctx = this.scoring(project.id, task.size, task.budget_usd);
       for (const edit of p.edits) {
         const m = members.find((x) => x.id === edit.memberId);
         if (!m) throw new OrchestratorError("crew.member_not_found", { memberId: edit.memberId });
         const c = candidates.find((x) => x.profile.id === edit.profileId);
+        if (c && readOnlyConflict(c, m.role)) throw new OrchestratorError("crew.read_only_profile", { profileId: c.profile.id, role: m.role });
         if (!c || !eligible(c, m.role, ctx)) throw new OrchestratorError("crew.unknown_profile", { profileId: edit.profileId });
         const v = scoreCandidate(c, m.role, ctx);
         if (edit.model) v.model = edit.model;
@@ -328,6 +329,9 @@ export class Orchestrator {
     for (const m of members) {
       const v = views.get(m.id);
       if (!v) throw new OrchestratorError("crew.missing_profile", { role: m.role });
+      // Checked for every member, not only edited ones: the profile may have been marked read-only after the proposal.
+      const c = candidates.find((x) => x.profile.id === v.profileId);
+      if (c && readOnlyConflict(c, m.role)) throw new OrchestratorError("crew.read_only_profile", { profileId: c.profile.id, role: m.role });
       for (const other of ROLES[m.role].independentOf) {
         const o = members.find((x) => x.role === other);
         const ov = o ? views.get(o.id) : null;
@@ -412,8 +416,7 @@ export class Orchestrator {
       this.emitTask(run.task_id, "run_resumed");
       return this.db.runView(this.db.run(runId));
     }
-    const superseded = this.db.runs(task.id).some((r) => r.resumed_from === run.id);
-    if (superseded || !["interrupted", "stopped", "failed"].includes(run.end_reason ?? "")) throw new OrchestratorError("run.not_resumable");
+    if (this.superseded(run) || !["interrupted", "stopped", "failed"].includes(run.end_reason ?? "")) throw new OrchestratorError("run.not_resumable");
     const adapter = this.adapters.get(run.runner);
     if (!adapter?.capabilities.resume || !run.native_session_id) throw new OrchestratorError("run.resume_unsupported", { runner: run.runner });
     this.cancelAutoRetry(run.id);
@@ -730,7 +733,7 @@ export class Orchestrator {
 
     this.db.exec("update requests set answered_at = ?, answer = ?, answered_by = 'user' where id = ?", this.iso(), JSON.stringify(answer), q.id);
     this.emitRequest(q.id);
-    this.audit(q.task_id, q.run_id, "request.answered", { requestId: q.id, kind: answer.kind, ...(answer.kind === "approval" ? { decision: answer.decision, reason: Boolean(answer.message) } : {}) });
+    this.audit(q.task_id, q.run_id, "request.answered", { requestId: q.id, nativeId: q.native_id, by: "user", kind: answer.kind, ...(answer.kind === "approval" ? { decision: answer.decision, reason: Boolean(answer.message) } : {}) });
 
     if (live && run && q.native_id && (answer.kind === "approval" || answer.kind === "question" || answer.kind === "cancel")) {
       await this.safe(() => live.adapter.answer(live.handle, q.native_id!, toCoreAnswer(answer)));
@@ -951,7 +954,8 @@ export class Orchestrator {
     } catch (err) {
       this.held.delete(runId);
       this.confirming.delete(runId);
-      this.endRun(runId, "failed", errorCode(err));
+      // The reason stays with the run (redacted), so the UI can say why it never started.
+      this.endRun(runId, "failed", errorDetail(err, await this.secretsFor(target.profileId)));
     }
   }
 
@@ -1073,8 +1077,10 @@ export class Orchestrator {
       await this.onLimitReached(runId, { trigger: "limit", window: null, resetsAt: null });
       return;
     }
-    this.endRun(runId, ended.reason, ended.detail);
-    if (ended.reason === "failed") await this.onFailure(runId, ended.detail);
+    // Runners report provider errors as they got them; what we keep and show is redacted and bounded.
+    const detail = ended.detail === null ? null : redactDetail(ended.detail, await this.secretsFor(run.profile_id)) || null;
+    this.endRun(runId, ended.reason, detail);
+    if (ended.reason === "failed") await this.onFailure(runId, detail);
   }
 
   private endRun(runId: string, reason: EndReason, detail: string | null): void {
@@ -1221,12 +1227,15 @@ export class Orchestrator {
       answeredByPolicy ? "policy" : null,
     );
     this.emitRequest(id);
-    if (!answeredByPolicy) this.emitTask(taskId, "request");
+    // The timeline pairs this with the runner's request event, so a policy answer does not read as waiting.
+    if (answeredByPolicy) this.audit(taskId, runId, "request.answered", { requestId: id, nativeId, by: "policy", kind: answeredByPolicy.kind });
+    else this.emitTask(taskId, "request");
     return id;
   }
 
   private closeRequest(q: RequestRow, by: "system" | "policy"): void {
-    this.db.exec("update requests set answered_at = ?, answer = ?, answered_by = ? where id = ? and answered_at is null", this.iso(), JSON.stringify({ kind: "cancel" }), by, q.id);
+    const closed = this.db.db.prepare("update requests set answered_at = ?, answer = ?, answered_by = ? where id = ? and answered_at is null").run(this.iso(), JSON.stringify({ kind: "cancel" }), by, q.id);
+    if (Number(closed.changes) > 0) this.audit(q.task_id, q.run_id, "request.answered", { requestId: q.id, nativeId: q.native_id, by, kind: "cancel" });
     this.emitRequest(q.id);
   }
 
@@ -1311,9 +1320,9 @@ export class Orchestrator {
    * (a step's estimate before it starts) must fit too. Caps you approved for this run with
    * "continue" are skipped; plans and local models never spend, so only paid keys are held.
    */
-  private capFor(taskId: string, runId: string | null, candidate: Candidate | undefined, addUsd = 0): SpendCap | null {
+  private capFor(taskId: string, runId: string | null, candidate: Candidate | undefined, addUsd = 0, alsoApproved: Set<string> = new Set()): SpendCap | null {
     if (candidate?.profile.credential.kind !== "api_key") return null;
-    const approved = runId ? this.db.approvedCaps(runId) : new Set<string>();
+    const approved = new Set([...(runId ? this.approvalsFor(runId) : []), ...alsoApproved]);
     const db = this.opts.store.db;
     const caps = reachedCaps(db, spendCredential(candidate), taskId, this.now(), { addUsd, excludeRunId: runId });
     const task = this.db.task(taskId);
@@ -1343,6 +1352,29 @@ export class Orchestrator {
     return caps.length > 0 ? { model: model ?? candidate.model?.id ?? candidate.profile.defaultModel, caps } : null;
   }
 
+  /**
+   * Caps you approved for this run, plus a "continue" past the task's own budget given to the run
+   * a manual handoff ("Change AI") continues: that budget belongs to the step, and moving the step
+   * is your own click. Key caps stay with their key, and a resume or retry still asks again.
+   */
+  private approvalsFor(runId: string): Set<string> {
+    const out = this.db.approvedCaps(runId);
+    for (const k of this.stepApprovals(this.db.run(runId))) out.add(k);
+    return out;
+  }
+
+  private stepApprovals(run: RunRow): Set<string> {
+    const out = new Set<string>();
+    let r = run;
+    for (let guard = 0; guard < 50; guard++) {
+      const h = this.db.handoffInto(r.id);
+      if (h?.trigger_kind !== "manual") break;
+      r = this.db.run(h.from_run_id);
+      if (this.db.approvedCaps(r.id).has("task_budget")) out.add("task_budget");
+    }
+    return out;
+  }
+
   /** The run waits on an unanswered unknown-price request; only that answer lets it go on. */
   private unpricedOpen(runId: string): boolean {
     return this.db.openRequestsForRun(runId).some((q) => q.kind === "handoff" && (JSON.parse(q.payload) as Extract<RequestPayload, { kind: "handoff" }>).trigger === "unpriced");
@@ -1355,7 +1387,8 @@ export class Orchestrator {
    */
   private checkSeen(run: RunRow, seen: SessionSeen | undefined): void {
     if (!seen) return;
-    const next = this.db.runs(run.task_id).find((r) => r.resumed_from === run.id);
+    // A handoff target that failed never took the step over, so the source's own questions stay answerable.
+    const next = this.db.successor(run);
     if (next) throw new OrchestratorError("run.session_changed", { runId: next.id });
     if (seen.sessionId !== null && run.native_session_id !== seen.sessionId) throw new OrchestratorError("run.session_changed", { runId: run.id });
   }
@@ -1376,7 +1409,7 @@ export class Orchestrator {
   }
 
   private superseded(run: RunRow): boolean {
-    return this.db.runs(run.task_id).some((r) => r.resumed_from === run.id);
+    return this.db.successor(run) !== null;
   }
 
   /** Feeds a sample from outside a run (e.g. a provider balance poll) through the same rules. */
@@ -1424,9 +1457,15 @@ export class Orchestrator {
     this.audit(task.id, runId, "run.failure", { kind: failure.kind, status: failure.status, retryAfterMs: failure.retryAfterMs });
     if (failure.kind === "request_invalid") return;
     const mode = task.fallback === "wait_for_reset" ? "ask" : task.fallback;
+    // An empty prepaid balance is a spend stop, not a crash: no retry on the same key, and the
+    // handoff (per the task's mode) only offers keys that are not the one out of credit.
+    if (failure.kind === "credit") {
+      await this.offerHandoff(run, task, mode, { trigger: "limit", window: null, resetsAt: null, failure: "credit" }, "credit_depleted");
+      return;
+    }
     if (failure.kind === "transient") {
       // Never wait when the next step is another profile: Auto with a target switches now.
-      const switching = mode === "auto" && this.handoffsTaken(run) < MAX_AUTO_HANDOFFS && (await this.handoffCandidates(run, task)).length > 0;
+      const switching = mode === "auto" && this.handoffsTaken(run) < MAX_AUTO_HANDOFFS && (await this.handoffCandidates(run, task, { trigger: "crashed", failure: "transient" })).length > 0;
       const attempt = this.db.retryAttempt(run.id) + 1;
       const delay = !switching && attempt <= RETRY.max ? retryDelayMs(attempt, failure.retryAfterMs) : null;
       if (delay !== null) {
@@ -1434,7 +1473,7 @@ export class Orchestrator {
         return;
       }
     }
-    await this.offerHandoff(run, task, mode, { trigger: "crashed", window: null, resetsAt: null }, null);
+    await this.offerHandoff(run, task, mode, { trigger: "crashed", window: null, resetsAt: null, failure: failure.kind }, null);
   }
 
   private handoffsTaken(run: RunRow): number {
@@ -1482,7 +1521,7 @@ export class Orchestrator {
   }
 
   private async offerHandoff(run: RunRow, task: TaskRow, mode: FallbackMode, info: HandoffInfo, detail: string | null): Promise<void> {
-    const candidates = await this.handoffCandidates(run, task);
+    const candidates = await this.handoffCandidates(run, task, info);
     if (mode === "auto" && candidates[0] && this.handoffsTaken(run) < MAX_AUTO_HANDOFFS) {
       this.track(this.performHandoff(run.id, candidates[0], info.trigger === "unpriced" ? "budget" : info.trigger));
       return;
@@ -1503,9 +1542,11 @@ export class Orchestrator {
   /**
    * Preflight (PLAN.md §8.2 step 2): standby candidates that are ready, have an adapter, keep the
    * role's permissions and the independence rule, have more than 20% headroom (Unknown passes and
-   * says so) and fit the remaining budget.
+   * says so) and fit the remaining budget. After a crash, a profile on the model that just failed
+   * and a profile whose last run could not even start are skipped (both failed again in the live
+   * run); after a credit stop, so is every profile on the key that ran out.
    */
-  private async handoffCandidates(run: RunRow, task: TaskRow): Promise<CandidateView[]> {
+  private async handoffCandidates(run: RunRow, task: TaskRow, info?: Pick<HandoffInfo, "trigger" | "failure">): Promise<CandidateView[]> {
     const project = this.db.project(task.project_id);
     const member = this.db.member(run.member_id);
     const all = await this.candidates(project);
@@ -1515,9 +1556,15 @@ export class Orchestrator {
     const original = member.chosen ? (JSON.parse(member.chosen) as CandidateView).profileId : null;
     const order = [...chain, ...(original ? [original] : [])].filter((id, i, a) => a.indexOf(id) === i && id !== run.profile_id);
     const spent = this.db.spend(this.db.runs(task.id)).usd ?? 0;
+    const crashed = info?.trigger === "crashed" || info?.failure === "credit";
+    const failedModel = (run.model ?? `profile:${run.profile_id}`).toLowerCase();
+    const source = all.find((c) => c.profile.id === run.profile_id);
+    const emptyKey = info?.failure === "credit" && source ? spendCredential(source) : null;
+    const usable = (c: Candidate) =>
+      !(crashed && modelKey(c) === failedModel) && !(crashed && this.db.failedToStart(c.profile.id)) && !(emptyKey !== null && spendCredential(c) === emptyKey);
     return order
       .map((id) => all.find((c) => c.profile.id === id))
-      .filter((c): c is Candidate => c !== undefined && eligible(c, member.role, ctx) && !avoid.models.has(modelKey(c)))
+      .filter((c): c is Candidate => c !== undefined && eligible(c, member.role, ctx) && !avoid.models.has(modelKey(c)) && usable(c))
       // Budget left (PLAN.md §8.2 step 2): a key past its daily or task cap is no target.
       .filter((c) => reachedCaps(this.opts.store.db, spendCredential(c), task.id, this.now(), { excludeRunId: run.id }).length === 0)
       .map((c) => scoreCandidate(c, member.role, ctx, avoid))
@@ -1591,11 +1638,15 @@ export class Orchestrator {
     const c = (await this.candidates(project)).find((x) => x.profile.id === profileId);
     if (!c) throw new OrchestratorError("crew.unknown_profile", { profileId });
     if (!c.ready || !this.adapters.has(c.profile.runner)) throw new OrchestratorError("handoff.target_not_ready", { profileId });
+    if (readOnlyConflict(c, member.role)) throw new OrchestratorError("crew.read_only_profile", { profileId, role: member.role });
     const ctx = this.scoring(project.id, task.size, task.budget_usd);
     if (!eligible(c, member.role, ctx)) throw new OrchestratorError("crew.unknown_profile", { profileId });
     const avoid = this.avoidFor(member);
     if (avoid.models.has(modelKey(c))) throw new OrchestratorError("crew.independence", { role: member.role });
-    const cap = this.capFor(task.id, null, c);
+    // Your "continue" past the task budget on this step carries over to the AI you move it to.
+    const stepApproved = new Set([...this.approvalsFor(source.id)].filter((k) => k === "task_budget"));
+    const cap = this.capFor(task.id, null, c, 0, stepApproved);
+    if (cap?.kind === "task_budget") throw new OrchestratorError("handoff.over_budget", { spentUsd: cap.spentUsd, capUsd: cap.capUsd });
     if (cap) throw new OrchestratorError("handoff.over_cap", { profileId, cap: cap.kind });
     return scoreCandidate(c, member.role, ctx, avoid);
   }
@@ -1801,6 +1852,18 @@ export class Orchestrator {
     return this.bootstrap.env({ taskId: run.task_id, projectId: project.id, repoPath: wt.repo_path, path: wt.path, branch: wt.branch }, this.config(project).config);
   }
 
+  /** The profile's secret values, only to cut them out of error text; never stored or logged. */
+  private async secretsFor(profileId: string): Promise<string[]> {
+    try {
+      const env = await this.directory.envFor(profileId);
+      return Object.entries(env)
+        .filter(([k, v]) => SECRET_ENV.test(k) && v.length >= 8)
+        .map(([, v]) => v);
+    } catch {
+      return [];
+    }
+  }
+
   private config(project: ProjectRow): { config: ProjectConfig; fromFile: boolean } {
     const file = join(project.path, ".mission", "project.json");
     if (existsSync(file)) {
@@ -1928,6 +1991,9 @@ export class Orchestrator {
     return this.now().toISOString();
   }
 }
+
+/** Child environment names that hold a secret (DEEPSEEK_API_KEY, ANTHROPIC_AUTH_TOKEN, ...). */
+const SECRET_ENV = /KEY|TOKEN|SECRET|PASSWORD|AUTH/i;
 
 const RANK: Record<Provenance, number> = { reported: 2, estimated: 1, unknown: 0 };
 const weakest = (a: Provenance, b: Provenance): Provenance => (RANK[a] <= RANK[b] ? a : b);

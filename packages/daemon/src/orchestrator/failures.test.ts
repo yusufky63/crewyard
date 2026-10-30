@@ -23,6 +23,14 @@ describe("classifyFailure", () => {
     // A bare number is not a status: an exit code or a token count must not read as one.
     expect(classifyFailure("opencode exited (400): done in 413 ms").kind).toBe("other");
   });
+
+  it("reads an empty prepaid balance as a credit stop, never as a crash or a hiccup", () => {
+    // Gemini's 402 from the live run, DeepSeek's balance error and OpenAI's quota error (sent as a 429).
+    expect(classifyFailure('API Error: 402 {"error":{"code":402,"message":"Your prepayment credits are depleted.","status":"PAYMENT_REQUIRED"}}')).toEqual({ kind: "credit", status: 402, retryAfterMs: null });
+    expect(classifyFailure("HTTP status 402 Insufficient Balance").kind).toBe("credit");
+    expect(classifyFailure('status: 429 {"error":{"type":"insufficient_quota","message":"You exceeded your current quota"}} retry-after: 5')).toEqual({ kind: "credit", status: 429, retryAfterMs: null });
+    expect(classifyFailure("Your credit balance is too low to access the API").kind).toBe("credit");
+  });
 });
 
 describe("retryDelayMs", () => {

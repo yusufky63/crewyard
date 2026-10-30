@@ -28,6 +28,9 @@ function setupSteps(input: CiTemplateInput): string[] {
     if (input.packageManager === "bun") steps.push("      - uses: oven-sh/setup-bun@v2");
     const install = { pnpm: "pnpm install --frozen-lockfile", npm: "npm ci", yarn: "yarn install --frozen-lockfile", bun: "bun install --frozen-lockfile" }[input.packageManager];
     steps.push(`      - run: ${install}`);
+  } else if (input.kind === "node") {
+    // No lockfile: detection runs the scripts with npm, so CI installs with npm too (no cache, no frozen install).
+    steps.push("      - uses: actions/setup-node@v7", "        with:", "          node-version: lts/*", "      - run: npm install");
   }
   if ((input.kind === "dotnet" || input.kind === "godot-csharp") && input.dotnetVersion) {
     steps.push("      - uses: actions/setup-dotnet@v6", "        with:", `          dotnet-version: ${quote(`${input.dotnetVersion}.x`)}`);

@@ -15,6 +15,7 @@
       "request_invalid": "the provider refused the request",
       "transient": "a temporary provider error",
       "auth": "the key was refused",
+      "credit": "the key has no credit left",
       "other": "the same error"
     },
     "openRun": "Open run",
@@ -107,6 +108,7 @@
     "handoff_failed": "The run stays paused; nothing moved.",
     "git_mismatch": "The target's worktree did not match the checkpoint.",
     "target_ended": "The target run ended before it confirmed.",
+    "credit_depleted": "The provider says this key has no credit left. Top it up, or hand off to an account on another key.",
     "adapter_failed": "The runner reported an error.",
     "run_resume_unsupported": "This runner cannot resume its session."
   },

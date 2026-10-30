@@ -39,13 +39,16 @@ export interface ProposedMember {
 export const modelKey = (c: Candidate) => (c.model?.id ?? c.profile.defaultModel ?? `profile:${c.profile.id}`).toLowerCase();
 const viewKey = (v: CandidateView) => (v.model ?? `profile:${v.profileId}`).toLowerCase();
 
+/** A profile you marked read-only never takes a role that writes, however it got there (proposal, edit, handoff). */
+export const readOnlyConflict = (c: Candidate, role: RoleId) => Boolean(c.readOnly) && ROLES[role].policy.writes !== "none";
+
 /** Hard requirements: a candidate that fails one is never offered for the role. */
 export function eligible(c: Candidate, role: RoleId, ctx: Pick<ScoringContext, "hasAdapter" | "exclude">): boolean {
   const tpl = ROLES[role];
   if (!c.ready || !ctx.hasAdapter(c.profile.runner)) return false;
   if (ctx.exclude?.includes(c.profile.id)) return false;
   if (!c.capabilities.launch || !c.capabilities.stream || !c.capabilities.approveTools) return false;
-  if (c.readOnly && tpl.policy.writes !== "none") return false;
+  if (readOnlyConflict(c, role)) return false;
   return !tpl.needsReadOnly || c.capabilities.readOnlyMode;
 }
 
@@ -179,6 +182,8 @@ export function proposeCrew(kind: TaskKind, security: boolean, candidates: Candi
     const ranked = rankForRole(candidates, step.role, ctx, avoid);
     const [chosen, ...rest] = ranked;
     const reasons: Reason[] = [];
+    const dropped = pinDropped(candidates, step.role, ctx, avoid, chosen);
+    if (dropped) reasons.push(dropped);
     if (!chosen) {
       const anyEligible = candidates.some((c) => eligible(c, step.role, ctx));
       reasons.push({ code: anyEligible && avoid.models.size > 0 ? "no_independent_candidate" : "no_candidate" });
@@ -190,6 +195,18 @@ export function proposeCrew(kind: TaskKind, security: boolean, candidates: Candi
     return { ...step, writesCode: tpl.writesCode, chosen: chosen ?? null, standby: rest.slice(0, STANDBY), reasons };
   });
   return { members, estimate: sumEstimates(members.map((m) => m.chosen?.estimate ?? { usd: null, provenance: "unknown" })) };
+}
+
+/**
+ * Why your pin for a role is not the chosen profile, so the proposal can say so instead of
+ * silently picking another one (the live run pinned a reviewer on the implementer's model).
+ */
+function pinDropped(candidates: Candidate[], role: RoleId, ctx: ScoringContext, avoid: { models: Set<string> }, chosen: CandidateView | undefined): Reason | null {
+  const pin = ctx.pins?.[role];
+  if (!pin || chosen?.profileId === pin) return null;
+  const c = candidates.find((x) => x.profile.id === pin);
+  const cause = !c ? "unavailable" : readOnlyConflict(c, role) ? "read_only" : !eligible(c, role, ctx) ? "unavailable" : avoid.models.has(modelKey(c)) ? "independence" : null;
+  return cause ? { code: "pin.dropped", params: { alias: c?.profile.alias ?? pin, cause } } : null;
 }
 
 export function sumEstimates(parts: CostEstimate[]): CostEstimate {

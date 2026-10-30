@@ -135,6 +135,14 @@ describe("rows", () => {
     expect(statusLine(task({ status: "failed", runs: [run("r9", "m2", { endedAt: "x", endReason: "failed", endDetail: "stream_closed" })] }), [])).toMatchObject({ key: "failedBecause", params: { reason: "stream_closed" } });
   });
 
+  it("translates the code of a failure and passes a runner's own text on as text", () => {
+    const failedWith = (endDetail: string) => statusLine(task({ status: "failed", runs: [run("r9", "m2", { endedAt: "x", endReason: "failed", endDetail })] }), []).params;
+    // A start failure keeps its code for the row; the redacted reason after it is for the inspector.
+    expect(failedWith("adapter.failed: spawn opencode ENOENT")).toEqual({ reason: "adapter.failed" });
+    // The live run's 402 blob has no code: it goes on as text for the row to cut.
+    expect(failedWith('API Error: 402 {"error":{"code":402}}')).toEqual({ reasonText: 'API Error: 402 {"error":{"code":402}}' });
+  });
+
   it("names each step's state", () => {
     const m = member("m2", "implementer", cand("a"));
     expect(stepState(m, null)).toBe("waiting");

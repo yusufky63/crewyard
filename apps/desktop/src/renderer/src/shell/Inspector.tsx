@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowLeftRight, PanelRightClose, PanelRightOpen, Pause, Play, RotateCw, Send, X } from "lucide-react";
-import type { CandidateView, RequestAnswer, RunView, TaskDetail } from "@crewyard/core";
+import { splitEndDetail, type CandidateView, type RequestAnswer, type RunView, type TaskDetail } from "@crewyard/core";
 import { BrandIcon, Button, Label, Splitter, TickMeter } from "@crewyard/ui";
 import { useInspector, type InspectorTarget } from "../inspector.ts";
 import { useNav } from "../nav.ts";
@@ -148,6 +148,26 @@ function PendingApproval({ detail, run, onError }: { detail: TaskDetail; run: Ru
   );
 }
 
+/** Why a run ended, whole: our code in words, then the runner's own text as the daemon kept it (redacted). */
+function EndDetail({ run }: { run: RunView }) {
+  const f = useFormat();
+  const { code, text } = splitEndDetail(run.endDetail);
+  if (!run.endedAt || (!code && !text)) return null;
+  const reason = f.t(`endReason.${run.endReason}`, { defaultValue: run.endReason ?? "" });
+  return (
+    <div className="ins-sec">
+      <Label>{f.t("inspector.endLabel")}</Label>
+      <div className="ins-now">{code ? `${reason} · ${f.t(`endDetail.${code}`, { defaultValue: code })}` : reason}</div>
+      {text && (
+        <>
+          <span className="muted ins-small">{f.t("inspector.endText")}</span>
+          <pre className="ins-end-text">{text}</pre>
+        </>
+      )}
+    </div>
+  );
+}
+
 function Body({ detail, target }: { detail: TaskDetail; target: InspectorTarget }) {
   const f = useFormat();
   const errorText = useErrorText();
@@ -261,6 +281,7 @@ function Body({ detail, target }: { detail: TaskDetail; target: InspectorTarget 
               })}
             </ol>
           </div>
+          {run && <EndDetail run={run} />}
           <TaskTimeline detail={detail} />
           {lineage.length > 1 && (
             <div className="ins-sec">

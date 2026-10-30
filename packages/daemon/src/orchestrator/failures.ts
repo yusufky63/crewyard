@@ -7,9 +7,12 @@
 //   fails the same on every provider, so it never hands off, falls back or retries.
 // - `transient`: 408, 409, 425, 429, 5xx, timeouts and dropped connections; worth trying again.
 // - `auth`: 401, 403 belong to this profile's key, so another profile may work.
+// - `credit`: 402 and the providers' "no credit left" errors (OpenAI sends insufficient_quota with
+//   a 429). The key is out of money, not overloaded: retrying it is pointless, so it stops like a
+//   spend limit and moves to a key that still has credit, per the task's fallback mode.
 // - `other`: anything we cannot read; handled like a crash, per the task's fallback mode.
 
-export type FailureClass = "request_invalid" | "transient" | "auth" | "other";
+export type FailureClass = "request_invalid" | "transient" | "auth" | "credit" | "other";
 
 export interface Failure {
   kind: FailureClass;
@@ -21,6 +24,10 @@ export interface Failure {
 export const REQUEST_INVALID = new Set([400, 405, 406, 413, 414, 415, 422, 501]);
 const TRANSIENT = new Set([408, 409, 425, 429, 500, 502, 503, 504, 529]);
 const AUTH = new Set([401, 403]);
+const CREDIT = new Set([402]);
+
+// Checked before the status, because a quota error can arrive as a 429 that is not transient.
+const NO_CREDIT = /\b(?:insufficient_quota|insufficient[ _](?:balance|credits?|funds)|credit balance is too low|prepayment credits|credits? (?:are |is |have been )?(?:depleted|exhausted)|payment[ _]required|billing_hard_limit_reached|exceeded your current quota)\b/i;
 
 // A bare number is too weak a signal, so a status counts only next to a word that names it.
 const STATUS_PATTERNS = [
@@ -42,6 +49,8 @@ const RETRY_AFTER = /retry[-_ ]after["']?\s*[:=]?\s*["']?(\d+(?:\.\d+)?)\s*(ms|m
 export function classifyFailure(detail: string | null | undefined): Failure {
   const text = detail ?? "";
   const retryAfterMs = readRetryAfter(text);
+  const status402 = STATUS_PATTERNS.map((re) => text.match(re)).find((m) => m && CREDIT.has(Number(m[1])));
+  if (status402 || NO_CREDIT.test(text)) return { kind: "credit", status: status402 ? 402 : readStatus(text), retryAfterMs: null };
   for (const re of STATUS_PATTERNS) {
     const m = text.match(re);
     if (!m) continue;
@@ -53,6 +62,14 @@ export function classifyFailure(detail: string | null | undefined): Failure {
   const named = NAMED.find((n) => n.re.test(text));
   if (named) return { kind: named.kind, status: named.status, retryAfterMs };
   return { kind: "other", status: null, retryAfterMs };
+}
+
+function readStatus(text: string): number | null {
+  for (const re of STATUS_PATTERNS) {
+    const m = text.match(re);
+    if (m) return Number(m[1]);
+  }
+  return null;
 }
 
 function readRetryAfter(text: string): number | null {

@@ -43,3 +43,25 @@ describe("profile presets in the crew proposal", () => {
     expect(eligible({ ...c, readOnly: false }, "implementer", ctx())).toBe(true);
   });
 });
+
+describe("pins the proposal could not keep", () => {
+  const roleOf = (members: ReturnType<typeof proposeCrew>["members"], role: string) => members.find((m) => m.role === role)!;
+
+  it("says why a reviewer pin on the implementer's model was replaced", () => {
+    const cands = CANDIDATES();
+    const { members } = proposeCrew("code", false, cands, ctx({ size: "S", pins: { implementer: "anthropic-key", reviewer: "anthropic-key" } }));
+    const rev = roleOf(members, "reviewer");
+    expect(rev.chosen!.profileId).not.toBe("anthropic-key");
+    expect(rev.reasons).toEqual([{ code: "pin.dropped", params: { alias: "anthropic-key", cause: "independence" } }]);
+    // A pin that was kept says nothing extra.
+    expect(roleOf(members, "implementer").reasons.map((r) => r.code)).not.toContain("pin.dropped");
+  });
+
+  it("names a read-only or missing pinned profile", () => {
+    const cands = CANDIDATES().map((c) => (c.profile.id === "openai-key" ? { ...c, readOnly: true } : c));
+    const ro = proposeCrew("code", false, cands, ctx({ size: "S", pins: { implementer: "openai-key" } }));
+    expect(roleOf(ro.members, "implementer").reasons[0]).toEqual({ code: "pin.dropped", params: { alias: "openai-key", cause: "read_only" } });
+    const gone = proposeCrew("research", false, CANDIDATES(), ctx({ pins: { researcher: "deleted-profile" } }));
+    expect(roleOf(gone.members, "researcher").reasons[0]).toEqual({ code: "pin.dropped", params: { alias: "deleted-profile", cause: "unavailable" } });
+  });
+});

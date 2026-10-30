@@ -338,6 +338,44 @@ export class OrchestratorDb {
     return this.all<HandoffRow>("select * from handoffs where task_id = ? order by opened_at, id", taskId);
   }
 
+  /** The handoff that started this run, if one did. (A source's own handoff_id later names the handoff that replaced it.) */
+  handoffInto(runId: string): HandoffRow | null {
+    return (
+      this.one<HandoffRow>(
+        "select h.* from handoffs h join runs r on h.from_run_id = r.resumed_from and (h.to_run_id = r.id or h.id = r.handoff_id) where r.id = ? order by h.opened_at desc limit 1",
+        runId,
+      ) ?? null
+    );
+  }
+
+  /**
+   * Target runs of handoffs that closed without completing (the target failed to start, ended
+   * before it confirmed, or git did not match). They never took over their step, so they supersede
+   * nothing: the source keeps the step and the handoff question about it stays answerable.
+   */
+  abandonedTargets(taskId: string): Set<string> {
+    const rows = this.all<{ id: string }>(
+      "select r.id from runs r join handoffs h on h.id = r.handoff_id where r.task_id = ? and h.from_run_id = r.resumed_from and h.closed_at is not null and h.outcome <> 'completed'",
+      taskId,
+    );
+    return new Set(rows.map((r) => r.id));
+  }
+
+  /** The run that continues this one's step (a resume, retry or completed handoff), if any. */
+  successor(run: RunRow, runs = this.runs(run.task_id)): RunRow | null {
+    const abandoned = this.abandonedTargets(run.task_id);
+    return runs.find((r) => r.resumed_from === run.id && !abandoned.has(r.id)) ?? null;
+  }
+
+  /** The profile's latest run anywhere failed before its runner started a session. */
+  failedToStart(profileId: string): boolean {
+    const last = this.one<{ end_reason: string | null; end_detail: string | null; native_session_id: string | null }>(
+      "select end_reason, end_detail, native_session_id from runs where profile_id = ? order by started_at desc, rowid desc limit 1",
+      profileId,
+    );
+    return last?.end_reason === "failed" && last.native_session_id === null && /^adapter\.failed(?::|$)/.test(last.end_detail ?? "");
+  }
+
   openHandoffs(): HandoffRow[] {
     return this.all<HandoffRow>("select * from handoffs where closed_at is null");
   }
@@ -476,6 +514,8 @@ export class OrchestratorDb {
     const openHandoff = this.one<{ id: string }>("select id from handoffs where task_id = ? and closed_at is null order by opened_at limit 1", task.id);
     const completed = (memberId: string) => runs.some((r) => r.member_id === memberId && r.end_reason === "completed");
     const writers = members.filter((m) => m.writes_code);
+    const abandoned = this.abandonedTargets(task.id);
+    const continued = (r: RunRow) => runs.some((o) => o.resumed_from === r.id && !abandoned.has(o.id));
     return {
       kind: task.kind,
       crewApprovedAt: crew?.approved_at ?? null,
@@ -488,14 +528,15 @@ export class OrchestratorDb {
         id: r.id,
         role: r.role,
         // A run superseded by a later run of the same step (resume, handoff) is no longer required.
-        required: Boolean(members.find((m) => m.id === r.member_id)?.required ?? 1) && !runs.some((o) => o.resumed_from === r.id),
+        // A failed handoff's target never held the step: its source still does.
+        required: Boolean(members.find((m) => m.id === r.member_id)?.required ?? 1) && !continued(r) && !abandoned.has(r.id),
         startedAt: r.started_at,
         endedAt: r.ended_at,
         endReason: r.end_reason,
         pendingRequestId: firstOpen(r.id),
         limitReached: r.limit_reached === 1,
         // A run waiting for its own same-profile retry (resume_at on an ended run) is not failed yet.
-        retryPending: runs.some((o) => o.resumed_from === r.id) || (r.ended_at !== null && r.resume_at !== null),
+        retryPending: continued(r) || (r.ended_at !== null && r.resume_at !== null),
       })),
     };
   }
@@ -514,7 +555,8 @@ export class OrchestratorDb {
     const runs = this.runs(task.id);
     const status = deriveTaskStatus(this.facts(task, runs));
     const openRequests = Number(this.one<{ n: number }>("select count(*) as n from requests where task_id = ? and answered_at is null", task.id)?.n ?? 0);
-    const superseded = (r: RunRow) => runs.some((o) => o.resumed_from === r.id);
+    const abandoned = this.abandonedTargets(task.id);
+    const superseded = (r: RunRow) => abandoned.has(r.id) || runs.some((o) => o.resumed_from === r.id && !abandoned.has(o.id));
     return {
       id: task.id,
       projectId: task.project_id,
@@ -596,7 +638,8 @@ export class OrchestratorDb {
       resumeAt: r.resume_at,
       limitReached: r.limit_reached === 1,
       pendingRequestId: pending?.id ?? null,
-      handoffId: r.handoff_id,
+      // While a handoff of this run is open, its id; the record only flips to the source once it completes.
+      handoffId: r.handoff_id ?? openHandoff?.id ?? null,
       resumedFrom: r.resumed_from,
       nativeSessionId: r.native_session_id,
       queuedMessages: extras.queue.length,

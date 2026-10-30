@@ -32,7 +32,7 @@ export function TasksScreen() {
   return (
     <div className="screen">
       <div className="page-head">
-        <div>
+        <div className="tk-head-main">
           <h1>{t("title")}</h1>
           {project && (
             <div className="lbl tk-context" title={project.path}>

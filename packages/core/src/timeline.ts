@@ -118,8 +118,29 @@ export function buildTimeline(runs: TimelineRun[], events: TimelineEvent[], now:
   const sortedRuns = [...runs].sort((a, b) => a.startedAt.localeCompare(b.startedAt) || a.id.localeCompare(b.id));
   const lanes = sortedRuns.map((r) => lane(r, byRun.get(r.id) ?? [], now));
 
+  // A runner's request event carries the runner's own id, which repeats across runs (Codex counts
+  // from 0 in each process), so an answer matches by run and native id first, then by our id.
   const answered = new Map<string, number>();
-  for (const e of ordered) if (e.kind === "answered" && e.requestId) answered.set(e.requestId, ms(e.at));
+  const answer = (key: string, at: number) => {
+    if (!answered.has(key)) answered.set(key, at);
+  };
+  for (const e of ordered) {
+    if (e.kind !== "answered") continue;
+    if (e.nativeId) answer(`${e.runId ?? ""}|${e.nativeId}`, ms(e.at));
+    if (e.requestId) answer(e.requestId, ms(e.at));
+  }
+  // Without an answer on record (logs written before answers named the runner's id), the wait is
+  // over once the run works again or ends; it never counts on past that.
+  const waitOver = (runId: string | null, after: number): number | null => {
+    const r = runId ? sortedRuns.find((x) => x.id === runId) : undefined;
+    if (!r) return null;
+    // Only a wait the run itself reported counts: running again after waiting_* means it got its answer.
+    const states = (byRun.get(r.id) ?? []).filter((e): e is Extract<TimelineEvent, { kind: "run.state" }> => e.kind === "run.state" && ms(e.at) >= after);
+    const waiting = states.findIndex((e) => e.state === "waiting_approval" || e.state === "waiting_input");
+    const back = waiting < 0 ? undefined : states.slice(waiting + 1).find((e) => e.state === "running" || e.state === "starting");
+    if (back) return ms(back.at);
+    return r.endedAt ? ms(r.endedAt) : null;
+  };
 
   const entries: TimelineEntry[] = [];
   for (const r of sortedRuns) entries.push({ kind: "started", at: ms(r.startedAt), runId: r.id });
@@ -167,7 +188,7 @@ export function buildTimeline(runs: TimelineRun[], events: TimelineEvent[], now:
       }
       case "request":
         flush(e.runId);
-        entries.push({ kind: "request", at, runId: e.runId, request: e.request, answeredAt: answered.get(e.requestId) ?? null });
+        entries.push({ kind: "request", at, runId: e.runId, request: e.request, answeredAt: answered.get(`${e.runId ?? ""}|${e.requestId}`) ?? answered.get(e.requestId) ?? waitOver(e.runId, at) });
         break;
       case "handoff":
         flush(e.runId);

@@ -49,6 +49,7 @@ export type ReasonCode =
   | "independence.provider" // reviewer on a different provider than the implementer
   | "independence.model" // { model } of the implementer, which this candidate does not share
   | "pinned"
+  | "pin.dropped" // { alias, cause }: your pin for this role was not used; cause is "independence", "read_only" or "unavailable"
   | "profile.note" // { note } the profile's own "when to use" note
   | "only_candidate"
   | "no_candidate"
@@ -72,6 +73,7 @@ export type OrchestratorErrorCode =
   | "crew.missing_profile" // { role } still has no profile
   | "crew.unknown_profile" // { profileId }
   | "crew.independence" // { role } would use the implementer's model
+  | "crew.read_only_profile" // { profileId, role }: the profile is marked read-only and this role writes
   | "run.not_found"
   | "run.not_live" // no process to talk to
   | "run.ended"
@@ -91,7 +93,8 @@ export type OrchestratorErrorCode =
   | "handoff.same_profile" // the target is the profile the run already uses
   | "handoff.open" // the run is already being handed off
   | "handoff.target_not_ready" // { profileId }: not signed in, no key, or no adapter
-  | "handoff.over_cap" // { profileId, cap }: the target's key is past its daily or task cap
+  | "handoff.over_cap" // { profileId, cap }: the target's key is past its daily or per-task cap
+  | "handoff.over_budget" // { spentUsd, capUsd }: the task is past its own budget and you have not approved going on
   | "git.failed" // { command, detail }
   | "worktree.branch_elsewhere" // { branch, path }: the task's branch is checked out in another worktree
   | "worktree.locked" // { path }: registered, folder missing, and locked with `git worktree lock`
@@ -256,6 +259,22 @@ export const NO_RUN_CONTROLS: RunControls = {
   steer: { ok: false, reason: "steer.unsupported" },
   undo: { ok: false, reason: "undo.unsupported", turnId: null },
 };
+
+const DETAIL_CODE = /^[a-z][a-z0-9_]*(?:\.[a-z0-9_]+)*$/;
+
+/**
+ * Reads a run's `endDetail` back: a code of ours ("process_gone", "bootstrap.denied"), a code with
+ * the redacted error behind it ("adapter.failed: spawn ENOENT"), or a runner's own error text
+ * ("API Error: 401 …"), which has no code. The code is translatable; the text is shown as written.
+ */
+export function splitEndDetail(detail: string | null): { code: string | null; text: string | null } {
+  const d = detail?.trim() ?? "";
+  if (!d) return { code: null, text: null };
+  if (DETAIL_CODE.test(d)) return { code: d, text: null };
+  const sep = d.indexOf(": ");
+  if (sep > 0 && DETAIL_CODE.test(d.slice(0, sep))) return { code: d.slice(0, sep), text: d.slice(sep + 2).trim() || null };
+  return { code: null, text: d };
+}
 
 /** What "Undo last turn" would do, shown before you confirm. */
 export interface UndoPreview {

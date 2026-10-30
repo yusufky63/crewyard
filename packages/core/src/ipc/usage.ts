@@ -68,7 +68,8 @@ export type TimelineEvent = {
     }
   | { kind: "plan.update"; current: string | null; done: number; total: number }
   | { kind: "request"; requestId: string; request: "question" | "approval" }
-  | { kind: "answered"; requestId: string | null; by: string | null }
+  /** `requestId` is ours; `nativeId` is the runner's id that its `request` event carried, when it had one. */
+  | { kind: "answered"; requestId: string | null; by: string | null; nativeId?: string | null }
   | { kind: "message"; queued: boolean }
   | { kind: "handoff"; phase: "opened" | "completed" | "failed"; handoffId: string | null; trigger: string | null }
   | { kind: "limit"; window: string | null }

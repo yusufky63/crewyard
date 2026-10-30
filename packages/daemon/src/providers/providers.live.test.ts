@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Store } from "../store.ts";
 import { dpapi } from "./dpapi.ts";
 import { ProvidersService } from "./service.ts";
@@ -18,11 +18,17 @@ const shape = (v: unknown): unknown =>
   Array.isArray(v) ? v.map(shape) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, k === "currency" ? x : shape(x)])) : `<${typeof v}>`;
 
 describe.runIf(live)("DeepSeek live", () => {
-  const dir = mkdtempSync(join(tmpdir(), "crewyard live "));
-  const store = new Store(join(dir, "t.db"));
+  // Vitest runs a skipped describe's body to collect it, so nothing may be created here: a folder
+  // made in the body leaked into %TEMP% on every `pnpm test` (about 70 by 2026-10-30).
+  let dir = "";
+  let store: Store | null = null;
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "crewyard live "));
+    store = new Store(join(dir, "t.db"));
+  });
   afterAll(() => {
-    store.close();
-    rmSync(dir, { recursive: true, force: true });
+    store?.close();
+    if (dir) rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   });
 
   it("stores the key with DPAPI, reads it back and fetches the balance", { timeout: 60_000 }, async () => {
@@ -32,7 +38,7 @@ describe.runIf(live)("DeepSeek live", () => {
       body = await res.clone().json().catch(() => null);
       return res;
     };
-    const svc = new ProvidersService({ db: store.db, dataDir: dir, protector: dpapi, fetchFn });
+    const svc = new ProvidersService({ db: store!.db, dataDir: dir, protector: dpapi, fetchFn });
     const c = await svc.addCredential("deepseek-live", "deepseek", key as string);
     const file = readdirSync(join(dir, "secrets"))[0] as string;
     expect(readFileSync(join(dir, "secrets", file)).includes(Buffer.from(key as string))).toBe(false);

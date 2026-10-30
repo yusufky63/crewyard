@@ -55,6 +55,8 @@
 .ins-mrow { display: grid; gap: 6px; }
 .ins-mrow .row { display: flex; justify-content: space-between; font-size: 13px; }
 .ins-small { font-size: 12px; }
+/* A run's end reason in full; a provider error can be a long JSON line, so it wraps instead of scrolling. */
+.ins-end-text { background: var(--sunken); border: 1px solid var(--line); padding: 10px 12px; margin: 8px 0 0; font: 400 12px / 1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow-y: auto; }
 .ins-facts { grid-template-columns: 1fr 1fr; gap: 14px 16px; }
 .ins-facts .v { font: 500 15px / 1.2 var(--mono); margin: 4px 0; }
 .ins-actions { padding: 16px; display: grid; gap: 12px; }

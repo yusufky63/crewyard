@@ -57,7 +57,7 @@ export const ROLES: Record<RoleId, RoleTemplate> = {
     prefersReasoning: true,
     tokenShare: 0.2,
     independentOf: ["implementer"],
-    contract: "A verdict, pass or changes, with a summary and comments with file, line and severity, given as the JSON result your final answer must be. Do not change any file; you may run the tests.",
+    contract: "A verdict, pass or changes, with a summary and comments with file, line and severity, given as the JSON result your final answer must be. Do not change any file; you may run the project's test command where your tools allow it.",
   },
   tester: {
     id: "tester",

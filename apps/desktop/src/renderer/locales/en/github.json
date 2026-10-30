@@ -42,6 +42,12 @@
     "unknown": "Unknown"
   },
   "push": {
+    "unavailable": {
+      "not_github": "This remote is not on GitHub, so Crewyard cannot tell which commits are pushed. Push task branches with git.",
+      "no_remote": "This repository has no remote yet, so there is nowhere to push.",
+      "not_a_repo": "This folder is not a git repository, so there is nothing to push.",
+      "other": "The push queue could not be read right now. Refresh to try again."
+    },
     "label": "Waiting to push",
     "branches_one": "branch",
     "branches_other": "branches",
