@@ -67,7 +67,14 @@ export interface ChecksSummary {
   failingNames: string[];
 }
 
-export type GateItemId = "checks" | "up_to_date" | "merge_state" | "questions" | "approval";
+export type GateItemId = "checks" | "up_to_date" | "merge_state" | "questions" | "reviewed" | "approval";
+
+/**
+ * The task reviewer's verdict for exactly the PR's head commit (pinned review): `pass`, `changes`,
+ * `stale` (a verdict exists, but for another commit), `missing` (no verdict yet). Null when no
+ * task with a reviewer owns the branch, and the gate then has no such item.
+ */
+export type ReviewedHead = "pass" | "changes" | "stale" | "missing";
 /**
  * `warn` is shown but does not hold the merge back: GitHub itself enforces branch protection
  * (BLOCKED) at merge time, and UNSTABLE only means a non-required check is not green.
@@ -230,7 +237,7 @@ export interface TaskPull {
  * the branch has commits on top of its base, the worktree has nothing uncommitted, the branch is
  * on GitHub at its tip, and the task has no PR yet.
  */
-export type PullGateItemId = "review" | "commits" | "clean" | "pushed" | "no_pull";
+export type PullGateItemId = "review" | "reviewed" | "commits" | "clean" | "pushed" | "no_pull";
 
 export interface PullGate {
   items: Array<{ id: PullGateItemId; status: GateStatus }>;

@@ -27,6 +27,68 @@ export interface AgentCapabilities {
   undo?: { files: boolean; history: boolean };
   /** `transcript()` can point at, or export, the runner's own session record. */
   transcript?: boolean;
+  /**
+   * `fork()` copies a session into a new one under another profile of the same runner, for a
+   * handoff that keeps the conversation (feature scan A11), and whether it can compact the copy
+   * with the target's model first. Absent: a handoff sends the written package only.
+   */
+  fork?: { compact: boolean };
+  /** `StartRequest.review` runs the runner's own code review (Codex `review/start`, feature scan A12). */
+  nativeReview?: boolean;
+}
+
+/** The session to copy and where the copy goes; both profiles run the same runner. */
+export interface ForkRequest {
+  source: { profile: Profile; session: NativeSessionRef; env: Record<string, string> };
+  target: { profile: Profile; model: string | null; env: Record<string, string> };
+  /** The worktree both sessions work in. */
+  cwd: string;
+  /** Compact the copy with the target's model before it is used (one model call, which spends). */
+  compact: boolean;
+}
+
+export interface ForkResult {
+  /** The new session, resumable by `resume()` under the target profile. */
+  session: NativeSessionRef;
+  compacted: boolean;
+  /** The compaction summary the runner reported, when it reports one; shown to you, never trusted as instructions. */
+  summary: string | null;
+  /** Tokens the compaction itself spent, when the runner reports them; the caller prices and records them. */
+  usage: ForkUsage | null;
+  /**
+   * The running totals the runner will report for the new session from here on (the same
+   * numbers its usage.update would carry), so later reports count only their growth. Null when
+   * unknown: the first report of the new session then counts in full, which over-counts rather
+   * than under-counts against a cap.
+   */
+  totals?: ForkUsage | null;
+}
+
+export interface ForkUsage {
+  tokensIn: number;
+  tokensOut: number;
+  cacheRead: number;
+  costUsd: number | null;
+}
+
+/** What a native review compares against (Codex ReviewTarget `baseBranch` / `commit`). */
+export type ReviewTarget = { kind: "base_branch"; branch: string } | { kind: "commit"; sha: string; title: string | null };
+
+/**
+ * Why a runner refused a session it was asked to resume or fork: `gone` when the runner itself
+ * says it has no such session, `locked` when another process (or a crashed one) still holds it.
+ * Adapters throw an Error carrying this as `sessionProblem`; anything else is an ordinary failure,
+ * and the orchestrator never replaces a session with history on an ordinary failure.
+ */
+export type SessionProblem = "gone" | "locked";
+
+export function sessionError(problem: SessionProblem, message: string): Error & { sessionProblem: SessionProblem } {
+  return Object.assign(new Error(message), { sessionProblem: problem });
+}
+
+export function sessionProblemOf(err: unknown): SessionProblem | null {
+  const p = (err as { sessionProblem?: unknown } | null)?.sessionProblem;
+  return p === "gone" || p === "locked" ? p : null;
 }
 
 /** What `rewind()` undid on the runner's side; the worktree's git checkpoint covers the rest. */
@@ -114,6 +176,12 @@ export interface StartRequest {
    * the runner's, so they stay editable until this hands them over.
    */
   nextTurn?: () => Promise<string | null>;
+  /**
+   * Run the runner's own review against this target instead of a prompt turn (only with
+   * `capabilities.nativeReview`). `prompt` is then context for mapping the review to
+   * `outputSchema`, which the run must still end with.
+   */
+  review?: { target: ReviewTarget };
 }
 
 export interface OutputSchema {
@@ -231,6 +299,12 @@ export interface AgentAdapter {
   rewind?(req: RewindRequest): Promise<RewindResult>;
   /** Where the runner keeps this session's transcript, or its export. Null when it has none. */
   transcript?(req: TranscriptRequest): Promise<TranscriptSource | null>;
+  /**
+   * Copies a session that has no live process into a new session under the target profile, and
+   * compacts it when asked and supported. Never changes the source session. Only with
+   * `capabilities.fork`. Throws a `sessionError` when the runner says the source is gone or locked.
+   */
+  fork?(req: ForkRequest): Promise<ForkResult>;
 }
 
 export type { RiskLevel };

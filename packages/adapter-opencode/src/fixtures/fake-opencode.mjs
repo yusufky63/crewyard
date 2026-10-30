@@ -2,8 +2,8 @@
 // API the adapter uses, checks Basic auth, and plays a scenario chosen by keywords in the prompt.
 // Everything it receives is appended as JSON lines to FAKE_OPENCODE_LOG so tests can assert on it.
 
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { createServer } from "node:http";
 
 const argv = process.argv.slice(2);
@@ -18,6 +18,7 @@ const log = (entry) => {
 };
 log({
   kind: "launch",
+  pid: process.pid,
   argv,
   cwd: process.cwd(),
   passwordSet: Boolean(process.env.OPENCODE_SERVER_PASSWORD),
@@ -42,18 +43,41 @@ if (argv[0] === "export") {
     process.stderr.write(`Session not found: ${argv[1]}\n`);
     process.exit(1);
   }
+  log({ kind: "export", session: argv[1], data: process.env.XDG_DATA_HOME });
+  process.stderr.write(`Exporting session: ${argv[1]}\n`);
+  // Like the real export: no permission rules in the record.
   process.stdout.write(JSON.stringify({ info: { id: found.id, title: found.title }, messages: found.messages }));
   process.exit(0);
 }
 const persist = () => {
-  if (STORE) writeFileSync(STORE, JSON.stringify([...sessions.values()].map(({ id, title, permission, messages }) => ({ id, title, permission, messages }))));
+  if (!STORE) return;
+  // Like OpenCode, which creates its data folder on first use.
+  mkdirSync(dirname(STORE), { recursive: true });
+  writeFileSync(STORE, JSON.stringify([...sessions.values()].map(({ id, title, permission, messages }) => ({ id, title, permission, messages }))));
 };
+// `opencode import <file>`: same id; existing messages are kept, missing ones added.
+if (argv[0] === "import") {
+  if (!existsSync(argv[1])) {
+    process.stderr.write(`\u001b[91m\u001b[1mError: \u001b[0mFile not found: ${argv[1]}\n`);
+    process.exit(1);
+  }
+  const data = JSON.parse(readFileSync(argv[1], "utf8"));
+  const existing = sessions.get(data.info.id);
+  const known = new Set(existing?.messages.map((m) => m.info.id) ?? []);
+  sessions.set(data.info.id, { id: data.info.id, title: data.info.title, permission: existing?.permission ?? [], messages: [...(existing?.messages ?? []), ...data.messages.filter((m) => !known.has(m.info.id))] });
+  persist();
+  log({ kind: "import", session: data.info.id, data: process.env.XDG_DATA_HOME, file: argv[1], cwd: process.cwd() });
+  process.stdout.write(`Imported session: ${data.info.id}\n`);
+  process.exit(0);
+}
 const permissions = new Map();
 const questions = new Map();
 const waiters = new Map();
 const clients = new Set();
 let counter = 0;
-const id = (prefix) => `${prefix}_${String(++counter).padStart(4, "0")}`;
+// Unique across launches too: a fork in another profile must not reuse an imported id.
+const RUN = Math.random().toString(36).slice(2, 7);
+const id = (prefix) => `${prefix}_${RUN}${String(++counter).padStart(4, "0")}`;
 const now = () => Date.now();
 
 function broadcast(type, properties) {
@@ -260,7 +284,45 @@ const server = createServer(async (req, res) => {
   if (parts[0] === "session" && parts[1]) {
     const s = sessions.get(parts[1]);
     if (!s) return json(res, 404, { name: "NotFoundError", data: { message: "no such session" } });
-    if (req.method === "GET" && parts.length === 2) return json(res, 200, { id: s.id, slug: "fake", projectID: "p", directory: process.cwd(), title: s.title, version: "1.19.5", time: { created: now(), updated: now() } });
+    const info = () => ({ id: s.id, slug: "fake", projectID: "p", directory: process.cwd(), title: s.title, version: "1.19.5", time: { created: now(), updated: now() }, ...(s.permission?.length ? { permission: s.permission } : {}) });
+    if (req.method === "GET" && parts.length === 2) return json(res, 200, info());
+    if (req.method === "PATCH" && parts.length === 2) {
+      const b = await body(req);
+      log({ kind: "session.update", session: s.id, body: b });
+      if (b.permission) s.permission = [...(s.permission ?? []), ...b.permission];
+      persist();
+      return json(res, 200, info());
+    }
+    if (req.method === "POST" && parts[2] === "fork") {
+      const f = { id: id("ses"), title: `${s.title} (fork #1)`, permission: [], messages: [], status: "idle", queued: 0 };
+      const ids = new Map();
+      for (const m of s.messages) {
+        const mid = id("msg");
+        ids.set(m.info.id, mid);
+        const parentID = m.info.parentID ? (ids.get(m.info.parentID) ?? m.info.parentID) : undefined;
+        f.messages.push({ info: { ...m.info, id: mid, sessionID: f.id, ...(parentID ? { parentID } : {}) }, parts: m.parts.map((p) => ({ ...p, id: id("prt"), messageID: mid, sessionID: f.id })) });
+      }
+      sessions.set(f.id, f);
+      persist();
+      log({ kind: "fork", session: s.id, forked: f.id, data: process.env.XDG_DATA_HOME });
+      return json(res, 200, { id: f.id, slug: "fake", projectID: "p", directory: process.cwd(), title: f.title, version: "1.19.5", time: { created: now(), updated: now() } });
+    }
+    if (req.method === "POST" && parts[2] === "summarize") {
+      const b = await body(req);
+      log({ kind: "summarize", session: s.id, body: b });
+      // FAKE_SUMMARIZE: "hang" never answers, "error" ends the compaction like a context overflow.
+      if (process.env.FAKE_SUMMARIZE === "hang") return;
+      const user = message(s, { id: id("msg"), sessionID: s.id, role: "user", time: { created: now() }, agent: "build", model: { providerID: b.providerID, modelID: b.modelID } });
+      part(s, { id: id("prt"), sessionID: s.id, messageID: user.id, type: "compaction", auto: Boolean(b.auto) });
+      const a = message(s, { id: id("msg"), sessionID: s.id, role: "assistant", time: { created: now() }, parentID: user.id, modelID: b.modelID, providerID: b.providerID, mode: "compaction", agent: "compaction", summary: true, path: { cwd: process.cwd(), root: process.cwd() }, cost: 0, tokens: zeroTokens() });
+      if (process.env.FAKE_SUMMARIZE === "error") {
+        message(s, { ...a, time: { created: a.time.created, completed: now() }, finish: "error", error: { name: "ContextOverflowError", data: { message: "Session too large to compact" } } });
+      } else {
+        text(s, a.id, "Summary: the user asked for a greeting.");
+        message(s, { ...a, time: { created: a.time.created, completed: now() }, finish: "stop", cost: 0.001, tokens: { input: 40, output: 8, reasoning: 0, cache: { read: 4, write: 0 } } });
+      }
+      return json(res, 200, true);
+    }
     if (req.method === "GET" && parts[2] === "message") return json(res, 200, s.messages);
     if (req.method === "POST" && parts[2] === "prompt_async") {
       const b = await body(req);

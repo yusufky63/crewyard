@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { capabilities, FakeAdapter, type FakeStep } from "@crewyard/adapter-fake";
-import type { AgentAdapter, AgentEvent, Answer, CatalogModel, NativeSessionRef, Probe, RunHandle, StartRequest, UserInput } from "@crewyard/core";
+import type { AgentAdapter, AgentCapabilities, AgentEvent, Answer, CatalogModel, ForkRequest, ForkResult, NativeSessionRef, Probe, RunHandle, RunOutput, StartRequest, UserInput } from "@crewyard/core";
 import { run } from "@crewyard/proc";
 import type { Candidate } from "./directory.ts";
 
@@ -12,14 +12,38 @@ import type { Candidate } from "./directory.ts";
  * Wraps one FakeAdapter per run so each role gets its own script. FakeAdapter numbers its runs
  * per instance, so handles are remapped to ids that stay unique across instances.
  */
+export interface ScriptedOptions {
+  capabilities?: Partial<AgentCapabilities>;
+  /** The schema-checked result a run ends with (a reviewer's verdict), by role and how many runs of it started before. */
+  result?: (role: string, nth: number, req: StartRequest) => RunOutput | undefined;
+  /** Makes `fork()` available (with capabilities.fork). */
+  fork?: (req: ForkRequest) => Promise<ForkResult>;
+  /** Thrown by resume() when it returns an error, e.g. a sessionError. */
+  resumeError?: (ref: NativeSessionRef) => Error | null;
+}
+
 export class ScriptedAdapter implements AgentAdapter {
   readonly id = "fake" as const;
-  readonly capabilities = capabilities;
-  readonly started: Array<{ runId: string; req: StartRequest; resumed: boolean; role: string }> = [];
-  private readonly runs = new Map<string, { fake: FakeAdapter; inner: RunHandle }>();
+  readonly capabilities: AgentCapabilities;
+  readonly started: Array<{ runId: string; req: StartRequest; resumed: boolean; role: string; ref: NativeSessionRef | null }> = [];
+  readonly forks: ForkRequest[] = [];
+  readonly fork?: (req: ForkRequest) => Promise<ForkResult>;
+  private readonly runs = new Map<string, { fake: FakeAdapter; inner: RunHandle; output: RunOutput | undefined }>();
   private n = 0;
 
-  constructor(private readonly pick: (role: string, req: StartRequest, resumed: boolean) => FakeStep[]) {}
+  constructor(
+    private readonly pick: (role: string, req: StartRequest, resumed: boolean) => FakeStep[],
+    private readonly options: ScriptedOptions = {},
+  ) {
+    this.capabilities = { ...capabilities, ...options.capabilities };
+    if (options.fork) {
+      const impl = options.fork;
+      this.fork = (req) => {
+        this.forks.push(req);
+        return impl(req);
+      };
+    }
+  }
 
   async probe(): Promise<Probe> {
     return { installed: true, executable: null, version: "0.0.0", signedIn: true, capabilities, problems: [] };
@@ -30,6 +54,8 @@ export class ScriptedAdapter implements AgentAdapter {
   }
 
   resume(ref: NativeSessionRef, req: StartRequest): Promise<RunHandle> {
+    const err = this.options.resumeError?.(ref);
+    if (err) return Promise.reject(err);
     return this.open(req, true, ref);
   }
 
@@ -38,14 +64,15 @@ export class ScriptedAdapter implements AgentAdapter {
     const fake = new FakeAdapter(this.pick(role, req, resumed));
     const inner = await fake.start(req);
     const runId = `scripted-${++this.n}`;
-    this.runs.set(runId, { fake, inner });
-    this.started.push({ runId, req, resumed, role });
+    const nth = this.started.filter((s) => s.role === role).length;
+    this.runs.set(runId, { fake, inner, output: this.options.result?.(role, nth, req) });
+    this.started.push({ runId, req, resumed, role, ref });
     return { runId, runner: "fake", pid: null, nativeSession: ref ?? { runner: "fake", sessionId: runId } };
   }
 
-  events(h: RunHandle): AsyncIterable<AgentEvent> {
+  async *events(h: RunHandle): AsyncIterable<AgentEvent> {
     const r = this.get(h);
-    return r.fake.events(r.inner);
+    for await (const ev of r.fake.events(r.inner)) yield ev.type === "run.ended" && ev.reason === "completed" && r.output ? { ...ev, output: r.output } : ev;
   }
 
   send(h: RunHandle, input: UserInput): Promise<void> {

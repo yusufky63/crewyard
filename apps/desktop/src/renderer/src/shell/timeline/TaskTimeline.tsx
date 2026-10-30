@@ -5,7 +5,8 @@ import { useTranslation } from "react-i18next";
 import { buildTimeline, timeIn, visibleSegments, type Lane, type LaneState, type TaskDetail, type TasksTopics, type TimelineEntry, type ToolStep } from "@crewyard/core";
 import { BrandIcon, Button, Label } from "@crewyard/ui";
 import { call } from "../../ipc.ts";
-import { formatDuration } from "../../screens/tasks/model.ts";
+import { formatDuration, loopLook } from "../../screens/tasks/model.ts";
+import { STATUS_ICONS, useFormat } from "../../screens/tasks/parts.tsx";
 import { FIXTURE, timelineFixture } from "./fixture.ts";
 import "./timeline.css";
 
@@ -176,10 +177,32 @@ const ENTRY_ICON: Record<TimelineEntry["kind"], typeof Play> = {
   handoff: ArrowLeftRight,
   message: MessageSquare,
   retry: RotateCw,
+  // Drawn with the decision's own status icon instead (loopLook).
+  loop: RotateCw,
   ended: Flag,
 };
 
-function EntryText({ e, who, now, locale, first }: { e: TimelineEntry; who: (runId: string | null) => string; now: number; locale: string; first: boolean }) {
+/** One loop decision as a sentence: what the tests or the reviewer said, and what the loop did next. */
+function LoopText({ e, role }: { e: Extract<TimelineEntry, { kind: "loop" }>; role: string }) {
+  const { t } = useTranslation("timeline");
+  const f = useFormat();
+  const p = e.reason.params ?? {};
+  const sha = typeof p.sha === "string" ? p.sha.slice(0, 7) : "";
+  const text = t(`loop.${e.decision}`, {
+    reason: f.reason(e.reason),
+    role,
+    iteration: e.iteration,
+    max: e.max,
+    sha,
+    command: typeof p.command === "string" ? p.command : "",
+    runner: typeof p.runner === "string" ? f.runner(p.runner) : "",
+    cap: typeof p.cap === "string" ? f.t(`capKind.${p.cap}`, { defaultValue: p.cap }) : "",
+    context: (e.decision === "review_passed" || e.decision === "review_changes") && !sha ? "nosha" : undefined,
+  });
+  return <span>{text}</span>;
+}
+
+function EntryText({ e, who, roleOf, now, locale, first }: { e: TimelineEntry; who: (runId: string | null) => string; roleOf: (memberId: string | null, runId: string | null) => string; now: number; locale: string; first: boolean }) {
   const { t } = useTranslation("timeline");
   switch (e.kind) {
     case "started":
@@ -201,6 +224,8 @@ function EntryText({ e, who, now, locale, first }: { e: TimelineEntry; who: (run
       return <span>{e.queued ? t("entry.messageQueued") : t("entry.message")}</span>;
     case "retry":
       return <span>{t("entry.retry", { who: who(e.runId) })}</span>;
+    case "loop":
+      return <LoopText e={e} role={roleOf(e.memberId, e.runId)} />;
     case "ended":
       return <span>{t("entry.ended", { who: who(e.runId), reason: t(`reason.${e.reason ?? "completed"}`, { defaultValue: e.reason ?? "" }) })}</span>;
   }
@@ -228,6 +253,12 @@ export function TaskTimeline({ detail }: { detail: TaskDetail }) {
   const whoOf = (runId: string | null) => {
     const r = detail.runs.find((x) => x.id === runId);
     return r ? `${role(r.role)} · ${runner(r.runner)}` : t("task");
+  };
+  // The step a loop decision is about: the implementer, also when the reviewer's run reported it.
+  const roleOf = (memberId: string | null, runId: string | null) => {
+    const m = detail.crew?.members.find((x) => x.id === memberId);
+    const r = m ? null : detail.runs.find((x) => x.id === runId);
+    return role(m?.role ?? r?.role ?? "implementer");
   };
   const clock = new Intl.DateTimeFormat(i18n.language, { hour: "2-digit", minute: "2-digit" });
   const present = STATES.filter((s) => tl.lanes.some((l) => l.segments.some((x) => x.state === s)));
@@ -264,16 +295,17 @@ export function TaskTimeline({ detail }: { detail: TaskDetail }) {
       {q.data && q.data.omitted > 0 && <p className="muted tl-small">{t("omitted", { count: q.data.omitted })}</p>}
       <ol className="tl-entries">
         {visible.map((e, i) => {
-          const Icon = e.kind === "request" && e.request === "question" ? CircleHelp : ENTRY_ICON[e.kind];
+          const look = e.kind === "loop" ? loopLook(e.decision) : null;
+          const Icon = look ? STATUS_ICONS[look.icon] : e.kind === "request" && e.request === "question" ? CircleHelp : ENTRY_ICON[e.kind];
           const d = durationOf(e, now);
           return (
-            <li key={`${e.kind}-${e.at}-${i}`} className={`tl-entry tl-e-${e.kind}${e.kind === "wait" ? ` tl-w-${e.state}` : ""}`}>
+            <li key={`${e.kind}-${e.at}-${i}`} className={`tl-entry tl-e-${e.kind}${e.kind === "wait" ? ` tl-w-${e.state}` : ""}${look ? ` tl-l-${look.tone}` : ""}`}>
               <time className="num muted" dateTime={new Date(e.at).toISOString()}>
                 {clock.format(e.at)}
               </time>
               <Icon {...ICON} />
               <div className="tl-text">
-                <EntryText e={e} who={whoOf} now={now} locale={i18n.language} first={visible.findIndex((x) => x.kind === "tools") === i} />
+                <EntryText e={e} who={whoOf} roleOf={roleOf} now={now} locale={i18n.language} first={visible.findIndex((x) => x.kind === "tools") === i} />
               </div>
               <span className="num muted tl-dur">{d === null ? "" : formatDuration(Math.max(0, d))}</span>
             </li>

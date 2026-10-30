@@ -484,6 +484,119 @@ Then create a new file ENV_CHECK.md that holds its single output line, and commi
     }
   });
 
+  /**
+   * Feature scan A9 live: the project's test command is a check the task text does not mention,
+   * so the implementer's first try fails it; the failure goes back to the same session and the
+   * second try passes. The reviewer is Codex, which reviews through its own review/start (A12),
+   * pinned to the head the tests passed on.
+   */
+  it("loop: implement, tests fail, fix, tests pass", { timeout: 20 * MIN }, async () => {
+    if (!want("loop-tests") || (await overBudget("loop-tests"))) return;
+    const reviewer = profiles[REVIEWER];
+    expect(profiles["cc-ds"] && reviewer).toBeTruthy();
+    const check = [
+      'import { existsSync, readFileSync } from "node:fs";',
+      'const ok = existsSync("LOOP_CHECK.txt") && readFileSync("LOOP_CHECK.txt", "utf8").trim() === "green";',
+      'if (!ok) { console.error("loop check failed: the repository root needs a file LOOP_CHECK.txt whose only content is the word green"); process.exit(1); }',
+      'console.log("loop check passed");',
+    ].join("\n");
+    writeFileSync(join(projectPath, "loop-check.mjs"), `${check}\n`);
+    git(projectPath, "add", "loop-check.mjs");
+    git(projectPath, "commit", "-q", "-m", "Add the loop check");
+    const restore = setTestCommand("node loop-check.mjs");
+    try {
+      const description = "Create a file hello.txt at the repository root containing the single word hi, then commit it. Do not run tests or any other command except git.";
+      const t = await d.call("tasks.propose", { projectId, title: "Add hello.txt", description, kind: "code", size: "S", budgetUsd: 0.5, pins: { implementer: profiles["cc-ds"], reviewer } });
+      await d.call("tasks.approve", { taskId: t.id });
+      const end = await watch(t.id, settled, 15 * MIN);
+      const decisions = end.loop.decisions.map((x) => `${x.kind}#${x.iteration}`);
+      d.log("loop-tests decisions", decisions.join(" "), "| tests", end.loop.tests.map((x) => (x.passed ? "pass" : `fail(${x.exitCode})`)).join(" "), "| verdicts", end.loop.verdicts.map((v) => `${v.verdict}@${v.headSha?.slice(0, 8)}${v.native ? " native" : ""}`).join(" "));
+      const wt = end.worktree;
+      const head = wt ? git(wt.path, "rev-parse", "HEAD") : null;
+      const kinds = end.loop.decisions.map((x) => x.kind);
+      const ok = kinds[0] === "tests_failed" && kinds.includes("tests_passed") && end.loop.verdicts.some((v) => v.headSha === head);
+      d.row({ flow: "loop: tests fail, fix, pass", runner: `claude-code/deepseek-flash -> ${REVIEWER}`, result: ok ? "pass" : "fail", costUsd: end.spend.usd, notes: `status ${end.status}; ${decisions.join(" ")}; verdict ${end.loop.verdicts.at(-1)?.verdict ?? "-"} at head ${end.loop.verdicts.at(-1)?.headSha === head}; native ${end.loop.verdicts.at(-1)?.native ?? "-"}` });
+    } finally {
+      restore();
+    }
+  });
+
+  /**
+   * The review loop live: the task tells the reviewer what to require and the implementer to write
+   * less, so the first verdict is "changes"; its comments go back to the same implementer session,
+   * then Test and Review run again. The reviewer runs on Claude Code (deepseek-v4-pro), which reads
+   * the task text, unlike Codex's own review.
+   */
+  it("loop: review asks for changes, implementer fixes, review passes", { timeout: 20 * MIN }, async () => {
+    if (!want("loop-review") || (await overBudget("loop-review"))) return;
+    if (!profiles["cc-dsp"]) {
+      const p = await d.attempt("providers.profileCreate", { alias: "cc-deepseek-pro", runner: "claude-code", providerId: "deepseek", credentialId: credentials.DEEPSEEK_API_KEY ?? null, defaultModel: "deepseek-v4-pro" });
+      if (p.ok) profiles["cc-dsp"] = p.result.id;
+    }
+    expect(profiles["cc-ds"] && profiles["cc-dsp"]).toBeTruthy();
+    const restore = setTestCommand(null);
+    try {
+      const description = [
+        "Implementer: create a file greet.txt at the repository root whose only line is: hello. Commit it. Do not run any command except git.",
+        "Reviewer: the task is only done when greet.txt has a second line that says: reviewed. If that line is missing, your verdict must be changes, with a comment on greet.txt asking for it. Otherwise pass.",
+      ].join("\n");
+      const t = await d.call("tasks.propose", { projectId, title: "Add greet.txt", description, kind: "code", size: "S", budgetUsd: 0.5, pins: { implementer: profiles["cc-ds"], reviewer: profiles["cc-dsp"] } });
+      await d.call("tasks.approve", { taskId: t.id });
+      const end = await watch(t.id, (x) => settled(x) && x.activeRuns === 0 && !x.runs.some((r) => !r.endedAt), 15 * MIN);
+      const decisions = end.loop.decisions.map((x) => `${x.kind}#${x.iteration}`);
+      d.log("loop-review decisions", decisions.join(" "), "| verdicts", end.loop.verdicts.map((v) => `${v.verdict}@${v.headSha?.slice(0, 8)}${v.stale ? " stale" : ""}`).join(" "));
+      const wt = end.worktree;
+      const greet = wt && existsSync(join(wt.path, "greet.txt")) ? readFileSync(join(wt.path, "greet.txt"), "utf8").trim().split(/\r?\n/) : [];
+      const kinds = end.loop.decisions.map((x) => x.kind);
+      const impls = end.runs.filter((r) => r.role === "implementer");
+      const sameSession = impls.length >= 2 && impls[1]!.resumedFrom === impls[0]!.id;
+      const ok = kinds.includes("review_changes") && kinds.at(-1) === "review_passed" && sameSession;
+      d.row({ flow: "loop: review changes, fix, pass", runner: "claude-code/deepseek-flash -> claude-code/deepseek-v4-pro", result: ok ? "pass" : "fail", costUsd: end.spend.usd, notes: `status ${end.status}; ${decisions.join(" ")}; greet.txt ${JSON.stringify(greet)}; implementer resumed in its session ${sameSession}` });
+    } finally {
+      restore();
+    }
+  });
+
+  /**
+   * Handoff by fork (A11) live: a Codex researcher on DeepSeek flash hands its step to Codex on
+   * DeepSeek pro (same runner, same provider), draining the turn in flight first, and the target
+   * continues a compacted fork of the thread. A research step, because with only a DeepSeek key a
+   * code crew has no reviewer left that is independent of both DeepSeek models.
+   */
+  it("handoff: fork and compact between two Codex profiles, drained", { timeout: 15 * MIN }, async () => {
+    if (!want("handoff-fork") || (await overBudget("handoff-fork"))) return;
+    expect(profiles["cx-ds"] && profiles["cx-dsp"]).toBeTruthy();
+    const restore = setTestCommand(null);
+    try {
+      const description = "Look at this repository: list its files, read each source file, then write a short report of what each function does. Work through the files one at a time.";
+      const t = await d.call("tasks.propose", { projectId, title: "Describe the repository", description, kind: "research", size: "S", budgetUsd: 0.5, pins: { researcher: profiles["cx-ds"] } });
+      await d.call("tasks.approve", { taskId: t.id });
+      const src = await d.waitFor("researcher working", async () => (await d.call("tasks.get", { taskId: t.id })).runs.find((r) => r.role === "researcher" && r.state === "running" && r.tokensIn > 0) ?? null, 5 * MIN, 1_000);
+      const asked = await d.attempt("runs.handoff", { runId: src.id, targetProfileId: profiles["cx-dsp"]!, stop: "drain" });
+      d.log("fork handoff", asked.ok ? "accepted" : asked.error);
+      const end = await watch(t.id, (x) => x.handoffs[0] !== undefined && x.handoffs[0].closedAt !== null && !x.runs.some((r) => !r.endedAt), 10 * MIN);
+      const h = end.handoffs[0];
+      const forked = d.audit("handoff.forked", t.id).at(-1)?.payload as { compacted?: boolean; summaryChars?: number } | undefined;
+      const failed = d.audit("handoff.fork_failed", t.id).at(-1)?.payload;
+      const target = end.runs.find((r) => r.profileId === profiles["cx-dsp"]);
+      d.log("fork result", JSON.stringify({ outcome: h?.outcome, kind: h?.kind, stop: h?.stop, forked, failed, target: target ? `${target.endReason} in=${target.tokensIn}` : null, status: end.status }));
+      const ok = h?.outcome === "completed" && h.kind === "fork" && h.stop === "drain" && target?.endReason === "completed";
+      d.row({ flow: "handoff: fork + compact, drain", runner: "codex/deepseek-flash -> codex/deepseek-v4-pro", result: ok ? "pass" : "fail", costUsd: end.spend.usd, notes: `outcome ${h?.outcome}; kind ${h?.kind}; stop ${h?.stop}; compacted ${forked?.compacted ?? "-"}; fork failure ${failed ? JSON.stringify(failed) : "none"}; target ${target?.endReason ?? "-"}; task ${end.status}` });
+    } finally {
+      restore();
+    }
+  });
+
+  /** Points the project's test command elsewhere for one flow; returns the undo. */
+  function setTestCommand(command: string | null): () => void {
+    const file = join(projectPath, ".mission", "project.json");
+    const before = readFileSync(file, "utf8");
+    const cfg = JSON.parse(before) as { commands: { test: string | null } };
+    cfg.commands.test = command;
+    writeFileSync(file, JSON.stringify(cfg, null, 2));
+    return () => writeFileSync(file, before);
+  }
+
   it("turn control and stall alerts", async () => {
     if (!want("turns")) return;
     const has = (m: string) => m in d.handlers;

@@ -4,7 +4,7 @@ import { Maximize2, Minimize2, Minus, Plus, Scan } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { CrewEdge, type CrewFlowEdge } from "./CrewEdge.tsx";
 import { CrewNode, useNodeTitle, type CrewFlowNode } from "./CrewNode.tsx";
-import { NODE_H, NODE_W, nudge, selectedPath, SNAP, type GraphModel, type Point } from "./model.ts";
+import { nodeHeight, NODE_W, nudge, selectedPath, SNAP, type GraphModel, type Point } from "./model.ts";
 import { routeEdge, spreadPorts, type Box } from "./route.ts";
 import { matches } from "../../keys.ts";
 
@@ -71,7 +71,7 @@ export function CrewCanvas({ model, taskTitle, positions, selected, full, onMove
         type: "crew" as const,
         position: positions[n.id] ?? { x: 0, y: 0 },
         width: NODE_W,
-        height: NODE_H,
+        height: nodeHeight(n),
         selectable: false,
         data: { model: n, title: title(n, taskTitle), taskTitle, selected: n.id === selected, onPath: path.nodes.has(n.id), onKey },
       })),
@@ -83,12 +83,12 @@ export function CrewCanvas({ model, taskTitle, positions, selected, full, onMove
     const boxes: Record<string, Box> = {};
     for (const n of model.nodes) {
       const p = positions[n.id];
-      if (p) boxes[n.id] = { x: p.x, y: p.y, w: NODE_W, h: NODE_H };
+      if (p) boxes[n.id] = { x: p.x, y: p.y, w: NODE_W, h: nodeHeight(n) };
     }
     // Fallback edges leave from the bottom on their own, so only work edges share side ports.
     const ports = spreadPorts(
       model.edges.filter((e) => e.kind !== "fallback"),
-      (id) => (positions[id]?.y ?? 0) + NODE_H / 2,
+      (id) => (boxes[id]?.y ?? 0) + (boxes[id]?.h ?? 0) / 2,
     );
     return model.edges.flatMap((e) => {
       const a = boxes[e.from];

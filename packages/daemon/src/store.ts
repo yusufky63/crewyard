@@ -511,6 +511,74 @@ export const MIGRATIONS: Migration[] = [
      copied_at text not null
    );`,
   },
+  // Crew loops (feature scan A9, A11, A12) and handoff hardening. Side tables only: loop decisions,
+  // test results, verdicts pinned to a commit, the detached review checkouts, run epochs that
+  // fence a source after its handoff, and how each handoff stopped and continued its source.
+  {
+    id: "crew-loops",
+    sql: `create table if not exists loop_decisions (
+     id text primary key,
+     task_id text not null references tasks(id),
+     member_id text not null references crew_members(id),
+     run_id text,
+     iteration integer not null,
+     max_iterations integer not null,
+     kind text not null,
+     reason text not null,
+     at text not null
+   );
+   create index if not exists loop_decisions_task on loop_decisions(task_id, at);
+   create table if not exists test_results (
+     id text primary key,
+     task_id text not null references tasks(id),
+     member_id text not null references crew_members(id),
+     run_id text not null,
+     command text not null,
+     exit_code integer,
+     passed integer not null,
+     tail text not null,
+     tree_sha text,
+     head_sha text,
+     duration_ms integer not null,
+     at text not null
+   );
+   create index if not exists test_results_member on test_results(member_id, at);
+   create table if not exists review_verdicts (
+     run_id text primary key,
+     task_id text not null references tasks(id),
+     member_id text not null references crew_members(id),
+     verdict text not null,
+     summary text not null,
+     comments text not null,
+     head_sha text,
+     native integer not null default 0,
+     at text not null
+   );
+   create index if not exists review_verdicts_task on review_verdicts(task_id, at);
+   create table if not exists review_checkouts (
+     run_id text primary key,
+     task_id text not null references tasks(id),
+     repo_path text not null,
+     path text not null,
+     sha text not null,
+     created_at text not null,
+     removed_at text
+   );
+   create table if not exists run_epochs (
+     run_id text primary key,
+     member_id text not null,
+     epoch integer not null
+   );
+   create table if not exists step_epochs (
+     member_id text primary key,
+     epoch integer not null
+   );
+   create table if not exists handoff_extras (
+     handoff_id text primary key,
+     stop text not null default 'interrupt',
+     forked integer not null default 0
+   );`,
+  },
 ];
 
 /** What the positional scheme applied: a database at `user_version` N has the first N of these. */

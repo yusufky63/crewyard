@@ -264,6 +264,12 @@ export class NotificationMapper {
   ended: { reason: EndReason; detail?: string } | null = null;
   /** Full text of the turn's last agent message; with turn/start outputSchema it is the JSON result. */
   lastAgentMessage: string | null = null;
+  /** Text of the last native review (`exitedReviewMode.review`), for mapping it to a verdict. */
+  reviewText: string | null = null;
+  /** A `contextCompaction` item completed (thread/compact/start). */
+  compacted = false;
+  /** The thread's last token usage notification, as codex sent it. */
+  lastUsage: ThreadTokenUsage | null = null;
 
   map(method: string, params: unknown): EventBody[] {
     switch (method) {
@@ -293,6 +299,12 @@ export class NotificationMapper {
         const { item } = params as ItemCompletedNotification;
         this.items.set(item.id, item);
         if (item.type === "agentMessage") this.lastAgentMessage = item.text;
+        if (item.type === "contextCompaction") this.compacted = true;
+        // The review is shown as the run's message; the verdict turn after it maps it to our schema.
+        if (item.type === "exitedReviewMode") {
+          this.reviewText = item.review;
+          return item.review ? [{ type: "message.delta", text: item.review }] : [];
+        }
         if (item.type === "agentMessage") return this.streamed.has(item.id) || !item.text ? [] : [{ type: "message.delta", text: item.text }];
         if (item.type === "reasoning") {
           const text = item.summary.join("\n\n");
@@ -317,7 +329,8 @@ export class NotificationMapper {
       case "turn/diff/updated":
         return [{ type: "diff.update", files: parseDiffStats((params as TurnDiffUpdatedNotification).diff) }];
       case "thread/tokenUsage/updated":
-        return [usageEvent((params as ThreadTokenUsageUpdatedNotification).tokenUsage)];
+        this.lastUsage = (params as ThreadTokenUsageUpdatedNotification).tokenUsage;
+        return [usageEvent(this.lastUsage)];
       case "account/rateLimits/updated":
         return limitEvents((params as { rateLimits: RateLimitSnapshot }).rateLimits);
       case "error": {

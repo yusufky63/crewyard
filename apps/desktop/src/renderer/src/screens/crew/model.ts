@@ -1,4 +1,4 @@
-import type { CandidateView, CrewMemberView, FallbackMode, Provenance, Reason, RoleId, RunnerId, RunView, TaskDetail, TaskStatus } from "@crewyard/core";
+import type { CandidateView, CrewMemberView, FallbackMode, Provenance, Reason, RoleId, RunnerId, RunView, TaskDetail, TaskLoopView, TaskStatus } from "@crewyard/core";
 
 // Turns a TaskDetail into the graph the Crew screen draws: one task node, one node per crew
 // member and one dashed node for the first standby candidate of each member. Everything the user
@@ -6,6 +6,8 @@ import type { CandidateView, CrewMemberView, FallbackMode, Provenance, Reason, R
 
 export const NODE_W = 180;
 export const NODE_H = 100;
+/** A node with a loop line (fix attempt, verdict) gets one more row, so the line sits inside its frame. */
+export const NODE_H_LOOP = 120;
 export const SNAP = 12;
 const COL = 228; // node width + 48, a multiple of SNAP
 const ROW = 168; // node height + 68, a multiple of SNAP
@@ -41,6 +43,14 @@ export type Fact =
   | { code: "kind"; kind: TaskDetail["kind"]; size: TaskDetail["size"] }
   | { code: "queued_messages"; count: number };
 
+/**
+ * The crew loop on a node: the step that writes code shows its fix attempts and why the loop last
+ * went on or stopped; a reviewer shows its latest verdict, pinned to the commit it read.
+ */
+export type NodeLoop =
+  | { code: "attempts"; attempt: number; max: number; tone: "wait" | "ok" | "bad"; last: Reason | null }
+  | { code: "verdict"; verdict: "pass" | "changes"; sha: string | null; stale: boolean };
+
 export interface GraphNodeModel {
   id: string;
   kind: NodeKind;
@@ -57,6 +67,7 @@ export interface GraphNodeModel {
   fact: Fact;
   /** Shown above the node as a leader-line annotation (limit reached, resumes at). */
   limit: { resumeAt: string | null } | null;
+  loop: NodeLoop | null;
 }
 
 export type EdgeKind = "reports" | "depends" | "fallback";
@@ -119,6 +130,26 @@ export function memberStatus(run: RunView | null, approved: boolean, cancelled: 
   }
 }
 
+const SHORT_SHA = 7;
+
+/** Whether the node draws a loop line: a fix attempt so far, or a reviewer's verdict. */
+export const hasLoopLine = (loop: NodeLoop | null): boolean => !!loop && (loop.code === "verdict" || loop.attempt > 0);
+export const nodeHeight = (n: Pick<GraphNodeModel, "loop">): number => (hasLoopLine(n.loop) ? NODE_H_LOOP : NODE_H);
+
+/** Loop state for one member, or null when the loop never touched it. */
+export function memberLoop(loop: TaskLoopView, memberId: string): NodeLoop | null {
+  const latest = <T extends { at: string }>(xs: T[]) => xs.reduce<T | null>((best, x) => (!best || x.at >= best.at ? x : best), null);
+  const verdict = latest(loop.verdicts.filter((v) => v.memberId === memberId));
+  if (verdict) return { code: "verdict", verdict: verdict.verdict, sha: verdict.headSha?.slice(0, SHORT_SHA) ?? null, stale: verdict.stale };
+  const decisions = loop.decisions.filter((d) => d.memberId === memberId);
+  const last = latest(decisions);
+  if (!last) return null;
+  const attempt = Math.max(...decisions.map((d) => d.iteration));
+  // A stop rule ended the loop; a pass ended it well; anything else is a try still under way.
+  const tone = last.kind.startsWith("stop_") || last.kind === "review_invalid" ? "bad" : last.kind === "review_passed" || last.kind === "tests_passed" ? "ok" : "wait";
+  return { code: "attempts", attempt, max: last.maxIterations || loop.maxIterations, tone, last: last.reason };
+}
+
 function memberFact(member: CrewMemberView, run: RunView | null, stepOf: Map<string, string>, finished: Set<string>): Fact {
   if (run) {
     if (run.queuedMessages > 0 && run.state !== "ended") return { code: "queued_messages", count: run.queuedMessages };
@@ -150,6 +181,7 @@ export function buildGraph(task: TaskDetail): GraphModel {
       taskStatus: task.status,
       fact: task.worktree ? { code: "branch", base: task.baseBranch ?? "", branch: task.worktree.branch } : { code: "kind", kind: task.kind, size: task.size },
       limit: null,
+      loop: null,
     },
   ];
   const edges: GraphEdgeModel[] = [];
@@ -177,6 +209,7 @@ export function buildGraph(task: TaskDetail): GraphModel {
       taskStatus: null,
       fact: memberFact(m, run, stepOf, finished),
       limit: run && (run.limitReached || run.state === "rate_limited") && run.state !== "ended" ? { resumeAt: run.resumeAt } : null,
+      loop: memberLoop(task.loop, m.id),
     });
     const deps = m.dependsOn.filter((d) => byStep.has(d));
     if (deps.length === 0) edges.push({ id: `e:${TASK_NODE}>${memberNodeId(m.id)}`, from: TASK_NODE, to: memberNodeId(m.id), kind: "reports" });
@@ -202,6 +235,7 @@ export function buildGraph(task: TaskDetail): GraphModel {
         taskStatus: null,
         fact: { code: "standby_for", step: pad2(i + 1), more: m.standby.length - 1 },
         limit: null,
+        loop: null,
       });
       edges.push({ id: `e:${memberNodeId(m.id)}>${standbyNodeId(m.id)}`, from: memberNodeId(m.id), to: standbyNodeId(m.id), kind: "fallback" });
     }

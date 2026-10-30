@@ -1,5 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
-import { TIMELINE_MAX_EVENTS, TIMELINE_PREVIEW, utf8Length, type Provenance, type RunnerId, type TaskTimelineData, type TimelineEvent, type TimelineEventBody, type UsageRecord, type UsageReport } from "@crewyard/core";
+import { TIMELINE_MAX_EVENTS, TIMELINE_PREVIEW, utf8Length, type LoopDecisionKind, type Provenance, type Reason, type RunnerId, type TaskTimelineData, type TimelineEvent, type TimelineEventBody, type UsageRecord, type UsageReport } from "@crewyard/core";
 import { startOfLocalDay } from "../providers/ledger.ts";
 
 // Reads behind the usage view and the task timeline (PLAN.md M5). Read-only: the spend ledger and
@@ -200,6 +200,7 @@ const KINDS = [
   "run.limit",
   "run.retried",
   "run.auto_retry",
+  "loop.decision",
 ];
 
 const TRUNCATED = /\n?\[truncated, (\d+) bytes(?:; full text in (.+))?\]$/;
@@ -228,6 +229,30 @@ export function readOutput(output: string | undefined): { preview: string | null
 
 type Payload = Record<string, unknown>;
 const str = (v: unknown): string | null => (typeof v === "string" ? v : null);
+const int = (v: unknown): number | null => (typeof v === "number" && Number.isInteger(v) ? v : null);
+
+const DECISIONS: ReadonlySet<string> = new Set<LoopDecisionKind>([
+  "tests_passed",
+  "tests_failed",
+  "tests_skipped",
+  "review_passed",
+  "review_changes",
+  "review_invalid",
+  "stop_iteration_cap",
+  "stop_no_change",
+  "stop_spend_cap",
+  "stop_no_resume",
+]);
+
+/** A stored reason, kept only when its shape is right; params keep only strings and numbers. */
+function reasonOf(v: unknown): Reason | null {
+  if (typeof v !== "object" || v === null) return null;
+  const r = v as Payload;
+  if (typeof r.code !== "string") return null;
+  const params: Record<string, string | number> = {};
+  if (typeof r.params === "object" && r.params !== null) for (const [k, x] of Object.entries(r.params as Payload)) if (typeof x === "string" || typeof x === "number") params[k] = x;
+  return { code: r.code as Reason["code"], params };
+}
 
 function project(kind: string, p: Payload): TimelineEventBody | null {
   // A payload past the store's ceiling keeps only { truncated, bytes }.
@@ -264,6 +289,15 @@ function project(kind: string, p: Payload): TimelineEventBody | null {
     case "run.retried":
     case "run.auto_retry":
       return { kind: "retry", detail: str(p.after) };
+    case "loop.decision": {
+      // A decision from a newer build with a kind this one does not know is left out, not guessed.
+      const decision = str(p.kind);
+      const reason = reasonOf(p.reason);
+      const iteration = int(p.iteration);
+      const max = int(p.max);
+      if (!decision || !DECISIONS.has(decision) || !reason || iteration === null || max === null) return null;
+      return { kind: "loop", decision: decision as LoopDecisionKind, memberId: str(p.memberId), iteration, max, reason };
+    }
     default:
       return null;
   }

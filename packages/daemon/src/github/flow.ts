@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import type { CleanupVerdict, FeedbackItem, FeedbackKind, MergeMethod, PullsResult, RunView, TaskDetail, TaskPull, TaskPullDraft, TaskPullState, TaskPullView, TaskSummary } from "@crewyard/core";
+import type { CleanupVerdict, FeedbackItem, FeedbackKind, MergeMethod, PullsResult, ReviewedHead, RunView, TaskDetail, TaskPull, TaskPullDraft, TaskPullState, TaskPullView, TaskSummary } from "@crewyard/core";
 import type { Store } from "../store.ts";
 import type { GithubClient } from "./client.ts";
 import * as git from "./git.ts";
@@ -190,6 +190,21 @@ export class PrFlow {
     return Number((this.db.prepare("select count(*) as n from requests where task_id = ? and answered_at is null").get(task.id) as { n: number }).n);
   }
 
+  /**
+   * The verdict of the task that owns the branch, for exactly `headSha` (pinned review): the
+   * merge and PR gates never pass a verdict given for another commit. Null when no task with a
+   * reviewer owns the branch.
+   */
+  reviewedHead(projectId: string, branch: string, headSha: string | null): ReviewedHead | null {
+    const task = this.db.prepare("select t.id from worktrees w join tasks t on t.id = w.task_id where t.project_id = ? and w.branch = ?").get(projectId, branch) as { id: string } | undefined;
+    if (!task) return null;
+    const reviewer = this.db.prepare("select 1 as x from crew_members m join crews c on c.id = m.crew_id where c.task_id = ? and m.role = 'reviewer'").get(task.id);
+    if (!reviewer) return null;
+    const exact = headSha ? (this.db.prepare("select verdict from review_verdicts where task_id = ? and head_sha = ? order by at desc, rowid desc limit 1").get(task.id, headSha) as { verdict: "pass" | "changes" } | undefined) : undefined;
+    if (exact) return exact.verdict;
+    return this.db.prepare("select 1 as x from review_verdicts where task_id = ? limit 1").get(task.id) ? "stale" : "missing";
+  }
+
   /** Projects with a code task in review: only those get the 60 s refresh. */
   watched(): string[] {
     return this.deps.store
@@ -252,7 +267,7 @@ export class PrFlow {
     const status = detail.status;
     const done = requiredDone(detail);
     if (!wt) {
-      return { title: detail.title, body: detail.description, head: null, base, headSha: null, ahead: null, unpushed: 0, gate: pullGate({ status, requiredDone: done, ahead: null, dirty: null, unpushed: 0, onRemote: false, hasPull }) };
+      return { title: detail.title, body: detail.description, head: null, base, headSha: null, ahead: null, unpushed: 0, gate: pullGate({ status, requiredDone: done, ahead: null, dirty: null, unpushed: 0, onRemote: false, hasPull, reviewed: null }) };
     }
     const tip = await git.branchTip(repoPath, wt.branch);
     const remoteBase = base ? `refs/remotes/${remote}/${base}` : null;
@@ -266,7 +281,7 @@ export class PrFlow {
       tip && baseRef ? git.diffTotals(repoPath, baseRef, tip) : Promise.resolve(null),
     ]);
     const unpushed = unpushedList.find((b) => b.branch === wt.branch)?.commits ?? 0;
-    const gate = pullGate({ status, requiredDone: done, ahead, dirty, unpushed, onRemote: Boolean(tip && remoteTip === tip), hasPull });
+    const gate = pullGate({ status, requiredDone: done, ahead, dirty, unpushed, onRemote: Boolean(tip && remoteTip === tip), hasPull, reviewed: this.reviewedHead(detail.projectId, wt.branch, tip) });
     const plan = [...detail.runs].sort((a, b) => a.startedAt.localeCompare(b.startedAt)).filter((r) => r.plan?.length).at(-1)?.plan ?? null;
     const crew = (detail.crew?.members ?? []).map((m) => {
       const r = latestRun(detail, m.id);

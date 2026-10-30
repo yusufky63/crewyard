@@ -10,6 +10,7 @@ const passed: ChecksSummary = { state: "passed", total: 6, passed: 6, failing: 0
 const gate = (pushed: "pass" | "wait"): PullGate => ({
   items: [
     { id: "review", status: "pass" },
+    { id: "reviewed", status: "pass" },
     { id: "commits", status: "pass" },
     { id: "clean", status: "pass" },
     { id: "pushed", status: pushed },
@@ -59,6 +60,8 @@ const live = (p: TaskPull, title: string): PullSummary => ({
             { id: "up_to_date", status: "pass" },
             { id: "merge_state", status: "fail" },
             { id: "questions", status: "pass" },
+            // The branch moved on after the reviewer's verdict, so the pinned review no longer counts.
+            { id: "reviewed", status: "fail" },
             { id: "approval", status: "wait" },
           ],
           mergeable: false,

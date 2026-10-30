@@ -213,7 +213,8 @@
       "superseded": "A later run already continues this step",
       "session_changed": "This step moved to another session. Check it again and retry",
       "price_unknown": "The model has no known price. Approve it in the Inbox first",
-      "still_limited": "The limit is still reached. Try again after it resets."
+      "still_limited": "The limit is still reached. Try again after it resets.",
+      "fenced": "This run lost its step to a handoff"
     },
     "task": {
       "not_found": "That task no longer exists",
@@ -231,7 +232,14 @@
   "changeAi": {
     "title": "Change the AI for {{target}}",
     "label": "Hand off to",
-    "body": "The agent stops at its next turn, its work is saved and packaged, and the AI you pick continues from there. That account's spending caps apply.",
+    "body": "Its work is saved and packaged, and the AI you pick continues from there. That account's spending caps apply.",
     "confirm": "Hand off"
+  },
+  "loop": {
+    "attempt": "Fix attempt {{attempt}} of {{max}}",
+    "verdict": { "pass": "Pass", "changes": "Changes requested" },
+    "commit": "Commit {{sha}}",
+    "noCommit": "No commit pinned",
+    "stale": "Stale"
   }
 }

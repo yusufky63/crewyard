@@ -3,6 +3,7 @@ import type {
   ModelUsage,
   NonNullableUsage,
   SDKAssistantMessage,
+  SDKCompactBoundaryMessage,
   SDKPartialAssistantMessage,
   SDKResultMessage,
   SDKSystemMessage,
@@ -124,4 +125,8 @@ export function result(over: Partial<Extract<SDKResultMessage, { subtype: "succe
 export function errorResult(subtype: Exclude<SDKResultMessage["subtype"], "success">, over: Record<string, unknown> = {}): SDKResultMessage {
   const base = result();
   return { ...base, subtype, is_error: true, errors: ["Request was aborted."], ...over } as unknown as SDKResultMessage;
+}
+
+export function compactBoundary(sessionId: string, preTokens = 14_000, postTokens = 2_500): SDKCompactBoundaryMessage {
+  return { type: "system", subtype: "compact_boundary", compact_metadata: { trigger: "manual", pre_tokens: preTokens, post_tokens: postTokens }, uuid: uuid(), session_id: sessionId };
 }

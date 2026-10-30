@@ -19,6 +19,7 @@ import { buildGraph, defaultLayout, mergeLayout, type GraphNodeModel, type Point
 import "@xyflow/react/dist/base.css";
 import "./crew.css";
 import { matches } from "../../keys.ts";
+import { canChooseHandoffStop } from "../tasks/model.ts";
 
 // Crew graph (DESIGN.md §6): one task's crew as a graph. Moving nodes changes only the saved
 // layout, never who does the work. Run actions go through the tasks IPC; layouts through crew.*.
@@ -352,7 +353,7 @@ function CrewView({ task, fixture }: { task: TaskDetail; fixture: boolean }) {
                   <td>{n.kind === "task" ? "" : runnerName(t, n.runner)}</td>
                   <td>{n.kind === "task" && n.taskStatus ? <TaskStatusLabel status={n.taskStatus} /> : n.status ? <MemberStatusLabel status={n.status} /> : null}</td>
                   <td className="mono">{n.kind === "task" ? "" : [n.model ?? t("node.defaultModel"), n.account ?? t("node.noAccount")].join(" · ")}</td>
-                  <td className="mono muted">{fmt.fact(n.fact)}</td>
+                  <td className="mono muted">{n.loop ? fmt.loopLine(fmt.loop(n.loop)) || fmt.fact(n.fact) : fmt.fact(n.fact)}</td>
                 </tr>
               ))}
             </tbody>
@@ -412,9 +413,10 @@ function CrewView({ task, fixture }: { task: TaskDetail; fixture: boolean }) {
           target={title(dialogNode, task.title)}
           candidates={handoffCandidates(task, dialogNode.memberId, dialogNode.run.profileId)}
           runnerLabel={(r) => runnerName(t, r)}
+          live={canChooseHandoffStop(dialogNode.run)}
           onClose={() => setDialog(null)}
-          onConfirm={(profileId) =>
-            runCall(() => call("runs.handoff", { runId: dialogNode.run!.id, targetProfileId: profileId }), t("done.handoff", { target: title(dialogNode, task.title) })).then(() => setDialog(null))
+          onConfirm={(profileId, stop) =>
+            runCall(() => call("runs.handoff", { runId: dialogNode.run!.id, targetProfileId: profileId, ...(stop ? { stop } : {}) }), t("done.handoff", { target: title(dialogNode, task.title) })).then(() => setDialog(null))
           }
         />
       )}
@@ -437,7 +439,7 @@ export function CrewScreen() {
   const selectTask = useNav((s) => s.selectTask);
   useCrewLive(FIXTURE ? null : taskId);
   const q = useDaemon("tasks.get", { taskId: taskId ?? "" }, { enabled: !FIXTURE && !!taskId });
-  const [fixture] = useState(() => (FIXTURE ? crewFixture() : null));
+  const [fixture] = useState(() => (FIXTURE ? crewFixture(query.get("fixture") === "loop" ? "loop" : "default") : null));
 
   if (fixture) return <CrewView key={fixture.id} task={fixture} fixture />;
   if (!projectId) return null;

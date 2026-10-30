@@ -1,4 +1,4 @@
-import type { ChecksSummary, GateItem, GateStatus, MergeGate, MergeState } from "@crewyard/core";
+import type { ChecksSummary, GateItem, GateStatus, MergeGate, MergeState, ReviewedHead } from "@crewyard/core";
 
 // Merge needs every gate (PLAN.md §10): checks passed, branch up to date, no open questions, and
 // the owner's approval. Unknown never counts as passing. A repository that runs no CI at all has
@@ -19,7 +19,14 @@ export interface GateInput {
   ciConfigured: boolean | null;
   /** Open agent questions on this branch, from the orchestrator; null when nobody can say. */
   openQuestions: number | null;
+  /** The reviewer's verdict for this exact head; null or absent when no task with a reviewer owns the branch. */
+  reviewed?: ReviewedHead | null;
   ownerApproved: boolean;
+}
+
+/** A verdict counts only for the commit it read; a newer commit makes it stale. */
+export function reviewedStatus(r: ReviewedHead): GateStatus {
+  return r === "pass" ? "pass" : r === "missing" ? "wait" : "fail";
 }
 
 /**
@@ -72,6 +79,7 @@ export function evaluateGate(input: GateInput): MergeGate {
     { id: "up_to_date", status: upToDate },
     { id: "merge_state", status: mergeStateStatus(input.mergeState, input.draft) },
     { id: "questions", status: questions },
+    ...(input.reviewed ? [{ id: "reviewed" as const, status: reviewedStatus(input.reviewed) }] : []),
     { id: "approval", status: approval },
   ];
   const others = items.filter((i) => i.id !== "approval").every(clears);

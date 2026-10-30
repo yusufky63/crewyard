@@ -112,7 +112,18 @@
     "admission_worktree_busy": "Worktree'ye başka bir çalışma yazıyor",
     "admission_no_profile": "Hesap seçilmedi; ekibi düzenleyin",
     "admission_budget_reserved": "Bütçe bekleniyor: {{capUsd}} sınırın tahmini {{reservedUsd}} kadarı diğer çalışmalara ayrıldı",
-    "admission_no_adapter": "{{runner}} bu sürümde yok"
+    "admission_no_adapter": "{{runner}} bu sürümde yok",
+    "loop_tests_passed": "Testler geçti",
+    "loop_tests_failed": "Testler geçmedi ({{exitCode}})",
+    "loop_tests_skipped": "Test komutu yok",
+    "loop_review_passed": "İnceleme geçti",
+    "loop_review_changes_one": "{{count}} inceleme yorumu",
+    "loop_review_changes_other": "{{count}} inceleme yorumu",
+    "loop_review_invalid": "İnceleme sonucu okunamadı",
+    "loop_iteration_cap": "{{max}} düzeltme denemesinin hepsi kullanıldı",
+    "loop_no_change": "Son denemeden beri değişiklik yok",
+    "loop_spend_cap": "{{cap}} doldu",
+    "loop_no_resume": "{{runner}} oturumu sürdüremiyor"
   },
   "status": {
     "proposed": "Onay bekliyor",
@@ -144,7 +155,9 @@
     "handed_off": "devredildi",
     "handoff_failed": "devir başarısız",
     "no_adapter": "çalıştırıcı yok",
-    "bootstrap": { "setup_failed": "worktree kurulumu başarısız", "denied": "worktree kurulumu reddedildi" }
+    "bootstrap": { "setup_failed": "worktree kurulumu başarısız", "denied": "worktree kurulumu reddedildi" },
+    "loop": { "no_change": "hiçbir şey değişmeden testler yine geçmedi", "iteration_cap": "düzeltme denemeleri tükendi", "spend_cap": "harcama sınırı düzeltme döngüsünü durdurdu" },
+    "session": { "gone": "çalıştırıcının oturumu artık yok", "locked": "çalıştırıcının oturumunu arka plandaki başka bir oturum tutuyor" }
   },
   "endReason": {
     "completed": "Tamamlandı",
@@ -234,6 +247,7 @@
     "planStatus": { "pending": "yapılacak", "in_progress": "sürüyor", "completed": "bitti" },
     "steps": "Adımlar",
     "runs": "Bu adımın çalışmaları",
+    "handoffs": "Devirler",
     "live": "Canlı",
     "folder": "Çalışma klasörü",
     "transcript": "Konuşma kaydının kopyası",
@@ -443,6 +457,7 @@
     "run_still_limited": "Limit hâlâ dolu. Sıfırlandıktan sonra yeniden deneyin.",
     "run_session_changed": "Siz baktıktan sonra bu adım başka bir oturuma geçti. Yeniden bakıp tekrar deneyin.",
     "run_price_unknown": "Bu modelin fiyatı bilinmiyor ve görevde bir sınır var. Önce Gelen kutusunda onaylayın.",
+    "run_fenced": "Bu çalışmanın adımı devirle başka bir çalışmaya geçti. Bundan sonra gönderdikleri yok sayılıyor.",
     "request_not_found": "Bu istek artık yok.",
     "request_answered": "Bu istek zaten yanıtlandı.",
     "request_answer_kind": "Bu yanıt bu isteğe uymuyor.",
@@ -474,5 +489,26 @@
     "issue_no_github": "Bu proje için GitHub okunamadı.",
     "issue_is_pull": "Bu numara bir issue değil, pull request.",
     "issue_bad_link": "Yalnızca bu projenin kendi deposundaki bir issue bağlanabilir."
+  },
+  "exitCode": "çıkış kodu {{code}}",
+  "exitNone": "çıkış kodu yok",
+  "capKind": { "daily_cap": "Günlük sınır", "task_cap": "Görev başına sınır", "task_budget": "Görev bütçesi" },
+  "handoffStop": {
+    "label": "Ne zaman geçilsin",
+    "interrupt": "Hemen durdur",
+    "interruptHint": "Süren tur yarıda kesilir; o ana kadarki iş kaydedilip aktarılır.",
+    "drain": "Önce turunu bitirsin",
+    "drainHint": "Şu anki yapay zeka önce turunu tamamlar, ardından işi aktarılır.",
+    "done": { "interrupt": "hemen durduruldu", "drain": "önce turunu bitirdi" }
+  },
+  "handoffKind": {
+    "native_resume": "Kendi oturumunu sürdürdü",
+    "fork": "Konuşmayı yanında getirdi",
+    "new_session": "Devir notlarıyla yeni oturum",
+    "pending": "Geçiş sürüyor"
+  },
+  "handoffRecord": {
+    "out": "{{target}} hesabına devredildi",
+    "in": "{{source}} hesabından devralındı"
   }
 }

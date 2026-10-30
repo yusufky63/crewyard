@@ -120,6 +120,12 @@
         "fail": "Open questions",
         "unknown": "Questions unknown"
       },
+      "reviewed": {
+        "pass": "Reviewed at this commit",
+        "wait": "Waiting for review of this commit",
+        "fail": "Review is for another commit or asked for changes",
+        "unknown": "Review state unknown"
+      },
       "approval": {
         "pass": "Approved",
         "wait": "Your approval",
@@ -222,6 +228,12 @@
         "pass": "Review passed",
         "wait": "Review not finished",
         "fail": "Review failed",
+        "unknown": "Review state unknown"
+      },
+      "reviewed": {
+        "pass": "Reviewed at this commit",
+        "wait": "Waiting for review of this commit",
+        "fail": "Review is for another commit or asked for changes",
         "unknown": "Review state unknown"
       },
       "commits": {

@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { useNav } from "../../nav.ts";
-import { DEFAULT_PORT_RANGE, DEFAULT_STEP_TIMEOUT_SEC, defaultProjectConfig, IncludePath, splitCommand, type FolderDetection, type PackageManager, type ProjectConfig, type RunnerId } from "@crewyard/core";
+import { DEFAULT_PORT_RANGE, DEFAULT_STEP_TIMEOUT_SEC, defaultLoop, defaultProjectConfig, IncludePath, splitCommand, type FolderDetection, type PackageManager, type ProjectConfig, type RunnerId } from "@crewyard/core";
 
 // The wizard's in-memory draft. Nothing reaches the disk until Create project. Every entry from
 // the Start screen and Cancel start from a blank draft.
@@ -42,6 +42,8 @@ export interface Draft {
   portFrom: string;
   portTo: string;
   portEnvVar: string;
+  /** No wizard field yet: carried so re-creating over an existing config keeps its loop settings. */
+  loop: ProjectConfig["loop"];
   gitInit: boolean;
   createRepo: boolean;
   repoName: string;
@@ -69,6 +71,7 @@ const blank = (): Draft => {
     toastApprovals: d.rules.toastApprovals,
     actionsWarnPct: String(d.github.actionsWarnPct),
     ...bootstrapFields(d.bootstrap),
+    loop: defaultLoop(),
     gitInit: false,
     createRepo: false,
     repoName: "",
@@ -121,6 +124,7 @@ export function seedFromDetection(draft: Draft, det: FolderDetection): Draft {
     actionsWarnPct: String(base.github.actionsWarnPct),
     ...bootstrapFields(base.bootstrap),
     ...(cfg || !det.type.packageManager ? {} : { setup: [newStep(INSTALL[det.type.packageManager])] }),
+    loop: base.loop,
     gitInit: !det.git.isRepo && !det.git.parentRepo && det.git.available && (draft.source === "empty" || det.empty),
     createRepo: false,
     repoName: det.name.replace(/[^\w.-]+/g, "-"),
@@ -204,6 +208,7 @@ export function buildConfig(d: Draft, remote: string | null): ProjectConfig {
       includeMaxMb: num(d.includeMaxMb),
       port: d.portOn ? { from: num(d.portFrom), to: num(d.portTo), envVar: d.portEnvVar } : null,
     },
+    loop: d.loop,
   };
 }
 

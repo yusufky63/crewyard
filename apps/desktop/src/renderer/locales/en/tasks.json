@@ -112,7 +112,18 @@
     "admission_worktree_busy": "Another run is writing in the worktree",
     "admission_no_profile": "No account chosen; edit the crew",
     "admission_budget_reserved": "Waiting for budget: other runs hold an estimated {{reservedUsd}} of the {{capUsd}} cap",
-    "admission_no_adapter": "{{runner}} is not available in this build"
+    "admission_no_adapter": "{{runner}} is not available in this build",
+    "loop_tests_passed": "Tests passed",
+    "loop_tests_failed": "Tests failed ({{exitCode}})",
+    "loop_tests_skipped": "No test command",
+    "loop_review_passed": "Review passed",
+    "loop_review_changes_one": "{{count}} review comment",
+    "loop_review_changes_other": "{{count}} review comments",
+    "loop_review_invalid": "Review result unreadable",
+    "loop_iteration_cap": "All {{max}} fix attempts used",
+    "loop_no_change": "No change since the last try",
+    "loop_spend_cap": "{{cap}} reached",
+    "loop_no_resume": "{{runner}} cannot resume"
   },
   "status": {
     "proposed": "Waiting for approval",
@@ -144,7 +155,9 @@
     "handed_off": "handed off",
     "handoff_failed": "handoff failed",
     "no_adapter": "runner not available",
-    "bootstrap": { "setup_failed": "worktree setup failed", "denied": "worktree setup was denied" }
+    "bootstrap": { "setup_failed": "worktree setup failed", "denied": "worktree setup was denied" },
+    "loop": { "no_change": "the tests failed again with nothing changed", "iteration_cap": "the fix attempts ran out", "spend_cap": "a spend cap stopped the fix loop" },
+    "session": { "gone": "the runner's session no longer exists", "locked": "a background session holds the runner's session" }
   },
   "endReason": {
     "completed": "Completed",
@@ -234,6 +247,7 @@
     "planStatus": { "pending": "to do", "in_progress": "in progress", "completed": "done" },
     "steps": "Steps",
     "runs": "Runs of this step",
+    "handoffs": "Handoffs",
     "live": "Live",
     "folder": "Working folder",
     "transcript": "Transcript copy",
@@ -443,6 +457,7 @@
     "run_still_limited": "The limit is still in place. Try again after it resets.",
     "run_session_changed": "This step moved to another session since you looked. Check it again and retry.",
     "run_price_unknown": "This model has no known price and the task has a cap. Approve it in the Inbox first.",
+    "run_fenced": "This run lost its step to a handoff. What it sends now is ignored.",
     "request_not_found": "This request no longer exists.",
     "request_answered": "This request was already answered.",
     "request_answer_kind": "That answer does not fit this request.",
@@ -474,5 +489,26 @@
     "issue_no_github": "GitHub could not be read for this project.",
     "issue_is_pull": "That number is a pull request, not an issue.",
     "issue_bad_link": "Only an issue of this project's own repo can be linked."
+  },
+  "exitCode": "exit {{code}}",
+  "exitNone": "no exit code",
+  "capKind": { "daily_cap": "Daily cap", "task_cap": "Per-task cap", "task_budget": "Task budget" },
+  "handoffStop": {
+    "label": "When to switch",
+    "interrupt": "Stop now",
+    "interruptHint": "The turn in flight is cut off; the work so far is saved and passed on.",
+    "drain": "Finish the turn first",
+    "drainHint": "The current AI ends its turn first, then its work is passed on.",
+    "done": { "interrupt": "stopped at once", "drain": "finished its turn first" }
+  },
+  "handoffKind": {
+    "native_resume": "Resumed its own session",
+    "fork": "Carried the conversation over",
+    "new_session": "New session with the handoff notes",
+    "pending": "Still moving"
+  },
+  "handoffRecord": {
+    "out": "Handed off to {{target}}",
+    "in": "Took over from {{source}}"
   }
 }

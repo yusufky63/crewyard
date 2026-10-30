@@ -213,7 +213,8 @@
       "superseded": "Bu adımı zaten daha yeni bir çalıştırma sürdürüyor",
       "session_changed": "Bu adım başka bir oturuma geçti. Yeniden bakıp tekrar dene",
       "price_unknown": "Modelin fiyatı bilinmiyor. Önce Gelen kutusunda onayla",
-      "still_limited": "Limit hâlâ dolu. Sıfırlandıktan sonra yeniden dene."
+      "still_limited": "Limit hâlâ dolu. Sıfırlandıktan sonra yeniden dene.",
+      "fenced": "Bu çalıştırmanın adımı devirle başka bir çalıştırmaya geçti"
     },
     "task": {
       "not_found": "Bu görev artık yok",
@@ -231,7 +232,14 @@
   "changeAi": {
     "title": "{{target}} için yapay zekayı değiştir",
     "label": "Devredilecek hesap",
-    "body": "Ajan bir sonraki turunda durur, yaptığı iş kaydedilip paketlenir ve seçtiğin yapay zeka oradan devam eder. O hesabın harcama sınırları geçerli olur.",
+    "body": "Yaptığı iş kaydedilip paketlenir ve seçtiğin yapay zeka oradan devam eder. O hesabın harcama sınırları geçerli olur.",
     "confirm": "Devret"
+  },
+  "loop": {
+    "attempt": "Düzeltme {{attempt}}/{{max}}",
+    "verdict": { "pass": "Geçti", "changes": "Değişiklik istendi" },
+    "commit": "Commit {{sha}}",
+    "noCommit": "Sabitlenmiş commit yok",
+    "stale": "Eskidi"
   }
 }

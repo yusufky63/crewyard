@@ -178,6 +178,28 @@ export async function removeWorktreeKeepBranch(repoPath: string, path: string, b
   await git(repoPath, ["worktree", "remove", path], bin);
 }
 
+/**
+ * A read-only reviewer's own checkout of one commit (pinned review): a detached worktree next to
+ * the task's, so the implementer can keep changing the task worktree without moving what the
+ * reviewer reads. Reused when the same commit is already checked out there.
+ */
+export async function addDetachedCheckout(repoPath: string, path: string, sha: string, bin = "git"): Promise<void> {
+  const regs = parseWorktreeList(await git(repoPath, ["worktree", "list", "--porcelain", "-z"], bin));
+  const existing = regs.find((r) => samePath(r.path, path));
+  if (existing && existsSync(path) && (await headSha(path, bin).catch(() => null)) === sha) return;
+  if (existing) await git(repoPath, ["worktree", "remove", "--force", path], bin);
+  else if (existsSync(path)) throw new OrchestratorError("worktree.path_taken", { path });
+  await git(repoPath, ["worktree", "add", "--detach", path, sha], bin);
+}
+
+/**
+ * Removes a review checkout the daemon made. `--force` is safe only because the folder is ours,
+ * holds one detached commit, and its role cannot write; task worktrees never go through here.
+ */
+export async function removeDetachedCheckout(repoPath: string, path: string, bin = "git"): Promise<void> {
+  await git(repoPath, ["worktree", "remove", "--force", path], bin);
+}
+
 export const diffStat = async (cwd: string, baseSha: string, bin = "git") => (await git(cwd, ["diff", "--stat", baseSha, "HEAD"], bin)).trim();
 
 export const isClean = async (cwd: string, bin = "git") => (await git(cwd, ["status", "--porcelain"], bin)).trim().length === 0;

@@ -42,6 +42,7 @@ export function createGithubHandlers(
     tokenState: deps.tokenState ?? (() => token.state()),
     resetToken: () => token.reset(),
     openQuestions: pendingSource ?? ((projectId, branch) => flow!.openQuestions(projectId, branch)),
+    reviewed: (projectId, branch, headSha) => flow!.reviewedHead(projectId, branch, headSha),
     watched: () => flow!.watched(),
     afterRefresh: (projectId) => flow!.sync(projectId),
   });

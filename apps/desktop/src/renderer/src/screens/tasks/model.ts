@@ -1,4 +1,4 @@
-import { splitEndDetail, STATUS_FILTER, type CandidateView, type CrewMemberView, type LimitNoticePayload, type LimitWindow, type RequestView, type RunView, type TaskDetail, type TaskStatus, type TaskSummary } from "@crewyard/core";
+import { splitEndDetail, STATUS_FILTER, type CandidateView, type HandoffView, type LoopDecisionKind, type CrewMemberView, type LimitNoticePayload, type LimitWindow, type RequestView, type RunView, type TaskDetail, type TaskStatus, type TaskSummary } from "@crewyard/core";
 import type { InspectorTarget } from "../../inspector.ts";
 
 // Pure view logic for the Tasks screen, the Inbox and the inspector. The app has no DOM test
@@ -240,6 +240,39 @@ export function limitBanner(detail: TaskDetail, notices: LimitNoticePayload[]): 
 
 /** Tasks with a proposal you still have to approve or cancel. */
 export const awaitingApproval = (tasks: TaskSummary[]) => tasks.filter((t) => t.status === "proposed");
+
+/**
+ * A manual handoff can let the source finish its turn first (drain) only while a turn is under
+ * way; a paused, limited or ended run has no turn left to finish, so it is always stopped now.
+ */
+export const canChooseHandoffStop = (run: Pick<RunView, "state">) => run.state === "running" || run.state === "waiting_input" || run.state === "waiting_approval";
+
+/** Handoffs into or out of a run, newest first, for the inspector's handoff record. */
+export const handoffsOf = (handoffs: HandoffView[], runId: string) => handoffs.filter((h) => h.fromRunId === runId || h.toRunId === runId).sort((a, b) => b.openedAt.localeCompare(a.openedAt));
+
+/**
+ * The icon and color of a loop decision (DESIGN.md status labels): a pass is green, a skip is
+ * neutral, a try sent back or a stop is red, and a stop on a cap uses the limit gauge.
+ */
+export function loopLook(kind: LoopDecisionKind): { icon: Exclude<StatusIcon, "spinner">; tone: Tone } {
+  switch (kind) {
+    case "tests_passed":
+    case "review_passed":
+      return { icon: "check", tone: "ok" };
+    case "tests_skipped":
+      return { icon: "square", tone: "muted" };
+    case "stop_iteration_cap":
+    case "stop_spend_cap":
+      return { icon: "gauge", tone: "bad" };
+    case "stop_no_change":
+      return { icon: "square", tone: "bad" };
+    case "tests_failed":
+    case "review_changes":
+    case "review_invalid":
+    case "stop_no_resume":
+      return { icon: "x", tone: "bad" };
+  }
+}
 
 /** i18n keys cannot contain dots used as nesting, so reason and error codes map `a.b` to `a_b`. */
 export const codeKey = (code: string) => code.replace(/\./g, "_");

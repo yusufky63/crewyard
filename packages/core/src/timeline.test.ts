@@ -109,6 +109,20 @@ describe("buildTimeline", () => {
     expect(tl.entries.map((e) => `${e.kind}:${e.runId}`)).toEqual(["started:r1", "handoff:r1", "ended:r1", "started:r2", "handoff:r2"]);
   });
 
+  it("ends a burst at a loop decision and lists the decision after the run it judged", () => {
+    const failed = { code: "loop.tests_failed", params: { command: "pnpm test", exitCode: 1 } } as const;
+    const events = [
+      call(2, "r1", "a"),
+      ev(10, "r1", { kind: "loop", decision: "tests_failed", memberId: "m1", iteration: 1, max: 3, reason: failed }),
+      call(11, "r1", "b"),
+      ev(20, "r1", { kind: "loop", decision: "stop_iteration_cap", memberId: "m1", iteration: 3, max: 3, reason: { code: "loop.iteration_cap", params: { max: 3 } } }),
+    ];
+    const tl = buildTimeline([run("r1", 0, 20, { endReason: "failed" })], events, ms(30));
+    expect(tl.entries.map((e) => e.kind)).toEqual(["started", "tools", "loop", "tools", "ended", "loop"]);
+    expect(tl.entries[2]).toEqual({ kind: "loop", at: ms(10), runId: "r1", memberId: "m1", decision: "tests_failed", iteration: 1, max: 3, reason: failed });
+    expect(tl.entries.at(-1)).toMatchObject({ decision: "stop_iteration_cap", iteration: 3 });
+  });
+
   it("stays readable for thousands of tool calls", () => {
     const events: TimelineEvent[] = [];
     for (let i = 0; i < 3000; i++) events.push(call(1 + (i % 50), "r1", `t${i}`));

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowLeftRight, PanelRightClose, PanelRightOpen, Pause, Play, RotateCw, Send, X } from "lucide-react";
-import { splitEndDetail, type CandidateView, type RequestAnswer, type RunView, type TaskDetail } from "@crewyard/core";
+import { splitEndDetail, type CandidateView, type HandoffStop, type RequestAnswer, type RunView, type TaskDetail } from "@crewyard/core";
 import { BrandIcon, Button, Label, Splitter, TickMeter } from "@crewyard/ui";
 import { useInspector, type InspectorTarget } from "../inspector.ts";
 import { useNav } from "../nav.ts";
@@ -14,8 +14,8 @@ import { ProvBadge } from "../screens/providers/shared.tsx";
 import { ApprovalActions } from "../screens/inbox/ApprovalActions.tsx";
 import { act, useErrorText, useRecheck, useWork } from "../screens/tasks/data.ts";
 import { useActivity } from "../screens/tasks/live.ts";
-import { formatDuration, latestRunOf, limitBanner, profileNames, resolveTarget, runDuration, stepState } from "../screens/tasks/model.ts";
-import { ConfirmButton, ErrorLine, LimitBanner, useFormat, useNow } from "../screens/tasks/parts.tsx";
+import { canChooseHandoffStop, formatDuration, handoffsOf, latestRunOf, limitBanner, profileNames, resolveTarget, runDuration, stepState } from "../screens/tasks/model.ts";
+import { ConfirmButton, ErrorLine, HandoffStopChoice, LimitBanner, useFormat, useNow } from "../screens/tasks/parts.tsx";
 import { DiffStat } from "../screens/tasks/TaskRow.tsx";
 import { DiffReview } from "../screens/tasks/DiffReview.tsx";
 import { TaskTimeline } from "./timeline/TaskTimeline.tsx";
@@ -36,7 +36,9 @@ function Actions({ detail, run, onError }: { detail: TaskDetail; run: RunView; o
   const member = detail.crew?.members.find((m) => m.id === run.memberId);
   const targets = [member?.chosen, ...(member?.standby ?? [])].filter((c): c is CandidateView => Boolean(c) && c!.profileId !== run.profileId);
   const [target, setTarget] = useState(targets[0]?.profileId ?? "");
+  const [stop, setStop] = useState<HandoffStop>("interrupt");
   const open = run.endedAt === null;
+  const choosesStop = canChooseHandoffStop(run);
   const superseded = detail.runs.some((r) => r.resumedFrom === run.id);
   const canRetry = !superseded && run.endReason !== "completed" && (run.endedAt !== null || run.limitReached || run.resumeAt !== null);
   const canHandOff = !superseded && run.endReason !== "completed" && targets.length > 0 && run.state !== "handing_off" && !detail.cancelledAt;
@@ -107,11 +109,12 @@ function Actions({ detail, run, onError }: { detail: TaskDetail; run: RunView; o
                 </option>
               ))}
             </select>
-            <Button disabled={!target} onClick={() => void go(() => act("runs.handoff", { runId: run.id, targetProfileId: target }))}>
+            <Button disabled={!target} onClick={() => void go(() => act("runs.handoff", { runId: run.id, targetProfileId: target, ...(choosesStop ? { stop } : {}) }))}>
               <ArrowLeftRight aria-hidden="true" />
               {f.t("inspector.handOff")}
             </Button>
           </div>
+          {choosesStop && <HandoffStopChoice name={`ins-stop-${run.id}`} value={stop} onChange={setStop} />}
         </div>
       )}
       {open && (
@@ -144,6 +147,32 @@ function PendingApproval({ detail, run, onError }: { detail: TaskDetail; run: Ru
       <Label>{f.t("inspector.approval")}</Label>
       {q.payload.command && <pre className="ib-code">{q.payload.command}</pre>}
       <ApprovalActions key={q.id} q={q} answer={answer} />
+    </div>
+  );
+}
+
+/** How work moved into or out of this run: who to whom, how the session carried over, how the source stopped. */
+function HandoffRecord({ detail, run }: { detail: TaskDetail; run: RunView }) {
+  const f = useFormat();
+  const names = profileNames(detail);
+  const list = handoffsOf(detail.handoffs, run.id);
+  if (list.length === 0) return null;
+  const aliasOf = (profileId: string | null | undefined) => (profileId ? (names.get(profileId)?.alias ?? profileId) : "");
+  return (
+    <div className="ins-sec">
+      <Label>{f.t("inspector.handoffs")}</Label>
+      <ul className="ins-handoffs">
+        {list.map((h) => {
+          const out = h.fromRunId === run.id;
+          const source = detail.runs.find((r) => r.id === h.fromRunId);
+          return (
+            <li key={h.id}>
+              <span>{out ? f.t("handoffRecord.out", { target: aliasOf(h.targetProfileId) }) : f.t("handoffRecord.in", { source: aliasOf(source?.profileId) })}</span>
+              <span className="muted">{[h.kind ? f.t(`handoffKind.${h.kind}`) : f.t("handoffKind.pending"), f.t(`handoffStop.done.${h.stop}`)].join(" · ")}</span>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
@@ -282,6 +311,7 @@ function Body({ detail, target }: { detail: TaskDetail; target: InspectorTarget 
             </ol>
           </div>
           {run && <EndDetail run={run} />}
+          {run && <HandoffRecord detail={detail} run={run} />}
           <TaskTimeline detail={detail} />
           {lineage.length > 1 && (
             <div className="ins-sec">

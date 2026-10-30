@@ -100,3 +100,11 @@
 .tk-step-dot.s-done { background: var(--ok); }
 /* Placeholder for a row not mounted yet (LazyRow): the height of a collapsed row, so the scrollbar is right. */
 .tk-row-ph { min-height: var(--row); }
+
+/* Handoff stop choice (inspector and Change AI dialog): two radio rows, the hint under each label. */
+.ho-stop { border: 0; margin: 0; padding: 0; display: grid; gap: 4px; min-width: 0; }
+.ho-stop legend { margin-bottom: 4px; padding: 0; }
+.ho-stop-row { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 8px; align-items: start; padding: 6px 10px; border: 1px solid var(--line); cursor: pointer; font-size: 13px; }
+.ho-stop-row:has(input:checked) { border-color: var(--accent); }
+.ho-stop-row input { margin: 2px 0 0; accent-color: var(--accent); }
+.ho-stop-hint { display: block; font-size: 12px; line-height: 1.35; }

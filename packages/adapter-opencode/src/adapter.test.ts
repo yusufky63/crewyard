@@ -1,8 +1,8 @@
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { AgentEvent, REVIEW_VERDICT_OUTPUT, type AgentAdapter, type RolePolicy, type RunHandle, type StartRequest } from "@crewyard/core";
+import { AgentEvent, REVIEW_VERDICT_OUTPUT, sessionProblemOf, type AgentAdapter, type ForkRequest, type Profile, type RolePolicy, type RunHandle, type StartRequest } from "@crewyard/core";
 import { WINDOWS_SYSTEM_VARS } from "@crewyard/proc";
 import { childEnv } from "./server.ts";
 import { unsupportedVersion } from "./adapter.ts";
@@ -384,5 +384,109 @@ describe("OpenCode adapter: turn control", () => {
     expect(exported?.kind).toBe("text");
     expect(JSON.parse((exported as { text: string }).text).info.id).toBe(session.sessionId);
     expect(await adapter.transcript!({ profile: req.profile, cwd: req.cwd, env: req.env, session: { ...session, sessionId: "ses_missing" } })).toBeNull();
+  });
+});
+
+describe("OpenCode adapter: fork between profiles", () => {
+  interface ForkSetup extends Setup {
+    target: Profile;
+    targetEnv: Record<string, string>;
+    fork: (over?: Partial<ForkRequest>) => ForkRequest;
+    ref: { runner: "opencode"; sessionId: string };
+  }
+
+  // One finished turn in the source profile, and a second profile on the same provider.
+  async function forkSetup(name: string, targetEnv: Record<string, string> = {}, forkTimeoutMs?: number): Promise<ForkSetup> {
+    const s = await setup(name, "basic");
+    const adapter = createAdapter({ executable: process.execPath, prefixArgs: [FAKE], reconnectDelayMs: 100, ...(forkTimeoutMs ? { forkTimeoutMs } : {}) });
+    const run = await adapter.start(s.req);
+    await collect(adapter, run);
+    const ref = { runner: "opencode" as const, sessionId: run.nativeSession!.sessionId };
+    const target: Profile = { ...s.req.profile, id: "p2", alias: "oc two", configDir: join(root, name, "target profile") };
+    const env = { FAKE_OPENCODE_LOG: s.logFile, FAKE_PROVIDER_KEY: "not-a-real-key-either", ...targetEnv };
+    const fork = (over: Partial<ForkRequest> = {}): ForkRequest => ({ source: { profile: s.req.profile, session: ref, env: s.req.env }, target: { profile: target, model: "m2", env }, cwd: s.req.cwd, compact: true, ...over });
+    return { ...s, adapter, target, targetEnv: env, fork, ref };
+  }
+
+  // Export and import get no run secrets, so the fake's log path reaches them through the parent.
+  async function withLog<T>(file: string, fn: () => Promise<T>): Promise<T> {
+    process.env.FAKE_OPENCODE_LOG = file;
+    try {
+      return await fn();
+    } finally {
+      delete process.env.FAKE_OPENCODE_LOG;
+    }
+  }
+
+  const steps = (log: Array<Record<string, unknown>>) => log.filter((l) => ["export", "import", "fork", "summarize"].includes(String(l.kind)));
+  const lastLaunch = (log: Array<Record<string, unknown>>) => log.filter((l) => l.kind === "launch" && (l.argv as string[])[0] === "serve").at(-1) as { pid: number; xdg: { data: string } };
+
+  it("exports from the source, imports into the target, forks and summarizes there, and the copy resumes under the target's rules", async () => {
+    const f = await forkSetup("fork ok");
+    const sourceStore = join(f.configDir, "data", "fake-sessions.json");
+    const before = await readFile(sourceStore, "utf8");
+
+    const result = await withLog(f.logFile, () => f.adapter.fork!(f.fork()));
+    expect(result.session.sessionId).toMatch(/^ses_/);
+    expect(result.session.sessionId).not.toBe(f.ref.sessionId);
+    expect(result).toMatchObject({ compacted: true, summary: "Summary: the user asked for a greeting.", usage: { tokensIn: 40, tokensOut: 8, cacheRead: 4, costUsd: 0.001 } });
+    // The history's turn plus the summary: what the resumed run's first usage report starts from.
+    expect(result.totals).toEqual({ tokensIn: 140, tokensOut: 28, cacheRead: 14, costUsd: expect.closeTo(0.0133, 6) });
+
+    const log = await readLog(f.logFile);
+    const sourceData = join(f.configDir, "data");
+    const targetData = join(f.target.configDir, "data");
+    expect(steps(log)).toEqual([
+      { kind: "export", session: f.ref.sessionId, data: sourceData },
+      { kind: "import", session: f.ref.sessionId, data: targetData, file: expect.stringContaining(join(f.target.configDir, "cache", "crewyard-fork-")), cwd: f.req.cwd },
+      { kind: "fork", session: f.ref.sessionId, forked: result.session.sessionId, data: targetData },
+      { kind: "summarize", session: result.session.sessionId, body: { providerID: "p", modelID: "m2", auto: false } },
+    ]);
+    expect(lastLaunch(log).xdg.data).toBe(targetData);
+    expect(await gone(lastLaunch(log).pid)).toBe(true);
+    expect(await readFile(sourceStore, "utf8")).toBe(before);
+    expect((await readdir(join(f.target.configDir, "cache"))).filter((n) => n.startsWith("crewyard-fork-"))).toEqual([]);
+
+    const again = createAdapter({ executable: process.execPath, prefixArgs: [FAKE], reconnectDelayMs: 100 });
+    const resumed = await again.resume(result.session, { ...f.req, profile: f.target, env: f.targetEnv, prompt: "continue" });
+    expect(texts(await collect(again, resumed))).toEqual(["ok"]);
+    const update = (await readLog(f.logFile)).find((l) => l.kind === "session.update") as { session: string; body: { permission: unknown[] } };
+    expect(update.session).toBe(result.session.sessionId);
+    expect(update.body.permission).toContainEqual({ permission: "bash", pattern: "*", action: "ask" });
+
+    // The target's runner itself has no such session: gone, not an ordinary failure.
+    const missing = await again.resume({ runner: "opencode", sessionId: "ses_missing" }, { ...f.req, profile: f.target, env: f.targetEnv }).catch((e: unknown) => e);
+    expect(sessionProblemOf(missing)).toBe("gone");
+  });
+
+  it("copies without a model call when compact is off", async () => {
+    const f = await forkSetup("fork plain");
+    const result = await withLog(f.logFile, () => f.adapter.fork!(f.fork({ compact: false })));
+    expect(result).toMatchObject({ compacted: false, summary: null, usage: null, totals: { tokensIn: 100, tokensOut: 20, cacheRead: 10 } });
+    expect(steps(await readLog(f.logFile)).map((l) => l.kind)).toEqual(["export", "import", "fork"]);
+  });
+
+  it("reports a source session the runner does not have as gone, before touching the target", async () => {
+    const f = await forkSetup("fork gone");
+    const err = await withLog(f.logFile, () => f.adapter.fork!(f.fork({ source: { profile: f.req.profile, session: { runner: "opencode", sessionId: "ses_missing" }, env: f.req.env } }))).catch((e: unknown) => e);
+    expect(sessionProblemOf(err)).toBe("gone");
+    const log = await readLog(f.logFile);
+    expect(steps(log)).toEqual([]);
+    expect(lastLaunch(log).xdg.data).toBe(join(f.configDir, "data"));
+  });
+
+  it("fails as an ordinary error when the compaction fails, and stops the server", async () => {
+    const f = await forkSetup("fork overflow", { FAKE_SUMMARIZE: "error" });
+    const err = await withLog(f.logFile, () => f.adapter.fork!(f.fork())).catch((e: unknown) => e);
+    expect(String(err)).toMatch(/could not compact the session: ContextOverflowError/);
+    expect(sessionProblemOf(err)).toBeNull();
+    expect(await gone(lastLaunch(await readLog(f.logFile)).pid)).toBe(true);
+  });
+
+  it("gives up on a summarize that never answers and kills the server", async () => {
+    const f = await forkSetup("fork hang", { FAKE_SUMMARIZE: "hang" }, 4_000);
+    const err = await withLog(f.logFile, () => f.adapter.fork!(f.fork())).catch((e: unknown) => e);
+    expect(String(err)).toMatch(/did not finish within 4000 ms/);
+    expect(await gone(lastLaunch(await readLog(f.logFile)).pid)).toBe(true);
   });
 });

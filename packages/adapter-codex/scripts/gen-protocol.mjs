@@ -62,6 +62,11 @@ const ROOTS = [
   "v2/CommandExecutionApprovalDecision",
   "v2/FileChangeApprovalDecision",
   "v2/WindowsSandboxReadinessResponse",
+  "v2/ReviewStartParams",
+  "v2/ReviewStartResponse",
+  "v2/ThreadForkParams",
+  "v2/ThreadForkResponse",
+  "v2/ThreadCompactStartParams",
 ];
 
 const here = dirname(fileURLToPath(import.meta.url));

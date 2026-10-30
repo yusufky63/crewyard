@@ -120,6 +120,12 @@
         "fail": "Açık sorular var",
         "unknown": "Sorular bilinmiyor"
       },
+      "reviewed": {
+        "pass": "Bu commit incelendi",
+        "wait": "Bu commit'in incelenmesi bekleniyor",
+        "fail": "İnceleme başka bir commit için ya da değişiklik istedi",
+        "unknown": "İnceleme durumu bilinmiyor"
+      },
       "approval": {
         "pass": "Onaylandı",
         "wait": "Senin onayın",
@@ -222,6 +228,12 @@
         "pass": "İnceleme geçti",
         "wait": "İnceleme bitmedi",
         "fail": "İnceleme başarısız",
+        "unknown": "İnceleme durumu bilinmiyor"
+      },
+      "reviewed": {
+        "pass": "Bu commit incelendi",
+        "wait": "Bu commit'in incelenmesi bekleniyor",
+        "fail": "İnceleme başka bir commit için ya da değişiklik istedi",
         "unknown": "İnceleme durumu bilinmiyor"
       },
       "commits": {

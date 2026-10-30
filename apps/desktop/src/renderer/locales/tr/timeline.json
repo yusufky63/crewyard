@@ -79,5 +79,19 @@
     "hideOutput": "Çıktıyı gizle",
     "outputOf": "{{title}} çıktısı",
     "failed": "Başarısız"
+  },
+  "loop": {
+    "tests_passed": "Testler geçti: {{command}}",
+    "tests_failed": "{{reason}}; {{role}} adımına geri gönderildi, düzeltme denemesi {{iteration}}/{{max}}",
+    "tests_skipped": "Testler atlandı: projede test komutu yok",
+    "review_passed": "İnceleme {{sha}} commit'inde geçti",
+    "review_passed_nosha": "İnceleme geçti",
+    "review_changes": "İnceleme {{sha}} commit'inde değişiklik istedi ({{reason}}); {{role}} adımına geri gönderildi, düzeltme denemesi {{iteration}}/{{max}}",
+    "review_changes_nosha": "İnceleme değişiklik istedi ({{reason}}); {{role}} adımına geri gönderildi, düzeltme denemesi {{iteration}}/{{max}}",
+    "review_invalid": "İnceleme sonucu denetimden geçmedi; döngü tahmin yürütmek yerine durdu",
+    "stop_iteration_cap": "Döngü durdu: {{max}} düzeltme denemesinin hepsi kullanıldı",
+    "stop_no_change": "Döngü durdu: son denemeden beri hiçbir şey değişmedi",
+    "stop_spend_cap": "Döngü durdu: {{cap}} doldu",
+    "stop_no_resume": "Döngü durdu: {{runner}}, kodu yazan oturumu sürdüremiyor"
   }
 }

@@ -1,13 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { checkOutput, outputRetryPrompt, parseOutputText } from "@crewyard/core";
+import { checkOutput, outputRetryPrompt, parseOutputText, sessionError } from "@crewyard/core";
 import type {
   AgentAdapter,
   AgentCapabilities,
   AgentEvent,
   Answer,
   EndReason,
+  ForkRequest,
+  ForkResult,
+  ForkUsage,
   LimitSample,
   NativeSessionRef,
   OutputSchema,
@@ -15,6 +18,7 @@ import type {
   Profile,
   RewindRequest,
   RewindResult,
+  ReviewTarget,
   RunHandle,
   RunOutput,
   StartRequest,
@@ -47,7 +51,12 @@ import type {
   GetAccountRateLimitsResponse,
   GetAccountResponse,
   PermissionsRequestApprovalParams,
+  ReviewStartParams,
+  ReviewStartResponse,
   ServerRequestResolvedNotification,
+  ThreadForkParams,
+  ThreadForkResponse,
+  ThreadTokenUsage,
   ThreadResumeParams,
   ThreadStartParams,
   ThreadStartResponse,
@@ -84,6 +93,11 @@ export const capabilities: AgentCapabilities = {
   // changes" (ThreadRollbackParams in codex-cli 0.147.0), so files come back through our git checkpoint.
   undo: { files: false, history: true },
   transcript: true,
+  // thread/fork by rollout `path` (so another profile's CODEX_HOME can read it) plus
+  // thread/compact/start, both in codex-cli 0.147.0 (ThreadForkParams, ThreadCompactStartParams).
+  fork: { compact: true },
+  // review/start with a baseBranch or commit target (ReviewTarget in codex-cli 0.147.0).
+  nativeReview: true,
 };
 
 /** Oldest codex-cli this adapter was checked against. */
@@ -140,6 +154,12 @@ interface Run {
   allowCommands: string[];
   networkDenied: boolean;
   outputSchema: OutputSchema | null;
+  /** StartRequest.review: the first turn is codex's own review; a verdict turn maps it to outputSchema. */
+  review: ReviewTarget | null;
+  /** The verdict turn after the review has been started. */
+  reviewMapped: boolean;
+  /** The StartRequest prompt, context for the verdict turn. */
+  context: string;
   /** StartRequest.nextTurn: the step's queued follow-ups at each turn boundary. */
   nextTurn: (() => Promise<string | null>) | null;
   /** A turn ended and nextTurn is being asked; the end is held until it answers. */
@@ -208,7 +228,8 @@ export class CodexAdapter implements AgentAdapter {
     try {
       const res = await run.server.rpc.request<ThreadStartResponse>("thread/start", this.threadParams(req), { timeoutMs: 60_000 });
       this.attachThread(run, res.thread.id);
-      if (req.prompt.trim()) await this.startTurn(run, req.prompt);
+      if (run.review) await this.startReview(run, run.review);
+      else if (req.prompt.trim()) await this.startTurn(run, req.prompt);
       return run.handle;
     } catch (err) {
       await this.abandon(run);
@@ -221,7 +242,9 @@ export class CodexAdapter implements AgentAdapter {
     const run = await this.open(req);
     try {
       const params: ThreadResumeParams = { ...this.threadParams(req), threadId: ref.sessionId, excludeTurns: true };
-      const res = await run.server.rpc.request<ThreadStartResponse>("thread/resume", params, { timeoutMs: 60_000 });
+      const res = await run.server.rpc.request<ThreadStartResponse>("thread/resume", params, { timeoutMs: 60_000 }).catch((err: unknown) => {
+        throw goneOr(err);
+      });
       this.attachThread(run, res.thread.id);
       if (req.prompt.trim()) await this.startTurn(run, req.prompt);
       return run.handle;
@@ -283,6 +306,61 @@ export class CodexAdapter implements AgentAdapter {
     return null;
   }
 
+  /**
+   * Handoff by fork (feature scan A11): the target profile's app-server forks the source thread
+   * from its rollout file (`path`, since the thread lives under the source profile's CODEX_HOME),
+   * then compacts the fork with the target's model. The source thread is only read.
+   */
+  async fork(req: ForkRequest): Promise<ForkResult> {
+    const rollout = await this.transcript({ profile: req.source.profile, cwd: req.cwd, env: req.source.env, session: req.source.session });
+    if (rollout?.kind !== "file") throw sessionError("gone", `no rollout for thread ${req.source.session.sessionId} under the source profile`);
+    const server = await AppServer.launch(this.launcher, { codexHome: req.target.profile.configDir, cwd: req.cwd, env: req.target.env });
+    try {
+      // `path` is marked unstable in 0.147.0, so the experimental API is on, as for runs.
+      await server.initialize({ experimentalApi: true });
+      const mapper = new NotificationMapper();
+      let compactDone: (() => void) | null = null;
+      server.rpc.onNotification((method, params) => {
+        mapper.map(method, params);
+        if (method === "turn/completed" || (mapper.compacted && method === "item/completed")) compactDone?.();
+      });
+      // Nothing may ask for approval here: the fork runs no tool, and compaction only summarizes.
+      server.rpc.onRequest(() => Promise.reject(new RpcError(METHOD_NOT_FOUND, "crewyard runs no tools while forking")));
+      const model = req.target.model ?? req.target.profile.defaultModel;
+      const params: ThreadForkParams = {
+        threadId: req.source.session.sessionId,
+        path: rollout.path,
+        cwd: req.cwd,
+        approvalPolicy: "on-request",
+        config: { "agents.enabled": false, ...shellEnvPolicy(req.target.env) },
+        excludeTurns: true,
+        ...(model ? { model } : {}),
+      };
+      const res = await server.rpc.request<ThreadForkResponse>("thread/fork", params, { timeoutMs: 60_000 }).catch((err: unknown) => {
+        throw goneOr(err);
+      });
+      const threadId = res.thread.id;
+      if (!req.compact) return { session: { runner: "codex", sessionId: threadId }, compacted: false, summary: null, usage: null, totals: null };
+      const before = mapper.lastUsage;
+      const done = new Promise<void>((resolve) => (compactDone = resolve));
+      await server.rpc.request("thread/compact/start", { threadId }, { timeoutMs: 60_000 });
+      let timer: NodeJS.Timeout | undefined;
+      const ok = await Promise.race([done.then(() => true), new Promise<false>((r) => (timer = setTimeout(() => r(false), FORK_COMPACT_MS)))]);
+      clearTimeout(timer);
+      const after = mapper.lastUsage;
+      return {
+        session: { runner: "codex", sessionId: threadId },
+        compacted: ok && mapper.compacted,
+        // codex keeps the compacted history inside the thread and sends no summary text for it.
+        summary: null,
+        usage: after ? forkSpend(after, before) : null,
+        totals: after ? usageTotals(after) : null,
+      };
+    } finally {
+      await server.close();
+    }
+  }
+
   async answer(handle: RunHandle, requestId: string, answer: Answer): Promise<void> {
     const run = this.mustGet(handle);
     const waiting = run.waiting.get(requestId);
@@ -339,6 +417,9 @@ export class CodexAdapter implements AgentAdapter {
       allowCommands: req.policy.allowCommands,
       networkDenied: req.policy.network === "denied",
       outputSchema: req.outputSchema ?? null,
+      review: req.review?.target ?? null,
+      reviewMapped: false,
+      context: req.prompt,
       nextTurn: req.nextTurn ?? null,
       pulling: false,
       outputRetried: false,
@@ -408,6 +489,13 @@ export class CodexAdapter implements AgentAdapter {
     run.mapper.turnId ??= res.turn.id;
   }
 
+  /** codex's own review (feature scan A12), inline on the run's thread so the verdict turn can see it. */
+  private async startReview(run: Run, target: ReviewTarget): Promise<void> {
+    const params: ReviewStartParams = { threadId: run.threadId, target: codexTarget(target), delivery: "inline" };
+    const res = await run.server.rpc.request<ReviewStartResponse>("review/start", params, { timeoutMs: 60_000 });
+    run.mapper.turnId ??= res.turn.id;
+  }
+
   private onNotification(run: Run, method: string, params: unknown): void {
     if (method === "serverRequest/resolved") {
       // codex settled the request itself (for example the turn was interrupted); drop our Inbox item.
@@ -423,6 +511,13 @@ export class CodexAdapter implements AgentAdapter {
     for (const body of run.mapper.map(method, params)) this.emit(run, body);
     const end = run.mapper.ended;
     if (!end || run.pulling) return;
+    // The review turn ended: one more turn in the same thread maps it to the run's verdict schema.
+    if (end.reason === "completed" && run.review && !run.reviewMapped && run.outputSchema && !run.stopping && !run.ended) {
+      run.reviewMapped = true;
+      run.mapper.ended = null;
+      this.startTurn(run, verdictPrompt(run.mapper.reviewText, run.context)).catch((err: unknown) => this.finish(run, "completed", undefined, { ok: false, error: `the verdict turn could not start: ${message(err)}` }));
+      return;
+    }
     // Turn boundary: the step's queued follow-ups start the next turn in the same thread.
     if (end.reason === "completed" && run.nextTurn && !run.stopping && !run.ended) {
       run.pulling = true;
@@ -584,6 +679,51 @@ function findNewestFirst(dir: string, match: (name: string) => boolean, depth: n
 export function shellEnvPolicy(secrets: Record<string, string>): Record<string, unknown> {
   const names = [...new Set([...Object.keys(secrets), "OPENAI_API_KEY", "CODEX_API_KEY"])].sort();
   return { "shell_environment_policy.ignore_default_excludes": false, "shell_environment_policy.exclude": names };
+}
+
+/** How long a fork waits for codex to finish compacting before it hands over the uncompacted fork. */
+const FORK_COMPACT_MS = 5 * 60_000;
+
+function codexTarget(t: ReviewTarget): ReviewStartParams["target"] {
+  return t.kind === "base_branch" ? { type: "baseBranch", branch: t.branch } : { type: "commit", sha: t.sha, title: t.title };
+}
+
+/**
+ * The turn after a native review: codex reviews in its own format (findings with priorities), and
+ * the crew's gate reads our verdict schema, so the model that just reviewed restates it.
+ */
+export function verdictPrompt(review: string | null, context: string): string {
+  return [
+    review ? "You have just reviewed the changes. Your review:" : "You have just reviewed the changes.",
+    ...(review ? ["<<<", review, ">>>"] : []),
+    "",
+    'Restate it as the JSON result now, without reviewing again: verdict "changes" when any finding should be fixed before merge (a P0, P1 or P2 finding, or a blocker or major issue), otherwise "pass"; one comment per finding with its file, first line (or null) and severity (P0 and P1 are blocker, P2 major, P3 minor).',
+    "",
+    "The task you reviewed, for context:",
+    context,
+  ].join("\n");
+}
+
+const toForkUsage = (t: ThreadTokenUsage["total"]): ForkUsage => ({ tokensIn: Math.max(0, t.inputTokens - t.cachedInputTokens), tokensOut: t.outputTokens, cacheRead: t.cachedInputTokens, costUsd: null });
+
+/** The thread's running totals in our usage terms (the same numbers usage.update carries). */
+function usageTotals(u: ThreadTokenUsage): ForkUsage {
+  return toForkUsage(u.total);
+}
+
+/** What the compaction added on top of the totals the fork started with. */
+function forkSpend(after: ThreadTokenUsage, before: ThreadTokenUsage | null): ForkUsage {
+  if (!before) return toForkUsage(after.last);
+  const a = usageTotals(after);
+  const b = usageTotals(before);
+  return { tokensIn: Math.max(0, a.tokensIn - b.tokensIn), tokensOut: Math.max(0, a.tokensOut - b.tokensOut), cacheRead: Math.max(0, a.cacheRead - b.cacheRead), costUsd: null };
+}
+
+/** codex says a thread has no rollout (messages checked against 0.147.0): the runner itself confirms it is gone. */
+const GONE = /no rollout found for thread id|failed to resolve rollout path/i;
+
+function goneOr(err: unknown): unknown {
+  return err instanceof RpcError && GONE.test(err.message) ? sessionError("gone", err.message) : err;
 }
 
 function textInput(text: string): CodexUserInput {

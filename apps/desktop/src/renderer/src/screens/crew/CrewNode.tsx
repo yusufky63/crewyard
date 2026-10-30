@@ -36,8 +36,9 @@ function CrewNodeView({ id, data }: NodeProps<CrewFlowNode>) {
   const { t } = useTranslation("crew");
   const fmt = useFormatters();
   const n = data.model;
-  const cls = ["crew-node", "spec", n.kind === "standby" ? "standby" : "", data.selected ? "selected" : "", data.onPath ? "on-path" : ""].filter(Boolean).join(" ");
-  const fact = fmt.fact(n.fact);
+  const loop = n.loop ? fmt.loop(n.loop) : null;
+  const cls = ["crew-node", "spec", loop?.tag ? "looped" : "", n.kind === "standby" ? "standby" : "", data.selected ? "selected" : "", data.onPath ? "on-path" : ""].filter(Boolean).join(" ");
+  const fact = loop?.fact ?? fmt.fact(n.fact);
   const modelLine = n.kind === "task" ? null : [n.model ?? t("node.defaultModel"), n.account ?? t("node.noAccount")].join(" · ");
 
   return (
@@ -77,10 +78,22 @@ function CrewNodeView({ id, data }: NodeProps<CrewFlowNode>) {
             {modelLine}
           </span>
         )}
-        <span className="crew-node-line" title={fact}>
+        <span className="crew-node-line" title={loop ? fmt.loopLine(loop) : fact}>
           {fact}
+          {loop?.stale && (
+            <>
+              {" · "}
+              <span className="crew-node-stale">{t("loop.stale")}</span>
+            </>
+          )}
         </span>
       </div>
+      {/* The loop's headline is a fifth row; the tile grows to NODE_H_LOOP to hold it. */}
+      {loop?.tag && (
+        <span className={`lbl crew-node-tag tone-${loop.tone}`} title={fmt.loopLine(loop)}>
+          {loop.tag}
+        </span>
+      )}
       <Handle type="source" position={Position.Right} isConnectable={false} className="crew-handle" />
     </div>
   );

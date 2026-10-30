@@ -94,6 +94,9 @@ export const DEFAULT_PORT_RANGE = { from: 4100, to: 4999, envVar: "PORT" } as co
 
 export const defaultBootstrap = (): WorktreeBootstrap => ({ setup: [], cleanup: [], include: [], includeMaxMb: 64, port: null });
 
+export const DEFAULT_MAX_ITERATIONS = 3;
+export const defaultLoop = () => ({ maxIterations: DEFAULT_MAX_ITERATIONS });
+
 export const ProjectConfig = z.object({
   version: z.literal(1),
   name: z.string().min(1),
@@ -116,6 +119,8 @@ export const ProjectConfig = z.object({
   }),
   // Configs written before bootstrap existed read as "nothing to set up".
   bootstrap: WorktreeBootstrap.default(defaultBootstrap),
+  // Run until green and the review loop (feature scan A9): fix attempts per step before the loop stops.
+  loop: z.object({ maxIterations: z.number().int().min(1).max(10) }).default(defaultLoop),
 });
 export type ProjectConfig = z.infer<typeof ProjectConfig>;
 
@@ -142,5 +147,6 @@ export function defaultProjectConfig(name: string, worktreeRoot: string): Projec
     worktreeRoot,
     github: { remote: null, pushNeedsApproval: true, actionsWarnPct: 80 },
     bootstrap: defaultBootstrap(),
+    loop: defaultLoop(),
   };
 }

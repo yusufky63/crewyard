@@ -1,4 +1,4 @@
-import type { Options, PermissionResult, Query, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import type { HookInput, Options, PermissionResult, Query, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { QueryFn } from "./adapter.ts";
 import { errorResult } from "./fixtures.ts";
 
@@ -12,6 +12,8 @@ export type Step =
   /** Waits until interrupt() and then ends the turn the way the CLI does after an abort. */
   | { block: true }
   | { spawn: { pid: number } }
+  /** Runs the hooks registered for this event, as the CLI does (PostCompact after a compaction). */
+  | { hook: HookInput }
   | { fail: string };
 
 export interface Recorded {
@@ -50,6 +52,10 @@ export function fakeQuery(turns: Step[][]): { query: QueryFn; rec: Recorded } {
             yield errorResult("error_during_execution", { terminal_reason: "aborted_streaming" });
           } else if ("spawn" in step) {
             options.spawnClaudeCodeProcess!({ command: "claude.exe", args: [], cwd: options.cwd, env: options.env ?? {}, signal: new AbortController().signal });
+          } else if ("hook" in step) {
+            for (const matcher of options.hooks?.[step.hook.hook_event_name] ?? []) {
+              for (const cb of matcher.hooks) await cb(step.hook, undefined, { signal: new AbortController().signal });
+            }
           } else if ("fail" in step) {
             throw new Error(step.fail);
           } else yield step;

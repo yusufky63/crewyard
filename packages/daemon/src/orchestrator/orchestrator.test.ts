@@ -125,8 +125,13 @@ describe("end to end", () => {
       ]),
     );
     expect(done.runs.find((r) => r.role === "implementer")!.diff).toEqual([{ path: "src/login.ts", added: 12, removed: 1 }]);
-    // Tester and reviewer run read-only inside the implementer's worktree.
-    expect(adapter.started.find((s) => s.role === "reviewer")!.req.cwd).toBe(detail.worktree?.path);
+    // The tester runs read-only inside the implementer's worktree; the reviewer reads a pinned checkout of its head.
+    expect(adapter.started.find((s) => s.role === "tester")!.req.cwd).toBe(detail.worktree?.path);
+    const head = (await git(detail.worktree!.path, "rev-parse", "HEAD")).trim();
+    expect(adapter.started.find((s) => s.role === "reviewer")!.req.cwd).toBe(`${detail.worktree!.path}.review-${head.slice(0, 8)}`);
+    expect(adapter.started.find((s) => s.role === "reviewer")!.req.prompt).toContain(`You review commit ${head}`);
+    // The checkout goes once the review ended.
+    await waitFor(() => !existsSync(`${detail.worktree!.path}.review-${head.slice(0, 8)}`));
     expect(adapter.inspect(implStart.runId).answers).toEqual([{ kind: "question", answers: [{ selected: ["redis"] }] }]);
     const kinds = new Set(topics.map((t) => t.topic));
     expect([...kinds].sort()).toEqual(["requests.changed", "runs.event", "tasks.changed"]);
@@ -856,7 +861,8 @@ describe("safety (feature scan F3, F4, F8, F11, F17)", () => {
 describe("schema-checked results", () => {
   it("asks planner and reviewer for JSON, hands the checked plan on and records the verdict", async () => {
     const plan = { summary: "Rate limit logins.", steps: [{ title: "Add a token bucket", detail: "five per minute" }], acceptanceCriteria: ["429 after five tries"], risks: [] };
-    const verdict = { verdict: "changes", summary: "Missing test.", comments: [{ file: "src/login.ts", line: 12, severity: "major", body: "No test for the reset." }] };
+    // A pass with a note: a "changes" verdict would start the review loop (loops.test.ts covers it).
+    const verdict = { verdict: "pass", summary: "Missing test.", comments: [{ file: "src/login.ts", line: 12, severity: "minor", body: "No test for the reset." }] };
     const pick: Picker = (role) =>
       role === "planner"
         ? [running, { emit: { type: "plan.update", steps: [{ title: "scratch todo", status: "in_progress" }] } }, { emit: { type: "run.ended", reason: "completed", output: { ok: true, value: plan } } }]
@@ -880,7 +886,7 @@ describe("schema-checked results", () => {
     expect(req("implementer").prompt).not.toContain("scratch todo");
 
     const events = store.eventsSince(0, 5_000);
-    expect(events.find((e) => e.kind === "review.verdict")?.payload).toEqual({ verdict: "changes", summary: "Missing test.", comments: verdict.comments });
+    expect(events.find((e) => e.kind === "review.verdict")?.payload).toEqual({ verdict: "pass", summary: "Missing test.", comments: verdict.comments });
     expect(events.find((e) => e.kind === "plan.result")?.payload).toEqual({ plan });
     // A role that asked for no result gets nothing recorded, whatever its adapter sent.
     expect(events.some((e) => e.kind === "result.invalid")).toBe(false);

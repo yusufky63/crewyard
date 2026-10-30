@@ -1,5 +1,5 @@
 import { reviewFixture } from "./reviewFixture.ts";
-import { NO_RUN_CONTROLS, type CandidateView, type CrewMemberView, type IpcMethod, type IpcParams, type IpcResult, type LimitNoticePayload, type RequestView, type RoleId, type RunView, type StallAlertView, type TaskDetail, type TaskSummary, type UndoPreview } from "@crewyard/core";
+import { NO_RUN_CONTROLS, type CandidateView, type CrewMemberView, type IpcMethod, type IpcParams, type IpcResult, type LimitNoticePayload, type LoopDecisionView, type RequestView, type RoleId, type RunView, type StallAlertView, type TaskDetail, type TaskSummary, type UndoPreview } from "@crewyard/core";
 
 // Screenshot data. Used only when the page URL has `fixture`, which the main process sets only
 // in screenshot mode (CREWYARD_SHOT_QUERY); a normal run never reads anything from this file.
@@ -29,6 +29,16 @@ const FLASH = cand("p-flash", "ds-primary", "opencode", "deepseek", "deepseek-fl
 const ARGON = cand("p-argon", "google", "gemini-cli", "google", "gemini-4-argon", 0, null, [{ code: "fit.reasoning" }, { code: "headroom.unknown" }]);
 
 let seq = 0;
+const decision = (m: CrewMemberView, runId: string, kind: LoopDecisionView["kind"], iteration: number, reason: LoopDecisionView["reason"], at: string): LoopDecisionView => ({
+  id: `d-${runId}-${kind}-${iteration}`,
+  memberId: m.id,
+  runId,
+  iteration,
+  maxIterations: 3,
+  kind,
+  reason,
+  at,
+});
 const member = (role: RoleId, step: number, chosen: CandidateView, standby: CandidateView[], dependsOn: string[] = [], writesCode = false): CrewMemberView => ({
   id: `m${++seq}`,
   step: role,
@@ -107,6 +117,7 @@ function build(projectId: string): { tasks: TaskDetail[]; requests: RequestView[
     runs,
     worktree: runs.length ? { id: "w1", path: `C:\\Projeler\\.mc\\worktrees\\crewyard\\${s.id}`, branch: `crewyard/${s.id}`, baseSha: "4f2c1aa", ownerRunId: runs[0]!.id, createdAt: s.createdAt } : null,
     handoffs: [],
+    loop: { maxIterations: 3, decisions: [], tests: [], verdicts: [] },
     ...over,
   });
 
@@ -139,7 +150,15 @@ function build(projectId: string): { tasks: TaskDetail[]; requests: RequestView[
       controls: { steer: { ok: true, reason: null }, undo: { ok: false, reason: "undo.turn_running", turnId: null } },
     }),
   ];
-  const running = detail(summary("t-running", "Add rate limiting to the login endpoint", { status: "running", activeRuns: 1, spend: { usd: 0.31, provenance: "estimated" } }), r, runningRuns);
+  // The tests failed twice at the implementer's turn boundary; each failure went back to the same session.
+  const failed = { code: "loop.tests_failed" as const, params: { command: "pnpm vitest run src/auth", exitCode: 1 } };
+  const runningLoop = {
+    maxIterations: 3,
+    decisions: [decision(r[1]!, runningRuns[1]!.id, "tests_failed", 1, failed, ago(7)), decision(r[1]!, runningRuns[1]!.id, "tests_failed", 2, failed, ago(3))],
+    tests: [],
+    verdicts: [],
+  };
+  const running = detail(summary("t-running", "Add rate limiting to the login endpoint", { status: "running", activeRuns: 1, spend: { usd: 0.31, provenance: "estimated" } }), r, runningRuns, { loop: runningLoop });
 
   // 3. Needs approval.
   const a = [member("implementer", 1, FLASH, [SOL], [], true), member("reviewer", 2, GLM, [ARGON], ["implementer"])];
@@ -170,7 +189,16 @@ function build(projectId: string): { tasks: TaskDetail[]; requests: RequestView[
     }),
     run("t-review", v[1]!, OPUS, { state: "ended", startedAt: ago(64), endedAt: ago(58), endReason: "completed", cost: { usd: 0.42, provenance: "estimated" } }),
   ];
-  const review = detail(summary("t-review", "Refactor the session store", { status: "review", spend: { usd: 0.42, provenance: "estimated" }, createdAt: ago(100) }), v, reviewRuns);
+  const reviewLoop = {
+    maxIterations: 3,
+    decisions: [
+      decision(v[0]!, reviewRuns[0]!.id, "tests_passed", 0, { code: "loop.tests_passed", params: { command: "pnpm test" } }, ago(64)),
+      decision(v[0]!, reviewRuns[1]!.id, "review_passed", 0, { code: "loop.review_passed", params: { sha: "7d1e09a4c2b8" } }, ago(58)),
+    ],
+    tests: [],
+    verdicts: [{ runId: reviewRuns[1]!.id, memberId: v[1]!.id, verdict: "pass" as const, summary: "The store keeps its API and the new tests cover expiry.", comments: [], headSha: "7d1e09a4c2b8f31d", native: false, stale: false, at: ago(58) }],
+  };
+  const review = detail(summary("t-review", "Refactor the session store", { status: "review", spend: { usd: 0.42, provenance: "estimated" }, createdAt: ago(100) }), v, reviewRuns, { loop: reviewLoop });
 
   // 6. Done, no code.
   const d = [member("researcher", 1, ARGON, [OPUS])];
@@ -262,7 +290,7 @@ const anyProject = () => cache?.projectId ?? "fixture";
 export function fixtureCall<M extends IpcMethod>(method: M, params: IpcParams<M>): IpcResult<M> {
   const p = (params ?? {}) as { projectId?: string; taskId?: string };
   const d = data(p.projectId ?? anyProject());
-  const strip = ({ description: _d, baseBranch: _b, waitResetMinutes: _w, classification: _c, crew: _cr, runs: _r, worktree: _wt, handoffs: _h, ...s }: TaskDetail): TaskSummary => s;
+  const strip = ({ description: _d, baseBranch: _b, waitResetMinutes: _w, classification: _c, crew: _cr, runs: _r, worktree: _wt, handoffs: _h, loop: _l, ...s }: TaskDetail): TaskSummary => s;
   const task = (id: string | undefined) => d.tasks.find((t) => t.id === id) ?? d.tasks[0]!;
   switch (method) {
     case "tasks.list":

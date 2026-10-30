@@ -35,6 +35,19 @@ export interface HandoffPackageInput {
   transcript: string;
 }
 
+/**
+ * The first message of a forked session (feature scan A11): the conversation above it is a copy of
+ * the previous agent's, compacted where the runner can, so only what changed at the handoff is new.
+ */
+export function forkPrompt(p: { trigger: string; packagePath: string; checkpointSha: string | null }): string {
+  return [
+    `The conversation above was continued by another agent until now; you take over this task from here. Reason for the handoff: ${p.trigger}.`,
+    p.checkpointSha ? `Its work in progress is committed locally as ${p.checkpointSha}.` : "It left no uncommitted changes.",
+    `A written summary of the task state is at ${p.packagePath} if anything above is unclear.`,
+    "Run `git status`, then continue where it stopped.",
+  ].join("\n");
+}
+
 /** PLAN.md §8.2 step 5. Cross-provider handoff never claims to carry hidden model state. */
 export function handoffPackage(p: HandoffPackageInput): string {
   const done = p.plan?.filter((s) => s.status === "completed").map((s) => `- ${s.title}`) ?? [];

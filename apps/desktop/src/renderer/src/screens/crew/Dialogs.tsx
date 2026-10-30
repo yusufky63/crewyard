@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import type { CandidateView } from "@crewyard/core";
+import type { CandidateView, HandoffStop } from "@crewyard/core";
 import { BrandIcon, Button } from "@crewyard/ui";
 import { matches } from "../../keys.ts";
+import { HandoffStopChoice } from "../tasks/parts.tsx";
 
 /** Native modal <dialog>: focus stays inside, Esc cancels, focus returns to the opener. */
 function Dialog({ title, onClose, children, footer }: { title: string; onClose: () => void; children: ReactNode; footer: ReactNode }) {
@@ -125,17 +126,21 @@ export function ChangeAiDialog({
   target,
   candidates,
   runnerLabel,
+  live,
   onConfirm,
   onClose,
 }: {
   target: string;
   candidates: CandidateView[];
   runnerLabel: (runner: CandidateView["runner"]) => string;
-  onConfirm: (profileId: string) => Promise<void>;
+  /** A turn is under way, so the user may let it finish before the switch. */
+  live: boolean;
+  onConfirm: (profileId: string, stop: HandoffStop | undefined) => Promise<void>;
   onClose: () => void;
 }) {
   const { t } = useTranslation("crew");
   const [pick, setPick] = useState(candidates[0]?.profileId ?? "");
+  const [stop, setStop] = useState<HandoffStop>("interrupt");
   const [busy, setBusy] = useState(false);
   return (
     <Dialog
@@ -151,7 +156,7 @@ export function ChangeAiDialog({
             disabled={!pick || busy}
             onClick={() => {
               setBusy(true);
-              void onConfirm(pick).finally(() => setBusy(false));
+              void onConfirm(pick, live ? stop : undefined).finally(() => setBusy(false));
             }}
           >
             {t("changeAi.confirm")}
@@ -170,6 +175,7 @@ export function ChangeAiDialog({
           </label>
         ))}
       </fieldset>
+      {live && <HandoffStopChoice name="crew-change-stop" value={stop} onChange={setStop} />}
       <p className="muted">{t("changeAi.body")}</p>
     </Dialog>
   );

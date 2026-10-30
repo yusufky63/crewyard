@@ -21,6 +21,9 @@ export const capabilities: AgentCapabilities = {
   // File checkpoints restore what Write and Edit changed; the conversation keeps the turn (docs: agent-sdk/file-checkpointing).
   undo: { files: true, history: false },
   transcript: true,
+  // SDK forkSession() into the target profile's folder, then `/compact` under the target's key
+  // (agent-sdk/sessions, agent-sdk/slash-commands; checked live on DeepSeek 2026-10-30, scripts/live-fork.mjs).
+  fork: { compact: true },
 };
 
 /** `deps` exists for the replay tests; the app always calls this without arguments. */
