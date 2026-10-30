@@ -9,7 +9,7 @@ import { OrchestratorError } from "./errors.ts";
 // delivered, never both; delivered ones are history and refuse every edit.
 
 /** `note`: written by Crewyard (after an undo the conversation could not forget), not typed by you. */
-export type QueueKind = "user" | "note";
+export type QueueKind = QueuedMessageView["kind"];
 
 interface Row {
   id: string;
@@ -29,7 +29,7 @@ export class StepQueue {
   ) {}
 
   /** Queued messages of a step in the order they will be sent. Older outbox rows without a queue row come first. */
-  pending(memberId: string): Array<QueuedMessageView & { kind: QueueKind }> {
+  pending(memberId: string): QueuedMessageView[] {
     const rows = this.db
       .prepare(
         `select o.id, o.text, o.created_at, q.edited_at, q.kind from outbox o left join outbox_queue q on q.outbox_id = o.id

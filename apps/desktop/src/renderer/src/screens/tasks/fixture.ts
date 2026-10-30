@@ -1,5 +1,5 @@
 import { reviewFixture } from "./reviewFixture.ts";
-import { NO_RUN_CONTROLS, type CandidateView, type CrewMemberView, type IpcMethod, type IpcParams, type IpcResult, type LimitNoticePayload, type RequestView, type RoleId, type RunView, type TaskDetail, type TaskSummary } from "@crewyard/core";
+import { NO_RUN_CONTROLS, type CandidateView, type CrewMemberView, type IpcMethod, type IpcParams, type IpcResult, type LimitNoticePayload, type RequestView, type RoleId, type RunView, type StallAlertView, type TaskDetail, type TaskSummary, type UndoPreview } from "@crewyard/core";
 
 // Screenshot data. Used only when the page URL has `fixture`, which the main process sets only
 // in screenshot mode (CREWYARD_SHOT_QUERY); a normal run never reads anything from this file.
@@ -125,6 +125,12 @@ function build(projectId: string): { tasks: TaskDetail[]; requests: RequestView[
       cost: { usd: 0, provenance: "estimated" },
       plan: [{ title: "Add a token bucket per account", status: "completed" }, { title: "Return 429 with a retry hint", status: "in_progress" }, { title: "Tests for limiter and handler", status: "pending" }],
       diff: [{ path: "src/auth/limiter.ts", added: 64, removed: 0 }, { path: "src/auth/login.ts", added: 18, removed: 6 }, { path: "src/auth/limiter.test.ts", added: 43, removed: 0 }],
+      queuedMessages: 2,
+      queue: [
+        { id: "qm-1", text: "Return the retry hint in seconds, not milliseconds.", createdAt: ago(3), editedAt: null, kind: "user" },
+        { id: "qm-2", text: "Keep the old error text as a fallback for clients that parse it.", createdAt: ago(1), editedAt: ago(0), kind: "user" },
+      ],
+      controls: { steer: { ok: true, reason: null }, undo: { ok: false, reason: "undo.turn_running", turnId: null } },
     }),
   ];
   const running = detail(summary("t-running", "Add rate limiting to the login endpoint", { status: "running", activeRuns: 1, spend: { usd: 0.31, provenance: "estimated" } }), r, runningRuns);
@@ -147,7 +153,15 @@ function build(projectId: string): { tasks: TaskDetail[]; requests: RequestView[
   // 5. Ready for review.
   const v = [member("implementer", 1, SOL, [OPUS], [], true), member("reviewer", 2, OPUS, [GLM], ["implementer"])];
   const reviewRuns = [
-    run("t-review", v[0]!, SOL, { state: "ended", startedAt: ago(96), endedAt: ago(64), endReason: "completed", diff: [{ path: "src/session/store.ts", added: 88, removed: 14 }, { path: "src/session/store.test.ts", added: 37, removed: 4 }] }),
+    run("t-review", v[0]!, SOL, {
+      state: "ended",
+      startedAt: ago(96),
+      endedAt: ago(64),
+      endReason: "completed",
+      diff: [{ path: "src/session/store.ts", added: 88, removed: 14 }, { path: "src/session/store.test.ts", added: 37, removed: 4 }],
+      controls: { steer: { ok: false, reason: "steer.no_turn" }, undo: { ok: true, reason: null, turnId: "turn-fx" } },
+      transcriptPath: "C:\\Users\\you\\AppData\\Roaming\\Crewyard\\tasks\\t-review\\transcripts\\codex-thr-1.jsonl",
+    }),
     run("t-review", v[1]!, OPUS, { state: "ended", startedAt: ago(64), endedAt: ago(58), endReason: "completed", cost: { usd: 0.42, provenance: "estimated" } }),
   ];
   const review = detail(summary("t-review", "Refactor the session store", { status: "review", spend: { usd: 0.42, provenance: "estimated" }, createdAt: ago(100) }), v, reviewRuns);
@@ -224,6 +238,10 @@ export function fixtureCall<M extends IpcMethod>(method: M, params: IpcParams<M>
       return task(p.taskId) as IpcResult<M>;
     case "requests.list":
       return d.requests.filter((q) => !p.taskId || q.taskId === p.taskId) as IpcResult<M>;
+    case "stalls.list":
+      return fixtureStalls(p.projectId ?? anyProject()).filter((a) => !p.taskId || a.taskId === p.taskId) as IpcResult<M>;
+    case "runs.undoPreview":
+      return fixtureUndo((params as { runId: string }).runId) as IpcResult<M>;
     case "github.repo":
     case "github.issues":
     case "github.issue":
@@ -238,6 +256,31 @@ export function fixtureCall<M extends IpcMethod>(method: M, params: IpcParams<M>
     default:
       return task(p.taskId) as IpcResult<M>;
   }
+}
+
+/** One quiet run and one step that keeps failing, as the stall rules would raise them. */
+function fixtureStalls(projectId: string): StallAlertView[] {
+  const base = { projectId, requestId: null, dismissedAt: null, clearedAt: null };
+  return [
+    { ...base, alertId: "st-1", rule: "no_events", taskId: "t-running", runId: "r-m6", minutes: 12, count: null, detail: null, observedAt: ago(2) },
+    { ...base, alertId: "st-2", rule: "request_unanswered", taskId: "t-approval", runId: "r-m9", requestId: "q-approval", minutes: 34, count: null, detail: null, observedAt: ago(1) },
+  ];
+}
+
+/** What undoing the review task's last implementer turn would change. */
+function fixtureUndo(runId: string): UndoPreview {
+  return {
+    runId,
+    turnId: "turn-fx",
+    turnStartedAt: ago(70),
+    files: [
+      { path: "src/session/store.ts", change: "restore", added: 14, removed: 88 },
+      { path: "src/session/store.test.ts", change: "delete", added: 0, removed: 37 },
+    ],
+    commits: 1,
+    native: { files: false, history: true },
+    noteQueued: false,
+  };
 }
 
 /** The live notice the running task's implementer would have produced. */

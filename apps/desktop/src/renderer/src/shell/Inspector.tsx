@@ -8,6 +8,7 @@ import { useNav } from "../nav.ts";
 import { usePrefs } from "../prefs.ts";
 import { INSPECTOR, inspectorBounds, sidebarColumn } from "./layout.ts";
 import { useViewportWidth } from "./useMedia.ts";
+import { QueueSection, UndoControl } from "./TurnControls.tsx";
 import { TaskPullSection } from "../screens/github/TaskPull.tsx";
 import { ProvBadge } from "../screens/providers/shared.tsx";
 import { ApprovalActions } from "../screens/inbox/ApprovalActions.tsx";
@@ -91,6 +92,7 @@ function Actions({ detail, run, onError }: { detail: TaskDetail; run: RunView; o
           </Button>
         )}
       </div>
+      <UndoControl key={run.id} run={run} onError={onError} />
       {canHandOff && (
         <div className="ins-handoff">
           <label className="lbl" htmlFor="ins-target">
@@ -281,6 +283,13 @@ function Body({ detail, target }: { detail: TaskDetail; target: InspectorTarget 
               {detail.worktree && run.worktreeId && <div className="mono muted ins-path">{detail.worktree.branch}</div>}
             </div>
           )}
+          {run?.transcriptPath && (
+            <div className="ins-sec">
+              <Label>{f.t("inspector.transcript")}</Label>
+              <div className="mono ins-path as-typed">{run.transcriptPath}</div>
+              <span className="muted ins-small">{f.t("inspector.transcriptNote")}</span>
+            </div>
+          )}
         </>
       )}
       {tab === "changes" && (
@@ -341,6 +350,15 @@ function Body({ detail, target }: { detail: TaskDetail; target: InspectorTarget 
       {run && !run.endedAt && (
         <PendingApproval
           detail={detail}
+          run={run}
+          onError={(e) => {
+            setError(errorText(e));
+            recheck(e);
+          }}
+        />
+      )}
+      {run && (
+        <QueueSection
           run={run}
           onError={(e) => {
             setError(errorText(e));

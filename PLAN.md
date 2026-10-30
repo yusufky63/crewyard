@@ -311,6 +311,11 @@ A run cannot create other runs. If an agent asks for more work, the request beco
   - High: destructive git (`reset --hard`, `push --force`, branch delete), anything outside the project, credential or `.env` paths, package installs.
 - Toasts offer `Approve once` only for Low. Medium and High open the Inbox. `Always allow in this project` adds a scoped allowlist entry and is never the default button.
 - Unanswered requests keep the run paused, never time out into an approval.
+- **Turn control** ([ADR 0005](docs/adr/0005-turn-control.md)):
+  - Messages typed while an agent works wait in the step's persisted queue, shown as queued, editable, reorderable and deletable; the next turn boundary takes them as one turn, or `Steer now` adds one to the running turn where the runner documents a way (Codex), otherwise the button is disabled with the reason.
+  - `Undo last turn` puts the worktree back to the git checkpoint taken before the turn, after the runner's own rewind where it has one (Claude file checkpoints, Codex thread rollback, OpenCode revert). It shows every file it changes first, asks to confirm, and never runs while a turn does.
+  - Stall alerts: a running turn quiet for N minutes, the same failure N runs in a row, or a request unanswered for N minutes becomes an Inbox item and a notice, with a cooldown; defaults in Settings.
+  - At handoff and at run end the runner's own transcript is copied into the task folder, and the handoff package cites the copy.
 
 ### 11.1 First run and project setup
 

@@ -24,6 +24,9 @@
 .settings .st-time { display: inline-flex; align-items: center; gap: 6px; }
 .settings .st-time .pv-input { width: 96px; }
 .settings .st-time .pv-input:disabled { opacity: 0.45; }
+.settings .st-number { display: inline-flex; align-items: center; gap: 8px; }
+.settings .st-number .pv-input { width: 84px; text-align: right; }
+.settings .st-number .pv-input[aria-invalid="true"] { border-color: var(--bad); }
 
 .settings .st-list { display: grid; border: 1px solid var(--line); margin: 0 0 10px; }
 .settings .st-list:empty { display: none; }

@@ -1,5 +1,28 @@
 {
   "nav": "Gelen kutusu",
+  "contextStalls": "{{open}} yanıtınızı bekliyor · {{stalls}} takıldı · {{info}} bilginize",
+  "stall": {
+    "section_one": "Takılanlar · {{count}}",
+    "section_other": "Takılanlar · {{count}}",
+    "no_events": "{{who}} {{minutes}} dakikadır ses vermiyor",
+    "request_unanswered": "Bir istek {{minutes}} dakikadır yanıtınızı bekliyor",
+    "same_failure_one": "Bu adım art arda {{count}} kez aynı şekilde başarısız oldu: {{failure}}",
+    "same_failure_other": "Bu adım art arda {{count}} kez aynı şekilde başarısız oldu: {{failure}}",
+    "someone": "Bir ajan",
+    "failureOnly": "{{kind}}",
+    "failureWithStatus": "{{kind}} ({{status}})",
+    "failure": {
+      "request_invalid": "sağlayıcı isteği reddetti",
+      "transient": "sağlayıcıda geçici bir hata",
+      "auth": "anahtar reddedildi",
+      "other": "aynı hata"
+    },
+    "openRun": "Çalışmayı aç",
+    "openRequest": "İsteği aç",
+    "stop": "Ajanı durdur",
+    "stopConfirm": "{{who}} durdurulsun mu?",
+    "dismiss": "Kapat"
+  },
   "context": "{{open}} yanıt bekliyor · {{info}} bilgi notu",
   "listLabel": "İstekler",
   "empty": "Şu an sizi bekleyen bir şey yok.",

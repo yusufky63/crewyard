@@ -185,7 +185,7 @@ export class Orchestrator {
     });
     this.stalls = new StallMonitor({ store: opts.store, db: this.db, now: this.now, inTurn: (runId) => this.live.get(runId)?.inTurn ?? false, emit: (topic, payload) => this.emit(topic, payload) });
     this.db.runExtras = (r) => ({
-      queue: this.turns.queue.pending(r.member_id).map(({ kind: _kind, ...m }) => m),
+      queue: this.turns.queue.pending(r.member_id),
       controls: this.turns.controls(r),
       transcriptPath: transcriptPath(opts.store, r.id),
     });

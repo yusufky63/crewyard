@@ -1,5 +1,28 @@
 {
   "nav": "Inbox",
+  "contextStalls": "{{open}} need your answer · {{stalls}} stalled · {{info}} for your information",
+  "stall": {
+    "section_one": "Stalled · {{count}}",
+    "section_other": "Stalled · {{count}}",
+    "no_events": "{{who}} has been quiet for {{minutes}} min",
+    "request_unanswered": "A request has waited {{minutes}} min for your answer",
+    "same_failure_one": "This step failed {{count}} time in a row: {{failure}}",
+    "same_failure_other": "This step failed {{count}} times in a row: {{failure}}",
+    "someone": "An agent",
+    "failureOnly": "{{kind}}",
+    "failureWithStatus": "{{kind}} ({{status}})",
+    "failure": {
+      "request_invalid": "the provider refused the request",
+      "transient": "a temporary provider error",
+      "auth": "the key was refused",
+      "other": "the same error"
+    },
+    "openRun": "Open run",
+    "openRequest": "Open request",
+    "stop": "Stop agent",
+    "stopConfirm": "Stop {{who}}?",
+    "dismiss": "Dismiss"
+  },
   "context": "{{open}} need your answer · {{info}} for your information",
   "listLabel": "Requests",
   "empty": "Nothing needs you right now.",

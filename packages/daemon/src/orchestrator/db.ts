@@ -190,7 +190,7 @@ export type RunExtras = Pick<RunView, "queue" | "controls" | "transcriptPath">;
 export class OrchestratorDb {
   /** Set by the orchestrator, which knows live processes and adapters; this default knows only rows. */
   runExtras: (r: RunRow) => RunExtras = (r) => ({
-    queue: this.queued(r.member_id).map((m) => ({ id: m.id, text: m.text, createdAt: "", editedAt: null })),
+    queue: this.queued(r.member_id).map((m) => ({ id: m.id, text: m.text, createdAt: "", editedAt: null, kind: "user" as const })),
     controls: NO_RUN_CONTROLS,
     transcriptPath: null,
   });

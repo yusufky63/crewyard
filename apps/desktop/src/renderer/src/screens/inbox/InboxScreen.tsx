@@ -13,6 +13,7 @@ import { codeKey, profileNames } from "../tasks/model.ts";
 import { ConfirmButton, ErrorLine, useFormat, Who } from "../tasks/parts.tsx";
 import { ApprovalActions } from "./ApprovalActions.tsx";
 import { InboxSplit } from "./InboxSplit.tsx";
+import { StallList, useStalls } from "./Stalls.tsx";
 import { defaultTarget, emptyForm, formAnswer, formReady, handoffChoices, infoNotices, orderRequests, titleKey, type QuestionForm } from "./model.ts";
 import "../tasks/tasks.css";
 import "./inbox.css";
@@ -304,8 +305,11 @@ export function InboxScreen() {
   const requests = useWork("requests.list", { projectId: projectId ?? "" }, { enabled: Boolean(projectId) });
   const tasks = useWork("tasks.list", { projectId: projectId ?? "" }, { enabled: Boolean(projectId) });
   const profiles = useDaemon("providers.profiles", undefined, { staleTime: 60_000 });
+  const stalls = useStalls(projectId ?? "");
+  const errorText = useErrorText();
   const notices = useActivity((s) => s.notices);
   const [picked, setPicked] = useState<string | null>(null);
+  const [stallError, setStallError] = useState<string | null>(null);
   const grid = useRef<HTMLDivElement>(null);
   if (!projectId) return null;
 
@@ -313,13 +317,14 @@ export function InboxScreen() {
   const selected = open.find((q) => q.id === picked) ?? open[0] ?? null;
   const info = infoNotices(notices, new Set((tasks.data ?? []).map((x) => x.id)));
   const aliasOf = (id: string) => profiles.data?.find((p) => p.id === id)?.alias ?? id;
+  const stalled = stalls.data ?? [];
 
   return (
     <div className="screen">
       <div className="page-head">
         <div>
           <h1>{t("title.page")}</h1>
-          <div className="lbl ib-context">{t("context", { open: open.length, info: info.length })}</div>
+          <div className="lbl ib-context">{stalled.length > 0 ? t("contextStalls", { open: open.length, stalls: stalled.length, info: info.length }) : t("context", { open: open.length, info: info.length })}</div>
         </div>
       </div>
       {requests.isError && <p className="muted">{t("errors.load")}</p>}
@@ -331,6 +336,8 @@ export function InboxScreen() {
               <Item key={q.id} q={q} selected={selected?.id === q.id} onSelect={() => setPicked(q.id)} />
             ))}
           </Panel>
+          <StallList alerts={stalled} onOpenRequest={setPicked} onError={(e) => setStallError(errorText(e))} />
+          <ErrorLine>{stallError}</ErrorLine>
           {info.length > 0 && (
             <>
               <div className="ib-sub lbl">{t("forInfo")}</div>

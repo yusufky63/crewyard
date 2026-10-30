@@ -218,6 +218,8 @@ export interface QueuedMessageView {
   text: string;
   createdAt: string;
   editedAt: string | null;
+  /** `note`: written by Crewyard after an undo the runner's conversation could not forget. */
+  kind: "user" | "note";
 }
 
 /**
@@ -230,6 +232,7 @@ export type ControlReason =
   | "steer.paused"
   | "undo.unsupported" // the runner has no documented way to rewind a turn
   | "undo.no_worktree" // the step works without a task worktree, so there is nothing of ours to restore
+  | "undo.read_only" // a read-only role (planner, reviewer) changed no files
   | "undo.turn_running" // never while a turn runs
   | "undo.no_turn" // no turn with a checkpoint, or the last one was already undone
   | "undo.other_run" // another run is working in the same worktree
