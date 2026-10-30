@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, FileDown, FolderOpen, History } from "lucide-react";
+import { Archive, FileDown, FileText, FolderOpen, History } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@crewyard/ui";
 import type { BackupEntry } from "@crewyard/core";
@@ -177,6 +177,7 @@ export function AboutSection() {
   const info = useQuery({ queryKey: ["app.info"], queryFn: () => window.crewyard.appInfo(), staleTime: Infinity });
   const status = useDaemon("daemon.status", undefined);
   const data = useDaemon("settings.data", undefined);
+  const [licenses, setLicenses] = useState<boolean | null>(null);
   const a = info.data;
   const d = data.data;
   const reveal = (path: string) => (
@@ -185,7 +186,7 @@ export function AboutSection() {
     </Button>
   );
   return (
-    <Section id="about" index={8} title={t("sections.about")}>
+    <Section id="about" index={9} title={t("sections.about")}>
       {a && (
         <>
           <Fact label={t("about.version")} value={`${a.version} · ${a.packaged ? t("about.packaged") : t("about.development")}`} />
@@ -205,6 +206,16 @@ export function AboutSection() {
         </>
       )}
       {a && <Fact label={t("about.exe")} value={a.exePath} />}
+      <Fact
+        label={t("about.licenses")}
+        value={licenses === false ? t("about.licensesMissing") : t("about.licensesValue")}
+        action={
+          <Button variant="ghost" size="sm" onClick={() => void window.crewyard.openLicenses().then(setLicenses)}>
+            <FileText strokeWidth={1.75} />
+            {t("about.open")}
+          </Button>
+        }
+      />
     </Section>
   );
 }

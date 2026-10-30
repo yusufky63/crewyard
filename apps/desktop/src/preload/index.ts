@@ -23,6 +23,13 @@ const api: CrewyardApi = {
   testToast: () => ipcRenderer.send("crewyard:test-toast"),
   keepAwake: () => ipcRenderer.invoke("crewyard:keep-awake"),
   reportBattery: (reading) => ipcRenderer.send("crewyard:battery", reading),
+  updates: () => ipcRenderer.invoke("crewyard:update", "state"),
+  checkForUpdates: () => ipcRenderer.invoke("crewyard:update", "check"),
+  downloadUpdate: () => ipcRenderer.invoke("crewyard:update", "download"),
+  cancelUpdate: () => ipcRenderer.invoke("crewyard:update", "cancel"),
+  installUpdate: () => ipcRenderer.invoke("crewyard:update", "install"),
+  setUpdateAutoCheck: (on) => ipcRenderer.invoke("crewyard:update", on ? "auto-on" : "auto-off"),
+  openLicenses: () => ipcRenderer.invoke("crewyard:open-licenses"),
 };
 
 contextBridge.exposeInMainWorld("crewyard", api);

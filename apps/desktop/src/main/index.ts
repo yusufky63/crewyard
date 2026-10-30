@@ -1,5 +1,5 @@
-import { readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { existsSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { app, BrowserWindow, dialog, ipcMain, Notification, powerMonitor, powerSaveBlocker, shell, type MessageBoxOptions } from "electron";
 import { inQuietHours, type AppSettings, type IpcMethod, type IpcParams, type IpcResult, type NotificationSettings } from "@crewyard/core";
 import type { AppInfo, NavigateTarget, StartupState, TitleBarColors } from "../shared/api.ts";
@@ -10,6 +10,7 @@ import { batteryPct, KeepAwake } from "./keep-awake.ts";
 import { Toaster } from "./notify/toaster.ts";
 import { HIDDEN_ARG, readStartup, writeStartup } from "./startup.ts";
 import { AppTray } from "./tray.ts";
+import { createUpdater } from "./updater/index.ts";
 import { EMPTY_WORK, quitDetail, summarize, type WorkSummary } from "./work.ts";
 
 const isWin = process.platform === "win32";
@@ -80,6 +81,9 @@ const t = () => translator(language);
 const send = (topic: string, payload: unknown) => {
   for (const w of BrowserWindow.getAllWindows()) w.webContents.send("crewyard:event", topic, payload);
 };
+
+// Checks only when you ask or turned automatic checks on; downloads and installs only on a click.
+const updater = createUpdater((s) => send("update.changed", s));
 
 // Opt-in; it only ever holds the machine in the real desktop app, never in screenshot or smoke runs.
 const keepAwake = new KeepAwake({ blocker: powerSaveBlocker, onChange: (s) => send("keepAwake.changed", s) });
@@ -225,17 +229,21 @@ async function onCloseRequested(): Promise<void> {
   }
 }
 
-/** Every quit goes through here: it names what it stops and waits for a yes before stopping agents. */
-async function requestQuit(): Promise<void> {
+/**
+ * Every quit goes through here: it names what it stops and waits for a yes before stopping agents.
+ * "Restart to install" comes here too, so an update never stops a run you did not agree to stop.
+ */
+async function requestQuit(reason: "quit" | "update" = "quit"): Promise<void> {
   if (quitting) return;
   const current = await refreshWork().catch(() => work);
   if (current.running > 0) {
+    const k = reason === "update" ? "updateQuit" : "quit";
     const opts: MessageBoxOptions = {
       type: "warning",
-      title: t()("quit.title"),
-      message: t()("quit.message", { count: current.running }),
-      detail: quitDetail(current, t()),
-      buttons: [t()("quit.confirm"), t()("quit.cancel")],
+      title: t()(`${k}.title`),
+      message: t()(`${k}.message`, { count: current.running, version: updater.state().available?.version ?? "" }),
+      detail: quitDetail(current, t(), 6, `${k}.detail`),
+      buttons: [t()(`${k}.confirm`), t()(`${k}.cancel`)],
       // Keep running is the default: Enter never stops agents.
       defaultId: 1,
       cancelId: 1,
@@ -247,9 +255,21 @@ async function requestQuit(): Promise<void> {
   }
   quitting = true;
   keepAwake.dispose();
+  updater.unschedule();
   await daemon.shutdown();
   tray?.destroy();
+  // electron-updater starts the installer and quits; it hands Crewyard back to Windows when done.
+  if (reason === "update" && updater.install()) return;
   app.quit();
+}
+
+/** "Restart to install": only a downloaded, verified update, and only through the quit confirm. */
+async function installUpdate(): Promise<void> {
+  if (updater.state().phase !== "downloaded") return;
+  if (desktop) return requestQuit("update");
+  quitting = true;
+  await daemon.shutdown();
+  if (!updater.install()) app.quit();
 }
 
 async function capture(w: BrowserWindow): Promise<void> {
@@ -330,6 +350,21 @@ ipcMain.on("crewyard:test-toast", () => {
   if (desktop) toaster.plain("toast.test", "toast.testBody");
 });
 ipcMain.handle("crewyard:keep-awake", () => keepAwake.state());
+// Checks and downloads report through update.changed, so the call returns as soon as they start.
+ipcMain.handle("crewyard:update", (_e, action: unknown) => {
+  if (action === "check") void updater.check();
+  else if (action === "download") void updater.download();
+  else if (action === "cancel") updater.cancel();
+  else if (action === "install") void installUpdate();
+  else if (action === "auto-on" || action === "auto-off") updater.setAutoCheck(action === "auto-on");
+  return updater.state();
+});
+/** The licence list that shipped next to the exe (electron-builder.config.cjs), or the one the last build wrote. */
+ipcMain.handle("crewyard:open-licenses", async () => {
+  const file = app.isPackaged ? join(dirname(process.execPath), "THIRD-PARTY-LICENSES.txt") : join(here, "../third-party/THIRD-PARTY-LICENSES.txt");
+  if (!existsSync(file)) return false;
+  return (await shell.openPath(file)) === "";
+});
 ipcMain.on("crewyard:battery", (_e, reading: unknown) => keepAwake.setBatteryPct(batteryPct(reading)));
 ipcMain.on("crewyard:titlebar", (_e, colors: TitleBarColors) => {
   if (isWin && win && !win.isDestroyed()) win.setTitleBarOverlay({ ...colors, height: 40 });
@@ -359,6 +394,7 @@ void app.whenReady().then(() => {
     keepAwake.setOnBattery(powerMonitor.isOnBatteryPower());
     powerMonitor.on("on-battery", () => keepAwake.setOnBattery(true));
     powerMonitor.on("on-ac", () => keepAwake.setOnBattery(false));
+    updater.schedule();
   }
   win = createWindow();
   if (smokeRun) void smoke();

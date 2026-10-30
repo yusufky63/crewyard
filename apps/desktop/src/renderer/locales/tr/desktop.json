@@ -67,5 +67,12 @@
     "usageTitle": "Kullanımı dışa aktar",
     "csvFilter": "CSV (virgülle ayrılmış)",
     "jsonFilter": "JSON"
+  },
+  "updateQuit": {
+    "title": "Güncellemeyi kur",
+    "message": "{{count}} ajan durdurulup {{version}} kurulsun mu?",
+    "detail": "Crewyard kapanır, güncellemeyi kurar ve yeniden açılır. Şunlar şimdi durur:\n{{list}}\n\nHer çalışma yarıda kalmış olarak işaretlenir ve görevinden devam ettirilebilir. Çalışma ağaçları ve commit'ler yerinde kalır.",
+    "confirm": "Ajanları durdur ve kur",
+    "cancel": "Şimdi değil"
   }
 }
