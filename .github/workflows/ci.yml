@@ -14,6 +14,8 @@ permissions:
   contents: read
 
 jobs:
+  # Also the Linux test job: the platform seams' POSIX branches and their real-process tests
+  # (process groups, the Unix report socket, the Perl relay) run here (docs/adr/0010).
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 15

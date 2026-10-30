@@ -137,6 +137,72 @@ export const listWindowsProcesses: ProcessLister = async (pids) => {
   return Array.isArray(parsed) ? parsed : [parsed];
 };
 
+// Linux and macOS (docs/adr/0010-linux-macos-groundwork.md): the same four facts from ps, one
+// column per call, because comm and args may hold spaces. LC_ALL=C keeps lstart in the fixed
+// English form ("Thu Oct 30 10:00:00 2026", local time, whole seconds; CLOCK_SLACK_MS covers the
+// lost fraction). Names are reduced to the file name (macOS prints comm as a full path) and
+// compared through image(), so "codex" matches the same entry as codex.exe.
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** ps's lstart in local time as an ISO string; null when it does not parse. */
+export function parseLstart(text: string): string | null {
+  const m = text.trim().match(/^\w{3} (\w{3}) +(\d{1,2}) (\d{2}):(\d{2}):(\d{2}) (\d{4})$/);
+  const month = m ? MONTHS.indexOf(m[1]!) : -1;
+  if (!m || month < 0) return null;
+  return new Date(Number(m[6]), month, Number(m[2]), Number(m[3]), Number(m[4]), Number(m[5])).toISOString();
+}
+
+/** `<pid> <rest of the line>` rows, as ps prints them with a leading pid column. */
+function byPid(text: string): Map<number, string> {
+  const out = new Map<number, string>();
+  for (const line of text.split("\n")) {
+    const m = line.match(/^\s*(\d+)\s+(.*?)\s*$/);
+    if (m) out.set(Number(m[1]), m[2]!);
+  }
+  return out;
+}
+
+/** Joins the three ps answers; a pid missing from the first is gone. */
+export function parsePsProcesses(times: string, comms: string, args: string): ProcessInfo[] {
+  const names = byPid(comms);
+  const lines = byPid(args);
+  const out: ProcessInfo[] = [];
+  for (const [pid, rest] of byPid(times)) {
+    const m = rest.match(/^(\d+)\s+(.+)$/);
+    const createdAt = m ? parseLstart(m[2]!) : null;
+    const comm = names.get(pid);
+    if (!m || !createdAt || !comm) continue;
+    out.push({ pid, parentPid: Number(m[1]), name: comm.split("/").pop() || comm, commandLine: lines.get(pid) ?? null, createdAt });
+  }
+  return out;
+}
+
+export type PsRun = (args: string[]) => Promise<{ code: number | null; stdout: string; stderr: string }>;
+
+const runPs: PsRun = (args) => run("/bin/ps", args, { timeoutMs: 30_000, env: { ...process.env, LC_ALL: "C" } });
+
+export function listPosixProcesses(exec: PsRun = runPs): ProcessLister {
+  return async (pids) => {
+    const ids = [...new Set(pids)].filter((p) => Number.isInteger(p) && p > 0);
+    if (ids.length === 0) return [];
+    const list = ids.join(",");
+    const [times, comms, args] = await Promise.all(["pid=,ppid=,lstart=", "pid=,comm=", "pid=,args="].map((o) => exec(["-o", o, "-p", list])));
+    for (const r of [times!, comms!, args!]) {
+      // ps exits 1 with no output when none of the pids exist; anything else is a failed query.
+      if (r.code !== 0 && !(r.code === 1 && r.stdout.trim() === "" && r.stderr.trim() === "")) throw new Error(`process query failed: ${r.stderr.trim().slice(0, 300)}`);
+    }
+    return parsePsProcesses(times!.stdout, comms!.stdout, args!.stdout);
+  };
+}
+
+/** The process lister for this platform; null where none exists, so nothing is ever killed there. */
+export function processListerFor(platform: NodeJS.Platform): ProcessLister | null {
+  if (platform === "win32") return listWindowsProcesses;
+  if (platform === "linux" || platform === "darwin") return listPosixProcesses();
+  return null;
+}
+
 /** Records this daemon's start, so runs it spawns can be traced back to it after a crash. */
 export function recordDaemonStart(store: Store, session: DaemonSession): void {
   store.db.prepare("insert or ignore into daemon_sessions (pid, started_at) values (?, ?)").run(session.pid, session.startedAt);
@@ -181,7 +247,7 @@ export async function cleanOrphans(store: Store, deps: CleanupDeps = {}): Promis
 
   const skipAll = (reason: SkipReason) => runs.forEach((r) => report.skipped.push({ runId: r.runId, pid: r.pid, reason }));
   const platform = deps.platform ?? process.platform;
-  const list = deps.list ?? (platform === "win32" ? listWindowsProcesses : null);
+  const list = deps.list ?? processListerFor(platform);
   if (!list) {
     skipAll("unsupported_platform");
     return log(store, runs, report);

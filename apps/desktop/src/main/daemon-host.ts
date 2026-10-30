@@ -1,8 +1,11 @@
 import { utilityProcess, type UtilityProcess } from "electron";
-import type { IpcMessage, IpcMethod, IpcResponse } from "@crewyard/core";
+import { isHostRequest, type HostMethod, type HostRequest, type HostResponse, type IpcMessage, type IpcMethod, type IpcResponse } from "@crewyard/core";
 
 // Owns the daemon utility process. Requests from the renderer are relayed with an id; responses
 // are matched back. If the daemon exits it is restarted with a short backoff and pending calls fail.
+// The daemon's own host requests (core host.ts) go to `host`, which only Linux and macOS pass.
+
+export type HostHandler = (method: HostMethod, data: string) => Promise<string>;
 
 export class DaemonHost {
   private child: UtilityProcess | null = null;
@@ -15,6 +18,7 @@ export class DaemonHost {
     private readonly entry: string,
     private readonly dataDir: string,
     private readonly onEvent: (topic: string, payload: unknown) => void,
+    private readonly host?: HostHandler,
   ) {}
 
   start(): void {
@@ -22,8 +26,9 @@ export class DaemonHost {
       serviceName: "Crewyard daemon",
       env: { ...process.env, CREWYARD_DATA_DIR: this.dataDir },
     });
-    child.on("message", (msg: IpcMessage) => {
-      if (msg.kind === "response") this.settle(msg);
+    child.on("message", (msg: IpcMessage | HostRequest) => {
+      if (isHostRequest(msg)) void this.answerHost(child, msg);
+      else if (msg.kind === "response") this.settle(msg);
       else if (msg.kind === "event") {
         if (msg.topic === "daemon.ready") this.restarts = 0;
         this.onEvent(msg.topic, msg.payload);
@@ -70,6 +75,19 @@ export class DaemonHost {
       clearTimeout(timer);
     }
     this.stop();
+  }
+
+  private async answerHost(child: UtilityProcess, msg: HostRequest): Promise<void> {
+    let reply: HostResponse;
+    try {
+      if (!this.host) throw new Error("Not available on this platform");
+      reply = { kind: "host.response", id: msg.id, ok: true, data: await this.host(msg.method, msg.data) };
+    } catch (err) {
+      // Messages only: neither the request nor its answer is ever logged.
+      reply = { kind: "host.response", id: msg.id, ok: false, error: err instanceof Error ? err.message : "Host request failed" };
+    }
+    // A daemon that was restarted meanwhile never asked; its successor gets nothing stale.
+    if (this.child === child) child.postMessage(reply);
   }
 
   private settle(msg: IpcResponse): void {

@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { REPORT_SERVER, type McpServerSpec } from "@crewyard/core";
 import { powershellPath } from "../providers/dpapi.ts";
 
@@ -36,13 +37,42 @@ export const relayScript = () => SCRIPT;
 
 const encoded = () => Buffer.from(SCRIPT, "utf16le").toString("base64");
 
-/** The report server for one run, as every adapter receives it. */
-export function reportServerSpec(pipe: string, ticket: string): McpServerSpec {
+// Linux and macOS (docs/adr/0010-linux-macos-groundwork.md): the same byte relay over the
+// daemon's Unix socket, in the system Perl with core modules only. /usr/bin/perl ships with macOS
+// and with every Linux distribution that packages git, whose own scripts need it. The script holds
+// no secret either; it ends when either side closes, like the PowerShell one.
+const POSIX_SCRIPT = [
+  "use strict; use warnings; use IO::Socket::UNIX; use IO::Select;",
+  "$SIG{PIPE} = 'IGNORE';",
+  `my $s = IO::Socket::UNIX->new(Peer => $ENV{${PIPE_ENV}}) or exit 1;`,
+  "binmode STDIN; binmode STDOUT; binmode $s;",
+  `my $hello = '{"crewyard":1,"ticket":"' . $ENV{${TICKET_ENV}} . '"}' . "\\n";`,
+  "defined(syswrite($s, $hello)) or exit 1;",
+  "my $sel = IO::Select->new(\\*STDIN, $s);",
+  "while (1) { for my $h ($sel->can_read) {",
+  "my $n = sysread($h, my $buf, 65536); exit 0 unless $n;",
+  "my $to = fileno($h) == fileno($s) ? \\*STDOUT : $s;",
+  "for (my $off = 0; $off < $n; ) { my $w = syswrite($to, $buf, $n - $off, $off); exit 0 unless defined $w; $off += $w; }",
+  "} }",
+].join(" ");
+
+export const posixRelayScript = () => POSIX_SCRIPT;
+
+/** Absolute, like powershellPath(): a perl earlier on PATH or in the worktree is never used. */
+export const PERL_PATH = "/usr/bin/perl";
+
+/** The report server for one run, as every adapter receives it. Throws where no relay can run. */
+export function reportServerSpec(pipe: string, ticket: string, platform: NodeJS.Platform = process.platform, perl: (path: string) => boolean = existsSync): McpServerSpec {
+  const env = { [PIPE_ENV]: pipe, [TICKET_ENV]: ticket };
+  if (platform !== "win32") {
+    if (!perl(PERL_PATH)) throw new Error(`The report relay needs ${PERL_PATH}`);
+    return { name: REPORT_SERVER, command: PERL_PATH, args: ["-e", POSIX_SCRIPT], env, tools: null, builtin: true };
+  }
   return {
     name: REPORT_SERVER,
     command: powershellPath(),
     args: ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded()],
-    env: { [PIPE_ENV]: pipe, [TICKET_ENV]: ticket },
+    env,
     tools: null,
     builtin: true,
   };

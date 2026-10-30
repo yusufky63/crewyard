@@ -1,7 +1,9 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import type { IpcMessage } from "@crewyard/core";
+import { isHostResponse, type IpcMessage } from "@crewyard/core";
 import { createHandlersForEnv } from "./e2e/index.ts";
+import { useHostProtector } from "./providers/dpapi.ts";
+import { HostClient, hostProtector } from "./providers/host-protector.ts";
 import { acquireDataDirLock, cleanOrphans, DataDirLockedError, recordDaemonStart, type DataDirLock } from "./recovery/index.ts";
 import { createHandlers, handleMessage, type Handlers } from "./server.ts";
 import { applyStagedRestore } from "./settings/data.ts";
@@ -22,6 +24,11 @@ const dataDir = process.env.CREWYARD_DATA_DIR;
 if (!dataDir) throw new Error("CREWYARD_DATA_DIR is not set");
 mkdirSync(dataDir, { recursive: true });
 const emit = (topic: string, payload: unknown) => parentPort.postMessage({ kind: "event", topic, payload } satisfies IpcMessage);
+
+// Linux and macOS keep API keys with the main process's safeStorage (docs/adr/0010); Windows keeps
+// calling DPAPI from here and never sends a host request.
+const host = new HostClient((m) => parentPort.postMessage(m));
+if (process.platform !== "win32") useHostProtector(hostProtector(host));
 
 const dbPath = join(dataDir, "crewyard.db");
 const startedAt = new Date().toISOString();
@@ -55,6 +62,11 @@ const ready: Promise<Handlers> = (async () => {
 })();
 
 parentPort.on("message", async ({ data }) => {
+  // Before awaiting startup: something that starts up may itself be waiting on this answer.
+  if (isHostResponse(data)) {
+    host.settle(data);
+    return;
+  }
   const res = await handleMessage(await ready, data as IpcMessage);
   if (res) parentPort.postMessage(res);
 });

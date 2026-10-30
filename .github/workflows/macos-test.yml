@@ -1,0 +1,31 @@
+name: macos-test
+
+# The unit tests on macOS, by hand only (Actions -> macos-test -> Run workflow): macOS minutes
+# count ten times Linux ones on a private repository, so nothing here runs on push or on a pull
+# request. Nothing is packaged or published (docs/adr/0010-linux-macos-groundwork.md).
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: macos-test-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: macos-latest
+    timeout-minutes: 20
+    env:
+      # The tests never start Electron, so skip its download.
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test

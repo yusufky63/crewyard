@@ -1,8 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { createServer, type Server, type Socket } from "node:net";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { REPORT_LIMITS } from "@crewyard/core";
+import { endpointPath, ensurePrivateDir, restrictSocket } from "../local-socket.ts";
 import { McpSession, type ToolOutcome } from "./session.ts";
 import type { RunTickets } from "./tickets.ts";
 
@@ -25,9 +24,14 @@ const HELLO_MS = 10_000;
 const MAX_CONNECTIONS = 64;
 const MAX_PER_RUN = 4;
 
-export function pipePath(): string {
-  const id = `crewyard-mcp-${process.pid}-${randomBytes(12).toString("hex")}`;
-  return process.platform === "win32" ? `\\\\.\\pipe\\${id}` : join(tmpdir(), `${id}.sock`);
+/**
+ * Windows: `\\.\pipe\crewyard-mcp-<pid>-<24 hex>`. Linux and macOS: a Unix socket in the user's
+ * private socket folder (local-socket.ts) with a shorter name, since macOS allows 103 bytes for the
+ * whole path; the 0700 folder, not the name, is what keeps others out there.
+ */
+export function pipePath(platform: NodeJS.Platform = process.platform): string {
+  if (platform === "win32") return endpointPath(`crewyard-mcp-${process.pid}-${randomBytes(12).toString("hex")}`, { platform });
+  return endpointPath(`mcp-${process.pid}-${randomBytes(8).toString("hex")}`, { platform });
 }
 
 export class ReportPipe {
@@ -53,7 +57,20 @@ export class ReportPipe {
         this.listening = null;
         reject(err);
       });
+      try {
+        ensurePrivateDir(this.path);
+      } catch (err) {
+        server.emit("error", err);
+        return;
+      }
       server.listen(this.path, () => {
+        try {
+          restrictSocket(this.path);
+        } catch (err) {
+          server.close();
+          server.emit("error", err);
+          return;
+        }
         this.server = server;
         resolve(this.path);
       });

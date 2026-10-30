@@ -4,7 +4,8 @@ import { start } from "@crewyard/proc";
 // Electron's safeStorage exists only in the main process; inside the daemon (a utility process)
 // require("electron") exposes net and systemPreferences only (checked on Electron 45.1.0). So the
 // daemon calls Windows DPAPI itself through .NET ProtectedData in Windows PowerShell 5.1, which
-// ships with every Windows 10/11. See docs/adr/0002-dpapi-secrets.md.
+// ships with every Windows 10/11. See docs/adr/0002-dpapi-secrets.md. Linux and macOS go through
+// the main process's safeStorage instead (host-protector.ts, docs/adr/0010-linux-macos-groundwork.md).
 //
 // The script is passed with -EncodedCommand and contains no secret. The secret travels on stdin
 // and the result on stdout, both base64, so it never shows up on a command line or in a process list.
@@ -78,10 +79,24 @@ export const dpapi: Protector = {
   unprotect: (blob) => runDpapi("Unprotect", blob),
 };
 
-/** The daemon refuses to store keys where DPAPI is missing instead of writing them in the clear. */
+/**
+ * The daemon refuses to store keys where no system encryption is reachable, instead of writing
+ * them in the clear: off Windows when it runs without the app (tests, live scripts), or when the
+ * app found no keychain.
+ */
 export const unsupportedProtector: Protector = {
-  protect: () => Promise.reject(new Error("Encrypted key storage needs Windows (DPAPI)")),
-  unprotect: () => Promise.reject(new Error("Encrypted key storage needs Windows (DPAPI)")),
+  protect: () => Promise.reject(new Error("Encrypted key storage needs Windows (DPAPI) or the app's system keychain")),
+  unprotect: () => Promise.reject(new Error("Encrypted key storage needs Windows (DPAPI) or the app's system keychain")),
 };
 
-export const defaultProtector = (): Protector => (process.platform === "win32" ? dpapi : unsupportedProtector);
+let hostSecrets: Protector | null = null;
+
+/**
+ * Linux and macOS: the daemon's entry hands in the main process's safeStorage
+ * (host-protector.ts, docs/adr/0010-linux-macos-groundwork.md). Never used on Windows.
+ */
+export function useHostProtector(protector: Protector | null): void {
+  hostSecrets = protector;
+}
+
+export const defaultProtector = (platform: NodeJS.Platform = process.platform): Protector => (platform === "win32" ? dpapi : (hostSecrets ?? unsupportedProtector));

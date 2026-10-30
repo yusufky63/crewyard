@@ -1,4 +1,4 @@
-import { ensureSystemEnv, killTree, start, WINDOWS_SYSTEM_VARS } from "@crewyard/proc";
+import { ensureSystemEnv, killTree, start, systemEnvVars } from "@crewyard/proc";
 import type { McpToolInfo } from "@crewyard/core";
 import { PROTOCOL_VERSIONS } from "./session.ts";
 
@@ -22,8 +22,7 @@ export function redactLine(text: string, secrets: readonly string[]): string {
 
 export function checkServer(launch: { command: string; args: string[] }, serverEnv: Record<string, string>, secrets: readonly string[], opts: { timeoutMs?: number; cwd?: string } = {}): Promise<CheckResult> {
   const base: Record<string, string> = {};
-  for (const k of WINDOWS_SYSTEM_VARS) if (process.env[k] !== undefined) base[k] = process.env[k]!;
-  if (process.platform !== "win32" && process.env.PATH) base.PATH = process.env.PATH;
+  for (const k of systemEnvVars()) if (process.env[k] !== undefined) base[k] = process.env[k]!;
   const env = ensureSystemEnv({ ...base, ...serverEnv });
   return new Promise<CheckResult>((resolve) => {
     let child: ReturnType<typeof start>;

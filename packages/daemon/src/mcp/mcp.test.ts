@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { connect as netConnect, type Socket } from "node:net";
 import { join } from "node:path";
 import type { FakeStep } from "@crewyard/adapter-fake";
@@ -10,7 +11,7 @@ import { Orchestrator } from "../orchestrator/orchestrator.ts";
 import { CANDIDATES, cleanTemps, ScriptedAdapter, tempDir, tempRepo, waitFor } from "../orchestrator/testing.ts";
 import { SecretStore } from "../providers/secrets.ts";
 import { pipePath } from "./pipe.ts";
-import { PIPE_ENV, TICKET_ENV } from "./relay.ts";
+import { PERL_PATH, PIPE_ENV, posixRelayScript, reportServerSpec, TICKET_ENV } from "./relay.ts";
 import { McpServerStore } from "./servers.ts";
 import { McpService } from "./service.ts";
 
@@ -122,8 +123,10 @@ describe("report server", () => {
     const { req } = await startRun(s);
     const spec = reportSpec(req);
     expect(spec.name).toBe("crewyard");
-    expect(spec.command.toLowerCase()).toMatch(/powershell\.exe$/);
-    expect(spec.args).toContain("-EncodedCommand");
+    if (process.platform === "win32") {
+      expect(spec.command.toLowerCase()).toMatch(/powershell\.exe$/);
+      expect(spec.args).toContain("-EncodedCommand");
+    } else expect(spec).toMatchObject({ command: PERL_PATH, args: ["-e", posixRelayScript()] });
     expect(spec.env[TICKET_ENV]).toMatch(/^[A-Za-z0-9_-]{43}$/);
     // The ticket never reaches the runner's own env, so the agent's shell commands do not see it.
     expect(Object.values(req.env)).not.toContain(spec.env[TICKET_ENV]);
@@ -272,7 +275,24 @@ describe("needs_input replies", () => {
   });
 });
 
-describe.runIf(process.platform === "win32")("the PowerShell relay", () => {
+describe("the relay per platform", () => {
+  it("is PowerShell on Windows and the system Perl elsewhere, refused without it", () => {
+    const sock = "/run/user/1000/crewyard/mcp-1-00.sock";
+    expect(reportServerSpec("\\\\.\\pipe\\x", "t", "win32").args).toContain("-EncodedCommand");
+    for (const platform of ["linux", "darwin"] as const) {
+      const spec = reportServerSpec(sock, "t", platform, (p) => p === PERL_PATH);
+      expect(spec).toMatchObject({ command: PERL_PATH, args: ["-e", posixRelayScript()], env: { [PIPE_ENV]: sock, [TICKET_ENV]: "t" }, builtin: true });
+      expect(() => reportServerSpec(sock, "t", platform, () => false)).toThrow(/needs \/usr\/bin\/perl/);
+    }
+    // The script names the variables, never their values, and stays on one line for every runner's config.
+    expect(posixRelayScript()).toContain(`$ENV{${TICKET_ENV}}`);
+    expect(posixRelayScript()).not.toMatch(/[\r\n]/);
+  });
+});
+
+const relayRuns = process.platform === "win32" || existsSync(PERL_PATH);
+
+describe.runIf(relayRuns)(process.platform === "win32" ? "the PowerShell relay" : "the Perl relay", () => {
   it("carries MCP between a runner's stdio and the daemon's pipe", async () => {
     const s = await setup();
     const { req, runId } = await startRun(s);
