@@ -160,12 +160,20 @@ async function orphanedAgent(dir: string): Promise<{ daemonPid: number; agentPid
   return { daemonPid, agentPid };
 }
 
-const running = async (pid: number) => (await listWindowsProcesses([pid])).length > 0;
+// Signal 0 only checks for existence; cheaper than a CIM query, which matters under the full suite.
+const running = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 async function gone(pid: number, ms = 10_000): Promise<boolean> {
   const end = Date.now() + ms;
   while (Date.now() < end) {
-    if (!(await running(pid))) return true;
+    if (!running(pid)) return true;
     await new Promise((r) => setTimeout(r, 200));
   }
   return false;
@@ -185,7 +193,7 @@ describe.runIf(win)("cleanOrphans on Windows", () => {
     const { daemonPid, agentPid } = await orphanedAgent(root);
     recordDaemonStart(store, { pid: daemonPid, startedAt: new Date(Date.now() - 10_000).toISOString() });
     seed(store, { pid: agentPid, runner: "codex", cwd: join(root, "demo repo"), startedAt });
-    expect(await running(agentPid)).toBe(true);
+    expect(running(agentPid)).toBe(true);
 
     const report = await cleanOrphans(store);
     expect(report.killed).toEqual([{ runId: "run-1", pid: agentPid, by: "parent" }]);
@@ -213,6 +221,6 @@ describe.runIf(win)("cleanOrphans on Windows", () => {
       { runId: "reused", pid: process.pid, reason: "created_before_run" },
     ]);
     expect(await gone(agent.pid!)).toBe(true);
-    expect(await running(stranger.pid!)).toBe(true);
+    expect(running(stranger.pid!)).toBe(true);
   });
 });
