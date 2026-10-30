@@ -167,7 +167,6 @@ export function SignInControl({ profile, status, session, compact = false }: { p
           <span className="muted">{t("signIn.private")}</span>
         </div>
       )}
-      {session?.state === "succeeded" && <p className="st st-ok si-note">{t("signIn.succeeded")}</p>}
       {session?.state === "failed" && status.state !== "blocked" && <p className="pv-error">{t("signIn.failed", { message: session.error ?? "" })}</p>}
       {error && <p className="pv-error">{error}</p>}
     </div>

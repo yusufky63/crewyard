@@ -99,7 +99,7 @@ describe("sign-in per profile", () => {
     driver.probe = async () => ({ state: "signed_in", plan: "plus", cliVersion: "0.147.0", update: null, problem: null });
     login.finish({ success: true, error: null });
     await tick();
-    expect(signIn.sessions()[0]).toMatchObject({ state: "succeeded", error: null });
+    expect(signIn.sessions()).toEqual([]);
     expect(svc.signInStatus(p.id)).toMatchObject({ state: "signed_in", plan: "plus" });
     expect(signedIn).toEqual([p.id]);
   });

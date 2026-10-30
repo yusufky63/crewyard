@@ -186,6 +186,8 @@ export class SignInService {
       const state = r.success ? "succeeded" : r.error === "cancelled" ? "cancelled" : "failed";
       live.session = { ...live.session, state, error: r.success ? null : r.error };
       await this.probe(profileId).catch(() => undefined);
+      // Success is told by the probed badge from here on; failures stay until the next try.
+      if (r.success && this.live.get(profileId) === live) this.live.delete(profileId);
       if (r.success) this.deps.onSignedIn?.(profileId);
       this.deps.changed("signin");
     });

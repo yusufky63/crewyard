@@ -120,7 +120,6 @@
     "openPage": "Open the sign-in page",
     "cancel": "Cancel sign-in",
     "private": "The CLI keeps its sign-in in this profile's folder. Crewyard never sees or stores it.",
-    "succeeded": "Signed in.",
     "failed": "Sign-in did not finish: {{message}}",
     "update": "Gemini CLI {{current}} would keep the sign-in in your own home folder, not in this profile. Update it to {{min}} or newer first:",
     "updateThen": "Then choose Check again.",

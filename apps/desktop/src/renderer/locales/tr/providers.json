@@ -120,7 +120,6 @@
     "openPage": "Oturum sayfasını aç",
     "cancel": "Oturum açmayı iptal et",
     "private": "Oturum bilgisini CLI bu profilin klasöründe tutar. Crewyard onu görmez, saklamaz.",
-    "succeeded": "Oturum açıldı.",
     "failed": "Oturum açılamadı: {{message}}",
     "update": "Gemini CLI {{current}}, oturumu bu profilde değil kendi ana klasöründe tutar. Önce {{min}} ya da daha yeni bir sürüme güncelle:",
     "updateThen": "Ardından Yeniden denetle'ye bas.",
