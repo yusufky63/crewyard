@@ -141,7 +141,7 @@ describe("worktrees", { timeout: 30_000 }, () => {
     expect((await git(repo, "log", "-1", "--format=%s")).trim()).toBe("init");
   });
 
-  it("recovers a registered worktree whose folder is gone without touching anything else", async () => {
+  it("recovers a registered worktree whose folder is gone; a stale sibling keeps its branch", async () => {
     const root = tempDir();
     const repo = await tempRepo(root);
     const path = join(defaultWorktreeRoot(repo), "task-1");
@@ -153,8 +153,11 @@ describe("worktrees", { timeout: 30_000 }, () => {
 
     await ensureWorktree(repo, path, "crewyard/task-1", null);
     expect(existsSync(join(path, "README.md"))).toBe(true);
-    // No repo-wide prune: the sibling's registration survives for its own recovery.
-    expect(parseWorktreeList(await git(repo, "worktree", "list", "--porcelain", "-z")).map((r) => r.branch)).toContain("crewyard/task-2");
+    // The sibling's stale registration in our own root is dropped, its branch is not, so it
+    // recovers the same way later.
+    expect(parseWorktreeList(await git(repo, "worktree", "list", "--porcelain", "-z")).map((r) => r.branch)).not.toContain("crewyard/task-2");
+    await ensureWorktree(repo, sibling, "crewyard/task-2", null);
+    expect(existsSync(join(sibling, "README.md"))).toBe(true);
   });
 
   it("refuses a locked registration, a branch checked out elsewhere and a foreign folder", async () => {
@@ -177,8 +180,8 @@ describe("worktrees", { timeout: 30_000 }, () => {
   it("parses porcelain output with spaces and locks", () => {
     const out = ["worktree C:/Projeler/my repo", "HEAD abc", "branch refs/heads/main", "", "worktree C:/Projeler/.mc/worktrees/my repo/t", "HEAD def", "branch refs/heads/crewyard/t", "locked moving", "", ""].join("\0");
     expect(parseWorktreeList(out)).toEqual([
-      { path: "C:/Projeler/my repo", branch: "main", locked: false },
-      { path: "C:/Projeler/.mc/worktrees/my repo/t", branch: "crewyard/t", locked: true },
+      { path: "C:/Projeler/my repo", branch: "main", locked: false, prunable: false },
+      { path: "C:/Projeler/.mc/worktrees/my repo/t", branch: "crewyard/t", locked: true, prunable: false },
     ]);
   });
 });

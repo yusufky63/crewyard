@@ -33,7 +33,10 @@
       "cleanup_needs_approval": "A cleanup command waits for your approval in the Inbox. The worktree stays until then.",
       "cleanup_failed": "A cleanup command failed, so the worktree stays. Its output is below.",
       "branch_elsewhere": "The branch is checked out in another worktree.",
-      "path_taken": "Another folder is already at this path."
+      "path_taken": "Another folder is already at this path.",
+      "bad_branch": "The branch name is not one git accepts.",
+      "base_missing": "The base branch does not exist in this repository.",
+      "base_dangling": "The repository's default branch points to a remote branch that was deleted. In the project folder, run: git remote set-head origin --auto"
     },
     "git": {
       "failed": "Git refused. The worktree may have untracked or changed files."

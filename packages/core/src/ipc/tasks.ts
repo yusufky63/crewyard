@@ -95,6 +95,9 @@ export type OrchestratorErrorCode =
   | "worktree.branch_elsewhere" // { branch, path }: the task's branch is checked out in another worktree
   | "worktree.locked" // { path }: registered, folder missing, and locked with `git worktree lock`
   | "worktree.path_taken" // { path }: a folder that git does not know is already there; never deleted
+  | "worktree.bad_branch" // { branch }: not a name git accepts (git check-ref-format)
+  | "worktree.base_missing" // { base }: the base branch or commit does not resolve
+  | "worktree.base_dangling" // { base, ref, target }: a symbolic ref (origin/HEAD) points at a deleted branch
   | "bootstrap.setup_failed" // { command }: a setup step failed; its log tail is on the worktree
   | "bootstrap.denied" // a setup or cleanup step was denied in the Inbox
   | "worktree.not_found" // the task has no worktree

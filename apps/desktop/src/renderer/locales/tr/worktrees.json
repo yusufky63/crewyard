@@ -33,7 +33,10 @@
       "cleanup_needs_approval": "Bir temizlik komutu Gelen kutusunda onayınızı bekliyor. O zamana kadar worktree yerinde kalır.",
       "cleanup_failed": "Bir temizlik komutu başarısız oldu, worktree yerinde kaldı. Çıktısı aşağıda.",
       "branch_elsewhere": "Dal başka bir worktree'de açık.",
-      "path_taken": "Bu yolda zaten başka bir klasör var."
+      "path_taken": "Bu yolda zaten başka bir klasör var.",
+      "bad_branch": "Dal adı git'in kabul ettiği bir ad değil.",
+      "base_missing": "Temel dal bu depoda yok.",
+      "base_dangling": "Deponun varsayılan dalı silinmiş bir uzak dalı gösteriyor. Proje klasöründe şunu çalıştırın: git remote set-head origin --auto"
     },
     "git": {
       "failed": "Git reddetti. Worktree'de izlenmeyen ya da değişmiş dosyalar olabilir."
