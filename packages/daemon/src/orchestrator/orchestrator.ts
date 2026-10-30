@@ -119,6 +119,8 @@ interface Live {
   done: Promise<void>;
   /** A turn is running: follow-ups wait in the step's queue for its boundary (StartRequest.nextTurn). */
   inTurn: boolean;
+  /** The runner has reported that turn (turn.started); a turn handed over but not begun cannot take a steer. */
+  turnBegun: boolean;
   /** The Test step runs the project tests at this run's turn boundary; the agent is idle meanwhile. */
   testing?: boolean;
 }
@@ -1237,6 +1239,7 @@ export class Orchestrator {
     const queued = this.turns.queue.pending(memberId);
     if (queued.length === 0) return;
     live.inTurn = true;
+    live.turnBegun = false;
     try {
       await this.turns.begin(target.id);
       await live.adapter.send(live.handle, { kind: "text", text: joinMessages(queued.map((m) => m.text)) });
@@ -1259,6 +1262,8 @@ export class Orchestrator {
     // A one-time grant from a hibernated approval covers only the turn it woke into.
     this.hibernation.dropGrant(runId);
     const live = this.live.get(runId);
+    // The turn that called this has ended; whatever comes next begins when the runner says so.
+    if (live) live.turnBegun = false;
     const run = this.db.run(runId);
     // A drain handoff waits for exactly this boundary: the source takes no further turn, and the
     // boundary is held until the handoff has stopped it, so the runner never ends it as completed.
@@ -1949,7 +1954,7 @@ export class Orchestrator {
     const wokeBy = this.pendingWake.get(runId) ?? "resume";
     if (this.hibernation.wake(runId, wokeBy)) this.audit(this.db.run(runId).task_id, runId, "run.woke", { by: wokeBy });
     this.pendingWake.delete(runId);
-    const live: Live = { adapter, handle, candidate, done: new Promise<void>((r) => (finish = r)), inTurn: true };
+    const live: Live = { adapter, handle, candidate, done: new Promise<void>((r) => (finish = r)), inTurn: true, turnBegun: false };
     this.live.set(runId, live);
     this.track(this.pump(runId, live).finally(finish));
   }
@@ -2000,9 +2005,12 @@ export class Orchestrator {
       case "run.state":
         this.db.exec("update runs set last_state = ? where id = ?", ev.state, runId);
         break;
-      case "turn.started":
+      case "turn.started": {
         this.turns.ref(runId, ev.turnRef);
+        const live = this.live.get(runId);
+        if (live) live.turnBegun = true;
         break;
+      }
       case "plan.update":
         this.db.exec("update runs set plan = ? where id = ?", JSON.stringify(ev.steps), runId);
         break;

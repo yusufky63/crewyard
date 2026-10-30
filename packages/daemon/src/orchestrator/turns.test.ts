@@ -79,7 +79,8 @@ const release = (adapter: ScriptedAdapter, scriptedRunId: string, id: string) =>
 
 describe("follow-up queue and steer now", () => {
   it("keeps messages typed during a turn queued and editable, steers one in, and flushes the rest at the boundary as one turn", async () => {
-    const pick: Picker = (role) => (role === "implementer" ? [running, { awaitAnswer: "work" }, say("done")] : [running, say("pass")]);
+    // turn.started as Codex sends it: steer joins a turn the runner has begun.
+    const pick: Picker = (role) => (role === "implementer" ? [running, { emit: { type: "turn.started", turnRef: "turn-1" } }, { awaitAnswer: "work" }, say("done")] : [running, say("pass")]);
     const { o, project, adapter } = await setup(pick);
     const t = await o.propose({ projectId: project.id, title: "Fix typo in the login error message" });
     await o.approve({ taskId: t.id });
@@ -127,6 +128,26 @@ describe("follow-up queue and steer now", () => {
     const view = await o.message(run.id, "hello");
     await expect(o.queueSteer(run.id, view.queue[0]!.id)).rejects.toMatchObject({ message: "run.not_steerable", params: { reason: "steer.unsupported" } });
     expect(o.get(t.id).runs[0]!.queue).toHaveLength(1);
+  });
+
+  it("offers steer only once the runner has begun its turn, and again only after the next one begins", async () => {
+    // A run that is still starting has a turn handed over but none begun (live run, 2026-10-30).
+    const pick: Picker = (role) =>
+      role === "implementer"
+        ? [running, { awaitAnswer: "begin" }, { emit: { type: "turn.started", turnRef: "turn-1" } }, { awaitAnswer: "work" }, say("done")]
+        : [running, say("pass")];
+    const { o, project, adapter } = await setup(pick);
+    const t = await o.propose({ projectId: project.id, title: "Fix typo in the login error message" });
+    await o.approve({ taskId: t.id });
+    const starting = await waitFor(() => o.get(t.id).runs.find((r) => r.role === "implementer" && r.state === "running"));
+    expect(starting.controls.steer).toEqual({ ok: false, reason: "steer.no_turn" });
+    const view = await o.message(starting.id, "Also add a test.");
+    await expect(o.queueSteer(starting.id, view.queue[0]!.id)).rejects.toMatchObject({ message: "run.not_steerable", params: { reason: "steer.no_turn" } });
+    const scripted = adapter.started.find((s) => s.role === "implementer")!.runId;
+    await release(adapter, scripted, "begin");
+    const begun = await waitFor(() => o.get(t.id).runs.find((r) => r.id === starting.id && r.controls.steer.ok));
+    await o.queueSteer(begun.id, view.queue[0]!.id);
+    expect(adapter.inspect(scripted).steered.map((i) => i.text)).toEqual(["Also add a test."]);
   });
 });
 

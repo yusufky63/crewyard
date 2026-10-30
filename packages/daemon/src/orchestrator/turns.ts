@@ -34,8 +34,8 @@ export interface TurnHost {
   db: OrchestratorDb;
   now(): Date;
   gitBin?: string;
-  /** The live process of a run, if any, and whether a turn is running in it. */
-  live(runId: string): { adapter: AgentAdapter; inTurn: boolean } | undefined;
+  /** The live process of a run, if any, whether a turn is running in it, and whether the runner has begun it. */
+  live(runId: string): { adapter: AgentAdapter; inTurn: boolean; turnBegun: boolean } | undefined;
   adapter(runner: RunnerId): AgentAdapter | undefined;
   /** Profile and secrets to talk to a runner about a session without starting a turn. */
   session(run: RunRow): Promise<{ profile: Profile; env: Record<string, string> } | null>;
@@ -111,7 +111,9 @@ export class TurnControl {
     if (!adapter?.capabilities.steer || !adapter.steer) return no("steer.unsupported");
     if (run.paused_at) return no("steer.paused");
     const live = this.host.live(run.id);
-    if (run.ended_at || !live?.inTurn) return no("steer.no_turn");
+    // Until the runner reports its turn (Codex turn/started) there is nothing to steer into: in the
+    // live run of 2026-10-30 a steer sent while the run was still starting was refused.
+    if (run.ended_at || !live?.inTurn || !live.turnBegun) return no("steer.no_turn");
     return ok();
   }
 
