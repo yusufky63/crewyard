@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { defaultProjectConfig, ReviewVerdict, type ProfileInput, type RequestView, type RunView, type TaskDetail } from "@crewyard/core";
-import { commandLineLeaks, defaultDecide, describeRequest, hasKey, keyFor, LiveDaemon, scanFiles, type Decide, type KeyVar } from "./harness.ts";
+import { commandLineLeaks, defaultDecide, describeRequest, hasKey, keyFor, killTree, LiveDaemon, processTable, scanFiles, type Decide, type KeyVar } from "./harness.ts";
 
 // `pnpm --filter @crewyard/daemon live` under env-vault `run` (see vitest.live.config.ts). Every
 // flow below is what a user would click, scripted; the report goes to CREWYARD_LIVE_OUT.
@@ -545,6 +545,32 @@ Then create a new file ENV_CHECK.md that holds its single output line, and commi
    * second try passes. The reviewer is Codex, which reviews through its own review/start (A12),
    * pinned to the head the tests passed on.
    */
+  // A cancelled OpenCode run must take its `opencode serve` with it (AGENTS.md: agent processes
+  // are killed as a tree on stop). An orphan has left that tree, so it is looked for by name.
+  it("stop: a cancelled OpenCode run leaves no opencode serve behind", { timeout: 10 * MIN }, async () => {
+    const flow = "stop OpenCode mid-turn";
+    if (!want("stop") || (await overBudget(flow))) return;
+    const id = profiles["oc-ds"];
+    if (!id) {
+      d.row({ flow, runner: "opencode/deepseek", result: "skipped", costUsd: null, notes: "profile not created" });
+      return;
+    }
+    const serving = () => new Set(processTable().filter((r) => r.name.toLowerCase() === "opencode.exe" && / serve /.test(r.commandLine ?? "")).map((r) => r.pid));
+    const before = serving();
+    const t = await d.call("tasks.propose", { projectId, title: "Research: describe every file", description: "Read every file in this repository, one at a time, and describe each in two sentences. Do not change any file.", kind: "research", size: "S", budgetUsd: 0.2, pins: { researcher: id } });
+    await d.call("tasks.approve", { taskId: t.id });
+    const started = await watch(t.id, (x) => x.runs.some((r) => r.state === "running") || ENDED.has(x.status), 3 * MIN, 500);
+    const during = [...serving()].filter((p) => !before.has(p));
+    await d.call("tasks.cancel", { taskId: t.id });
+    const end = await watch(t.id, (x) => ENDED.has(x.status), 2 * MIN);
+    await new Promise((r) => setTimeout(r, 5_000));
+    const left = [...serving()].filter((p) => !before.has(p));
+    for (const pid of left) killTree(pid);
+    d.log(flow, "status at cancel", started.status, "serve during", during.join(",") || "-", "left after cancel", left.join(",") || "-");
+    d.row({ flow, runner: "opencode/deepseek", result: during.length === 0 ? "partial" : left.length === 0 ? "pass" : "fail", costUsd: end.spend.usd, notes: `serve processes during the turn ${during.length}, left 5 s after cancel ${left.length}; status ${end.status}` });
+    expect(left).toEqual([]);
+  });
+
   it("loop: implement, tests fail, fix, tests pass", { timeout: 20 * MIN }, async () => {
     if (!want("loop-tests") || (await overBudget("loop-tests"))) return;
     const reviewer = profiles[REVIEWER];
