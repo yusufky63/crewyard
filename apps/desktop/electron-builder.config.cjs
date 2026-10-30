@@ -27,6 +27,17 @@ module.exports = {
   // The Electron that `pnpm install` already put in node_modules, so packaging needs no second download.
   electronDist: "node_modules/electron/dist",
   forceCodeSigning: sign,
+  // Electron fuses, flipped in the packaged exe (agent-orchestrator #6446). Nothing here runs
+  // Electron as plain Node: the daemon is a utility process and agents are their own CLIs.
+  // grantFileProtocolExtraPrivileges stays on: the renderer still loads its ES modules from file://.
+  electronFuses: {
+    runAsNode: false,
+    enableNodeOptionsEnvironmentVariable: false,
+    enableNodeCliInspectArguments: false,
+    enableEmbeddedAsarIntegrityValidation: true,
+    onlyLoadAppFromAsar: true,
+    enableCookieEncryption: true,
+  },
   publish: null,
   win: {
     target: [{ target: "nsis", arch: ["x64"] }],

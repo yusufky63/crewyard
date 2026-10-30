@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { IpcMessage } from "@crewyard/core";
-import { acquireDataDirLock, cleanOrphans, DataDirLockedError, recordDaemonStart } from "./recovery/index.ts";
+import { acquireDataDirLock, cleanOrphans, DataDirLockedError, recordDaemonStart, type DataDirLock } from "./recovery/index.ts";
 import { createHandlers, handleMessage, type Handlers } from "./server.ts";
 import { Store } from "./store.ts";
 
@@ -21,29 +21,32 @@ if (!dataDir) throw new Error("CREWYARD_DATA_DIR is not set");
 mkdirSync(dataDir, { recursive: true });
 const emit = (topic: string, payload: unknown) => parentPort.postMessage({ kind: "event", topic, payload } satisfies IpcMessage);
 
-// Nothing touches the database before this daemon owns the folder. If another daemon holds it,
-// exit: the host restarts with backoff, which also covers an old daemon that is still dying.
-let lock: Awaited<ReturnType<typeof acquireDataDirLock>>;
-try {
-  lock = await acquireDataDirLock(dataDir);
-} catch (err) {
-  if (err instanceof DataDirLockedError) emit("daemon.locked", { dataDir });
-  console.error(err);
-  process.exit(3);
-}
-if (lock.unsupported) console.warn(`Data folder lock unavailable, running without it: ${lock.unsupported}`);
-
 const dbPath = join(dataDir, "crewyard.db");
-const store = new Store(dbPath);
 const startedAt = new Date().toISOString();
+let lock: DataDirLock | null = null;
+let store: Store | null = null;
 
-// Agent trees left by a killed daemon go first: creating the handlers starts the orchestrator,
-// which labels those runs interrupted. Requests that arrive meanwhile wait for this.
+// The message listener is registered before any await: a utility process with no listener can
+// exit with code 0 while startup is still awaiting, and requests sent meanwhile would be lost.
+// Startup order: own the data folder, open the database, kill the agent trees a killed daemon
+// left behind, and only then create the handlers, which start the orchestrator and label those
+// runs interrupted. Requests wait for all of it.
 const ready: Promise<Handlers> = (async () => {
-  const orphans = await cleanOrphans(store);
+  try {
+    lock = await acquireDataDirLock(dataDir);
+  } catch (err) {
+    // Another daemon owns the folder. Exit; the host restarts with backoff, which also covers an
+    // old daemon that is still shutting down.
+    if (err instanceof DataDirLockedError) emit("daemon.locked", { dataDir });
+    throw err;
+  }
+  if (lock.unsupported) console.warn(`Data folder lock unavailable, running without it: ${lock.unsupported}`);
+  const s = new Store(dbPath);
+  store = s;
+  const orphans = await cleanOrphans(s);
   if (orphans.checked) emit("daemon.recovered", orphans);
-  recordDaemonStart(store, { pid: process.pid, startedAt });
-  return createHandlers({ store, info: { startedAt, dbPath, dataDir }, emit });
+  recordDaemonStart(s, { pid: process.pid, startedAt });
+  return createHandlers({ store: s, info: { startedAt, dbPath, dataDir }, emit });
 })();
 
 parentPort.on("message", async ({ data }) => {
@@ -52,8 +55,8 @@ parentPort.on("message", async ({ data }) => {
 });
 
 process.on("exit", () => {
-  store.close();
-  lock.release();
+  store?.close();
+  lock?.release();
 });
 ready.then(
   () => emit("daemon.ready", { pid: process.pid }),
