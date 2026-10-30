@@ -239,3 +239,13 @@ describe("CI template", () => {
     await expect(writeCi(dir, { branch: "main", build: "cargo build", test: null })).rejects.toThrow(/already exists/);
   });
 });
+
+describe("clone folder names", () => {
+  it("accepts names with spaces, refuses what Windows refuses", async () => {
+    const { isFolderName } = await import("./actions.ts");
+    for (const ok of ["my app", "crewyard e2e", "a.b-c_d", "Proje 2026"]) expect(isFolderName(ok), ok).toBe(true);
+    for (const bad of ["", ".", "..", "a:b", "a/b", "a\b", 'a"b', "a?", "a*", "trailing.", "trailing ", " leading", "CON", "nul.txt", "com1", "x".repeat(101)]) {
+      expect(isFolderName(bad), bad).toBe(false);
+    }
+  });
+});

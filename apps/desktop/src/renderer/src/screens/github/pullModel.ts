@@ -36,6 +36,7 @@ export function gateTextKey(i: GateItem, mergeState: MergeState | null): string 
 export function gateTitleKey(i: GateItem, mergeState: MergeState | null, draft: boolean): string | undefined {
   if (i.id === "merge_state") return `pulls.mergeStateTitle.${mergeState ?? "unknown"}`;
   if (i.id === "questions" && i.status === "unknown") return "pulls.gateTitle.questions_unknown";
+  if (i.id === "checks" && i.status === "warn") return "pulls.gateTitle.checks_none";
   if (i.id === "approval" && draft) return "pulls.gateTitle.draft";
   return undefined;
 }

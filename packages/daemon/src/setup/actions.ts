@@ -32,6 +32,16 @@ export async function gitInit(dir: string): Promise<{ branch: string }> {
 const REPO_NAME = /^[\w.-]{1,100}$/;
 const OWNER_REPO = /^[\w.-]{1,39}\/[\w.-]{1,100}$/;
 
+/**
+ * A folder name Windows accepts: spaces are fine (the repo's own rule: paths with spaces work
+ * everywhere), but not its reserved characters, a trailing dot or space, or a device name.
+ */
+export function isFolderName(name: string): boolean {
+  if (name.length === 0 || name.length > 100 || name === "." || name === "..") return false;
+  if (/[<>:"/\\|?*]/.test(name) || [...name].some((c) => c.charCodeAt(0) < 32) || /[. ]$/.test(name) || /^ /.test(name)) return false;
+  return !/^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\..*)?$/i.test(name);
+}
+
 export async function createPrivateRepo(dir: string, name: string): Promise<{ remoteUrl: string }> {
   const abs = resolve(dir);
   if (!REPO_NAME.test(name) || name === "." || name === "..") throw new Error(`Not a valid repository name: ${name}`);
@@ -88,7 +98,7 @@ export async function listRepos(): Promise<{ login: string | null; repos: Github
 
 export async function cloneRepo(repo: string, parent: string, name: string): Promise<{ path: string }> {
   if (!OWNER_REPO.test(repo)) throw new Error(`Not a GitHub repository: ${repo}`);
-  if (!REPO_NAME.test(name) || name === "." || name === "..") throw new Error(`Not a valid folder name: ${name}`);
+  if (!isFolderName(name)) throw new Error(`Not a valid folder name: ${name}`);
   const base = resolve(parent);
   if (!folderState(base).exists) throw new Error(`Not a folder: ${base}`);
   const target = join(base, name);

@@ -296,7 +296,9 @@ function PullRow({ projectId, pr, method, now }: { projectId: string; pr: PullSu
     } catch (err) {
       // The daemon refuses DIRTY and BEHIND with a code ("merge.dirty"); anything else is GitHub's own text.
       const raw = (err instanceof Error ? err.message : String(err)).replace(/^.*Error: /, "").trim();
-      const message = /^merge\.[a-z_]+$/.test(raw) ? t(`taskPull.error.${raw.replace(".", "_")}`) : raw;
+      // "merge.gate: checks" carries the blocking items after the colon; the chips already show them.
+      const code = raw.replace(/:.*$/, "");
+      const message = /^merge\.[a-z_]+$/.test(code) ? t(`taskPull.error.${code.replace(".", "_")}`) : raw;
       setMsg({ text: t("pulls.mergeFailed", { message }), bad: true });
     } finally {
       setBusy(false);

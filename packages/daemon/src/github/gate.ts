@@ -1,7 +1,9 @@
 import type { ChecksSummary, GateItem, GateStatus, MergeGate, MergeState } from "@crewyard/core";
 
 // Merge needs every gate (PLAN.md §10): checks passed, branch up to date, no open questions, and
-// the owner's approval. Unknown never counts as passing.
+// the owner's approval. Unknown never counts as passing. A repository that runs no CI at all has
+// nothing GitHub could report, so that item is a visible warning instead of a wall: the task's own
+// Test step and the owner's approval decide. A check that exists but has not reported still holds.
 
 export interface GateInput {
   checks: ChecksSummary;
@@ -10,6 +12,11 @@ export interface GateInput {
   /** GitHub's mergeable_state; null when it was not read. */
   mergeState: MergeState | null;
   draft: boolean;
+  /**
+   * Whether the repository has GitHub workflows at all; null when unknown. With none, zero checks
+   * is the final answer; with workflows, zero checks only means CI has not started yet.
+   */
+  ciConfigured: boolean | null;
   /** Open agent questions on this branch, from the orchestrator; null when nobody can say. */
   openQuestions: number | null;
   ownerApproved: boolean;
@@ -39,12 +46,24 @@ export function mergeStateStatus(state: MergeState | null, draft: boolean): Gate
   }
 }
 
-/** The merge may go ahead past this item; only the merge-state warning is allowed through. */
-const clears = (i: GateItem) => i.status === "pass" || (i.id === "merge_state" && i.status === "warn");
+/** The merge may go ahead past this item; only the merge-state and no-CI warnings are allowed through. */
+const clears = (i: GateItem) => i.status === "pass" || ((i.id === "merge_state" || i.id === "checks") && i.status === "warn");
 
 export function evaluateGate(input: GateInput): MergeGate {
   const checks: GateItem["status"] =
-    input.checks.state === "passed" ? "pass" : input.checks.state === "failing" ? "fail" : input.checks.state === "pending" ? "wait" : "unknown";
+    input.checks.state === "passed"
+      ? "pass"
+      : input.checks.state === "failing"
+        ? "fail"
+        : input.checks.state === "pending"
+          ? "wait"
+          : input.checks.state === "none"
+            ? input.ciConfigured === false
+              ? "warn"
+              : input.ciConfigured === true
+                ? "wait"
+                : "unknown"
+            : "unknown";
   const upToDate: GateItem["status"] = input.behindBy === null ? "unknown" : input.behindBy === 0 ? "pass" : "fail";
   const questions: GateItem["status"] = input.openQuestions === null ? "unknown" : input.openQuestions === 0 ? "pass" : "wait";
   const approval: GateItem["status"] = input.draft ? "wait" : input.ownerApproved ? "pass" : "wait";
@@ -64,7 +83,8 @@ export function mergeBlock(gate: MergeGate, state: MergeState | null): string | 
   // Conflicts and a stale branch say exactly what to do, so they get their own reason.
   if (state === "dirty" || state === "behind") return `merge.${state}`;
   const blocking = gate.items.filter((i) => !clears(i)).map((i) => i.id);
-  return blocking.length ? `Merge gate not passed: ${blocking.join(", ")}` : null;
+  // The gate items themselves say which one holds; the code only tells the UI to show them.
+  return blocking.length ? `merge.gate: ${blocking.join(", ")}` : null;
 }
 
 /** GitHub's REST value, kept only when it is one we know. */

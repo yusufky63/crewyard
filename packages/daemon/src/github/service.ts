@@ -269,7 +269,7 @@ export class GithubService {
       mergedAt: p.merged_at ?? null,
       mergedBy: null,
       checks,
-      gate: merged ? null : evaluateGate({ checks, behindBy, mergeState, draft, openQuestions: this.openQuestions(projectId, p.head.ref), ownerApproved: false }),
+      gate: merged ? null : evaluateGate({ checks, behindBy, mergeState, draft, ciConfigured: this.ciConfigured(projectId), openQuestions: this.openQuestions(projectId, p.head.ref), ownerApproved: false }),
     };
   }
 
@@ -342,6 +342,15 @@ export class GithubService {
   sync(projectId: string): GithubSync {
     const c = this.cache(projectId);
     return { projectId, syncedAt: c.syncedAt, refreshing: c.refreshing !== null, problem: c.problem };
+  }
+
+  /** GitHub workflows in the project's checkout decide whether zero checks can still change. */
+  private ciConfigured(projectId: string): boolean | null {
+    try {
+      return this.workflowsOnDisk(this.deps.projectPath(projectId)).length > 0;
+    } catch {
+      return null;
+    }
   }
 
   private workflowsOnDisk(path: string): WorkflowFile[] {
@@ -438,7 +447,7 @@ export class GithubService {
       if (!pr || pr.state === "merged") throw new Error(`#${number} is not an open pull request`);
       if (pr.headSha !== headSha) throw new Error(`#${number} has new commits since it was reviewed`);
       // The explicit call is the owner's approval; every other item must pass on a fresh read.
-      const gate = evaluateGate({ checks: pr.checks, behindBy: pr.behindBy, mergeState: pr.mergeState, draft: pr.state === "draft", openQuestions: this.openQuestions(projectId, pr.head), ownerApproved: true });
+      const gate = evaluateGate({ checks: pr.checks, behindBy: pr.behindBy, mergeState: pr.mergeState, draft: pr.state === "draft", ciConfigured: this.ciConfigured(projectId), openQuestions: this.openQuestions(projectId, pr.head), ownerApproved: true });
       const blocked = mergeBlock(gate, pr.mergeState);
       if (blocked) throw new Error(blocked);
       const res = await this.deps.client.write<{ merged: boolean; sha: string | null }>("PUT", `/repos/${meta.owner}/${meta.repo}/pulls/${number}/merge`, {

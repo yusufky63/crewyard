@@ -105,7 +105,8 @@
         "pass": "Checks",
         "wait": "Checks running",
         "fail": "Checks failing",
-        "unknown": "No checks yet"
+        "unknown": "No checks yet",
+        "warn": "No CI on this repo"
       },
       "up_to_date": {
         "pass": "Up to date",
@@ -128,7 +129,8 @@
     },
     "gateTitle": {
       "questions_unknown": "Crewyard could not read the open agent questions for this branch, so merging stays closed.",
-      "draft": "Draft pull requests cannot be merged."
+      "draft": "Draft pull requests cannot be merged.",
+      "checks_none": "This repository runs no GitHub workflows, so there are no checks to wait for. The task's own Test step and your approval decide the merge."
     },
     "reviewMerge": "Review and merge",
     "blocked": "Every gate except your approval must pass first.",
@@ -308,7 +310,8 @@
       "feedback_busy": "This feedback is already being sent.",
       "feedback_no_owner": "No step of this task owns the branch.",
       "merge_dirty": "GitHub reports conflicts with the base branch. Resolve them on the branch first.",
-      "merge_behind": "The branch is behind its base and the branch rules require it up to date. Update it first."
+      "merge_behind": "The branch is behind its base and the branch rules require it up to date. Update it first.",
+      "merge_gate": "The merge gate is not passed yet. The chips above say which item holds it."
     }
   }
 }

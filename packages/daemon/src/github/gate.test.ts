@@ -3,7 +3,7 @@ import type { ChecksSummary } from "@crewyard/core";
 import { evaluateGate, mergeBlock, mergeStateStatus, summarizeChecks, toMergeState } from "./gate.ts";
 
 const passed: ChecksSummary = { state: "passed", total: 3, passed: 3, failing: 0, pending: 0, failingNames: [] };
-const base = { checks: passed, behindBy: 0, mergeState: "clean" as const, draft: false, openQuestions: 0, ownerApproved: false };
+const base = { checks: passed, behindBy: 0, mergeState: "clean" as const, draft: false, ciConfigured: true, openQuestions: 0, ownerApproved: false };
 const statusOf = (g: ReturnType<typeof evaluateGate>) => Object.fromEntries(g.items.map((i) => [i.id, i.status]));
 
 describe("merge gate", () => {
@@ -23,9 +23,22 @@ describe("merge gate", () => {
   });
 
   it("never treats unknown as passing", () => {
-    const g = evaluateGate({ ...base, ownerApproved: true, behindBy: null, mergeState: null, openQuestions: null, checks: { ...passed, state: "none", total: 0 } });
+    const g = evaluateGate({ ...base, ownerApproved: true, behindBy: null, mergeState: null, ciConfigured: null, openQuestions: null, checks: { ...passed, state: "none", total: 0 } });
     expect(statusOf(g)).toEqual({ checks: "unknown", up_to_date: "unknown", merge_state: "unknown", questions: "unknown", approval: "pass" });
     expect(g.mergeable).toBe(false);
+  });
+
+  it("warns instead of blocking when the repository runs no CI at all", () => {
+    const none = { ...passed, state: "none" as const, total: 0, passed: 0 };
+    const noCi = evaluateGate({ ...base, ownerApproved: true, ciConfigured: false, checks: none });
+    expect(statusOf(noCi).checks).toBe("warn");
+    expect(noCi.mergeable).toBe(true);
+    expect(mergeBlock(noCi, "clean")).toBeNull();
+    // With workflows, zero checks only means CI has not started for this head yet: hold.
+    const notStarted = evaluateGate({ ...base, ownerApproved: true, ciConfigured: true, checks: none });
+    expect(statusOf(notStarted).checks).toBe("wait");
+    expect(notStarted.mergeable).toBe(false);
+    expect(mergeBlock(notStarted, "clean")).toBe("merge.gate: checks");
   });
 
   it("blocks a branch that is behind, has open questions or is a draft", () => {
@@ -62,7 +75,7 @@ describe("merge state", () => {
     expect(mergeStateStatus("has_hooks", false)).toBe("pass");
     const g = evaluateGate({ ...base, mergeState: "unknown", ownerApproved: true });
     expect(g.mergeable).toBe(false);
-    expect(mergeBlock(g, "unknown")).toBe("Merge gate not passed: merge_state");
+    expect(mergeBlock(g, "unknown")).toBe("merge.gate: merge_state");
     expect(mergeStateStatus("draft", true)).toBe("wait");
   });
 

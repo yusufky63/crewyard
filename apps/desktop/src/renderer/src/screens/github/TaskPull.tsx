@@ -54,8 +54,9 @@ function useErrorText(): (err: unknown) => string {
   const { t } = useTranslation("github");
   return (err) => {
     const raw = err instanceof Error ? err.message : String(err);
-    const code = raw.replace(/^.*Error: /, "").trim();
-    return /^[a-z_]+\.[a-z_]+$/.test(code) ? t(`taskPull.error.${code.replace(".", "_")}`, { defaultValue: code }) : code;
+    // A code may carry details after a colon ("merge.gate: checks"); the chips already show those.
+    const code = raw.replace(/^.*Error: /, "").trim().replace(/:.*$/, "");
+    return /^[a-z_]+\.[a-z_]+$/.test(code) ? t(`taskPull.error.${code.replace(".", "_")}`, { defaultValue: code }) : raw.replace(/^.*Error: /, "").trim();
   };
 }
 
