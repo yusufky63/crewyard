@@ -206,8 +206,10 @@ function Startup() {
   );
 }
 
+const scrollToSection = (id: SectionId) => document.getElementById(`settings-${id}`)?.scrollIntoView({ block: "start" });
+
 /** Highlights the section in view in the index on the left. */
-function useCurrentSection(): SectionId {
+function useCurrentSection(): [SectionId, (id: SectionId) => void] {
   const [current, setCurrent] = useState<SectionId>("general");
   useEffect(() => {
     const seen = new Map<string, boolean>();
@@ -217,7 +219,8 @@ function useCurrentSection(): SectionId {
         const first = SECTIONS.find((id) => seen.get(id));
         if (first) setCurrent(first);
       },
-      { rootMargin: "0px 0px -55% 0px" },
+      // The top 10% is left out: after a jump, the end of the section above still shows there.
+      { rootMargin: "-10% 0px -55% 0px" },
     );
     SECTIONS.forEach((id) => {
       const el = document.getElementById(`settings-${id}`);
@@ -225,7 +228,7 @@ function useCurrentSection(): SectionId {
     });
     return () => io.disconnect();
   }, []);
-  return current;
+  return [current, setCurrent];
 }
 
 export function SettingsScreen() {
@@ -234,17 +237,20 @@ export function SettingsScreen() {
   const { from, section, clearSection } = useSettingsNav();
   const startup = useQuery({ queryKey: ["app.startup"], queryFn: () => window.crewyard.startup() });
   const info = useQuery({ queryKey: ["app.info"], queryFn: () => window.crewyard.appInfo(), staleTime: Infinity });
-  const current = useCurrentSection();
-  const jump = (id: SectionId) => document.getElementById(`settings-${id}`)?.scrollIntoView({ block: "start" });
+  const [current, setCurrent] = useCurrentSection();
+  const jump = (id: SectionId) => {
+    scrollToSection(id);
+    setCurrent(id);
+  };
 
   useEffect(() => {
     // ?section= comes only from screenshot runs (CREWYARD_SHOT_QUERY), to capture lower sections.
     const wanted = section ?? (new URLSearchParams(window.location.search).get("section") as SectionId | null);
     if (!wanted || !SECTIONS.includes(wanted)) return;
-    jump(wanted);
+    scrollToSection(wanted);
     clearSection();
     // Sections above grow once their data arrives; land on the section again after that.
-    const again = setTimeout(() => jump(wanted), 700);
+    const again = setTimeout(() => scrollToSection(wanted), 700);
     return () => clearTimeout(again);
   }, [section, clearSection]);
 

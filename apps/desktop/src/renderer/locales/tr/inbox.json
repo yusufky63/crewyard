@@ -148,21 +148,21 @@
     "noReset": "sıfırlanma zamanı bilinmiyor"
   },
   "report": {
-    "section_one": "Ajanlardan {{count}} bildirim",
-    "section_other": "Ajanlardan {{count}} bildirim",
-    "needs_input": "{{who}} senden yanıt bekliyor",
+    "section_one": "Ajanlardan {{count}} rapor",
+    "section_other": "Ajanlardan {{count}} rapor",
+    "needs_input": "{{who}} sizden yanıt bekliyor",
     "stuck": "{{who}} takıldı",
     "followup": "{{who}} yeni bir görev öneriyor",
     "someone": "Bir ajan",
     "fromAgent": "Ajanın mesajı",
     "artifacts": "Dosyalar",
     "reply": "Yanıtla",
-    "replyLabel": "Yanıtın",
-    "replyHint": "Ajana bir sonraki mesajın olarak gider.",
+    "replyLabel": "Yanıtınız",
+    "replyHint": "Ajana bir sonraki mesajınız olarak gider.",
     "send": "Gönder",
     "cancel": "Vazgeç",
     "accept": "Göreve dönüştür",
-    "acceptNote": "Önerilen ekiple taslak bir görev oluşturur. Sen onaylamadan hiçbir şey başlamaz.",
+    "acceptNote": "Önerilen ekiple taslak bir görev oluşturur. Siz onaylamadan hiçbir şey başlamaz.",
     "openRun": "Çalıştırmayı aç",
     "dismiss": "Kapat"
   }

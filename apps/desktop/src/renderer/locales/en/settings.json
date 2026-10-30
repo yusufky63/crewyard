@@ -166,7 +166,7 @@
   },
   "mcp": {
     "title": "Your MCP servers",
-    "hint": "Stdio servers that runs in a project get, besides Crewyard's own. They are stored in Crewyard, never in the project folder.",
+    "hint": "Stdio servers every run in a project gets, besides Crewyard's own. They are stored in Crewyard, never in the project folder.",
     "reportNote": "Every run also gets Crewyard's report server: agents use it to report progress, ask for input and propose follow-up tasks. It cannot start anything.",
     "add": "Add server",
     "addTitle": "New MCP server",

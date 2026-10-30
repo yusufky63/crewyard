@@ -51,7 +51,7 @@
     "ended": "{{who}} bitti · {{reason}}",
     "report": {
       "checkpoint": "{{who}} bir ara noktaya ulaştığını bildirdi",
-      "needs_input": "{{who}} senden yanıt bekliyor",
+      "needs_input": "{{who}} sizden yanıt bekliyor",
       "stuck": "{{who}} takıldı",
       "done": "{{who}} işi bitirdiğini bildirdi",
       "followup": "{{who}} yeni bir görev önerdi"

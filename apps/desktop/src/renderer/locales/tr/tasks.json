@@ -343,7 +343,7 @@
     "close": "Kapat",
     "search": "Numara, başlık ya da etiketle süz",
     "listLabel": "Açık issue'lar",
-    "untrusted": "Issue metni GitHub'da yazıldı. Oluşturucuya alıntı olarak gelir; düzenleyebilirsin ve sen bir ekibi onaylamadan hiçbir şey başlamaz.",
+    "untrusted": "Issue metni GitHub'da yazıldı. Oluşturucuya alıntı olarak gelir; düzenleyebilirsiniz ve siz bir ekibi onaylamadan hiçbir şey başlamaz.",
     "loading": "Açık issue'lar okunuyor…",
     "loadingOne": "Okunuyor…",
     "none": "Bu depoda açık issue yok.",
