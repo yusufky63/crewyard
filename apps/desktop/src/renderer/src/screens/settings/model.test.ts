@@ -27,6 +27,8 @@ describe("settings formatting", () => {
   it("maps daemon error codes, including the wrapping Electron adds", () => {
     expect(errorCode(new Error("Error invoking remote method 'crewyard:call': Error: restore.agents_running"))).toBe("restore.agents_running");
     expect(errorCode(new Error("data.exists"))).toBe("data.exists");
+    // The saved message, as Settings keeps it, when account switching is turned on before the terms note.
+    expect(errorCode("Error invoking remote method 'crewyard:call': Error: settings.terms")).toBe("settings.terms");
     expect(errorCode(new Error("ENOSPC: no space left on device"))).toBeNull();
     expect(errorCode(new Error("crew.bad_layout"))).toBeNull();
   });

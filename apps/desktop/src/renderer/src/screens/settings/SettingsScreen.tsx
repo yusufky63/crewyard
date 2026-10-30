@@ -7,11 +7,12 @@ import type { AppSettings, SettingsPatch } from "@crewyard/core";
 import { call, useDaemon } from "../../ipc.ts";
 import { useNav } from "../../nav.ts";
 import { usePrefs, type Density, type ThemePref } from "../../prefs.ts";
+import { AccountSwitchRows } from "./AccountSwitch.tsx";
 import { AboutSection, DataSection } from "./DataSection.tsx";
 import { HibernationRows } from "./Hibernation.tsx";
 import { KeepAwakeRows } from "./KeepAwake.tsx";
 import { McpSection } from "./McpSection.tsx";
-import { backTarget, SECTIONS, useSettingsNav, type SectionId } from "./model.ts";
+import { backTarget, errorCode, SECTIONS, useSettingsNav, type SectionId } from "./model.ts";
 import { Row, Section, Seg, Toggle } from "./parts.tsx";
 import { StallRules } from "./StallRules.tsx";
 import "../providers/providers.css";
@@ -206,6 +207,18 @@ function Startup() {
   );
 }
 
+/** What happens when a step stops on a limit; today the same-provider account switch (docs/adr/0009). */
+function Fallback() {
+  const { t } = useTranslation("settings");
+  const app = useAppSettings();
+  return (
+    <Section id="fallback" index={5} title={t("sections.fallback")}>
+      {app.settings && <AccountSwitchRows settings={app.settings} save={app.save} />}
+      {app.error && <p className="pv-error st-note">{errorCode(app.error) === "settings.terms" ? t("accountSwitch.termsRequired") : t("saveFailed", { error: app.error })}</p>}
+    </Section>
+  );
+}
+
 const scrollToSection = (id: SectionId) => document.getElementById(`settings-${id}`)?.scrollIntoView({ block: "start" });
 
 /** Highlights the section in view in the index on the left. */
@@ -286,7 +299,8 @@ export function SettingsScreen() {
           <Projects />
           <Notifications supported={startup.data?.supported ?? false} />
           <Startup />
-          <McpSection index={5} />
+          <Fallback />
+          <McpSection index={6} />
           <DataSection />
           <AboutSection />
         </div>

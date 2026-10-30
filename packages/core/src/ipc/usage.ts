@@ -1,6 +1,6 @@
 import type { CrewReportType } from "../mcp.ts";
 import type { Provenance, RunnerId } from "../events.ts";
-import type { LoopDecisionKind, Reason } from "./tasks.ts";
+import type { AccountSwitchSkipped, AccountSwitchSource, AccountSwitchTrigger, CostEstimate, Headroom, LoopDecisionKind, Reason } from "./tasks.ts";
 
 // IPC methods for the usage view and the task timeline (PLAN.md M5). Owned by the usage work.
 // Implementations live in packages/daemon/src/handlers/usage.ts; the pure rules that shape what
@@ -85,6 +85,23 @@ export type TimelineEvent = {
   | { kind: "loop"; decision: LoopDecisionKind; memberId: string | null; iteration: number; max: number; reason: Reason }
   /** A report or follow-up proposal the agent sent through the report server (docs/adr/0007); untrusted text. */
   | { kind: "report"; reportId: string; report: CrewReportType; text: string; title: string | null }
+  /**
+   * Another account of the same provider took the step over (`switched`), or none passed preflight
+   * (`refused`, `to` null) and the task's fallback mode decided instead (docs/adr/0009).
+   */
+  | {
+      kind: "account_switch";
+      phase: "switched" | "refused";
+      switchId: string | null;
+      trigger: AccountSwitchTrigger;
+      providerId: string;
+      from: { profileId: string; alias: string };
+      to: { profileId: string; alias: string } | null;
+      source: AccountSwitchSource;
+      headroom: Headroom | null;
+      estimate: CostEstimate | null;
+      skipped: AccountSwitchSkipped[];
+    }
 );
 
 /** A timeline event without its envelope, per kind. */

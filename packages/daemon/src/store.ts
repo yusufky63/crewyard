@@ -748,6 +748,40 @@ export const MIGRATIONS: Migration[] = [
      primary key (runner, session_id)
    );`,
   },
+  // Automatic switches to another account of the same provider (docs/adr/0009), and the tasks that
+  // hold themselves out of them. `from_account` is the account the step left (a credential id or a
+  // profile id), so a step never switches back to it.
+  {
+    id: "account-switch",
+    sql: `create table if not exists account_switches (
+     id text primary key,
+     task_id text not null references tasks(id),
+     member_id text not null,
+     from_run_id text not null references runs(id),
+     handoff_id text,
+     runner text not null,
+     provider_id text not null,
+     from_profile_id text not null,
+     from_alias text not null,
+     from_account text not null,
+     to_profile_id text not null,
+     to_alias text not null,
+     trigger_kind text not null,
+     source text not null,
+     headroom text not null,
+     estimate text not null,
+     skipped text not null,
+     created_at text not null,
+     dismissed_at text
+   );
+   create index if not exists account_switches_task on account_switches(task_id, created_at);
+   create index if not exists account_switches_member on account_switches(member_id);
+   create table if not exists task_account_switch (
+     task_id text primary key references tasks(id),
+     enabled integer not null,
+     updated_at text not null
+   );`,
+  },
 ];
 
 /** What the positional scheme applied: a database at `user_version` N has the first N of these. */

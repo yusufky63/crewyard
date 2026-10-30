@@ -3,6 +3,7 @@ import { existsSync, readdirSync, readFileSync, rmdirSync } from "node:fs";
 import { freemem } from "node:os";
 import { join, resolve } from "node:path";
 import {
+  type AccountSwitchSkipped,
   capEvent,
   classifyRisk,
   defaultProjectConfig,
@@ -58,6 +59,7 @@ import { Bootstrapper } from "../worktrees/bootstrap.ts";
 import { admit, admitGroup, DEFAULT_LIMITS, type AdmissionLimits } from "./admission.ts";
 import { BEST_OF_MAX, BEST_OF_MIN, BestOfStore, groupFact, groupPhase, pickVariants, worktreeDiff, type DiffStat, type GroupRow } from "./best-of.ts";
 import { AdapterRegistry } from "./adapters.ts";
+import { accountOf, AccountSwitches, isClaudeSubscription, refusalOf, sameProviderAccounts, sourceOf, switchOrder, switchTrigger } from "./account-switch.ts";
 import { classifyTask } from "./classify.ts";
 import { eligible, estimateFor, MIN_HEADROOM, modelKey, proposeCrew, rankForRole, readOnlyConflict, sameModel, scoreCandidate, sumEstimates, type ScoringContext } from "./crew.ts";
 import { OrchestratorDb, type MemberRow, type ProjectRow, type RequestRow, type RunRow, type TaskRow, type WorktreeRow } from "./db.ts";
@@ -193,6 +195,8 @@ export class Orchestrator {
   readonly schedules: Scheduler;
   /** Idle runs whose process was stopped and that wake by session id (hibernation.ts). */
   readonly hibernation: HibernationStore;
+  /** Same-provider account switches and the tasks held out of them (account-switch.ts, docs/adr/0009). */
+  readonly switches: AccountSwitches;
   private hibernateTimer: NodeJS.Timeout | null = null;
   /** Runs whose process is being stopped for hibernation: the stream's end must not end the run. */
   private readonly hibernating = new Set<string>();
@@ -270,6 +274,7 @@ export class Orchestrator {
     this.loops = new LoopStore(opts.store.db, this.now);
     this.bestOf = new BestOfStore(opts.store.db, this.now);
     this.hibernation = new HibernationStore(opts.store.db, this.now);
+    this.switches = new AccountSwitches(opts.store.db, this.now, (topic, payload) => this.emit(topic, payload));
     this.db.hibernatedAt = (runId) => this.hibernation.asleep(runId)?.hibernated_at ?? null;
     this.schedules = new Scheduler({
       db: opts.store.db,
@@ -378,7 +383,7 @@ export class Orchestrator {
 
   get(taskId: string): TaskDetail {
     const task = this.db.task(taskId);
-    return { ...this.db.detail(task, this.blocked), bestOfGroup: this.groupView(task) };
+    return { ...this.db.detail(task, this.blocked), bestOfGroup: this.groupView(task), accountSwitch: this.switches.taskEnabled(task.id) };
   }
 
   /** Classifies the task and stores a draft crew. No process, worktree or network call. */
@@ -503,10 +508,20 @@ export class Orchestrator {
       const estimate = sumEstimates([...views.entries()].flatMap(([id, v]) => (groupCands && group?.member_id === id ? groupCands.map((g) => g.estimate) : [v?.estimate ?? { usd: null, provenance: "unknown" as const }])));
       this.db.exec("update crews set approved_at = ?, estimate_usd = ?, estimate_provenance = ? where id = ?", this.iso(), estimate.usd, estimate.provenance, crew.id);
       if (p.fallback) this.db.exec("update tasks set fallback = ? where id = ?", p.fallback, task.id);
+      if (p.accountSwitch !== undefined) this.switches.setTask(task.id, p.accountSwitch);
     });
     this.audit(task.id, null, "task.approved", { edits: p.edits ?? [], bestOf: groupCands?.map((g) => g.profileId) ?? null });
     this.emitTask(task.id, "approved");
     await this.tick();
+    return this.get(task.id);
+  }
+
+  /** Lets the task's steps switch to another account of the same provider, or holds them out (docs/adr/0009). */
+  setAccountSwitch(taskId: string, enabled: boolean): TaskDetail {
+    const task = this.db.task(taskId);
+    this.switches.setTask(task.id, enabled);
+    this.audit(task.id, null, "task.account_switch", { enabled });
+    this.emitTask(task.id, "account_switch");
     return this.get(task.id);
   }
 
@@ -2486,6 +2501,7 @@ export class Orchestrator {
       }
       mode = "ask";
     }
+    if (await this.switchAccount(this.db.run(runId), task, info)) return;
     await this.offerHandoff(this.db.run(runId), task, mode, info, null);
   }
 
@@ -2507,12 +2523,14 @@ export class Orchestrator {
     // An empty prepaid balance is a spend stop, not a crash: no retry on the same key, and the
     // handoff (per the task's mode) only offers keys that are not the one out of credit.
     if (failure.kind === "credit") {
-      await this.offerHandoff(run, task, mode, { trigger: "limit", window: null, resetsAt: null, failure: "credit" }, "credit_depleted");
+      const info: HandoffInfo = { trigger: "limit", window: null, resetsAt: null, failure: "credit" };
+      if (await this.switchAccount(run, task, info)) return;
+      await this.offerHandoff(run, task, mode, info, "credit_depleted");
       return;
     }
     if (failure.kind === "transient") {
       // Never wait when the next step is another profile: Auto with a target switches now.
-      const switching = mode === "auto" && this.handoffsTaken(run) < MAX_AUTO_HANDOFFS && (await this.handoffCandidates(run, task, { trigger: "crashed", failure: "transient" })).length > 0;
+      const switching = mode === "auto" && this.handoffsTaken(run) < MAX_AUTO_HANDOFFS && (await this.autoTargets(run, task, await this.handoffCandidates(run, task, { trigger: "crashed", failure: "transient" }))).length > 0;
       const attempt = this.db.retryAttempt(run.id) + 1;
       const delay = !switching && attempt <= RETRY.max ? retryDelayMs(attempt, failure.retryAfterMs) : null;
       if (delay !== null) {
@@ -2576,8 +2594,9 @@ export class Orchestrator {
 
   private async offerHandoff(run: RunRow, task: TaskRow, mode: FallbackMode, info: HandoffInfo, detail: string | null): Promise<void> {
     const candidates = await this.handoffCandidates(run, task, info);
-    if (mode === "auto" && candidates[0] && this.handoffsTaken(run) < MAX_AUTO_HANDOFFS) {
-      this.track(this.performHandoff(run.id, candidates[0], info.trigger === "unpriced" ? "budget" : info.trigger));
+    const next = mode === "auto" ? (await this.autoTargets(run, task, candidates))[0] : undefined;
+    if (next && this.handoffsTaken(run) < MAX_AUTO_HANDOFFS) {
+      this.track(this.performHandoff(run.id, next, info.trigger === "unpriced" ? "budget" : info.trigger));
       return;
     }
     this.insertRequest(task.id, run.id, null, null, {
@@ -2646,6 +2665,81 @@ export class Orchestrator {
     return avoid;
   }
 
+  /**
+   * Auto mode never moves a step to another account of the same provider on its own: only the
+   * account-switch setting does, with its own rules (docs/adr/0009). Another profile on the same
+   * key is the same account and stays a target. Manual and Ask still list them all.
+   */
+  private async autoTargets(run: RunRow, task: TaskRow, candidates: CandidateView[]): Promise<CandidateView[]> {
+    const all = await this.candidates(this.db.project(task.project_id));
+    const source = all.find((c) => c.profile.id === run.profile_id);
+    if (!source) return candidates;
+    const others = new Set(sameProviderAccounts(source, all).map((c) => c.profile.id));
+    return candidates.filter((v) => !others.has(v.profileId));
+  }
+
+  /**
+   * Same-provider account switch (docs/adr/0009). With Settings on and the task not held out, a
+   * limit, an empty credit or the key's own spend cap moves the step to the next account of the
+   * same runner and provider that passes preflight, whatever the task's fallback mode. True when
+   * the switch started. Otherwise the task's mode decides, and when there was an account to try,
+   * why each was passed over goes to the timeline.
+   */
+  private async switchAccount(run: RunRow, task: TaskRow, info: HandoffInfo): Promise<boolean> {
+    const trigger = switchTrigger(info);
+    // A Best of N variant follows the task you see, whose proposal held it in or out.
+    if (!trigger || task.cancelled_at || !this.switches.allowed(this.bestOf.parentOf(task.id) ?? task.id)) return false;
+    const project = this.db.project(task.project_id);
+    const all = await this.candidates(project);
+    const source = all.find((c) => c.profile.id === run.profile_id);
+    const sourceAccount = source ? accountOf(source) : null;
+    if (!source || sourceAccount === null || isClaudeSubscription(source)) return false;
+    const accounts = sameProviderAccounts(source, all);
+    if (accounts.length === 0) return false;
+
+    const member = this.db.member(run.member_id);
+    const ctx = this.scoring(project.id, task.size, task.budget_usd);
+    const avoid = this.avoidFor(member);
+    const chain = (JSON.parse(member.standby) as CandidateView[]).map((s) => s.profileId);
+    const ranked = rankForRole(accounts, member.role, ctx, avoid).map((v) => v.profileId);
+    const left = this.switches.leftAccounts(member.id);
+    const spent = this.db.spend(this.db.runs(task.id)).usd ?? 0;
+    const sourceInfo = sourceOf(trigger, info, this.db.headroom(run.profile_id, this.now()));
+    const from = { profileId: source.profile.id, alias: source.profile.alias };
+    const skipped: AccountSwitchSkipped[] = [];
+    for (const c of switchOrder(accounts, chain, ranked)) {
+      const view = scoreCandidate(c, member.role, ctx, avoid);
+      const reason = refusalOf({
+        sameKind: c.profile.credential.kind === source.profile.credential.kind,
+        ready: c.ready && this.adapters.has(c.profile.runner),
+        claudeSubscription: isClaudeSubscription(c),
+        roleOk: eligible(c, member.role, ctx),
+        independent: !avoid.models.has(modelKey(c)),
+        leftBefore: left.has(accountOf(c)!),
+        overCap: reachedCaps(this.opts.store.db, spendCredential(c), task.id, this.now(), { excludeRunId: run.id }).length > 0,
+        overBudget: task.budget_usd !== null && view.estimate.usd !== 0 && spent >= task.budget_usd,
+        headroom: view.headroom,
+      });
+      if (reason) {
+        skipped.push({ profileId: c.profile.id, alias: c.profile.alias, reason });
+        continue;
+      }
+      const to = { profileId: c.profile.id, alias: c.profile.alias };
+      this.track(
+        this.performHandoff(run.id, view, info.trigger === "budget" ? "budget" : "limit", {
+          mode: "auto",
+          onClaim: (handoffId) => {
+            const rec = this.switches.record({ taskId: task.id, memberId: member.id, fromRunId: run.id, handoffId, runner: source.profile.runner, providerId: source.profile.providerId, from: { ...from, account: sourceAccount }, to, trigger, source: sourceInfo, headroom: view.headroom, estimate: view.estimate, skipped });
+            this.audit(task.id, run.id, "account.switched", { phase: "switched", switchId: rec.id, handoffId, trigger, providerId: rec.providerId, from, to, source: sourceInfo, headroom: view.headroom, estimate: view.estimate, skipped });
+          },
+        }),
+      );
+      return true;
+    }
+    this.audit(task.id, run.id, "account.switch_refused", { phase: "refused", switchId: null, trigger, providerId: source.profile.providerId, from, to: null, source: sourceInfo, headroom: null, estimate: null, skipped });
+    return false;
+  }
+
   /** Models that actually ran for the roles this member must stay independent of. */
   private ranModels(member: MemberRow): Set<string> {
     const out = new Set<string>();
@@ -2669,7 +2763,11 @@ export class Orchestrator {
     return ranked.find((v) => v.profileId === profileId) ?? null;
   }
 
-  private async performHandoff(sourceRunId: string, target: CandidateView, trigger: HandoffTrigger): Promise<void> {
+  /**
+   * `mode` overrides what the handoff record says it ran under (an account switch is automatic
+   * whatever the task's mode); `onClaim` records what started it once the claim holds.
+   */
+  private async performHandoff(sourceRunId: string, target: CandidateView, trigger: HandoffTrigger, opts: { mode?: FallbackMode; onClaim?: (handoffId: string) => void } = {}): Promise<void> {
     const source = this.db.run(sourceRunId);
     const task = this.db.task(source.task_id);
     const project = this.db.project(task.project_id);
@@ -2680,8 +2778,9 @@ export class Orchestrator {
       await this.offerHandoff(source, task, "manual", { trigger, window: null, resetsAt: null }, "target_unavailable");
       return;
     }
-    const handoffId = this.claimHandoff(source, task, target, trigger);
+    const handoffId = this.claimHandoff(source, task, target, trigger, opts.mode);
     if (!handoffId) return;
+    opts.onClaim?.(handoffId);
     await this.executeHandoff(handoffId, source.id, target, trigger);
   }
 
@@ -2709,7 +2808,7 @@ export class Orchestrator {
    * Claim: one open handoff per source run (also a unique index). A second click, or Auto racing
    * a click, gets null instead of starting a second target.
    */
-  private claimHandoff(source: RunRow, task: TaskRow, target: CandidateView, trigger: HandoffTrigger): string | null {
+  private claimHandoff(source: RunRow, task: TaskRow, target: CandidateView, trigger: HandoffTrigger, mode?: FallbackMode): string | null {
     const handoffId = this.db.tx(() => {
       if (this.db.openHandoffs().some((h) => h.from_run_id === source.id)) return null;
       const id = randomUUID();
@@ -2719,7 +2818,7 @@ export class Orchestrator {
         task.id,
         source.id,
         target.profileId,
-        trigger === "manual" ? "manual" : task.fallback,
+        mode ?? (trigger === "manual" ? "manual" : task.fallback),
         trigger,
         this.iso(),
       );

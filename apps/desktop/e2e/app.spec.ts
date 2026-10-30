@@ -1,6 +1,6 @@
 import { basename } from "node:path";
 import { expect, test } from "@playwright/test";
-import { approval, daemon, hold, launch, limitReached, question, running, say, usage, type Harness } from "./harness.ts";
+import { approval, daemon, hold, launch, limitReached, question, running, say, usage, type E2eProfile, type Harness } from "./harness.ts";
 
 // One app instance walks through the flows in order, the way a person would: open a project,
 // run tasks against scripted runners, answer the Inbox, then change settings and layout.
@@ -271,6 +271,56 @@ test("Schedules: creates one switched off, switches it on and runs it now", asyn
   await expect.poll(async () => (await taskByTitle("Nightly limiter check"))?.status).toBe("proposed");
   await expect(row.getByText(/Last: Proposed, waits for approval/)).toBeVisible();
   await page.getByRole("group", { name: "View" }).getByRole("button", { name: "Tasks" }).click();
+});
+
+test("Fallback: with account switching on, a limit moves the step to the provider's other account and the Inbox says so", async () => {
+  const { page } = h;
+  const main = page.locator("main");
+  const toggle = () => main.getByRole("group", { name: "Switch accounts of the same provider" });
+  // Off by default; turning it on shows the provider-terms note first (docs/adr/0009).
+  await page.locator("#app-sidebar").getByRole("button", { name: "Settings" }).click();
+  await expect(toggle().getByRole("button", { name: "Off" })).toHaveAttribute("aria-pressed", "true");
+  await toggle().getByRole("button", { name: "On" }).click();
+  const note = main.getByRole("alertdialog", { name: "Before you turn it on" });
+  await expect(note).toBeVisible();
+  await note.getByRole("button", { name: "I understand, turn it on" }).click();
+  await expect(toggle().getByRole("button", { name: "On" })).toHaveAttribute("aria-pressed", "true");
+  // Settings hides the sidebar; Back returns to where it was opened from.
+  await main.getByRole("button", { name: "[ Back ]", exact: true }).click();
+
+  // Two accounts of one provider: whichever the crew picks, the other one takes over.
+  const model = (id: string): E2eProfile["model"] => ({ id, name: id, family: null, context: 200_000, output: 16_000, cost: { input: 1.25, output: 10, cacheRead: 0.125 }, reasoning: true, openWeights: false, released: null });
+  const profiles: E2eProfile[] = [
+    { id: "e2e-work", alias: "Fake Work", providerId: "openai", model: model("fake-sol") },
+    { id: "e2e-home", alias: "Fake Home", providerId: "openai", model: model("fake-sol") },
+  ];
+  const resetsAt = new Date(Date.now() + 3 * 3_600_000).toISOString();
+  h.setScripts({ researcher: [[running, limitReached(resetsAt), hold()], [running, say("Continued on the other account."), { wait: 200 }]] }, profiles);
+  const proposal = await compose("Check the limiter on a second account", { onLimit: "manual" });
+  await expect(proposal.getByLabel(/Same-provider accounts may take over/)).toBeChecked();
+  await proposal.getByRole("button", { name: "Approve and start" }).click();
+  // Manual mode, and still no question: the switch comes before the task's fallback mode.
+  await expect.poll(async () => (await taskByTitle("Check the limiter on a second account"))?.status, { timeout: 20_000 }).toBe("done");
+  const task = (await taskByTitle("Check the limiter on a second account"))!;
+  expect((await runsOf(task.id)).map((r) => r.endReason)).toEqual(expect.arrayContaining(["limit", "completed"]));
+
+  await openInbox();
+  await expect(page.getByText("Switched accounts · 1")).toBeVisible();
+  const entry = page.locator(".ib-switch");
+  await expect(entry).toContainText("Fake Work");
+  await expect(entry).toContainText("Fake Home");
+  await expect(entry).toContainText("limit reached");
+  await entry.getByRole("button", { name: "Off for this task" }).click();
+  await expect(entry.getByRole("button", { name: "Off for this task" })).toBeDisabled();
+  await entry.getByRole("button", { name: "Dismiss" }).click();
+  await expect(page.locator(".ib-switch")).toHaveCount(0);
+
+  // Off again, so the flows after this one see the default.
+  h.setScripts({});
+  await page.locator("#app-sidebar").getByRole("button", { name: "Settings" }).click();
+  await toggle().getByRole("button", { name: "Off" }).click();
+  await expect(toggle().getByRole("button", { name: "Off" })).toHaveAttribute("aria-pressed", "true");
+  await main.getByRole("button", { name: "[ Back ]", exact: true }).click();
 });
 
 test("Settings: theme and language change and the UI follows", async () => {

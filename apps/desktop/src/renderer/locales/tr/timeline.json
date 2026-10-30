@@ -104,5 +104,9 @@
     "stop_spend_cap": "Döngü durdu: {{cap}} doldu",
     "stop_no_resume": "Döngü durdu: {{runner}}, kodu yazan oturumu sürdüremiyor"
   },
-  "wokeBy": {"answer": "yanıtınızla", "message": "mesajınızla", "resume": "adım devam etti"}
+  "wokeBy": {"answer": "yanıtınızla", "message": "mesajınızla", "resume": "adım devam etti"},
+  "switch": {
+    "switched": "{{who}}, sağlayıcının başka bir hesabına geçti",
+    "refused": "{{who}}: sağlayıcının başka hiçbir hesabı kontrollerden geçmedi; görevin yedek modu karar veriyor"
+  }
 }

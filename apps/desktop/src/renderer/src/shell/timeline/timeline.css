@@ -58,3 +58,7 @@
 .tl-quote { display: block; padding: 4px 0 4px 10px; border-left: 2px solid var(--line-strong); color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
 .tl-r-needs_input > svg, .tl-r-stuck > svg { color: var(--warn); }
 .tl-r-done > svg { color: var(--ok); }
+/* Account switches (docs/adr/0009): a switch reads like a handoff; a refusal is only information. */
+.tl-switch { display: grid; gap: 4px; }
+.tl-e-switch > svg { color: var(--warn); }
+.tl-e-switch.tl-s-refused > svg { color: var(--ink-3); }

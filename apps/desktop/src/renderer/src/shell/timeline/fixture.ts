@@ -1,4 +1,5 @@
 import type { TaskDetail, TaskTimelineData, TimelineEvent, TimelineEventBody } from "@crewyard/core";
+import { fixtureSwitches } from "../../screens/tasks/fixture.ts";
 import { fixtureReportEvents } from "../mcpFixture.ts";
 
 // Screenshot data for the task timeline, derived from the fixture task the inspector shows. Used
@@ -68,6 +69,9 @@ export function timelineFixture(detail: TaskDetail): TaskTimelineData {
   });
   fixtureReportEvents(detail, (at, runId, e) => push(at, runId, e));
   // Loop decisions come from the daemon's audit log; here they are replayed from the fixture task.
+  // Account switches come from the audit log too; here they are replayed from the fixture's records.
+  for (const s of fixtureSwitches(detail.projectId).filter((x) => x.taskId === detail.id))
+    push(Date.parse(s.at), s.fromRunId, { kind: "account_switch", phase: "switched", switchId: s.id, trigger: s.trigger, providerId: s.providerId, from: s.from, to: s.to, source: s.source, headroom: s.headroom, estimate: s.estimate, skipped: s.skipped });
   for (const d of detail.loop.decisions) push(Date.parse(d.at), d.runId, { kind: "loop", decision: d.kind, memberId: d.memberId, iteration: d.iteration, max: d.maxIterations, reason: d.reason });
   events.sort((a, b) => a.at.localeCompare(b.at) || a.seq - b.seq);
   events.forEach((e, i) => (e.seq = i + 1));

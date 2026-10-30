@@ -617,5 +617,32 @@
     "title": "Hibernated",
     "waitingOnYou": "Its process was stopped {{time}} to free memory and a slot. It wakes with its own session when you answer.",
     "idle": "Its process was stopped {{time}} to free memory and a slot. It wakes with its own session on your next message."
+  },
+  "accountSwitch": {
+    "trigger": { "limit": "limit reached", "credit": "credit ran out", "spend_cap": "key spend cap reached" },
+    "source": "{{from}}: {{trigger}}",
+    "sourceWindow": "{{from}}: {{trigger}}, {{window}} at {{pct}}%",
+    "sourceCap": "{{from}}: {{trigger}}, spent {{spent}} of {{cap}}",
+    "target": "{{to}}: {{pct}}% left on its {{window}}",
+    "targetUnknown": "{{to}}: headroom unknown",
+    "estimate": "step estimate {{usd}}",
+    "noCost": "no token cost",
+    "estimateUnknown": "estimate unknown",
+    "skipped": "Passed over: {{list}}",
+    "skippedItem": "{{alias}} ({{reason}})",
+    "refusal": {
+      "not_ready": "not signed in or not ready",
+      "claude_subscription": "a Claude subscription, never used",
+      "other_kind": "a different kind of account (plan or paid key)",
+      "role": "not allowed in this role",
+      "independence": "the model the reviewer must avoid",
+      "left_before": "this step already left it",
+      "over_cap": "its key is at a spend cap",
+      "over_budget": "the task budget is spent",
+      "headroom_low": "20% or less left"
+    },
+    "outcome": { "pending": "switching", "completed": "continued", "failed": "switch failed, waits for you" },
+    "proposal": "Same-provider accounts may take over",
+    "proposalHint": "On a limit, an empty credit or the key's spend cap, the next account of the same provider that passes the checks continues this task."
   }
 }

@@ -1,8 +1,9 @@
-import { useState, type KeyboardEvent } from "react";
+import { useId, useState, type KeyboardEvent } from "react";
 import { AlertTriangle, ArrowRight, ClipboardList, Code, FileText, FlaskConical, Search, Shield, ShieldCheck } from "lucide-react";
 import type { CandidateView, CrewEdit, CrewMemberView, FallbackMode, RoleId, TaskDetail } from "@crewyard/core";
 import { Button, Label, TickMeter } from "@crewyard/ui";
 import { ProvBadge } from "../providers/shared.tsx";
+import { useAccountSwitchOn } from "./AccountSwitch.tsx";
 import { act, useErrorText } from "./data.ts";
 import { IssueNote } from "./IssuePicker.tsx";
 import { ErrorLine, useFormat, Who } from "./parts.tsx";
@@ -162,6 +163,10 @@ export function CrewProposal({ task, onClose }: { task: TaskDetail; onClose: () 
   const [edits, setEdits] = useState<Record<string, string>>({});
   const [mode, setMode] = useState<FallbackMode>(task.fallback === "wait_for_reset" ? "ask" : task.fallback);
   const [hideReasons, setHideReasons] = useState(false);
+  // Same-provider account switching (docs/adr/0009): on for every task while Settings has it on.
+  const switching = useAccountSwitchOn();
+  const [accountSwitch, setAccountSwitch] = useState(task.accountSwitch !== false);
+  const switchHint = useId();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const proposedVariants = task.bestOfGroup?.variants.map((v) => v.candidate.profileId) ?? [];
@@ -183,7 +188,7 @@ export function CrewProposal({ task, onClose }: { task: TaskDetail; onClose: () 
         .filter(([memberId, profileId]) => members.find((m) => m.id === memberId)?.chosen?.profileId !== profileId)
         .map(([memberId, profileId]) => ({ memberId, profileId }));
       const variantsChanged = picks.some((id, i) => id !== proposedVariants[i]);
-      await act("tasks.approve", { taskId: task.id, ...(list.length ? { edits: list } : {}), ...(variantsChanged ? { bestOf: { profileIds: picks } } : {}), fallback: mode });
+      await act("tasks.approve", { taskId: task.id, ...(list.length ? { edits: list } : {}), ...(variantsChanged ? { bestOf: { profileIds: picks } } : {}), fallback: mode, ...(switching ? { accountSwitch } : {}) });
       onClose();
     } catch (err) {
       setError(errorText(err));
@@ -247,6 +252,17 @@ export function CrewProposal({ task, onClose }: { task: TaskDetail; onClose: () 
             </button>
           ))}
         </div>
+        {switching && (
+          <label className="tk-switch">
+            <input type="checkbox" checked={accountSwitch} onChange={(e) => setAccountSwitch(e.target.checked)} aria-describedby={switchHint} />
+            <span>
+              {f.t("accountSwitch.proposal")}
+              <span className="muted tk-switch-hint" id={switchHint}>
+                {f.t("accountSwitch.proposalHint")}
+              </span>
+            </span>
+          </label>
+        )}
       </div>
       <div className="tk-crew-actions">
         <p className="tk-est">

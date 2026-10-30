@@ -4,7 +4,7 @@ import { useNav } from "../../nav.ts";
 // Settings is a launch screen, so the sidebar hides while it shows; it remembers where it was
 // opened from so Back returns there, and which section to scroll to.
 
-export const SECTIONS = ["general", "projects", "notifications", "startup", "mcp", "data", "about"] as const;
+export const SECTIONS = ["general", "projects", "notifications", "startup", "fallback", "mcp", "data", "about"] as const;
 export type SectionId = (typeof SECTIONS)[number];
 
 interface SettingsNav {
@@ -44,7 +44,7 @@ export function formatBytes(bytes: number, locale: string): string {
   return new Intl.NumberFormat(locale, { style: "unit", unit: UNITS[unit], unitDisplay: "short", maximumFractionDigits: unit === 0 ? 0 : 1 }).format(value);
 }
 
-const KNOWN_ERRORS = new Set(["settings.invalid", "data.path", "data.exists", "restore.agents_running", "restore.not_database", "restore.integrity", "restore.not_crewyard", "restore.newer_schema"]);
+const KNOWN_ERRORS = new Set(["settings.invalid", "settings.terms", "data.path", "data.exists", "restore.agents_running", "restore.not_database", "restore.integrity", "restore.not_crewyard", "restore.newer_schema"]);
 
 /** The daemon throws codes; Electron wraps them as "Error invoking remote method ...: Error: <code>". */
 export function errorCode(err: unknown): string | null {

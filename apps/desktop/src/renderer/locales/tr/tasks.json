@@ -617,5 +617,32 @@
     "title": "Uykuda",
     "waitingOnYou": "Süreci {{time}} durduruldu; bellek ve yuva boşaldı. Siz yanıtlayınca kendi oturumuyla uyanır.",
     "idle": "Süreci {{time}} durduruldu; bellek ve yuva boşaldı. Bir sonraki mesajınızda kendi oturumuyla uyanır."
+  },
+  "accountSwitch": {
+    "trigger": { "limit": "limite ulaştı", "credit": "kredisi bitti", "spend_cap": "anahtarın harcama sınırı doldu" },
+    "source": "{{from}}: {{trigger}}",
+    "sourceWindow": "{{from}}: {{trigger}}, {{window}} %{{pct}} dolu",
+    "sourceCap": "{{from}}: {{trigger}}, harcanan {{spent}} / {{cap}}",
+    "target": "{{to}}: {{window}} içinde %{{pct}} payı kaldı",
+    "targetUnknown": "{{to}}: kalan pay bilinmiyor",
+    "estimate": "adım tahmini {{usd}}",
+    "noCost": "token ücreti yok",
+    "estimateUnknown": "tahmin bilinmiyor",
+    "skipped": "Atlananlar: {{list}}",
+    "skippedItem": "{{alias}} ({{reason}})",
+    "refusal": {
+      "not_ready": "oturum açık değil ya da hazır değil",
+      "claude_subscription": "Claude aboneliği, hiç kullanılmaz",
+      "other_kind": "farklı türde bir hesap (abonelik ya da ücretli anahtar)",
+      "role": "bu rolde kullanılamaz",
+      "independence": "gözden geçirenin kaçınması gereken model",
+      "left_before": "bu adım ondan zaten ayrıldı",
+      "over_cap": "anahtarı bir harcama sınırında",
+      "over_budget": "görev bütçesi bitti",
+      "headroom_low": "%20 ya da daha az pay kaldı"
+    },
+    "outcome": { "pending": "geçiliyor", "completed": "devam etti", "failed": "geçiş olmadı, sizi bekliyor" },
+    "proposal": "Aynı sağlayıcının diğer hesapları devralabilir",
+    "proposalHint": "Limit dolunca, kredi bitince ya da anahtarın harcama sınırı dolunca, kontrollerden geçen sıradaki hesap bu görevi sürdürür."
   }
 }

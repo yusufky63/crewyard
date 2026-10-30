@@ -104,5 +104,9 @@
     "stop_spend_cap": "Loop stopped: {{cap}} reached",
     "stop_no_resume": "Loop stopped: {{runner}} cannot resume the session that wrote the code"
   },
-  "wokeBy": {"answer": "your answer", "message": "your message", "resume": "the step went on"}
+  "wokeBy": {"answer": "your answer", "message": "your message", "resume": "the step went on"},
+  "switch": {
+    "switched": "{{who}} moved to another account of the provider",
+    "refused": "{{who}}: no other account of the provider passed the checks, so the task's fallback mode decides"
+  }
 }

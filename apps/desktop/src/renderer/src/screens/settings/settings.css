@@ -76,3 +76,7 @@
 .settings .mcp-usage { list-style: none; display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; margin: 0; padding: 0; }
 .settings .mcp-usage li { display: grid; gap: 2px; padding: 6px 0; border-top: 1px dashed var(--line); font-size: var(--font-size-meta); overflow-wrap: anywhere; }
 .settings .mcp-usage li:first-child { border-top: 0; }
+/* The provider-terms note before same-provider account switching is turned on (docs/adr/0009). */
+.st-terms { display: grid; gap: 8px; align-items: start; margin: 4px 0 8px; }
+.st-terms p { color: var(--ink); font-size: 13px; line-height: 1.5; }
+.st-terms-acts { display: flex; gap: 8px; flex-wrap: wrap; }

@@ -4,7 +4,7 @@ import type { AppSettings, DataInfo, SettingsIpc, SettingsPatch } from "@crewyar
 import { orchestratorFor } from "../orchestrator/index.ts";
 import { readProjectConfig } from "../setup/config.ts";
 import { backupsDir, backupTo, commitStaged, exportTo, listBackups, stageRestore } from "../settings/data.ts";
-import { applyPatch, HIBERNATION_KEY, KEEP_AWAKE_KEY, NOTIFICATIONS_KEY, readHibernation, readKeepAwake, readNotifications, readStalls, STALLS_KEY } from "../settings/values.ts";
+import { ACCOUNT_SWITCH_KEY, applyPatch, HIBERNATION_KEY, KEEP_AWAKE_KEY, NOTIFICATIONS_KEY, readAccountSwitch, readHibernation, readKeepAwake, readNotifications, readStalls, STALLS_KEY } from "../settings/values.ts";
 import { appliedMigrationIds, MIGRATIONS } from "../store.ts";
 import type { HandlerContext, HandlerMap } from "./types.ts";
 
@@ -31,7 +31,13 @@ export function createSettingsHandlers(ctx: HandlerContext, opts: SettingsOption
   const restart = opts.restart ?? exitForRestart;
 
   const value = (key: string) => (db.prepare("select value from settings where key = ?").get(key) as { value: string } | undefined)?.value;
-  const read = (): AppSettings => ({ notifications: readNotifications(value(NOTIFICATIONS_KEY)), keepAwake: readKeepAwake(value(KEEP_AWAKE_KEY)), stalls: readStalls(value(STALLS_KEY)), hibernation: readHibernation(value(HIBERNATION_KEY)) });
+  const read = (): AppSettings => ({
+    notifications: readNotifications(value(NOTIFICATIONS_KEY)),
+    keepAwake: readKeepAwake(value(KEEP_AWAKE_KEY)),
+    stalls: readStalls(value(STALLS_KEY)),
+    hibernation: readHibernation(value(HIBERNATION_KEY)),
+    accountSwitch: readAccountSwitch(value(ACCOUNT_SWITCH_KEY)),
+  });
   const write = (key: string, v: unknown) => db.prepare("insert into settings (key, value) values (?, ?) on conflict(key) do update set value = excluded.value").run(key, JSON.stringify(v));
   // How many migrations the live database has; restore accepts only files whose ids this build knows.
   const schemaVersion = () => appliedMigrationIds(db).length;
@@ -46,6 +52,7 @@ export function createSettingsHandlers(ctx: HandlerContext, opts: SettingsOption
       if (patch.keepAwake !== undefined) write(KEEP_AWAKE_KEY, next.keepAwake);
       if (patch.stalls !== undefined) write(STALLS_KEY, next.stalls);
       if (patch.hibernation !== undefined) write(HIBERNATION_KEY, next.hibernation);
+      if (patch.accountSwitch !== undefined) write(ACCOUNT_SWITCH_KEY, next.accountSwitch);
       ctx.emit("settings.changed", next);
       return next;
     },

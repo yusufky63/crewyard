@@ -37,6 +37,36 @@ describe("buildTimeline", () => {
     ]);
   });
 
+  it("lists an account switch with its labels between the runs it joins, and a refusal on its own", () => {
+    const source = { window: "5h", usedPct: 100, provenance: "reported" };
+    const events = [
+      call(2, "r1", "a"),
+      ev(10, "r1", {
+        kind: "account_switch",
+        phase: "switched",
+        switchId: "s1",
+        trigger: "limit",
+        providerId: "openai",
+        from: { profileId: "p1", alias: "work" },
+        to: { profileId: "p2", alias: "personal" },
+        source,
+        headroom: { pct: 64, window: "5h", provenance: "reported" },
+        estimate: { usd: 0, provenance: "estimated" },
+        skipped: [{ profileId: "p3", alias: "team", reason: "headroom_low" }],
+      }),
+      ev(30, "r2", { kind: "account_switch", phase: "refused", switchId: null, trigger: "credit", providerId: "openai", from: { profileId: "p2", alias: "personal" }, to: null, source: { window: null, usedPct: null, provenance: "reported" }, headroom: null, estimate: null, skipped: [{ profileId: "p1", alias: "work", reason: "left_before" }] }),
+    ];
+    const tl = buildTimeline([run("r1", 0, 10), run("r2", 10, null, { profileId: "p2" })], events, ms(40));
+    const switches = tl.entries.filter((e) => e.kind === "switch");
+    expect(switches.map((e) => (e.kind === "switch" ? [e.phase, e.trigger, e.to?.alias ?? null, e.source.provenance, e.headroom?.provenance ?? null, e.skipped.map((s) => s.reason)] : null))).toEqual([
+      ["switched", "limit", "personal", "reported", "reported", ["headroom_low"]],
+      ["refused", "credit", null, "reported", null, ["left_before"]],
+    ]);
+    // The burst before the switch closes first; the switch sits after r1's last step, before r2 starts working.
+    const kinds = tl.entries.map((e) => e.kind);
+    expect(kinds.indexOf("tools")).toBeLessThan(kinds.indexOf("switch"));
+  });
+
   it("draws a lane per run with its waits, merged and clipped to the run", () => {
     const events = [
       ev(5, "r1", { kind: "run.state", state: "waiting_approval", detail: null }),

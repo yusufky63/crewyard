@@ -149,7 +149,9 @@ export type OrchestratorErrorCode =
   | "schedule.invalid" // { field }: a field failed validation
   | "schedule.busy" // the schedule's previous run is still active, or its precheck is running
   // Hibernation
-  | "run.hibernated"; // the run's process is stopped while it waits; a message or an answer wakes it
+  | "run.hibernated" // the run's process is stopped while it waits; a message or an answer wakes it
+  // Same-provider account switch (docs/adr/0009)
+  | "switch.not_found";
 
 export interface CostEstimate {
   usd: number | null;
@@ -617,6 +619,11 @@ export interface TaskDetail extends TaskSummary {
   loop: TaskLoopView;
   /** Best of N: the implement step as 2 to 4 variants, each in its own worktree; null without a group. */
   bestOfGroup?: BestOfView | null;
+  /**
+   * Whether this task lets another account of the same provider take over (docs/adr/0009). Only
+   * acts while Settings has it on; absent means on.
+   */
+  accountSwitch?: boolean;
 }
 
 export type RequestKind = "question" | "approval" | "handoff";
@@ -681,6 +688,66 @@ export interface SpendCap {
 export interface UnpricedSpend {
   model: string | null;
   caps: Array<SpendCap["kind"]>;
+}
+
+// ---------------------------------------------------------------- same-provider account switch (docs/adr/0009)
+
+/** What stopped the source: a reached limit, an empty prepaid credit, or its key's daily or per-task cap. */
+export type AccountSwitchTrigger = "limit" | "credit" | "spend_cap";
+
+/** Why an account of the same provider was not taken; the same preflight every handoff target passes, plus two rules of its own. */
+export type AccountSwitchRefusal =
+  | "not_ready" // signed out, key missing, or no adapter for the runner
+  | "claude_subscription" // Claude runs on API keys only (PLAN.md §6)
+  | "other_kind" // a plan sign-in and a paid API key never switch into each other on their own
+  | "role" // not allowed in the step's role (read-only preset, missing capability)
+  | "independence" // the model another role must stay independent of
+  | "left_before" // this step already switched away from this account
+  | "over_cap" // its key is at its daily or per-task cap
+  | "over_budget" // the task budget is spent
+  | "headroom_low"; // 20% or less left on a window
+
+/** What stopped the source, with where the number came from. A cap's amounts are Estimated unless billed. */
+export interface AccountSwitchSource {
+  window: LimitWindow | null;
+  usedPct: number | null;
+  provenance: Provenance;
+  cap?: SpendCap | null;
+}
+
+export interface AccountSwitchSkipped {
+  profileId: string;
+  alias: string;
+  reason: AccountSwitchRefusal;
+}
+
+/**
+ * One automatic switch to another account of the same provider. `outcome` follows the handoff it
+ * opened: pending until the target confirmed, then completed or failed (the source then asks in
+ * the Inbox as after any failed handoff).
+ */
+export interface AccountSwitchView {
+  id: string;
+  taskId: string;
+  projectId: string;
+  memberId: string;
+  fromRunId: string;
+  toRunId: string | null;
+  handoffId: string | null;
+  runner: RunnerId;
+  providerId: string;
+  from: { profileId: string; alias: string };
+  to: { profileId: string; alias: string };
+  trigger: AccountSwitchTrigger;
+  source: AccountSwitchSource;
+  /** The target's headroom and the step's estimate on it, when the switch was decided. */
+  headroom: Headroom;
+  estimate: CostEstimate;
+  /** Accounts of the provider tried before the target, with why each was passed over. */
+  skipped: AccountSwitchSkipped[];
+  outcome: "pending" | "completed" | "failed";
+  at: string;
+  dismissedAt: string | null;
 }
 
 export type RequestAnswer =
@@ -805,7 +872,9 @@ export interface TasksIpc {
    * start ready steps under admission control. Fails with `crew.missing_profile` or
    * `crew.independence` instead of starting a crew that breaks the rules.
    */
-  "tasks.approve": { params: { taskId: string; edits?: CrewEdit[]; fallback?: FallbackMode; bestOf?: { profileIds: string[] } }; result: TaskDetail };
+  "tasks.approve": { params: { taskId: string; edits?: CrewEdit[]; fallback?: FallbackMode; bestOf?: { profileIds: string[] }; accountSwitch?: boolean }; result: TaskDetail };
+  /** Lets this task's steps switch to another account of the same provider, or holds them out (docs/adr/0009). */
+  "tasks.setAccountSwitch": { params: { taskId: string; enabled: boolean }; result: TaskDetail };
   /**
    * Keeps one finished Best of N variant: its worktree and session continue the crew (test,
    * review, PR). Every other variant is stopped and its worktree parked (WIP committed, folder
@@ -872,6 +941,10 @@ export interface TasksIpc {
   /** Open stall alerts by default, newest first. */
   "stalls.list": { params: { projectId?: string; taskId?: string; includeClosed?: boolean }; result: StallAlertView[] };
   "stalls.dismiss": { params: { alertId: string }; result: StallAlertView };
+  /** Automatic switches to another account of the same provider, newest first; dismissed ones only on request. */
+  "switches.list": { params: { projectId?: string; taskId?: string; includeDismissed?: boolean }; result: AccountSwitchView[] };
+  /** Takes a switch off the Inbox; the record and its timeline entry stay. */
+  "switches.dismiss": { params: { switchId: string }; result: AccountSwitchView };
   /** Every schedule of a project, or of all projects. */
   "schedules.list": { params: { projectId?: string }; result: ScheduleView[] };
   /** Creates a schedule (disabled) or, with `id`, edits one. Fails with `schedule.invalid` and the field. */
@@ -897,6 +970,7 @@ export interface TasksTopics {
   "stall.notice": StallNoticePayload;
   "stalls.changed": { alertId: string; taskId: string; projectId: string; open: boolean };
   "schedules.changed": { scheduleId: string; projectId: string };
+  "switches.changed": { switchId: string; taskId: string; projectId: string };
 }
 
 export type TaskChangeCause =
@@ -924,4 +998,6 @@ export type TaskChangeCause =
   // A Best of N group started, a variant changed, or one was kept.
   | "best_of"
   // A run's process was stopped while idle, or woke again.
-  | "hibernation";
+  | "hibernation"
+  // The task let in or held out same-provider account switching (docs/adr/0009).
+  | "account_switch";

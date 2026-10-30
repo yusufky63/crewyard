@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeftRight, ChevronDown, ChevronRight, CircleAlert, CircleCheck, CircleHelp, Flag, Lightbulb, MessageSquare, Milestone, Moon, Play, RotateCw, ShieldQuestion, Timer, Wrench } from "lucide-react";
+import { ArrowLeftRight, ChevronDown, ChevronRight, CircleAlert, CircleCheck, CircleHelp, Flag, Lightbulb, MessageSquare, Milestone, Moon, Play, RotateCw, ShieldQuestion, Shuffle, Timer, Wrench } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { buildTimeline, timeIn, visibleSegments, type CrewReportType, type Lane, type LaneState, type McpTopics, type TaskDetail, type TasksTopics, type TimelineEntry, type ToolStep } from "@crewyard/core";
 import { BrandIcon, Button, Label } from "@crewyard/ui";
 import { call } from "../../ipc.ts";
+import { SwitchFacts } from "../../screens/tasks/AccountSwitch.tsx";
 import { formatDuration, loopLook } from "../../screens/tasks/model.ts";
 import { STATUS_ICONS, useFormat } from "../../screens/tasks/parts.tsx";
 import { FIXTURE, timelineFixture } from "./fixture.ts";
@@ -16,7 +17,7 @@ import "./timeline.css";
 // it was and where its full text is, so a long task stays readable and a huge one stays fast.
 
 const PAGE = 40;
-/** Screenshot mode only: `timeline=open` scrolls the inspector to the timeline and opens the first burst. */
+/** Screenshot mode only: `timeline=open` scrolls the inspector to the timeline and opens the first burst; `timeline=switch` to the newest account switch. */
 const SHOT = FIXTURE ? new URLSearchParams(location.search).get("timeline") : null;
 const STEP_PAGE = 50;
 const ICON = { size: 14, strokeWidth: 1.75, "aria-hidden": true } as const;
@@ -184,6 +185,7 @@ const ENTRY_ICON: Record<TimelineEntry["kind"], typeof Play> = {
   message: MessageSquare,
   retry: RotateCw,
   hibernation: Moon,
+  switch: Shuffle,
   // Drawn with the decision's own status icon instead (loopLook).
   loop: RotateCw,
   // Drawn with the report's own icon instead (REPORT_ICON).
@@ -232,7 +234,7 @@ function LoopText({ e, role }: { e: Extract<TimelineEntry, { kind: "loop" }>; ro
   return <span>{text}</span>;
 }
 
-function EntryText({ e, who, roleOf, now, locale, first }: { e: TimelineEntry; who: (runId: string | null) => string; roleOf: (memberId: string | null, runId: string | null) => string; now: number; locale: string; first: boolean }) {
+function EntryText({ e, who, roleOf, runnerOf, now, locale, first }: { e: TimelineEntry; who: (runId: string | null) => string; roleOf: (memberId: string | null, runId: string | null) => string; runnerOf: (runId: string | null) => string; now: number; locale: string; first: boolean }) {
   const { t } = useTranslation("timeline");
   switch (e.kind) {
     case "started":
@@ -260,6 +262,13 @@ function EntryText({ e, who, roleOf, now, locale, first }: { e: TimelineEntry; w
       return <LoopText e={e} role={roleOf(e.memberId, e.runId)} />;
     case "report":
       return <ReportText e={e} who={who(e.runId)} />;
+    case "switch":
+      return (
+        <span className="tl-switch">
+          <span>{t(`switch.${e.phase}`, { who: who(e.runId) })}</span>
+          <SwitchFacts runner={runnerOf(e.runId)} trigger={e.trigger} from={e.from} to={e.to} source={e.source} headroom={e.headroom} estimate={e.estimate} skipped={e.skipped} />
+        </span>
+      );
     case "ended":
       return <span>{t("entry.ended", { who: who(e.runId), reason: t(`reason.${e.reason ?? "completed"}`, { defaultValue: e.reason ?? "" }) })}</span>;
   }
@@ -279,6 +288,10 @@ export function TaskTimeline({ detail }: { detail: TaskDetail }) {
   useEffect(() => {
     if (SHOT) ref.current?.scrollIntoView({ block: "start" });
   }, []);
+  // `timeline=switch` brings the newest account switch into view once the events are in.
+  useEffect(() => {
+    if (SHOT === "switch" && q.data) ref.current?.querySelector(".tl-e-switch")?.scrollIntoView({ block: "start" });
+  }, [q.data]);
   const runs = useMemo(() => detail.runs.map((r) => ({ id: r.id, memberId: r.memberId, role: r.role, runner: r.runner, profileId: r.profileId, startedAt: r.startedAt, endedAt: r.endedAt, endReason: r.endReason })), [detail.runs]);
   const tl = useMemo(() => buildTimeline(runs, q.data?.events ?? [], now), [runs, q.data, now]);
   if (detail.runs.length === 0) return null;
@@ -294,6 +307,8 @@ export function TaskTimeline({ detail }: { detail: TaskDetail }) {
     const r = m ? null : detail.runs.find((x) => x.id === runId);
     return role(m?.role ?? r?.role ?? "implementer");
   };
+  // An account switch keeps the runner; its accounts are named "Runner · alias" like everywhere else.
+  const runnerOf = (runId: string | null) => detail.runs.find((x) => x.id === runId)?.runner ?? "";
   const clock = new Intl.DateTimeFormat(i18n.language, { hour: "2-digit", minute: "2-digit" });
   const present = STATES.filter((s) => tl.lanes.some((l) => l.segments.some((x) => x.state === s)));
   // Newest first, in pages, so a task with thousands of steps renders a screenful.
@@ -333,13 +348,13 @@ export function TaskTimeline({ detail }: { detail: TaskDetail }) {
           const Icon = look ? STATUS_ICONS[look.icon] : e.kind === "request" && e.request === "question" ? CircleHelp : e.kind === "report" ? REPORT_ICON[e.report] : ENTRY_ICON[e.kind];
           const d = durationOf(e, now);
           return (
-            <li key={`${e.kind}-${e.at}-${i}`} className={`tl-entry tl-e-${e.kind}${e.kind === "wait" ? ` tl-w-${e.state}` : ""}${e.kind === "report" ? ` tl-r-${e.report}` : ""}${look ? ` tl-l-${look.tone}` : ""}`}>
+            <li key={`${e.kind}-${e.at}-${i}`} className={`tl-entry tl-e-${e.kind}${e.kind === "wait" ? ` tl-w-${e.state}` : ""}${e.kind === "report" ? ` tl-r-${e.report}` : ""}${e.kind === "switch" ? ` tl-s-${e.phase}` : ""}${look ? ` tl-l-${look.tone}` : ""}`}>
               <time className="num muted" dateTime={new Date(e.at).toISOString()}>
                 {clock.format(e.at)}
               </time>
               <Icon {...ICON} />
               <div className="tl-text">
-                <EntryText e={e} who={whoOf} roleOf={roleOf} now={now} locale={i18n.language} first={visible.findIndex((x) => x.kind === "tools") === i} />
+                <EntryText e={e} who={whoOf} roleOf={roleOf} runnerOf={runnerOf} now={now} locale={i18n.language} first={visible.findIndex((x) => x.kind === "tools") === i} />
               </div>
               <span className="num muted tl-dur">{d === null ? "" : formatDuration(Math.max(0, d))}</span>
             </li>
