@@ -383,6 +383,74 @@ describe("CodexAdapter: schema-checked results", () => {
   });
 });
 
+describe("native review and fork", () => {
+  const verdict = { verdict: "changes", summary: "One bug.", comments: [{ file: "src/a.ts", line: 3, severity: "major", body: "Off by one." }] };
+  const ended = (events: AgentEvent[]) => events.find((e) => e.type === "run.ended") as Extract<AgentEvent, { type: "run.ended" }>;
+  const reviewer: RolePolicy = { writes: "none", allowCommands: [], network: "denied" };
+
+  it("runs review/start against the base branch, then maps the review to the verdict in the same thread", async () => {
+    const dir = home({ scenario: "review", reviewText: "[P1] Off by one in src/a.ts:3", answers: [JSON.stringify(verdict)] });
+    const adapter = new CodexAdapter(launcher);
+    const events = await collect(adapter, await adapter.start(request(dir, { policy: reviewer, outputSchema: REVIEW_VERDICT_OUTPUT, review: { target: { kind: "base_branch", branch: "main" } } })));
+    const log = received(dir);
+    expect(sentBy(log, "review/start")[0]).toEqual({ threadId: "thr-1", target: { type: "baseBranch", branch: "main" }, delivery: "inline" });
+    const turns = sentBy(log, "turn/start");
+    expect(turns).toHaveLength(1);
+    expect(turns[0]?.outputSchema).toEqual(REVIEW_VERDICT_OUTPUT.jsonSchema);
+    expect(JSON.stringify(turns[0]?.input)).toContain("Off by one in src/a.ts:3");
+    expect(events.some((e) => e.type === "message.delta" && e.text.includes("[P1]"))).toBe(true);
+    expect(ended(events)).toMatchObject({ reason: "completed", output: { ok: true, value: verdict } });
+  });
+
+  it("pins a commit target to its sha", async () => {
+    const dir = home({ scenario: "review", reviewText: "Looks right.", answers: [JSON.stringify({ ...verdict, verdict: "pass", comments: [] })] });
+    const adapter = new CodexAdapter(launcher);
+    await collect(adapter, await adapter.start(request(dir, { outputSchema: REVIEW_VERDICT_OUTPUT, review: { target: { kind: "commit", sha: "abc123", title: "fix" } } })));
+    expect(sentBy(received(dir), "review/start")[0]).toMatchObject({ target: { type: "commit", sha: "abc123", title: "fix" } });
+  });
+
+  it("forks the source rollout by path under the target profile and compacts it", async () => {
+    const source = home();
+    const rollout = join(source, "sessions", "2026", "10", "30");
+    mkdirSync(rollout, { recursive: true });
+    writeFileSync(join(rollout, "rollout-2026-10-30T10-00-00-thr-src.jsonl"), "{}\n");
+    const target = home();
+    const adapter = new CodexAdapter(launcher);
+    const res = await adapter.fork({
+      source: { profile: { ...request(source).profile, configDir: source }, session: { runner: "codex", sessionId: "thr-src" }, env: {} },
+      target: { profile: { ...request(target).profile, configDir: target }, model: "deepseek-pro", env: { DEEPSEEK_API_KEY: "k" } },
+      cwd: target,
+      compact: true,
+    });
+    expect(res).toEqual({
+      session: { runner: "codex", sessionId: "thr-fork" },
+      compacted: true,
+      summary: null,
+      usage: { tokensIn: 600, tokensOut: 120, cacheRead: 0, costUsd: null },
+      totals: { tokensIn: 1600, tokensOut: 120, cacheRead: 0, costUsd: null },
+    });
+    const log = received(target);
+    expect(sentBy(log, "thread/fork")[0]).toMatchObject({ threadId: "thr-src", path: join(rollout, "rollout-2026-10-30T10-00-00-thr-src.jsonl"), model: "deepseek-pro", config: { "agents.enabled": false } });
+    expect(sentBy(log, "thread/compact/start")[0]).toEqual({ threadId: "thr-fork" });
+    expect(sentBy(log, "turn/start")).toHaveLength(0);
+  });
+
+  it("says the session is gone when the source has no rollout, and when codex has no such thread", async () => {
+    const adapter = new CodexAdapter(launcher);
+    const source = home();
+    const target = home();
+    const req = {
+      source: { profile: { ...request(source).profile, configDir: source }, session: { runner: "codex" as const, sessionId: "thr-missing" }, env: {} },
+      target: { profile: { ...request(target).profile, configDir: target }, model: null, env: {} },
+      cwd: target,
+      compact: false,
+    };
+    await expect(adapter.fork(req)).rejects.toMatchObject({ sessionProblem: "gone" });
+    const dir = home({ resumeGone: true });
+    await expect(adapter.resume({ runner: "codex", sessionId: "thr-x" }, request(dir))).rejects.toMatchObject({ sessionProblem: "gone" });
+  });
+});
+
 describe("app-server launch", () => {
   it("turns codex's own subagents off", () => {
     expect(DEFAULT_ARGS).toEqual(["app-server", "--disable", "plugins", "--disable", "multi_agent"]);

@@ -1,5 +1,6 @@
 import type { AgentEvent, EndReason } from "@crewyard/core";
 import type { SDKAssistantMessage, SDKMessage, SDKResultMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import { sessionProblemDetail } from "./sessions.ts";
 import { toolKind, toolTitle } from "./tools.ts";
 
 // Turns SDKMessage frames into normalized events. Pure apart from its own bookkeeping, so the
@@ -63,6 +64,9 @@ export class EventMapper {
       return { reason: "limit", detail: this.lastError ?? msg.terminal_reason };
     }
     if (msg.terminal_reason === "aborted_streaming" || msg.terminal_reason === "aborted_tools") return { reason: "interrupted" };
+    // The CLI refused the session to resume: the orchestrator tells this from an ordinary failure by the prefix.
+    const problem = msg.subtype === "success" ? null : sessionProblemDetail(msg.errors ?? [], msg.startup_failure_reason);
+    if (problem) return { reason: "failed", detail: problem };
     const detail = msg.subtype === "success" ? msg.result : (msg.errors?.join("; ") ?? msg.subtype);
     return { reason: "failed", detail: detail || this.lastError || msg.subtype };
   }

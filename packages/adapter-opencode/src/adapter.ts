@@ -1,5 +1,7 @@
-import { randomUUID } from "node:crypto";
-import { checkOutput, outputInstruction, outputRetryPrompt, parseOutputText } from "@crewyard/core";
+import { randomBytes, randomUUID } from "node:crypto";
+import { mkdir, rm } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { checkOutput, outputInstruction, outputRetryPrompt, parseOutputText, sessionError } from "@crewyard/core";
 import { randomUUID as newPassword } from "node:crypto";
 import type {
   AgentAdapter,
@@ -7,6 +9,8 @@ import type {
   AgentEvent,
   Answer,
   EndReason,
+  ForkRequest,
+  ForkResult,
   NativeSessionRef,
   OutputSchema,
   Probe,
@@ -22,6 +26,7 @@ import type {
   UserInput,
 } from "@crewyard/core";
 import { isShutdownExit, parseVersion, resolveBin, run as runCommand } from "@crewyard/proc";
+import { compactionOf, errorText, exportSession, importSession, isNotFound, usageOf, type CliCall } from "./fork.ts";
 import { createOpencodeClient, type Event as OpenCodeEvent, type Message, type OpencodeClient, type PermissionRequest, type SessionStatus } from "@opencode-ai/sdk/v2";
 import { OpenCodeMapper, type EventBody } from "./mapper.ts";
 import { mustReject, permissionRules } from "./policy.ts";
@@ -51,6 +56,11 @@ export interface OpenCodeAdapterOptions {
   prefixArgs?: string[];
   readyTimeoutMs?: number;
   reconnectDelayMs?: number;
+  /**
+   * Bound on a whole fork(): export, import, fork and the summarize turn. Under Node's 300 s
+   * fetch headers timeout, since summarize answers only once the compaction turn is done.
+   */
+  forkTimeoutMs?: number;
 }
 
 interface ModelRef {
@@ -128,6 +138,7 @@ export class OpenCodeAdapter implements AgentAdapter {
       prefixArgs: opts.prefixArgs ?? [],
       readyTimeoutMs: opts.readyTimeoutMs ?? 30_000,
       reconnectDelayMs: opts.reconnectDelayMs ?? 1_000,
+      forkTimeoutMs: opts.forkTimeoutMs ?? 240_000,
     };
   }
 
@@ -164,7 +175,14 @@ export class OpenCodeAdapter implements AgentAdapter {
   async resume(ref: NativeSessionRef, req: StartRequest): Promise<RunHandle> {
     const run = await this.open(req, ref.sessionId);
     try {
-      await run.client.session.get({ sessionID: ref.sessionId });
+      const info = need(
+        await run.client.session.get({ sessionID: ref.sessionId }).catch((err: unknown) => {
+          throw isNotFound(err) ? sessionError("gone", `OpenCode has no session ${ref.sessionId} in this profile`) : err;
+        }),
+      );
+      // A forked or imported copy has no permission rules (an export does not carry them), and
+      // without rules OpenCode allows what its defaults allow: give it this role's rules first.
+      if (!info.permission?.length) await run.client.session.update({ sessionID: ref.sessionId, permission: permissionRules(req.policy) });
       this.attach(run, ref.sessionId);
       // History is already in our event log; prime the mapper so it is not emitted twice.
       const history = await run.client.session.messages({ sessionID: ref.sessionId });
@@ -258,6 +276,78 @@ export class OpenCodeAdapter implements AgentAdapter {
     return { kind: "text", text, ext: "json" };
   }
 
+  /**
+   * Handoff between two profiles: `opencode export` from the source profile, `opencode import`
+   * into the target's (same id), then `POST /session/{id}/fork` there, so the copy that goes on
+   * has an id of its own and a later import of the source only touches the untouched mirror.
+   * With `compact`, `POST /session/{id}/summarize` on the fork with the target's model. The source
+   * profile is only read. The imported mirror stays in the target profile, like any session.
+   */
+  async fork(req: ForkRequest): Promise<ForkResult> {
+    const executable = await this.executable();
+    if (!executable) throw new Error("opencode was not found on PATH");
+    await this.ensureVersion(executable);
+    const sourceId = req.source.session.sessionId;
+    const model = req.compact ? (req.target.model ?? req.target.profile.defaultModel) : null;
+    if (req.compact && !model) throw new Error("Compacting needs a model on the target profile");
+    const deadline = Date.now() + this.opts.forkTimeoutMs;
+    const left = () => Math.max(1, deadline - Date.now());
+    // No provider keys for export and import: they only read and write the profile's database.
+    const cli = (profile: Profile): CliCall => ({ executable, prefixArgs: this.opts.prefixArgs, cwd: req.cwd, env: childEnv(profile.configDir, {}, newPassword(), process.env, providerEnv({ profile })), timeoutMs: Math.min(left(), 60_000) });
+
+    if (!sameDir(req.source.profile.configDir, req.target.profile.configDir)) {
+      const cache = join(req.target.profile.configDir, "cache");
+      await mkdir(cache, { recursive: true });
+      const file = join(cache, `crewyard-fork-${randomBytes(6).toString("hex")}.json`);
+      try {
+        const exported = await exportSession(cli(req.source.profile), sourceId, file);
+        if (!exported.ok) throw exported.gone ? sessionError("gone", `OpenCode has no session ${sourceId} in the source profile`) : new Error(`Could not export the OpenCode session: ${exported.detail}`);
+        const problem = await importSession(cli(req.target.profile), sourceId, file);
+        if (problem) throw new Error(`Could not import the OpenCode session: ${problem}`);
+      } finally {
+        await rm(file, { force: true, maxRetries: 5, retryDelay: 200 });
+      }
+    }
+
+    const target = { profile: req.target.profile, model: req.target.model };
+    const server = await launchServer({ executable, prefixArgs: this.opts.prefixArgs, cwd: req.cwd, configDir: req.target.profile.configDir, env: req.target.env, extraEnv: providerEnv(target), readyTimeoutMs: Math.min(left(), this.opts.readyTimeoutMs) });
+    const work = async (): Promise<ForkResult> => {
+      const client = createOpencodeClient({ baseUrl: server.url, directory: req.cwd, headers: { Authorization: basicAuth(server.password) }, throwOnError: true });
+      const forked = need(
+        await client.session.fork({ sessionID: sourceId }).catch((err: unknown) => {
+          throw isNotFound(err) ? sessionError("gone", `OpenCode has no session ${sourceId} to fork`) : err;
+        }),
+      );
+      const session = { runner: "opencode" as const, sessionId: forked.id };
+      let compaction: { summary: string | null; usage: ForkResult["usage"] } | null = null;
+      if (model) {
+        const before = new Set(need(await client.session.messages({ sessionID: forked.id })).map((m) => m.info.id));
+        await client.session.summarize({ sessionID: forked.id, ...openCodeModel(req.target.profile.providerId, model), auto: false });
+        const result = compactionOf(before, need(await client.session.messages({ sessionID: forked.id })));
+        if (!result.ok) throw new Error(`OpenCode could not compact the session: ${result.error}`);
+        compaction = { summary: result.summary, usage: result.usage };
+      }
+      // What resume() primes the mapper with: every assistant message of the new session.
+      const totals = usageOf(need(await client.session.messages({ sessionID: forked.id })));
+      return { session, compacted: compaction !== null, summary: compaction?.summary ?? null, usage: compaction?.usage ?? null, totals };
+    };
+    let timer: NodeJS.Timeout | undefined;
+    const pending = work();
+    try {
+      return await Promise.race([
+        pending,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error(`The OpenCode fork did not finish within ${this.opts.forkTimeoutMs} ms`)), left());
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+      // Closing the server ends a summarize turn still running; its request then fails unseen.
+      pending.catch(() => undefined);
+      await server.close();
+    }
+  }
+
   async stop(handle: RunHandle): Promise<void> {
     const run = this.runs.get(handle.runId);
     if (!run) return;
@@ -276,13 +366,17 @@ export class OpenCodeAdapter implements AgentAdapter {
     return this.opts.executable ?? (await resolveBin("opencode"));
   }
 
-  private async open(req: StartRequest, sessionId: string | null): Promise<Run> {
-    const executable = await this.executable();
-    if (!executable) throw new Error("opencode was not found on PATH");
+  private async ensureVersion(executable: string): Promise<void> {
     // Every event carries the CLI version (PLAN.md §5.3); read it once per adapter.
     if (this.version === null) this.version = parseVersion((await runCommand(executable, [...this.opts.prefixArgs, "--version"], { timeoutMs: 15_000 })).stdout);
     const unsupported = unsupportedVersion(this.version);
     if (unsupported) throw new Error(unsupported);
+  }
+
+  private async open(req: StartRequest, sessionId: string | null): Promise<Run> {
+    const executable = await this.executable();
+    if (!executable) throw new Error("opencode was not found on PATH");
+    await this.ensureVersion(executable);
     const server = await launchServer({ executable, prefixArgs: this.opts.prefixArgs, cwd: req.cwd, configDir: req.profile.configDir, env: req.env, extraEnv: providerEnv(req), readyTimeoutMs: this.opts.readyTimeoutMs });
     const client = createOpencodeClient({ baseUrl: server.url, directory: req.cwd, headers: { Authorization: basicAuth(server.password) }, throwOnError: true });
     const runId = `opencode-${randomUUID()}`;
@@ -631,15 +725,15 @@ function need<T>(res: { data?: T }): T {
   return res.data;
 }
 
+function sameDir(a: string, b: string): boolean {
+  const norm = (p: string) => (process.platform === "win32" ? resolve(p).toLowerCase() : resolve(p));
+  return norm(a) === norm(b);
+}
+
 function title(prompt: string): string {
   // OpenCode spends a model call on naming sessions that keep the default title; ours has one.
   const first = prompt.trim().split(/\r?\n/)[0] ?? "";
   return `Crewyard: ${first.slice(0, 80) || "task"}`;
-}
-
-function errorText(error: { name: string; data?: unknown }): string {
-  const data = error.data as { message?: unknown } | undefined;
-  return typeof data?.message === "string" ? `${error.name}: ${data.message}` : error.name;
 }
 
 function lastLine(text: string): string {

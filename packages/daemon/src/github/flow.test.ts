@@ -98,6 +98,8 @@ async function setup() {
   const project = store.addProject(repo, "demo repo");
   const adapter = new ScriptedAdapter((role: string, _req: StartRequest, resumed: boolean) =>
     role === "reviewer" ? [running, say("Reading the diff."), tool, say("Approved: the limiter and its tests look right.")] : [running, say(resumed ? "fixed" : `${role} done`)],
+    // The schema-checked verdict, pinned to the head the reviewer read.
+    { result: (role) => (role === "reviewer" ? { ok: true, value: { verdict: "pass", summary: "Looks right.", comments: [] } } : undefined) },
   );
   const adapters = new AdapterRegistry({});
   adapters.set("fake", adapter);
@@ -124,7 +126,7 @@ async function setup() {
 
 describe("task PR flow", () => {
   it("goes from a finished crew to a merged PR with every outward step explicit, then cleans up safely", async () => {
-    const { root, repo, project, o, adapter, gh, svc, flow, topics } = await setup();
+    const { root, repo, store, project, o, adapter, gh, svc, flow, topics } = await setup();
     const proposed = await o.propose({ projectId: project.id, title: "Implement rate limiting for the login endpoint", description: "Five attempts per minute per account." });
     await o.approve({ taskId: proposed.id });
     await waitFor(() => o.get(proposed.id).status === "review");
@@ -133,12 +135,17 @@ describe("task PR flow", () => {
     await git(wt.path, "add", "-A");
     await git(wt.path, "commit", "-q", "-m", "Add the login limiter");
     const tip = (await git(wt.path, "rev-parse", "HEAD")).trim();
+    // The commit above landed after the review, so the verdict is for another head and never counts.
+    expect((await flow.view(proposed.id)).draft?.gate.items.find((i) => i.id === "reviewed")?.status).toBe("fail");
+    // As if the review loop had re-reviewed the new head.
+    store.db.prepare("update review_verdicts set head_sha = ? where task_id = ?").run(tip, proposed.id);
 
     // 1. The draft: review gate passed, one commit, clean, not pushed yet.
     let view = await flow.view(proposed.id);
     expect(view.pull).toBeNull();
     expect(view.draft?.gate.items.map((i) => [i.id, i.status])).toEqual([
       ["review", "pass"],
+      ["reviewed", "pass"],
       ["commits", "pass"],
       ["clean", "pass"],
       ["pushed", "wait"],

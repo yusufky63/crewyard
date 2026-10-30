@@ -15,6 +15,18 @@ describe("merge gate", () => {
     expect(evaluateGate({ ...base, ownerApproved: true }).mergeable).toBe(true);
   });
 
+  it("merges only with a pass verdict for exactly this head (pinned review)", () => {
+    expect(evaluateGate({ ...base, ownerApproved: true, reviewed: "pass" }).mergeable).toBe(true);
+    for (const r of ["changes", "stale"] as const) {
+      const g = evaluateGate({ ...base, ownerApproved: true, reviewed: r });
+      expect([statusOf(g).reviewed, g.mergeable]).toEqual(["fail", false]);
+      expect(mergeBlock(g, "clean")).toBe("Merge gate not passed: reviewed");
+    }
+    expect(statusOf(evaluateGate({ ...base, reviewed: "missing" })).reviewed).toBe("wait");
+    // A PR no task with a reviewer owns has no such item.
+    expect(statusOf(evaluateGate({ ...base, reviewed: null }))).not.toHaveProperty("reviewed");
+  });
+
   it("blocks on failing or pending checks", () => {
     expect(evaluateGate({ ...base, ownerApproved: true, checks: { ...passed, state: "failing" } }).mergeable).toBe(false);
     const pending = evaluateGate({ ...base, checks: { ...passed, state: "pending" } });

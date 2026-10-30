@@ -21,6 +21,9 @@ export const capabilities: AgentCapabilities = {
   // Session revert to a turn's user message restores OpenCode's file snapshot and hides the turn from history.
   undo: { files: true, history: true },
   transcript: true,
+  // export from one profile, import into another, fork there, summarize with the target's model
+  // (fake suite, and live on DeepSeek 2026-10-30: the copy resumed in the other profile and kept the context).
+  fork: { compact: true },
 };
 
 export function createAdapter(opts: OpenCodeAdapterOptions = {}): AgentAdapter {

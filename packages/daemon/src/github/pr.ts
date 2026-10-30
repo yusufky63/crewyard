@@ -1,4 +1,5 @@
-import type { CleanupBlock, CleanupVerdict, FeedbackKind, GateStatus, PullGate, TaskStatus } from "@crewyard/core";
+import type { CleanupBlock, CleanupVerdict, FeedbackKind, GateStatus, PullGate, ReviewedHead, TaskStatus } from "@crewyard/core";
+import { reviewedStatus } from "./gate.ts";
 
 // Pure rules for the task PR flow (PLAN.md §10): the gate before a PR may be opened, the PR text,
 // feedback deduplication and the message the owning run receives, job-log excerpts, and the
@@ -16,6 +17,8 @@ export interface PullGateInput {
   onRemote: boolean;
   /** An open, draft or merged PR already belongs to the task. */
   hasPull: boolean;
+  /** The reviewer's verdict for the branch tip; null or absent when the crew has no reviewer. */
+  reviewed?: ReviewedHead | null;
 }
 
 export function pullGate(i: PullGateInput): PullGate {
@@ -25,6 +28,7 @@ export function pullGate(i: PullGateInput): PullGate {
   const pushed: GateStatus = i.unpushed === 0 && i.onRemote ? "pass" : "wait";
   const items: PullGate["items"] = [
     { id: "review", status: review },
+    ...(i.reviewed ? [{ id: "reviewed" as const, status: reviewedStatus(i.reviewed) }] : []),
     { id: "commits", status: commits },
     { id: "clean", status: clean },
     { id: "pushed", status: pushed },

@@ -107,6 +107,19 @@ async function runTurn() {
       completed("completed");
       return;
     }
+    case "review": {
+      // review/start is the first turn: codex's own review items; the next turn/start is the verdict turn.
+      started();
+      if (turns === 1) {
+        notify("item/completed", { threadId: "thr-1", turnId: "turn-1", completedAtMs: 1, item: { type: "enteredReviewMode", id: "rv-in", review: "current changes" } });
+        notify("item/completed", { threadId: "thr-1", turnId: "turn-1", completedAtMs: 1, item: { type: "exitedReviewMode", id: "rv-out", review: config.reviewText ?? "" } });
+      } else {
+        const text = (config.answers ?? [])[turns - 2] ?? "";
+        notify("item/completed", { threadId: "thr-1", turnId: "turn-1", completedAtMs: 1, item: { type: "agentMessage", id: `msg-${turns}`, text, phase: null, memoryCitation: null } });
+      }
+      completed("completed");
+      return;
+    }
     case "hang":
       // Stays in the turn until turn/interrupt or the process is killed.
       started();
@@ -136,13 +149,35 @@ const handlers = {
     return { status: "canceled" };
   },
   "thread/start": () => ({ thread: { id: "thr-1" } }),
-  "thread/resume": (params) => ({ thread: { id: params.threadId } }),
+  "thread/resume": (params) => {
+    if (config.resumeGone) throw Object.assign(new Error("no rollout found for thread id " + params.threadId), { rpcCode: -32600 });
+    return { thread: { id: params.threadId } };
+  },
   "turn/start": () => {
     turns++;
     void runTurn();
     return { turn: turn("inProgress") };
   },
   "turn/steer": () => ({ turnId: "turn-1" }),
+  "review/start": () => {
+    turns++;
+    void runTurn();
+    return { turn: turn("inProgress"), reviewThreadId: "thr-1" };
+  },
+  "thread/fork": (params) => {
+    if (config.forkGone) throw Object.assign(new Error("no rollout found for thread id " + params.threadId), { rpcCode: -32600 });
+    return { thread: { id: "thr-fork" } };
+  },
+  "thread/compact/start": (params) => {
+    const usage = (input, output) => ({ totalTokens: input + output, inputTokens: input, cachedInputTokens: 0, cacheWriteInputTokens: 0, outputTokens: output, reasoningOutputTokens: 0 });
+    notify("thread/tokenUsage/updated", { threadId: params.threadId, turnId: "turn-c", tokenUsage: { total: usage(1000, 0), last: usage(1000, 0), modelContextWindow: null } });
+    setTimeout(() => {
+      notify("thread/tokenUsage/updated", { threadId: params.threadId, turnId: "turn-c", tokenUsage: { total: usage(1600, 120), last: usage(600, 120), modelContextWindow: null } });
+      notify("item/completed", { threadId: params.threadId, turnId: "turn-c", completedAtMs: 1, item: { type: "contextCompaction", id: "cc-1" } });
+      notify("turn/completed", { threadId: params.threadId, turn: { ...turn("completed"), id: "turn-c" } });
+    }, 5);
+    return {};
+  },
   // History only, as in 0.147.0; "noRollback" plays a newer codex that dropped the method.
   ...(config.noRollback ? {} : { "thread/rollback": (params) => ({ thread: { id: params.threadId, turns: [] } }) }),
   "turn/interrupt": () => {
@@ -164,6 +199,12 @@ rl.on("line", (line) => {
   if (msg.id === undefined) return;
   const handler = handlers[msg.method];
   if (!handler) send({ id: msg.id, error: { code: -32601, message: `unknown method ${msg.method}` } });
-  else send({ id: msg.id, result: handler(msg.params ?? {}) });
+  else {
+    try {
+      send({ id: msg.id, result: handler(msg.params ?? {}) });
+    } catch (err) {
+      send({ id: msg.id, error: { code: err.rpcCode ?? -32603, message: err.message } });
+    }
+  }
 });
 rl.on("close", () => process.exit(0));

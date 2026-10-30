@@ -10,6 +10,7 @@ import type {
   PullSummary,
   PullsResult,
   PushQueue,
+  ReviewedHead,
   RepoState,
   WorkflowCheck,
   WorktreesSummary,
@@ -29,6 +30,8 @@ const MERGED_DAYS = 14;
 const MERGED_SHOWN = 5;
 
 export type OpenQuestionsSource = (projectId: string, branch: string) => number | null;
+/** The task reviewer's verdict for a branch at exactly this head; null when no task with a reviewer owns it. */
+export type ReviewedSource = (projectId: string, branch: string, headSha: string) => ReviewedHead | null;
 
 interface RepoMeta {
   owner: string;
@@ -75,6 +78,7 @@ export interface ServiceDeps {
   tokenState(): "ok" | "no_gh" | "signed_out";
   resetToken(): void;
   openQuestions?: OpenQuestionsSource;
+  reviewed?: ReviewedSource;
   /**
    * Projects to refresh every 60 s: those with a task in review (PLAN.md §10). Without it the
    * background refresh covers projects with open PRs.
@@ -99,11 +103,13 @@ export class GithubService {
   private timer: ReturnType<typeof setInterval> | null = null;
   private login: string | null = null;
   openQuestions: OpenQuestionsSource;
+  readonly reviewed: ReviewedSource;
   private readonly deps: ServiceDeps;
 
   constructor(deps: ServiceDeps) {
     this.deps = deps;
     this.openQuestions = deps.openQuestions ?? (() => null);
+    this.reviewed = deps.reviewed ?? (() => null);
   }
 
   private cache(projectId: string): ProjectCache {
@@ -269,7 +275,7 @@ export class GithubService {
       mergedAt: p.merged_at ?? null,
       mergedBy: null,
       checks,
-      gate: merged ? null : evaluateGate({ checks, behindBy, mergeState, draft, openQuestions: this.openQuestions(projectId, p.head.ref), ownerApproved: false }),
+      gate: merged ? null : evaluateGate({ checks, behindBy, mergeState, draft, openQuestions: this.openQuestions(projectId, p.head.ref), reviewed: this.reviewed(projectId, p.head.ref, p.head.sha), ownerApproved: false }),
     };
   }
 
@@ -438,7 +444,7 @@ export class GithubService {
       if (!pr || pr.state === "merged") throw new Error(`#${number} is not an open pull request`);
       if (pr.headSha !== headSha) throw new Error(`#${number} has new commits since it was reviewed`);
       // The explicit call is the owner's approval; every other item must pass on a fresh read.
-      const gate = evaluateGate({ checks: pr.checks, behindBy: pr.behindBy, mergeState: pr.mergeState, draft: pr.state === "draft", openQuestions: this.openQuestions(projectId, pr.head), ownerApproved: true });
+      const gate = evaluateGate({ checks: pr.checks, behindBy: pr.behindBy, mergeState: pr.mergeState, draft: pr.state === "draft", openQuestions: this.openQuestions(projectId, pr.head), reviewed: this.reviewed(projectId, pr.head, pr.headSha), ownerApproved: true });
       const blocked = mergeBlock(gate, pr.mergeState);
       if (blocked) throw new Error(blocked);
       const res = await this.deps.client.write<{ merged: boolean; sha: string | null }>("PUT", `/repos/${meta.owner}/${meta.repo}/pulls/${number}/merge`, {

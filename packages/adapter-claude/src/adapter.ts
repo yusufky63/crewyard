@@ -1,15 +1,15 @@
 import type { ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
+import { forkSession as sdkForkSession, query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
 import type { CanUseTool, HookCallback, Options, Query, SDKMessage, SDKResultMessage, SDKUserMessage, SpawnedProcess } from "@anthropic-ai/claude-agent-sdk";
-import { checkOutput, outputRetryPrompt } from "@crewyard/core";
-import { existsSync, readdirSync } from "node:fs";
+import { checkOutput, outputRetryPrompt, sessionError } from "@crewyard/core";
 import { join } from "node:path";
-import type { AgentAdapter, AgentCapabilities, AgentEvent, Answer, NativeSessionRef, Probe, Profile, RewindRequest, RewindResult, RunHandle, RunOutput, StartRequest, TranscriptRequest, TranscriptSource, UserInput } from "@crewyard/core";
+import type { AgentAdapter, AgentCapabilities, AgentEvent, Answer, ForkRequest, ForkResult, ForkUsage, NativeSessionRef, Probe, Profile, RewindRequest, RewindResult, RunHandle, RunOutput, StartRequest, TranscriptRequest, TranscriptSource, UserInput } from "@crewyard/core";
 import { exitCodeWithin, isShutdownExit, killTree, parseVersion, resolveBin, run, start as spawnChild } from "@crewyard/proc";
 import { buildEnv, redact } from "./env.ts";
 import { EventMapper, type EventBody, type TurnOutcome } from "./mapper.ts";
 import { AsyncQueue } from "./queue.ts";
+import { crossProfileStore, findSession, isSessionProblem, removeFiles, sessionProblemDetail } from "./sessions.ts";
 import { PLAN_TOOLS, approvalResult, approvalScope, chainedOnAllowlisted, disallowedFor, permissionModeFor, policyDecision, questionResult, questionsFrom, readOnlyAllowRules } from "./tools.ts";
 
 /** The CLI version the installed SDK was built against (package.json "claudeCodeVersion"). */
@@ -20,6 +20,9 @@ const SIGNIN_SOURCES = new Set(["oauth", "/login managed key"]);
 
 export type QueryFn = (params: { prompt: AsyncIterable<SDKUserMessage>; options: Options }) => Query;
 
+/** How long a fork may take, compaction included: one summary call over the whole conversation. */
+export const FORK_TIMEOUT_MS = 300_000;
+
 export interface ClaudeAdapterDeps {
   query: QueryFn;
   /** Finds the CLI; resolveBin by default, so the run spawns the file the machine check showed. */
@@ -28,6 +31,9 @@ export interface ClaudeAdapterDeps {
   spawn: typeof spawnChild;
   killTree: typeof killTree;
   env: NodeJS.ProcessEnv;
+  /** The SDK's own session fork (new message uuids, parent chain kept); tests may wrap it. */
+  forkSession: typeof sdkForkSession;
+  forkTimeoutMs?: number;
 }
 
 interface Pending {
@@ -172,15 +178,148 @@ export class ClaudeAdapter implements AgentAdapter {
 
   /** The session's JSONL under the profile folder: `<CLAUDE_CONFIG_DIR>/projects/<project>/<session>.jsonl`. */
   async transcript(req: TranscriptRequest): Promise<TranscriptSource | null> {
-    const root = join(req.profile.configDir, "projects");
-    if (!existsSync(root)) return null;
-    const name = `${req.session.sessionId}.jsonl`;
-    for (const dir of readdirSync(root, { withFileTypes: true })) {
-      if (!dir.isDirectory()) continue;
-      const path = join(root, dir.name, name);
-      if (existsSync(path)) return { kind: "file", path, ext: "jsonl" };
+    const found = findSession(req.profile.configDir, req.session.sessionId);
+    return found ? { kind: "file", path: found.path, ext: "jsonl" } : null;
+  }
+
+  /**
+   * Handoff to another Claude profile with the conversation kept (feature scan A11). The SDK's
+   * forkSession() copies the source transcript under new message uuids; our store reads it from
+   * the source profile's folder and writes the fork into the same `projects/<folder>` of the
+   * target profile, so the source file is never written. With `compact`, the fork is resumed
+   * once under the target's key and model with `/compact`.
+   */
+  async fork(req: ForkRequest): Promise<ForkResult> {
+    const { source, target } = req;
+    if (source.session.runner !== "claude-code") throw new Error(`Cannot fork a ${source.session.runner} session with Claude Code.`);
+    if (source.profile.credential.kind === "plan_signin" || target.profile.credential.kind === "plan_signin") throw new Error("Claude profiles run on an API key; claude.ai sign-in is not supported.");
+    const sourceId = source.session.sessionId;
+    const file = findSession(source.profile.configDir, sourceId);
+    if (!file) throw sessionError("gone", `Claude Code has no session ${sourceId} in the source profile's folder.`);
+
+    const { store, written } = crossProfileStore(file, sourceId, join(target.profile.configDir, "projects", file.folder));
+    let forkedId: string;
+    try {
+      ({ sessionId: forkedId } = await this.deps.forkSession(sourceId, { dir: req.cwd, sessionStore: store }));
+    } catch (err) {
+      removeFiles(written);
+      throw new Error(`Could not copy the Claude Code session: ${err instanceof Error ? err.message : String(err)}`, { cause: err });
     }
-    return null;
+    const session: NativeSessionRef = { runner: "claude-code", sessionId: forkedId };
+    // The CLI restores a session's running totals from its transcript's `cost-state` entry, and
+    // forkSession does not copy that entry, so the fork starts from zero; after `/compact` it
+    // continues from the compaction's totals. Seen live on 2026-10-30 (scripts/live-fork.mjs):
+    // the first resume of a plain fork reported only its own turn, and the first resume of a
+    // compacted fork reported the compaction's tokens plus its turn.
+    const zero: ForkUsage = { tokensIn: 0, tokensOut: 0, cacheRead: 0, costUsd: 0 };
+    if (!req.compact) return { session, compacted: false, summary: null, usage: null, totals: zero };
+    try {
+      const c = await this.compact(req, forkedId);
+      return { session, compacted: c.compacted, summary: c.summary, usage: c.usage, totals: c.usage };
+    } catch (err) {
+      // A half-compacted fork is not handed on; the caller falls back to the written handoff.
+      removeFiles(written);
+      throw err;
+    }
+  }
+
+  /** Resumes the fork once with `/compact` under the target profile, as a normal launch would run it. */
+  private async compact(req: ForkRequest, sessionId: string): Promise<{ compacted: boolean; summary: string | null; usage: ForkUsage | null }> {
+    const { target } = req;
+    if (target.profile.credential.kind !== "local" && !target.env.ANTHROPIC_API_KEY && !target.env.ANTHROPIC_AUTH_TOKEN) throw new Error("No API key was provided for the target Claude profile.");
+    const executable = await this.deps.which("claude");
+    if (!executable) throw new Error("Claude Code is not installed or not on PATH.");
+    const model = target.model ?? target.profile.defaultModel;
+    const { env, secrets } = buildEnv(target.profile, target.env, model, this.deps.env);
+    const abort = new AbortController();
+    const input = new AsyncQueue<SDKUserMessage>();
+    input.push({ type: "user", message: { role: "user", content: "/compact" }, parent_tool_use_id: null, uuid: randomUUID() });
+    let pid: number | null = null;
+    let stderrTail = "";
+    let summary: string | null = null;
+    const onCompact: HookCallback = async (h) => {
+      if (h.hook_event_name === "PostCompact") summary = h.compact_summary;
+      return {};
+    };
+    // Compaction calls no tools; a project settings file must not make it run any.
+    const noTools: HookCallback = async (h) =>
+      h.hook_event_name === "PreToolUse" ? { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: "This run only compacts the conversation." } } : {};
+    const q = this.deps.query({
+      prompt: input,
+      options: {
+        cwd: req.cwd,
+        ...(model ? { model } : {}),
+        pathToClaudeCodeExecutable: executable,
+        env,
+        abortController: abort,
+        resume: sessionId,
+        maxTurns: 1,
+        permissionMode: "dontAsk",
+        hooks: { PostCompact: [{ hooks: [onCompact] }], PreToolUse: [{ hooks: [noTools] }] },
+        spawnClaudeCodeProcess: (o) => {
+          const child = this.deps.spawn(o.command, o.args, { cwd: o.cwd, env: o.env as NodeJS.ProcessEnv, stdio: ["pipe", "pipe", "pipe"] });
+          pid = child.pid ?? null;
+          child.stderr?.setEncoding("utf8").on("data", (d: string) => {
+            stderrTail = (stderrTail + d).slice(-STDERR_TAIL);
+          });
+          o.signal.addEventListener("abort", () => void (child.pid && this.deps.killTree(child.pid)), { once: true });
+          return child as unknown as SpawnedProcess;
+        },
+      },
+    });
+
+    const timeoutMs = this.deps.forkTimeoutMs ?? FORK_TIMEOUT_MS;
+    let timedOut = false;
+    let refused: string | null = null;
+    const stopAll = () => {
+      input.end();
+      q.close();
+      abort.abort();
+      if (pid) void this.deps.killTree(pid);
+    };
+    const timer = setTimeout(() => {
+      timedOut = true;
+      stopAll();
+    }, timeoutMs);
+    let boundary = false;
+    let result: SDKResultMessage | null = null;
+    let thrown: unknown = null;
+    try {
+      for await (const msg of q) {
+        if (msg.type === "system" && msg.subtype === "init" && SIGNIN_SOURCES.has(msg.apiKeySource)) {
+          refused = "The target Claude profile is signed in to claude.ai. Crewyard runs Claude only on API keys.";
+          stopAll();
+          break;
+        }
+        if (msg.type === "system" && msg.subtype === "compact_boundary") boundary = true;
+        if (msg.type === "result") {
+          result = msg;
+          input.end();
+        }
+      }
+    } catch (err) {
+      // The SDK rethrows an error result after yielding it; the result says more.
+      thrown = err;
+    } finally {
+      clearTimeout(timer);
+      input.end();
+    }
+    const failed = refused !== null || timedOut || !result || result.is_error || result.subtype !== "success";
+    if (failed && pid) await this.deps.killTree(pid);
+    if (refused) throw new Error(refused);
+    if (timedOut) throw new Error(`Compacting the forked session did not finish within ${Math.round(timeoutMs / 1000)} s.`);
+    if (!result || result.is_error || result.subtype !== "success") {
+      const said = result && result.subtype !== "success" ? (result.errors ?? []) : [];
+      const message = thrown instanceof Error ? thrown.message : thrown ? String(thrown) : "Claude Code exited without a result.";
+      const problem = sessionProblemDetail([...said, message, stderrTail], result && result.subtype !== "success" ? result.startup_failure_reason : undefined);
+      const text = redact(problem ?? [said.join("; ") || message, stderrTail.trim()].filter(Boolean).join("\n"), secrets);
+      if (problem) throw sessionError(problem.startsWith("session.locked:") ? "locked" : "gone", text);
+      throw new Error(`Compacting the forked session failed: ${text}`);
+    }
+    const u = new EventMapper().map(result).find((e) => e.type === "usage.update");
+    const usage: ForkUsage | null = u && u.type === "usage.update" ? { tokensIn: u.tokensIn, tokensOut: u.tokensOut, cacheRead: u.cacheRead, costUsd: u.costUsd } : null;
+    // No compact_boundary: the CLI found nothing to summarize ("Not enough messages to compact."), and the fork is used as it is.
+    return { compacted: boundary, summary: boundary ? summary : null, usage };
   }
 
   async stop(run: RunHandle): Promise<void> {
@@ -279,10 +418,11 @@ export class ClaudeAdapter implements AgentAdapter {
         await this.afterMessage(ctx, msg);
       }
     } catch (err) {
-      if (!ctx.forced) {
+      // The SDK throws after an error result too; a session the CLI refused keeps that result's detail.
+      if (!ctx.forced && !isSessionProblem(ctx.outcome?.detail)) {
         const message = err instanceof Error ? err.message : String(err);
         const tail = ctx.stderrTail.trim();
-        ctx.outcome = { reason: "failed", detail: redact(tail ? `${message}\n${tail}` : message, ctx.secrets) };
+        ctx.outcome = { reason: "failed", detail: redact(sessionProblemDetail([message, tail]) ?? (tail ? `${message}\n${tail}` : message), ctx.secrets) };
       }
     } finally {
       this.cancelPending(ctx);
@@ -444,4 +584,4 @@ export function compareVersions(a: string, b: string): number {
   return 0;
 }
 
-export const defaultDeps = (): ClaudeAdapterDeps => ({ query: sdkQuery, which: (name) => resolveBin(name), run, spawn: spawnChild, killTree, env: process.env });
+export const defaultDeps = (): ClaudeAdapterDeps => ({ query: sdkQuery, which: (name) => resolveBin(name), run, spawn: spawnChild, killTree, env: process.env, forkSession: sdkForkSession });

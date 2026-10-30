@@ -1,4 +1,5 @@
 import type { AgentEvent, EndReason, LimitWindow, Provenance, RiskLevel, RunnerId, RunState } from "../events.ts";
+import type { VerdictComment } from "../results.ts";
 import type { TaskStatus } from "../state.ts";
 
 // IPC methods for tasks, crews, runs, requests (Inbox), limits and handoffs. Owned by the orchestrator backend; other work only reads it.
@@ -62,7 +63,18 @@ export type ReasonCode =
   | "admission.worktree_busy" // another run is writing in the task's worktree
   | "admission.no_profile" // the step has no profile; edit the crew
   | "admission.budget_reserved" // { reservedUsd, capUsd, cap }: unfinished runs hold the rest of a spend cap
-  | "admission.no_adapter"; // { runner } is not wired in this build
+  | "admission.no_adapter" // { runner } is not wired in this build
+  // crew loops: why the run-until-green or review loop went on or stopped
+  | "loop.tests_passed" // { command }
+  | "loop.tests_failed" // { command, exitCode }
+  | "loop.tests_skipped" // the project has no test command in .mission/project.json
+  | "loop.review_passed" // { sha }
+  | "loop.review_changes" // { comments, sha }
+  | "loop.review_invalid" // { error }
+  | "loop.iteration_cap" // { max }
+  | "loop.no_change" // the worktree is the same as at the last try
+  | "loop.spend_cap" // { cap }
+  | "loop.no_resume"; // { runner }
 
 export type OrchestratorErrorCode =
   | "project.not_found"
@@ -89,6 +101,7 @@ export type OrchestratorErrorCode =
   | "run.session_changed" // { runId }: a handoff or a later run took over the step since you looked; re-read and ask again
   | "run.price_unknown" // continuing needs your approval in the Inbox: the model has no known price and the task has a cap
   | "run.superseded" // a later run already continues this step
+  | "run.fenced" // the run lost its step to a handoff; its late events and answers are ignored
   | "run.still_limited" // { window, resetsAt }: retry found the limit still in place
   | "handoff.same_profile" // the target is the profile the run already uses
   | "handoff.open" // the run is already being handed off
@@ -316,8 +329,14 @@ export interface HandoffView {
   toRunId: string | null;
   targetProfileId: string | null;
   mode: FallbackMode;
-  /** `native_resume` for the same runner and profile, otherwise a new session fed the package. */
-  kind: "native_resume" | "new_session" | null;
+  /**
+   * `native_resume` for the same runner and profile; `fork` when the target got a copy of the
+   * source's session (same runner and provider, compacted where the runner can); otherwise a new
+   * session fed the package. The package is written in every case.
+   */
+  kind: "native_resume" | "fork" | "new_session" | null;
+  /** How the source was stopped: `interrupt` the turn in flight, or `drain` (let it finish first). */
+  stop: HandoffStop;
   trigger: HandoffTrigger;
   phase: HandoffPhase;
   /** Markdown handoff package under the task folder (PLAN.md §8.2 step 5). */
@@ -327,6 +346,79 @@ export interface HandoffView {
   closedAt: string | null;
   outcome: HandoffOutcome | null;
   detail: string | null;
+}
+
+/** How a manual handoff stops its source: interrupt the turn in flight (default), or let it finish. */
+export type HandoffStop = "interrupt" | "drain";
+
+/**
+ * Crew-level loops (feature scan A9): after Implement the daemon runs the project's test command;
+ * a failure goes back to the same implementer, as does a reviewer's "changes" verdict, until the
+ * tests pass and the review passes, or a stop rule ends the loop. Every decision is recorded.
+ */
+export type LoopDecisionKind =
+  | "tests_passed"
+  | "tests_failed" // the failure went back to the implementer for another try
+  | "tests_skipped" // the project has no test command
+  | "review_passed"
+  | "review_changes" // the comments went back to the implementer, then Test and Review run again
+  | "review_invalid" // the reviewer's result failed its schema check; the loop does not guess
+  | "stop_iteration_cap" // { max }
+  | "stop_no_change" // the worktree did not change between two tries
+  | "stop_spend_cap" // { cap }
+  | "stop_no_resume"; // the implementer's session cannot be resumed, and it is never replaced on its own
+
+export interface LoopDecisionView {
+  id: string;
+  memberId: string;
+  runId: string | null;
+  /** Fix attempts so far for this step, counting this one. */
+  iteration: number;
+  maxIterations: number;
+  kind: LoopDecisionKind;
+  /** A translatable reason; params carry the numbers (exit code, failing count, comments). */
+  reason: Reason;
+  at: string;
+}
+
+export interface TestResultView {
+  id: string;
+  runId: string;
+  command: string;
+  exitCode: number | null;
+  passed: boolean;
+  /** Last lines of output, redacted; for the inspector, never sent anywhere else. */
+  tail: string;
+  durationMs: number;
+  /** The commit the result belongs to, when the worktree was committed. */
+  headSha: string | null;
+  at: string;
+}
+
+/** A reviewer's schema-checked verdict, pinned to the commit it read (feature scan F5, A12). */
+export interface ReviewVerdictView {
+  runId: string;
+  memberId: string;
+  verdict: "pass" | "changes";
+  summary: string;
+  comments: VerdictComment[];
+  /** The exact commit the reviewer read in its detached checkout; null for a review outside a worktree. */
+  headSha: string | null;
+  /** Codex's own review/start produced it. */
+  native: boolean;
+  /**
+   * The worktree may have moved on since (a later writer run). The merge and PR gates compare
+   * `headSha` with the branch tip and never pass a verdict for another commit.
+   */
+  stale: boolean;
+  at: string;
+}
+
+export interface TaskLoopView {
+  maxIterations: number;
+  decisions: LoopDecisionView[];
+  tests: TestResultView[];
+  verdicts: ReviewVerdictView[];
 }
 
 export interface TaskSummary {
@@ -360,6 +452,8 @@ export interface TaskDetail extends TaskSummary {
   runs: RunView[];
   worktree: WorktreeView | null;
   handoffs: HandoffView[];
+  /** Run-until-green and review loop state; empty lists for tasks that never ran a writer. */
+  loop: TaskLoopView;
 }
 
 export type RequestKind = "question" | "approval" | "handoff";
@@ -570,7 +664,7 @@ export interface TasksIpc {
    * the target. Works on a live, paused, limited, failed or stopped run; the target must pass the
    * role, independence, readiness and spend-cap preflight. Returns the source run.
    */
-  "runs.handoff": { params: { runId: string; targetProfileId: string }; result: RunView };
+  "runs.handoff": { params: { runId: string; targetProfileId: string; stop?: HandoffStop }; result: RunView };
   /**
    * "Check again". A failed, stopped or interrupted step starts a fresh run of the same member on
    * the same profile. A run paused on a limit or a spend cap re-checks now and continues when it
@@ -638,4 +732,6 @@ export type TaskChangeCause =
   | "admission"
   | "recovered"
   // The GitHub work: the task's pull request was opened, linked, merged or closed.
-  | "pull_request";
+  | "pull_request"
+  // A run-until-green or review loop decision (tests, verdict, stop rule).
+  | "loop";

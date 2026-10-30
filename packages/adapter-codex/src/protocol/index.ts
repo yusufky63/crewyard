@@ -50,3 +50,8 @@ export type * from "./v2/RateLimitWindow.ts";
 export type * from "./v2/CommandExecutionApprovalDecision.ts";
 export type * from "./v2/FileChangeApprovalDecision.ts";
 export type * from "./v2/WindowsSandboxReadinessResponse.ts";
+export type * from "./v2/ReviewStartParams.ts";
+export type * from "./v2/ReviewStartResponse.ts";
+export type * from "./v2/ThreadForkParams.ts";
+export type * from "./v2/ThreadForkResponse.ts";
+export type * from "./v2/ThreadCompactStartParams.ts";

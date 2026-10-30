@@ -1,5 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import {
+  DEFAULT_MAX_ITERATIONS,
   deriveTaskStatus,
   NO_RUN_CONTROLS,
   type CandidateView,
@@ -9,6 +10,7 @@ import {
   type EndReason,
   type FallbackMode,
   type Headroom,
+  type HandoffStop,
   type HandoffView,
   type LimitSample,
   type LimitWindow,
@@ -25,6 +27,7 @@ import {
   type TaskDetail,
   type TaskFacts,
   type TaskKind,
+  type TaskLoopView,
   type TaskSize,
   type TaskStatus,
   type TaskSummary,
@@ -188,6 +191,10 @@ const toSample = (r: SampleRow): LimitSample => ({
 export type RunExtras = Pick<RunView, "queue" | "controls" | "transcriptPath">;
 
 export class OrchestratorDb {
+  /** Loop state per task (set by the orchestrator, which owns loops.ts and the project config). */
+  taskLoop: (t: TaskRow) => TaskLoopView = () => ({ maxIterations: DEFAULT_MAX_ITERATIONS, decisions: [], tests: [], verdicts: [] });
+  /** How a handoff stopped its source (handoff_extras); interrupt for older rows. */
+  handoffStop: (handoffId: string) => HandoffStop = () => "interrupt";
   /** Set by the orchestrator, which knows live processes and adapters; this default knows only rows. */
   runExtras: (r: RunRow) => RunExtras = (r) => ({
     queue: this.queued(r.member_id).map((m) => ({ id: m.id, text: m.text, createdAt: "", editedAt: null, kind: "user" as const })),
@@ -592,7 +599,8 @@ export class OrchestratorDb {
       crew: crew ? this.crewView(crew, blocked) : null,
       runs: this.runs(task.id).map((r) => this.runView(r)),
       worktree: wt ? worktreeView(wt) : null,
-      handoffs: this.handoffs(task.id).map(handoffView),
+      handoffs: this.handoffs(task.id).map((h) => handoffView(h, this.handoffStop(h.id))),
+      loop: this.taskLoop(task),
     };
   }
 
@@ -694,7 +702,8 @@ export const worktreeView = (w: WorktreeRow): WorktreeView => ({
   createdAt: w.created_at,
 });
 
-export const handoffView = (h: HandoffRow): HandoffView => ({
+export const handoffView = (h: HandoffRow, stop: HandoffStop = "interrupt"): HandoffView => ({
+  stop,
   id: h.id,
   fromRunId: h.from_run_id,
   toRunId: h.to_run_id,
