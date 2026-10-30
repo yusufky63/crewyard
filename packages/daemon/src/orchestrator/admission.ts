@@ -31,3 +31,30 @@ export function admit(load: AdmissionLoad, limits: AdmissionLimits): Reason | nu
   if (load.freeMb < limits.minFreeMb) return { code: "admission.memory", params: { freeMb: Math.round(load.freeMb), neededMb: limits.minFreeMb } };
   return null;
 }
+
+export interface GroupLoad {
+  projectActive: number;
+  globalActive: number;
+  freeMb: number;
+  /** Per profile of the group: how many variants it takes and how many runs it has open now. */
+  profiles: Array<{ profileId: string; needed: number; active: number }>;
+}
+
+/**
+ * Best of N starts every variant at once or none, so a half-started group never holds slots
+ * while the rest waits: all project, global and per-profile slots, and memory for each variant.
+ */
+export function admitGroup(load: GroupLoad, limits: AdmissionLimits): Reason | null {
+  const needed = load.profiles.reduce((n, p) => n + p.needed, 0);
+  const projectFree = limits.projectSlots - load.projectActive;
+  if (projectFree < needed) return { code: "admission.group_slots", params: { needed, free: Math.max(0, projectFree), scope: "project" } };
+  const globalFree = limits.globalSlots - load.globalActive;
+  if (globalFree < needed) return { code: "admission.group_slots", params: { needed, free: Math.max(0, globalFree), scope: "global" } };
+  for (const p of load.profiles) {
+    const free = limits.perProfile - p.active;
+    if (free < p.needed) return { code: "admission.group_slots", params: { needed: p.needed, free: Math.max(0, free), scope: "profile" } };
+  }
+  const neededMb = limits.minFreeMb * needed;
+  if (load.freeMb < neededMb) return { code: "admission.group_memory", params: { freeMb: Math.round(load.freeMb), neededMb } };
+  return null;
+}

@@ -64,6 +64,8 @@ export type ReasonCode =
   | "admission.no_profile" // the step has no profile; edit the crew
   | "admission.budget_reserved" // { reservedUsd, capUsd, cap }: unfinished runs hold the rest of a spend cap
   | "admission.no_adapter" // { runner } is not wired in this build
+  | "admission.group_slots" // { needed, free, scope }: a Best of N group starts all its variants at once; scope is "project", "global" or "profile"
+  | "admission.group_memory" // { freeMb, neededMb }: free memory for every variant of a Best of N group
   // crew loops: why the run-until-green or review loop went on or stopped
   | "loop.tests_passed" // { command }
   | "loop.tests_failed" // { command, exitCode }
@@ -132,7 +134,22 @@ export type OrchestratorErrorCode =
   | "undo.unavailable" // { reason }: a ControlReason
   | "undo.changed" // the step moved on since the preview (a new turn, run or undo); preview again
   | "undo.partial" // { files }: some files could not be restored (open in another program); the rest were
-  | "stall.not_found";
+  | "stall.not_found"
+  // Best of N (feature scan A8)
+  | "best_of.bad_count" // { min, max }: 2 to 4 variants
+  | "best_of.too_few" // { found, needed }: not enough eligible profiles for the implement step
+  | "best_of.not_found" // the task has no Best of N group, or no such variant
+  | "best_of.kept" // a variant was already kept
+  | "best_of.not_finished" // { variantId }: only a variant whose implement run completed can be kept
+  | "best_of.not_started" // the group has not started yet
+  | "best_of.over_budget" // { estimateUsd, capUsd }: the group's estimate alone passes the task budget
+  | "best_of.slots" // { needed, slots }: the project or app has fewer slots than variants
+  // Scheduled tasks
+  | "schedule.not_found"
+  | "schedule.invalid" // { field }: a field failed validation
+  | "schedule.busy" // the schedule's previous run is still active, or its precheck is running
+  // Hibernation
+  | "run.hibernated"; // the run's process is stopped while it waits; a message or an answer wakes it
 
 export interface CostEstimate {
   usd: number | null;
@@ -196,8 +213,11 @@ export interface RunView {
   profileId: string;
   runner: RunnerId;
   model: string | null;
-  /** Live state, or "ended" once `endedAt` is set. Derived from facts on read. */
-  state: RunState | "ended";
+  /**
+   * Live state, or "ended" once `endedAt` is set. Derived from facts on read. "hibernated" is its
+   * own state: the process is stopped but the run is open and holds its step (never "stopped").
+   */
+  state: RunState | "ended" | "hibernated";
   cwd: string;
   worktreeId: string | null;
   startedAt: string;
@@ -227,6 +247,12 @@ export interface RunView {
   /** Latest plan the agent reported. */
   plan: Array<{ title: string; status: "pending" | "in_progress" | "completed" }> | null;
   diff: Array<{ path: string; added: number; removed: number }> | null;
+  /**
+   * Set while the run's process is stopped to free memory and its admission slot (hibernation).
+   * The run is not stopped: it holds its step and wakes by session id on the next message, on an
+   * answer to its open request, or when its step continues.
+   */
+  hibernatedAt?: string | null;
 }
 
 /** A follow-up typed for a step while it was busy. Queued is never shown as sent. */
@@ -441,7 +467,142 @@ export interface TaskSummary {
    * alone reads "queued" for these, so the UI uses this list to offer Resume.
    */
   resumableRunIds: string[];
+  /** Set when a schedule created this task (see SchedulesIpc). */
+  scheduled?: { scheduleId: string; title: string; autoApproved: boolean } | null;
+  /** Variants in a Best of N group, when the task has one; the phase tells the list what to show. */
+  bestOf?: { n: number; phase: BestOfPhase } | null;
+  /** Set on the hidden task of one Best of N variant: the visible task it belongs to. */
+  variantOf?: { taskId: string; position: number; n: number } | null;
 }
+
+// ---------------------------------------------------------------- Best of N (feature scan A8)
+
+/**
+ * `proposed`: the crew is not approved. `waiting`: approved, the group has not started (its
+ * earlier steps, or admission for all variants at once). `running`: variants are working.
+ * `choosing`: none is active and at least one finished; you compare and keep one. `kept`: one
+ * continues the crew. `failed`: none is active and none finished.
+ */
+export type BestOfPhase = "proposed" | "waiting" | "running" | "choosing" | "kept" | "failed";
+
+export interface BestOfVariantView {
+  id: string;
+  /** 1-based, in the order of the proposal. */
+  position: number;
+  candidate: CandidateView;
+  /** The variant's own hidden task, once the group started; null before. */
+  taskId: string | null;
+  status: TaskStatus | null;
+  /** Latest implement run of the variant. */
+  run: RunView | null;
+  /** Ended runs of the variant you can resume or retry. */
+  resumableRunIds: string[];
+  spend: CostEstimate;
+  /** Files changed against the task's base, from git in the variant's worktree (Reported by git). */
+  diffStat: { files: Array<{ path: string; added: number; removed: number }>; added: number; removed: number } | null;
+  /** The variant's latest test run in its own worktree. */
+  test: TestResultView | null;
+  /** Its loop decisions, oldest first; the last one is its verdict (tests passed, stopped, ...). */
+  decisions: LoopDecisionView[];
+  branch: string | null;
+  worktreePath: string | null;
+  outcome: "kept" | "discarded" | null;
+  /** A discarded variant's worktree was parked (WIP committed, folder removed, branch kept). */
+  parkedAt: string | null;
+  /** Why parking a discarded variant failed (an error code); it stays on disk until you park it. */
+  parkError: string | null;
+}
+
+export interface BestOfView {
+  id: string;
+  /** The crew step that runs as N variants (the implementer). */
+  memberId: string;
+  n: number;
+  phase: BestOfPhase;
+  /** Every variant's estimate together; this is what the caps and reservations count. */
+  estimate: CostEstimate;
+  variants: BestOfVariantView[];
+  startedAt: string | null;
+  keptVariantId: string | null;
+  keptAt: string | null;
+}
+
+// ---------------------------------------------------------------- scheduled tasks
+
+export type ScheduleCadence = "daily" | "weekly";
+
+/**
+ * A task template that proposes a task on a schedule. The daemon keeps the timer: nothing runs
+ * while Crewyard is closed, and no OS scheduler is involved.
+ */
+export interface ScheduleInput {
+  projectId: string;
+  title: string;
+  description: string;
+  kind?: TaskKind;
+  size?: TaskSize;
+  fallback?: FallbackMode;
+  budgetUsd?: number | null;
+  /** 2 to 4 runs the implement step as Best of N. */
+  bestOf?: number | null;
+  cadence: ScheduleCadence;
+  /** "HH:MM", 24-hour, in `timeZone`. */
+  time: string;
+  /** 0 = Sunday ... 6 = Saturday; required for weekly. */
+  weekday?: number | null;
+  /** IANA name, e.g. "Europe/Istanbul"; the UI sends the system's. */
+  timeZone: string;
+  /** Run first in the project folder; exit code 0 lets the run go on, anything else skips it for free. */
+  precheck?: string | null;
+  /** 5 to 600 seconds; a timeout skips the run like a failure. */
+  precheckTimeoutSec?: number;
+  /** Approve the proposed crew without asking. Caps, approvals in the Inbox and pushes still wait for you. */
+  autoApprove?: boolean;
+}
+
+export interface ScheduleView extends Required<Omit<ScheduleInput, "budgetUsd" | "bestOf" | "weekday" | "precheck">> {
+  id: string;
+  budgetUsd: number | null;
+  bestOf: number | null;
+  weekday: number | null;
+  precheck: string | null;
+  /** New schedules start disabled; enabling one is your click. */
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+  /** The next slot after now while enabled; null when disabled. */
+  nextAt: string | null;
+  /** Due slots not run yet (missed while asleep or held by a run still going), at most MAX_CATCH_UP. */
+  pending: number;
+  lastRun: ScheduleRunView | null;
+}
+
+/**
+ * What one slot did. `skipped_precheck` costs nothing: no agent ran. `skipped_missed` records
+ * slots dropped beyond the catch-up limit (`count`). `proposed` waits for your approval;
+ * `approved` was auto-approved. `failed` could not create the task (`detail` is a code).
+ */
+export type ScheduleOutcome = "running_precheck" | "skipped_precheck" | "skipped_missed" | "proposed" | "approved" | "failed";
+
+export interface ScheduleRunView {
+  id: string;
+  scheduleId: string;
+  /** The slot this run belongs to; null for Run now. */
+  slotAt: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+  outcome: ScheduleOutcome;
+  precheckExit: number | null;
+  /** Last lines of the precheck's output, redacted. */
+  precheckTail: string | null;
+  taskId: string | null;
+  count: number;
+  detail: string | null;
+  manual: boolean;
+}
+
+/** Missed slots caught up after sleep or a restart, oldest first; older ones are recorded as skipped. */
+export const MAX_CATCH_UP = 3;
 
 export interface TaskDetail extends TaskSummary {
   description: string;
@@ -454,6 +615,8 @@ export interface TaskDetail extends TaskSummary {
   handoffs: HandoffView[];
   /** Run-until-green and review loop state; empty lists for tasks that never ran a writer. */
   loop: TaskLoopView;
+  /** Best of N: the implement step as 2 to 4 variants, each in its own worktree; null without a group. */
+  bestOfGroup?: BestOfView | null;
 }
 
 export type RequestKind = "question" | "approval" | "handoff";
@@ -632,6 +795,8 @@ export interface TasksIpc {
       waitResetMinutes?: number;
       pins?: Partial<Record<RoleId, string>>;
       exclude?: string[];
+      /** 2 to 4: the implement step runs on that many profiles in parallel, each in its own worktree. */
+      bestOf?: number;
     };
     result: TaskDetail;
   };
@@ -640,7 +805,13 @@ export interface TasksIpc {
    * start ready steps under admission control. Fails with `crew.missing_profile` or
    * `crew.independence` instead of starting a crew that breaks the rules.
    */
-  "tasks.approve": { params: { taskId: string; edits?: CrewEdit[]; fallback?: FallbackMode }; result: TaskDetail };
+  "tasks.approve": { params: { taskId: string; edits?: CrewEdit[]; fallback?: FallbackMode; bestOf?: { profileIds: string[] } }; result: TaskDetail };
+  /**
+   * Keeps one finished Best of N variant: its worktree and session continue the crew (test,
+   * review, PR). Every other variant is stopped and its worktree parked (WIP committed, folder
+   * removed, branch kept). The UI asks you to confirm first.
+   */
+  "tasks.keepVariant": { params: { taskId: string; variantId: string }; result: TaskDetail };
   /** Stops every run of the task and closes its open requests. Worktrees are kept. */
   "tasks.cancel": { params: { taskId: string }; result: TaskDetail };
   /** Interrupts at a turn boundary; the run stays open and holds no slot. */
@@ -701,6 +872,20 @@ export interface TasksIpc {
   /** Open stall alerts by default, newest first. */
   "stalls.list": { params: { projectId?: string; taskId?: string; includeClosed?: boolean }; result: StallAlertView[] };
   "stalls.dismiss": { params: { alertId: string }; result: StallAlertView };
+  /** Every schedule of a project, or of all projects. */
+  "schedules.list": { params: { projectId?: string }; result: ScheduleView[] };
+  /** Creates a schedule (disabled) or, with `id`, edits one. Fails with `schedule.invalid` and the field. */
+  "schedules.save": { params: ScheduleInput & { id?: string }; result: ScheduleView };
+  /** Enabling starts counting slots from now; slots before it are never caught up. */
+  "schedules.setEnabled": { params: { id: string; enabled: boolean }; result: ScheduleView };
+  "schedules.delete": { params: { id: string }; result: { id: string } };
+  /** Newest first. */
+  "schedules.runs": { params: { id: string; limit?: number }; result: ScheduleRunView[] };
+  /**
+   * Proposes the task now, without the precheck (you are asking for it). Refused with
+   * `schedule.busy` while its previous run is still active. Approval rules are the same.
+   */
+  "schedules.runNow": { params: { id: string }; result: ScheduleRunView };
 }
 
 /** Live topics pushed through ctx.emit; the renderer re-reads with tasks.get when it needs more. */
@@ -711,6 +896,7 @@ export interface TasksTopics {
   "limits.notice": LimitNoticePayload;
   "stall.notice": StallNoticePayload;
   "stalls.changed": { alertId: string; taskId: string; projectId: string; open: boolean };
+  "schedules.changed": { scheduleId: string; projectId: string };
 }
 
 export type TaskChangeCause =
@@ -734,4 +920,8 @@ export type TaskChangeCause =
   // The GitHub work: the task's pull request was opened, linked, merged or closed.
   | "pull_request"
   // A run-until-green or review loop decision (tests, verdict, stop rule).
-  | "loop";
+  | "loop"
+  // A Best of N group started, a variant changed, or one was kept.
+  | "best_of"
+  // A run's process was stopped while idle, or woke again.
+  | "hibernation";

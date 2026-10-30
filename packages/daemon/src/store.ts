@@ -579,6 +579,93 @@ export const MIGRATIONS: Migration[] = [
      forked integer not null default 0
    );`,
   },
+  // Best of N (feature scan A8): the implement step of a task as 2 to 4 variants. Each variant is
+  // a hidden task of its own (its own crew of one, worktree, bootstrap and loops); the kept one's
+  // worktree moves to the parent task, and the others are stopped and parked.
+  {
+    id: "best-of",
+    sql: `create table if not exists best_of_groups (
+     id text primary key,
+     task_id text not null unique references tasks(id),
+     member_id text not null references crew_members(id),
+     started_at text,
+     kept_variant_id text,
+     kept_at text
+   );
+   create table if not exists best_of_variants (
+     id text primary key,
+     group_id text not null references best_of_groups(id),
+     position integer not null,
+     candidate text not null,
+     task_id text unique references tasks(id),
+     outcome text,
+     diff_stat text,
+     parked_at text,
+     park_error text
+   );
+   create index if not exists best_of_variants_group on best_of_variants(group_id, position);`,
+  },
+  // Scheduled tasks: templates that propose a task on a daily or weekly slot, with an optional
+  // precheck command whose exit code gates the run. The daemon's own timer reads these.
+  {
+    id: "schedules",
+    sql: `create table if not exists schedules (
+     id text primary key,
+     project_id text not null references projects(id),
+     title text not null,
+     description text not null,
+     kind text,
+     size text,
+     fallback text,
+     budget_usd real,
+     best_of integer,
+     cadence text not null,
+     time text not null,
+     weekday integer,
+     time_zone text not null,
+     precheck text,
+     precheck_timeout_sec integer not null default 60,
+     auto_approve integer not null default 0,
+     enabled integer not null default 0,
+     cursor_at text,
+     created_at text not null,
+     updated_at text not null
+   );
+   create index if not exists schedules_project on schedules(project_id);
+   create table if not exists schedule_runs (
+     id text primary key,
+     schedule_id text not null references schedules(id) on delete cascade,
+     slot_at text,
+     started_at text not null,
+     finished_at text,
+     outcome text not null,
+     precheck_exit integer,
+     precheck_tail text,
+     task_id text references tasks(id),
+     count integer not null default 1,
+     detail text,
+     manual integer not null default 0
+   );
+   create index if not exists schedule_runs_schedule on schedule_runs(schedule_id, started_at);
+   create index if not exists schedule_runs_task on schedule_runs(task_id);`,
+  },
+  // Hibernation: an idle run whose process was stopped to free memory and its admission slot. The
+  // run stays open; a row without woke_at means it is asleep now.
+  {
+    id: "hibernation",
+    sql: `create table if not exists run_hibernation (
+     id text primary key,
+     run_id text not null references runs(id),
+     hibernated_at text not null,
+     idle_since text not null,
+     request_id text,
+     approved_command text,
+     approved_cwd text,
+     woke_at text,
+     woke_by text
+   );
+   create index if not exists run_hibernation_run on run_hibernation(run_id, hibernated_at);`,
+  },
 ];
 
 /** What the positional scheme applied: a database at `user_version` N has the first N of these. */

@@ -1,4 +1,4 @@
-import { STALL_LIMITS, type AppSettings, type KeepAwakeSettings, type NotificationSettings, type SettingsPatch, type StallSettings } from "@crewyard/core";
+import { HIBERNATION_LIMITS, STALL_LIMITS, type AppSettings, type HibernationSettings, type KeepAwakeSettings, type NotificationSettings, type SettingsPatch, type StallSettings } from "@crewyard/core";
 
 // App settings live in the `settings` table, one JSON value per key, so a damaged or older entry
 // only falls back for that key. Every write goes through `applyPatch`, which refuses anything a
@@ -7,6 +7,7 @@ import { STALL_LIMITS, type AppSettings, type KeepAwakeSettings, type Notificati
 export const NOTIFICATIONS_KEY = "app.notifications";
 export const KEEP_AWAKE_KEY = "app.keepAwake";
 export const STALLS_KEY = "app.stalls";
+export const HIBERNATION_KEY = "app.hibernation";
 
 export const DEFAULT_SETTINGS: AppSettings = {
   notifications: {
@@ -20,6 +21,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   keepAwake: { enabled: false, minBatteryPct: 30 },
   // Long enough that a slow build or a model thinking hard is not a stall; short enough to catch a hang overnight.
   stalls: { noEventsMinutes: 10, sameFailureCount: 3, requestMinutes: 30, cooldownMinutes: 60 },
+  // On by default: a stopped process wakes by session id, so nothing is lost, and memory and slots come back.
+  hibernation: { enabled: true, idleMinutes: 30 },
 };
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -54,7 +57,26 @@ export function applyPatch(current: AppSettings, patch: SettingsPatch): AppSetti
   if (patch.notifications !== undefined) next = { ...next, notifications: patchNotifications(next.notifications, patch.notifications) };
   if (patch.keepAwake !== undefined) next = { ...next, keepAwake: patchKeepAwake(next.keepAwake, patch.keepAwake) };
   if (patch.stalls !== undefined) next = { ...next, stalls: patchStalls(next.stalls, patch.stalls) };
+  if (patch.hibernation !== undefined) next = { ...next, hibernation: patchHibernation(next.hibernation, patch.hibernation) };
   return next;
+}
+
+const idleMinutes = (v: unknown): number => {
+  const { min, max } = HIBERNATION_LIMITS.idleMinutes;
+  return typeof v === "number" && Number.isInteger(v) && v >= min && v <= max ? v : invalid();
+};
+
+function patchHibernation(cur: HibernationSettings, h: SettingsPatch["hibernation"]): HibernationSettings {
+  if (typeof h !== "object" || h === null) return invalid();
+  return { enabled: h.enabled === undefined ? cur.enabled : bool(h.enabled), idleMinutes: h.idleMinutes === undefined ? cur.idleMinutes : idleMinutes(h.idleMinutes) };
+}
+
+/** Same leniency as readKeepAwake. */
+export function readHibernation(raw: string | undefined): HibernationSettings {
+  const base = DEFAULT_SETTINGS.hibernation;
+  const p = parseObject(raw);
+  if (!p) return base;
+  return { enabled: pick(() => bool(p.enabled), base.enabled), idleMinutes: pick(() => idleMinutes(p.idleMinutes), base.idleMinutes) };
 }
 
 /** A whole number of minutes or runs inside the rule's bounds. */

@@ -43,6 +43,7 @@ import {
   type TaskDetail,
   type TaskSize,
   type TaskSummary,
+  type BestOfView,
   type TasksIpc,
   type TasksTopics,
   type UnpricedSpend,
@@ -51,7 +52,8 @@ import {
 } from "@crewyard/core";
 import type { Store } from "../store.ts";
 import { Bootstrapper } from "../worktrees/bootstrap.ts";
-import { admit, DEFAULT_LIMITS, type AdmissionLimits } from "./admission.ts";
+import { admit, admitGroup, DEFAULT_LIMITS, type AdmissionLimits } from "./admission.ts";
+import { BEST_OF_MAX, BEST_OF_MIN, BestOfStore, groupFact, groupPhase, pickVariants, worktreeDiff, type DiffStat, type GroupRow } from "./best-of.ts";
 import { AdapterRegistry } from "./adapters.ts";
 import { classifyTask } from "./classify.ts";
 import { eligible, estimateFor, MIN_HEADROOM, modelKey, proposeCrew, rankForRole, readOnlyConflict, sameModel, scoreCandidate, sumEstimates, type ScoringContext } from "./crew.ts";
@@ -69,6 +71,8 @@ import { forkPrompt, handoffPackage, rolePrompt } from "./prompts.ts";
 import { onlyDocPaths, ROLES } from "./roles.ts";
 import { capResetsAt, capWindow, credentialCaps, overCap, reachedCaps, recordRunSpend, reservedUsd, reserveSpend, settleReservation, spendCredential } from "./spend.ts";
 import { joinMessages } from "./queue.ts";
+import { answerAfterSleep, HibernationStore, idleSince, type WakeCause } from "./hibernation.ts";
+import { Scheduler } from "./schedules.ts";
 import { StallMonitor } from "./stall.ts";
 import { snapshotTranscript, transcriptPath } from "./transcripts.ts";
 import { TurnControl } from "./turns.ts";
@@ -97,6 +101,10 @@ export interface OrchestratorOptions {
   stallCheckMs?: number;
   /** How long a "drain" handoff waits for the turn in flight before it interrupts it. */
   drainTimeoutMs?: number;
+  /** How often scheduled tasks look for due slots. 0 disables the timer; tests call schedules.check(). */
+  scheduleCheckMs?: number;
+  /** How often idle runs are checked for hibernation. 0 disables the timer; tests call checkHibernation(). */
+  hibernateCheckMs?: number;
 }
 
 interface Live {
@@ -168,6 +176,17 @@ export class Orchestrator {
   /** Turn checkpoints, the follow-up queue, Steer now and Undo (turns.ts, queue.ts). */
   readonly turns: TurnControl;
   readonly stalls: StallMonitor;
+  /** Best of N groups and their variant tasks (best-of.ts). */
+  readonly bestOf: BestOfStore;
+  /** Scheduled tasks and their daemon-side timer (schedules.ts). */
+  readonly schedules: Scheduler;
+  /** Idle runs whose process was stopped and that wake by session id (hibernation.ts). */
+  readonly hibernation: HibernationStore;
+  private hibernateTimer: NodeJS.Timeout | null = null;
+  /** Runs whose process is being stopped for hibernation: the stream's end must not end the run. */
+  private readonly hibernating = new Set<string>();
+  /** Hibernated runs that should wake but wait for an admission slot, with why they wake. */
+  private readonly pendingWake = new Map<string, WakeCause>();
   private stallTimer: NodeJS.Timeout | null = null;
   private directory: ProfileDirectory;
   private readonly adapters: AdapterRegistry;
@@ -236,6 +255,27 @@ export class Orchestrator {
       transcriptPath: transcriptPath(opts.store, r.id),
     });
     this.loops = new LoopStore(opts.store.db, this.now);
+    this.bestOf = new BestOfStore(opts.store.db, this.now);
+    this.hibernation = new HibernationStore(opts.store.db, this.now);
+    this.db.hibernatedAt = (runId) => this.hibernation.asleep(runId)?.hibernated_at ?? null;
+    this.schedules = new Scheduler({
+      db: opts.store.db,
+      now: this.now,
+      emit: (topic, payload) => this.emit(topic, payload),
+      propose: (p) => this.propose(p),
+      approve: (p) => this.approve(p),
+      status: (taskId) => {
+        try {
+          return this.db.status(this.db.task(taskId));
+        } catch {
+          return null;
+        }
+      },
+      projectPath: (projectId) => this.db.project(projectId).path,
+      audit: (projectId, taskId, kind, payload) => opts.store.appendEvent({ kind, source: "orchestrator", payload, projectId, taskId }),
+      track: (p) => this.track(p),
+    });
+    this.db.taskExtras = (t) => this.taskExtras(t);
     this.db.taskLoop = (t) => this.loopView(t);
     this.db.handoffStop = (id) => this.loops.handoffStop(id);
   }
@@ -254,6 +294,12 @@ export class Orchestrator {
     if (ms > 0) this.interval = setInterval(() => void this.tick(), ms).unref();
     const stallMs = this.opts.stallCheckMs ?? 30_000;
     if (stallMs > 0) this.stallTimer = setInterval(() => this.checkStalls(), stallMs).unref();
+    const hibernateMs = this.opts.hibernateCheckMs ?? 30_000;
+    if (hibernateMs > 0) this.hibernateTimer = setInterval(() => void this.checkHibernation(), hibernateMs).unref();
+    const scheduleMs = this.opts.scheduleCheckMs ?? 30_000;
+    this.schedules.start(scheduleMs);
+    // Slots missed while the app was closed are caught up now (at most MAX_CATCH_UP of them).
+    if (scheduleMs > 0) this.track(this.schedules.check());
     void this.tick();
   }
 
@@ -275,6 +321,8 @@ export class Orchestrator {
     this.closed = true;
     if (this.interval) clearInterval(this.interval);
     if (this.stallTimer) clearInterval(this.stallTimer);
+    this.schedules.stop();
+    if (this.hibernateTimer) clearInterval(this.hibernateTimer);
     this.timers.forEach((t) => clearTimeout(t));
     this.timers.clear();
     const live = [...this.live.values()];
@@ -295,12 +343,18 @@ export class Orchestrator {
 
   // ---------------------------------------------------------------- tasks
 
+  /** The task list; a Best of N variant's hidden task shows inside its parent, not as a row. */
   list(projectId?: string): TaskSummary[] {
-    return this.db.tasks(projectId).map((t) => this.db.summary(t));
+    const variants = this.bestOf.variantTaskIds();
+    return this.db
+      .tasks(projectId)
+      .filter((t) => !variants.has(t.id))
+      .map((t) => this.db.summary(t));
   }
 
   get(taskId: string): TaskDetail {
-    return this.db.detail(this.db.task(taskId), this.blocked);
+    const task = this.db.task(taskId);
+    return { ...this.db.detail(task, this.blocked), bestOfGroup: this.groupView(task) };
   }
 
   /** Classifies the task and stores a draft crew. No process, worktree or network call. */
@@ -313,8 +367,11 @@ export class Orchestrator {
     const candidates = await this.candidates(project);
     const ctx = this.scoring(project.id, cls.size, budgetUsd, p.pins, p.exclude);
     const crew = proposeCrew(cls.kind, cls.security, candidates, ctx);
+    const group = p.bestOf === undefined ? null : this.groupCandidates(crew.members, candidates, ctx, p.bestOf);
+    const estimate = group ? sumEstimates(crew.members.flatMap((m, i) => (i === group.index ? group.candidates.map((c) => c.estimate) : [m.chosen?.estimate ?? { usd: null, provenance: "unknown" as const }]))) : crew.estimate;
     const taskId = randomUUID();
     const crewId = randomUUID();
+    const memberIds = crew.members.map(() => randomUUID());
     const at = this.iso();
     this.db.tx(() => {
       this.db.exec(
@@ -333,12 +390,12 @@ export class Orchestrator {
         JSON.stringify(cls.reasons),
         at,
       );
-      this.db.exec("insert into crews (id, task_id, proposed_at, estimate_usd, estimate_provenance) values (?, ?, ?, ?, ?)", crewId, taskId, at, crew.estimate.usd, crew.estimate.provenance);
+      this.db.exec("insert into crews (id, task_id, proposed_at, estimate_usd, estimate_provenance) values (?, ?, ?, ?, ?)", crewId, taskId, at, estimate.usd, estimate.provenance);
       crew.members.forEach((m, i) =>
         this.db.exec(
           `insert into crew_members (id, crew_id, position, step, role, depends_on, required, writes_code, chosen, standby, reasons)
            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          randomUUID(),
+          memberIds[i]!,
           crewId,
           i,
           m.step,
@@ -351,14 +408,15 @@ export class Orchestrator {
           JSON.stringify(m.reasons),
         ),
       );
+      if (group) this.bestOf.create(taskId, memberIds[group.index]!, group.candidates);
     });
-    this.audit(taskId, null, "task.proposed", { kind: cls.kind, size: cls.size, members: crew.members.map((m) => ({ role: m.role, profileId: m.chosen?.profileId ?? null })) });
+    this.audit(taskId, null, "task.proposed", { kind: cls.kind, size: cls.size, members: crew.members.map((m) => ({ role: m.role, profileId: m.chosen?.profileId ?? null })), bestOf: group?.candidates.map((c) => c.profileId) ?? null });
     this.emitTask(taskId, "proposed");
     return this.get(taskId);
   }
 
   /** Approves the crew, with optional edits, then lets the scheduler start ready steps. */
-  async approve(p: { taskId: string; edits?: CrewEdit[]; fallback?: FallbackMode }): Promise<TaskDetail> {
+  async approve(p: TasksIpc["tasks.approve"]["params"]): Promise<TaskDetail> {
     const task = this.db.task(p.taskId);
     if (task.cancelled_at) throw new OrchestratorError("task.cancelled");
     const crew = this.db.crew(task.id);
@@ -382,6 +440,10 @@ export class Orchestrator {
       }
     }
 
+    const group = this.bestOf.group(task.id);
+    if (p.bestOf && !group) throw new OrchestratorError("best_of.not_found");
+    const groupCands = group ? this.approvedVariants(task, project, members, views, candidates, group, p) : null;
+
     for (const m of members) {
       const v = views.get(m.id);
       if (!v) throw new OrchestratorError("crew.missing_profile", { role: m.role });
@@ -392,6 +454,8 @@ export class Orchestrator {
         const o = members.find((x) => x.role === other);
         const ov = o ? views.get(o.id) : null;
         if (ov && sameModel(v, ov)) throw new OrchestratorError("crew.independence", { role: m.role });
+        // Any variant may be the one you keep, so a reviewer must be independent of all of them.
+        if (o && group?.member_id === o.id && groupCands?.some((g) => sameModel(v, g))) throw new OrchestratorError("crew.independence", { role: m.role });
       }
     }
 
@@ -408,11 +472,15 @@ export class Orchestrator {
           if (before) this.db.bumpPreference(project.id, m.role, before.profileId, -1);
         }
       }
-      const estimate = sumEstimates([...views.values()].map((v) => v?.estimate ?? { usd: null, provenance: "unknown" }));
+      if (group && groupCands) {
+        this.bestOf.replace(group.id, groupCands);
+        this.db.exec("update crew_members set chosen = ? where id = ?", JSON.stringify(groupCands[0]), group.member_id);
+      }
+      const estimate = sumEstimates([...views.entries()].flatMap(([id, v]) => (groupCands && group?.member_id === id ? groupCands.map((g) => g.estimate) : [v?.estimate ?? { usd: null, provenance: "unknown" as const }])));
       this.db.exec("update crews set approved_at = ?, estimate_usd = ?, estimate_provenance = ? where id = ?", this.iso(), estimate.usd, estimate.provenance, crew.id);
       if (p.fallback) this.db.exec("update tasks set fallback = ? where id = ?", p.fallback, task.id);
     });
-    this.audit(task.id, null, "task.approved", { edits: p.edits ?? [] });
+    this.audit(task.id, null, "task.approved", { edits: p.edits ?? [], bestOf: groupCands?.map((g) => g.profileId) ?? null });
     this.emitTask(task.id, "approved");
     await this.tick();
     return this.get(task.id);
@@ -427,10 +495,437 @@ export class Orchestrator {
       for (const r of this.db.runs(task.id).filter((r) => !r.ended_at)) await this.stopRun(r.id, "task_cancelled");
       for (const q of this.db.requests({ taskId: task.id })) this.closeRequest(q, "system");
       for (const h of this.db.handoffs(task.id).filter((h) => !h.closed_at)) this.closeHandoff(h.id, "cancelled", null);
+      // The variants of a Best of N group go with their task; their worktrees stay, like the task's.
+      for (const id of this.bestOf.variantTasksOf(task.id)) await this.cancel(id);
       this.audit(task.id, null, "task.cancelled", {});
       this.emitTask(task.id, "cancelled");
     }
     return this.get(task.id);
+  }
+
+  // ---------------------------------------------------------------- hibernation
+
+  /**
+   * One pass: every live run idle past the window, on a runner that resumes sessions, has its
+   * process stopped. A failure (the store closing on exit) waits for the next pass.
+   */
+  async checkHibernation(): Promise<void> {
+    if (this.closed) return;
+    try {
+      const s = this.hibernation.settings();
+      if (!s.enabled) return;
+      const now = this.now();
+      for (const [runId, live] of [...this.live]) {
+        const run = this.db.run(runId);
+        if (run.ended_at) continue;
+        const open = this.db.openRequestsForRun(runId)[0] ?? null;
+        const payload = open ? (JSON.parse(open.payload) as RequestPayload) : null;
+        const since = idleSince(
+          {
+            inTurn: live.inTurn,
+            busy: Boolean(live.testing) || this.draining.has(runId) || this.drainRelease.has(runId) || this.stopping.has(runId) || this.hibernating.has(runId) || this.confirming.has(runId) || this.db.openHandoffs().some((h) => h.from_run_id === runId),
+            paused: run.paused_at !== null,
+            limited: run.limit_reached === 1,
+            resumable: Boolean(live.adapter.capabilities.resume && run.native_session_id),
+            lastActivityAt: run.last_activity_at,
+            startedAt: run.started_at,
+            request: open && payload ? { id: open.id, createdAt: open.created_at, hibernatable: (payload.kind === "question" || (payload.kind === "approval" && !payload.bootstrap)) && open.native_id !== null } : null,
+          },
+          now,
+          s.idleMinutes,
+        );
+        if (since) await this.hibernate(runId, live, since, open?.id ?? null);
+      }
+    } catch {
+      // Same as a failed scheduling pass: the next timer tick tries again.
+    }
+  }
+
+  private async hibernate(runId: string, live: Live, since: string, requestId: string | null): Promise<void> {
+    const run = this.db.run(runId);
+    this.hibernation.sleep(runId, since, requestId);
+    this.hibernating.add(runId);
+    await this.safe(() => live.adapter.stop(live.handle));
+    if (!(await this.within(live.done, this.opts.stopTimeoutMs ?? 30_000)) && this.live.get(runId) === live) {
+      // The process tree was killed; the stream may never close, so the run lets go of it here.
+      this.live.delete(runId);
+      this.hibernating.delete(runId);
+    }
+    this.turns.end(runId);
+    this.db.exec("update runs set pid = null where id = ?", runId);
+    this.audit(run.task_id, runId, "run.hibernated", { idleSince: since, requestId });
+    this.emitTask(run.task_id, "hibernation");
+    void this.tick();
+  }
+
+  /**
+   * Wakes a hibernated run by its session id, with what is queued for its step (your message, or
+   * the answer to its request). It takes an admission slot again; without one it waits, and the
+   * scheduler wakes it once a slot is free.
+   */
+  private async wakeRun(runId: string, cause: WakeCause): Promise<void> {
+    const run = this.db.run(runId);
+    if (run.ended_at || this.live.has(runId) || run.paused_at || !this.hibernation.asleep(runId)) {
+      this.pendingWake.delete(runId);
+      return;
+    }
+    const task = this.db.task(run.task_id);
+    const config = this.config(this.db.project(task.project_id)).config;
+    const counts = this.db.activeCounts();
+    const blocked = admit(
+      {
+        projectActive: counts.byProject.get(task.project_id) ?? 0,
+        profileActive: counts.byProfile.get(run.profile_id) ?? 0,
+        globalActive: counts.total,
+        freeMb: (this.opts.freeMemoryMb ?? (() => freemem() / 1024 / 1024))(),
+        worktreeBusy: false,
+        profileId: run.profile_id,
+      },
+      { ...DEFAULT_LIMITS, ...this.opts.limits, projectSlots: config.rules.slots },
+    );
+    if (blocked) {
+      this.pendingWake.set(runId, cause);
+      this.blocked.set(run.member_id, blocked);
+      return;
+    }
+    this.pendingWake.set(runId, cause);
+    this.blocked.delete(run.member_id);
+    try {
+      await this.continueRun(runId, this.turns.queue.pending(run.member_id).length > 0 ? "" : "Continue the task where you stopped.");
+      this.emitTask(task.id, "hibernation");
+    } catch (err) {
+      this.pendingWake.delete(runId);
+      // The runner could not resume the session: the run failed, and the usual handoff or retry follows.
+      const detail = errorDetail(err, await this.secretsFor(run.profile_id));
+      this.endRun(runId, "failed", detail);
+      await this.onFailure(runId, detail);
+    }
+  }
+
+  // ---------------------------------------------------------------- Best of N (feature scan A8)
+
+  /** The task whose budget and per-task caps a task spends on: a variant's parent, or itself. */
+  private budgetTask(taskId: string): string {
+    return this.bestOf.parentOf(taskId) ?? taskId;
+  }
+
+  /** The runs a task's spend is: its own and, for a Best of N parent, every variant's. */
+  private budgetRuns(taskId: string): RunRow[] {
+    return [...this.db.runs(taskId), ...this.bestOf.variantTasksOf(taskId).flatMap((id) => this.db.runs(id))];
+  }
+
+  /** At proposal: the variants for the implement step, never on a reviewer's model. */
+  private groupCandidates(members: ReturnType<typeof proposeCrew>["members"], candidates: Candidate[], ctx: ScoringContext, n: number): { index: number; candidates: CandidateView[] } {
+    if (!Number.isInteger(n) || n < BEST_OF_MIN || n > BEST_OF_MAX) throw new OrchestratorError("best_of.bad_count", { min: BEST_OF_MIN, max: BEST_OF_MAX });
+    const index = members.findIndex((m) => m.role === "implementer" && m.writesCode);
+    if (index < 0) throw new OrchestratorError("best_of.not_found");
+    const independent = members.filter((m) => m.chosen && ROLES[m.role].independentOf.includes("implementer")).map((m) => m.chosen!);
+    const ranked = rankForRole(candidates, "implementer", ctx, { models: new Set(), providers: new Set() }).filter((c) => !independent.some((r) => sameModel(r, c)));
+    const picked = pickVariants(members[index]!.chosen, ranked, n);
+    if (picked.length < n) throw new OrchestratorError("best_of.too_few", { found: picked.length, needed: n });
+    return { index, candidates: picked };
+  }
+
+  /**
+   * At approval: the group's variants after your edits, checked against the rules that make the
+   * group able to start at all: enough slots for every variant at once, and an estimate that fits
+   * the task budget on its own.
+   */
+  private approvedVariants(task: TaskRow, project: ProjectRow, members: MemberRow[], views: Map<string, CandidateView | null>, candidates: Candidate[], group: GroupRow, p: { edits?: CrewEdit[]; bestOf?: { profileIds: string[] } }): CandidateView[] {
+    const ctx = this.scoring(project.id, task.size, task.budget_usd);
+    const member = members.find((m) => m.id === group.member_id)!;
+    let out = this.bestOf.candidates(group.id);
+    if (p.bestOf) {
+      const ids = p.bestOf.profileIds;
+      if (ids.length < BEST_OF_MIN || ids.length > BEST_OF_MAX || new Set(ids).size !== ids.length) throw new OrchestratorError("best_of.bad_count", { min: BEST_OF_MIN, max: BEST_OF_MAX });
+      const before = out;
+      out = ids.map((id) => {
+        const c = candidates.find((x) => x.profile.id === id);
+        if (c && readOnlyConflict(c, member.role)) throw new OrchestratorError("crew.read_only_profile", { profileId: id, role: member.role });
+        if (!c || !eligible(c, member.role, ctx)) throw new OrchestratorError("crew.unknown_profile", { profileId: id });
+        return before.find((v) => v.profileId === id) ?? scoreCandidate(c, member.role, ctx);
+      });
+    } else if (p.edits?.some((e) => e.memberId === member.id)) {
+      // Changing the implementer in the crew changes the first variant.
+      const first = views.get(member.id)!;
+      out = [first, ...out.filter((v) => v.profileId !== first.profileId)].slice(0, out.length);
+    }
+    const slots = Math.min(this.config(project).config.rules.slots, this.opts.limits?.globalSlots ?? DEFAULT_LIMITS.globalSlots);
+    if (out.length > slots) throw new OrchestratorError("best_of.slots", { needed: out.length, slots });
+    const estimate = sumEstimates(out.map((v) => v.estimate));
+    if (task.budget_usd !== null && estimate.usd !== null && estimate.usd > task.budget_usd) throw new OrchestratorError("best_of.over_budget", { estimateUsd: estimate.usd, capUsd: task.budget_usd });
+    views.set(member.id, out[0]!);
+    return out;
+  }
+
+  /**
+   * Starts every variant of a group at once, or none: admission for all of them, then every
+   * paid variant's estimate reserved against the parent's caps in one step, so parallel steps
+   * cannot take the room between two variants. Then one hidden task per variant, and its run.
+   */
+  private async startGroup(task: TaskRow, m: MemberRow, group: GroupRow, project: ProjectRow, slots: number, candidates: Candidate[]): Promise<void> {
+    const variants = this.bestOf.variants(group.id);
+    const views = variants.map((v) => JSON.parse(v.candidate) as CandidateView);
+    const missing = views.find((v) => !this.adapters.has(v.runner));
+    const reason: Reason | null = missing ? { code: "admission.no_adapter", params: { runner: missing.runner } } : (this.groupAdmission(task, views, slots) ?? this.groupBudgetHold(task, m, views, candidates));
+    if (reason) {
+      const prev = this.blocked.get(m.id);
+      this.blocked.set(m.id, reason);
+      if (prev?.code !== reason.code) this.emitTask(task.id, "admission");
+      return;
+    }
+    this.blocked.delete(m.id);
+    const at = this.iso();
+    const created = new Map<string, string>();
+    const specs: LaunchSpec[] = [];
+    this.db.tx(() => {
+      for (const [i, v] of variants.entries()) {
+        const view = views[i]!;
+        const taskId = randomUUID();
+        const crewId = randomUUID();
+        const memberId = randomUUID();
+        this.db.exec(
+          `insert into tasks (id, project_id, title, description, kind, size, base_branch, fallback, wait_reset_minutes, budget_usd, classification, created_at)
+           values (?, ?, ?, ?, ?, ?, ?, ?, ?, null, '[]', ?)`,
+          taskId,
+          task.project_id,
+          task.title,
+          task.description,
+          task.kind,
+          task.size,
+          task.base_branch,
+          task.fallback,
+          task.wait_reset_minutes,
+          at,
+        );
+        this.db.exec("insert into crews (id, task_id, proposed_at, approved_at, estimate_usd, estimate_provenance) values (?, ?, ?, ?, ?, ?)", crewId, taskId, at, at, view.estimate.usd, view.estimate.provenance);
+        this.db.exec(
+          "insert into crew_members (id, crew_id, position, step, role, depends_on, required, writes_code, chosen, standby, reasons) values (?, ?, 0, ?, ?, '[]', 1, 1, ?, '[]', '[]')",
+          memberId,
+          crewId,
+          m.step,
+          m.role,
+          JSON.stringify(view),
+        );
+        created.set(v.id, taskId);
+        specs.push({ runId: randomUUID(), task: this.db.task(taskId), member: this.db.member(memberId), target: view });
+      }
+      this.bestOf.start(group.id, created);
+      for (const spec of specs) {
+        const c = candidates.find((x) => x.profile.id === spec.target.profileId);
+        if (c?.profile.credential.kind === "api_key") reserveSpend(this.opts.store.db, { runId: spec.runId!, taskId: task.id, credentialId: spendCredential(c), amountUsd: estimateFor(c, m.role, task.size).usd ?? 0 }, this.now());
+      }
+    });
+    for (const spec of specs) this.insertRun(spec);
+    this.audit(task.id, null, "best_of.started", { groupId: group.id, variants: views.map((v) => v.profileId), estimate: sumEstimates(views.map((v) => v.estimate)) });
+    this.emitTask(task.id, "best_of");
+    // One after another: parallel `git worktree add` on one repo races for its locks.
+    this.track(
+      (async () => {
+        for (const spec of specs) await this.boot(spec.runId!, spec);
+      })(),
+    );
+  }
+
+  private groupAdmission(task: TaskRow, views: CandidateView[], projectSlots: number): Reason | null {
+    const counts = this.db.activeCounts();
+    const needed = new Map<string, number>();
+    for (const v of views) needed.set(v.profileId, (needed.get(v.profileId) ?? 0) + 1);
+    return admitGroup(
+      {
+        projectActive: counts.byProject.get(task.project_id) ?? 0,
+        globalActive: counts.total,
+        freeMb: (this.opts.freeMemoryMb ?? (() => freemem() / 1024 / 1024))(),
+        profiles: [...needed].map(([profileId, n]) => ({ profileId, needed: n, active: counts.byProfile.get(profileId) ?? 0 })),
+      },
+      { ...DEFAULT_LIMITS, ...this.opts.limits, projectSlots },
+    );
+  }
+
+  /**
+   * Like budgetHold for one step, for the whole group: it waits while other unfinished runs hold
+   * the room every variant's estimate needs together. A group that would not fit even once they
+   * finish starts, and each paid variant pauses on its cap with a request, as a single step does.
+   */
+  private groupBudgetHold(task: TaskRow, m: MemberRow, views: CandidateView[], candidates: Candidate[]): Reason | null {
+    const byCredential = new Map<string, { c: Candidate; usd: number }>();
+    let total = 0;
+    for (const v of views) {
+      const c = candidates.find((x) => x.profile.id === v.profileId);
+      if (c?.profile.credential.kind !== "api_key") continue;
+      const usd = estimateFor(c, m.role, task.size).usd ?? 0;
+      total += usd;
+      const key = spendCredential(c) ?? `profile:${c.profile.id}`;
+      const cur = byCredential.get(key);
+      byCredential.set(key, { c, usd: (cur?.usd ?? 0) + usd });
+    }
+    for (const { c, usd } of byCredential.values()) {
+      const cap = reachedCaps(this.opts.store.db, spendCredential(c), task.id, this.now(), { addUsd: usd }).find((x) => x.reservedUsd);
+      if (cap && !overCap(cap.spentUsd, 0, usd, cap.capUsd)) return { code: "admission.budget_reserved", params: { reservedUsd: cap.reservedUsd!, capUsd: cap.capUsd, cap: cap.kind } };
+    }
+    if (task.budget_usd !== null && total > 0) {
+      const spent = this.db.spend(this.budgetRuns(task.id)).usd ?? 0;
+      const held = reservedUsd(this.opts.store.db, { taskId: task.id });
+      if (held > 0 && overCap(spent, held, total, task.budget_usd) && !overCap(spent, 0, total, task.budget_usd)) {
+        return { code: "admission.budget_reserved", params: { reservedUsd: Math.round(held * 1_000_000) / 1_000_000, capUsd: task.budget_usd, cap: "task_budget" } };
+      }
+    }
+    return null;
+  }
+
+  private async refreshVariantDiff(variantId: string): Promise<void> {
+    const v = this.bestOf.variant(variantId);
+    const wt = v?.task_id ? this.db.worktree(v.task_id) : null;
+    if (!v || !wt || !existsSync(wt.path)) return;
+    try {
+      this.bestOf.setDiff(v.id, await worktreeDiff(wt.path, wt.base_sha, this.opts.gitBin));
+      this.emitTask(v.task_id!, "best_of");
+    } catch (err) {
+      this.audit(v.task_id!, null, "best_of.diff_failed", { code: errorCode(err) });
+    }
+  }
+
+  /**
+   * Keeps one finished variant (after you confirmed in the compare view). Its worktree, bootstrap
+   * state and session move to the parent task, recorded as a completed run of the implement step,
+   * so test, review and PR continue there. Every other variant is stopped, cancelled and parked.
+   */
+  async keepVariant(taskId: string, variantId: string): Promise<TaskDetail> {
+    const task = this.db.task(taskId);
+    if (task.cancelled_at) throw new OrchestratorError("task.cancelled");
+    const group = this.bestOf.group(task.id);
+    const kept = group ? this.bestOf.variant(variantId) : null;
+    if (!group || !kept || kept.group_id !== group.id) throw new OrchestratorError("best_of.not_found");
+    if (group.kept_variant_id) throw new OrchestratorError("best_of.kept");
+    if (!group.started_at || !kept.task_id) throw new OrchestratorError("best_of.not_started");
+    const runs = this.db.runs(kept.task_id);
+    const last = runs.filter((r) => r.end_reason === "completed" && !this.db.successor(r, runs)).at(-1);
+    const wt = this.db.worktree(kept.task_id);
+    if (!last || !wt || runs.some((r) => !r.ended_at)) throw new OrchestratorError("best_of.not_finished", { variantId });
+    if (this.db.worktree(task.id)) throw new OrchestratorError("best_of.kept");
+    const member = this.db.member(group.member_id);
+    const variantMember = this.db.member(last.member_id);
+    const adoptedId = randomUUID();
+    const at = this.iso();
+    this.db.tx(() => {
+      this.bestOf.keep(group.id, kept.id);
+      // The worktree row moves, so its id (and every run that names it) stays valid.
+      this.db.exec("update worktrees set task_id = ? where task_id = ?", task.id, kept.task_id);
+      this.db.exec("update worktree_bootstrap set task_id = ? where task_id = ?", task.id, kept.task_id);
+      this.db.exec(
+        `insert into runs (id, task_id, member_id, role, profile_id, runner, model, cwd, worktree_id, native_session_id, started_at, ended_at, end_reason, end_detail, last_state, last_activity_at, cost_provenance, plan, diff)
+         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', 'best_of.kept', ?, ?, 'estimated', ?, ?)`,
+        adoptedId,
+        task.id,
+        member.id,
+        member.role,
+        last.profile_id,
+        last.runner,
+        last.model,
+        last.cwd,
+        wt.id,
+        last.native_session_id,
+        at,
+        at,
+        last.last_state,
+        last.last_activity_at,
+        last.plan,
+        last.diff,
+      );
+    });
+    this.loops.enlist(adoptedId, member.id);
+    // The reviewer's prompt cites the last test; it belongs to the kept variant's worktree.
+    const test = this.loops.lastTest(variantMember.id);
+    if (test) this.loops.addTest({ task_id: task.id, member_id: member.id, run_id: adoptedId, command: test.command, exit_code: test.exit_code, passed: test.passed, tail: test.tail, tree_sha: test.tree_sha, head_sha: test.head_sha, duration_ms: test.duration_ms });
+    this.audit(task.id, adoptedId, "best_of.kept", { groupId: group.id, variantId: kept.id, variantTaskId: kept.task_id, fromRun: last.id, profileId: last.profile_id, branch: wt.branch });
+    for (const other of this.bestOf.variants(group.id).filter((v) => v.id !== kept.id && v.task_id)) await this.discardVariant(other.id, other.task_id!);
+    this.emitTask(task.id, "best_of");
+    await this.tick();
+    return this.get(task.id);
+  }
+
+  private async discardVariant(variantId: string, variantTaskId: string): Promise<void> {
+    for (const r of this.db.runs(variantTaskId).filter((r) => !r.ended_at)) await this.stopRun(r.id, "best_of.discarded");
+    await this.cancel(variantTaskId);
+    if (!this.db.worktree(variantTaskId)) {
+      this.bestOf.parked(variantId, null);
+      return;
+    }
+    try {
+      await this.bootstrap.park(variantTaskId);
+      this.bestOf.parked(variantId, null);
+    } catch (err) {
+      // A cleanup step waiting for approval, a locked file: the folder stays and the code says why.
+      this.bestOf.parked(variantId, errorCode(err));
+    }
+    this.audit(variantTaskId, null, "best_of.discarded", { variantId });
+  }
+
+  private groupView(task: TaskRow): BestOfView | null {
+    const group = this.bestOf.group(task.id);
+    if (!group) return null;
+    const crew = this.db.crew(task.id);
+    const max = this.config(this.db.project(task.project_id)).config.loop.maxIterations;
+    const variants = this.bestOf.variants(group.id).map((v) => {
+      const candidate = JSON.parse(v.candidate) as CandidateView;
+      const vt = v.task_id ? this.db.task(v.task_id) : null;
+      const summary = vt ? this.db.summary(vt) : null;
+      const run = vt ? (this.db.runs(vt.id).at(-1) ?? null) : null;
+      const loop = vt ? this.loops.view(vt.id, max, () => false) : null;
+      // The kept variant's worktree belongs to the parent now.
+      const wt = vt ? (this.db.worktree(vt.id) ?? (v.outcome === "kept" ? this.db.worktree(task.id) : null)) : null;
+      return {
+        id: v.id,
+        position: v.position,
+        candidate,
+        taskId: v.task_id,
+        status: summary?.status ?? null,
+        run: run ? this.db.runView(run) : null,
+        resumableRunIds: summary?.resumableRunIds ?? [],
+        spend: summary?.spend ?? { usd: 0, provenance: "estimated" as const },
+        diffStat: v.diff_stat ? (JSON.parse(v.diff_stat) as DiffStat) : null,
+        test: loop?.tests.at(-1) ?? null,
+        decisions: loop?.decisions ?? [],
+        branch: wt?.branch ?? null,
+        worktreePath: wt?.path ?? null,
+        outcome: v.outcome,
+        parkedAt: v.parked_at,
+        parkError: v.park_error,
+      };
+    });
+    return {
+      id: group.id,
+      memberId: group.member_id,
+      n: variants.length,
+      phase: groupPhase(group, Boolean(crew?.approved_at), variants.map((v) => ({ status: v.status, finished: v.status === "review" }))),
+      estimate: sumEstimates(variants.map((v) => v.candidate.estimate)),
+      variants,
+      startedAt: group.started_at,
+      keptVariantId: group.kept_variant_id,
+      keptAt: group.kept_at,
+    };
+  }
+
+  /** What a task's summary adds from Best of N and schedules; cheap reads, called on every summary. */
+  private taskExtras(t: TaskRow): ReturnType<OrchestratorDb["taskExtras"]> {
+    const parent = this.bestOf.parentOf(t.id);
+    const scheduled = this.schedules.taskOrigin(t.id);
+    if (parent) {
+      const v = this.bestOf.variantByTask(t.id)!;
+      return { scheduled, bestOf: null, variantOf: { taskId: parent, position: v.position, n: this.bestOf.variants(v.group_id).length }, fact: null, groupRuns: [] };
+    }
+    const group = this.bestOf.group(t.id);
+    if (!group) return { scheduled, bestOf: null, variantOf: null, fact: null, groupRuns: [] };
+    const variants = this.bestOf.variants(group.id);
+    const statuses = variants.map((v) => (v.task_id ? this.db.status(this.db.task(v.task_id)) : null));
+    const phase = groupPhase(group, Boolean(this.db.crew(t.id)?.approved_at), statuses.map((status) => ({ status, finished: status === "review" })));
+    return {
+      scheduled,
+      bestOf: { n: variants.length, phase },
+      variantOf: null,
+      fact: groupFact(phase, statuses),
+      groupRuns: variants.flatMap((v) => (v.task_id ? this.db.runs(v.task_id) : [])),
+    };
   }
 
   // ---------------------------------------------------------------- runs
@@ -578,6 +1073,8 @@ export class Orchestrator {
     this.turns.queue.add(run.task_id, run.member_id, text);
     const live = this.live.get(runId);
     this.audit(run.task_id, runId, "run.message", { chars: text.length, queued: !live || Boolean(run.paused_at) || live.inTurn });
+    // A hibernated run wakes for your message; the queue goes with its resume.
+    if (!live && !run.paused_at && this.hibernation.asleep(runId)) await this.wakeRun(runId, "message");
     await this.flushOutbox(run.task_id, run.member_id);
     this.emitTask(run.task_id, "queue");
     return this.db.runView(this.db.run(runId));
@@ -986,7 +1483,9 @@ export class Orchestrator {
     if (answer.kind === "approval" && answer.decision === "allow_always" && q.risk === "high") throw new OrchestratorError("request.always_high_risk");
     // A worktree bootstrap step is answered by the daemon itself, so its run need not be live (it is held).
     const boot = payload.kind === "approval" ? (payload.bootstrap ?? null) : null;
-    if ((answer.kind === "approval" || answer.kind === "question") && !live && !boot) throw new OrchestratorError("run.not_live");
+    // A hibernated run takes the answer as text when it wakes, since its process is gone.
+    const asleep = run && !live && !run.ended_at ? this.hibernation.asleep(run.id) : null;
+    if ((answer.kind === "approval" || answer.kind === "question") && !live && !boot && !asleep) throw new OrchestratorError("run.not_live");
     // A source that lost its step to a handoff takes no more answers; its requests were cancelled.
     if (run && (answer.kind === "approval" || answer.kind === "question") && this.loops.fenced(run.id, run.member_id)) throw new OrchestratorError("run.fenced");
     let target: CandidateView | null = null;
@@ -1014,6 +1513,11 @@ export class Orchestrator {
       const next = this.bootstrap.answered(q.id, answer.kind === "approval" ? answer.decision : "cancel");
       for (const id of next.ready) if (this.held.has(id) && !this.live.has(id)) this.track(this.proceed(id, ""));
       if (next.denied && !this.db.run(next.denied).ended_at) this.endRun(next.denied, "failed", "bootstrap.denied");
+    }
+    if (asleep && run && (payload.kind === "question" || payload.kind === "approval") && answer.kind !== "handoff") {
+      if (payload.kind === "approval" && answer.kind === "approval" && answer.decision !== "deny" && payload.command) this.hibernation.approved(run.id, payload.command, payload.cwd);
+      this.turns.queue.add(run.task_id, run.member_id, answerAfterSleep(payload, answer), "note");
+      await this.wakeRun(run.id, "answer");
     }
     if (answer.kind === "handoff" && run && payload.kind === "handoff") {
       if (answer.decision === "hand_off" && target) this.track(this.performHandoff(run.id, target, payload.trigger === "handoff_failed" ? "limit" : payload.trigger === "unpriced" ? "budget" : payload.trigger));
@@ -1049,6 +1553,7 @@ export class Orchestrator {
   }
 
   private async schedulePass(): Promise<void> {
+    for (const [runId, cause] of [...this.pendingWake]) await this.wakeRun(runId, cause);
     for (const task of this.db.schedulable()) {
       const status = this.db.status(task);
       if (status === "failed" || status === "cancelled") continue;
@@ -1071,6 +1576,12 @@ export class Orchestrator {
           return dep !== undefined && runs.some((r) => r.member_id === dep.id && r.end_reason === "completed");
         };
         if (!deps.every(done)) continue;
+        // A Best of N step runs as its variants' tasks until you keep one; then the kept run is its run.
+        const group = this.bestOf.group(task.id);
+        if (group?.member_id === m.id && !runs.some((r) => r.member_id === m.id)) {
+          if (!group.started_at && !group.kept_variant_id) await this.startGroup(task, m, group, project, config.rules.slots, (candidates ??= await this.candidates(project)));
+          continue;
+        }
         const chosen = m.chosen ? (JSON.parse(m.chosen) as CandidateView) : null;
         const reason = !chosen
           ? ({ code: "admission.no_profile" } as Reason)
@@ -1136,6 +1647,13 @@ export class Orchestrator {
    * counts it at once; a failure to start ends it as failed with a code.
    */
   private async launch(spec: LaunchSpec): Promise<string> {
+    const runId = this.insertRun(spec);
+    await this.boot(runId, spec);
+    return runId;
+  }
+
+  /** The run row of a launch, written before any await so admission control counts it at once. */
+  private insertRun(spec: LaunchSpec): string {
     const { task, member, target } = spec;
     const project = this.db.project(task.project_id);
     const runId = spec.runId ?? randomUUID();
@@ -1157,7 +1675,6 @@ export class Orchestrator {
     if (spec.handoffId) this.confirming.set(runId, spec.handoffId);
     this.loops.enlist(runId, member.id);
     this.emitTask(task.id, "run_started");
-    await this.boot(runId, spec);
     return runId;
   }
 
@@ -1208,7 +1725,7 @@ export class Orchestrator {
         return;
       }
       this.held.delete(runId);
-      if (candidate.profile.credential.kind === "api_key") reserveSpend(this.opts.store.db, { runId, taskId: task.id, credentialId: spendCredential(candidate), amountUsd: amount }, this.now());
+      if (candidate.profile.credential.kind === "api_key") reserveSpend(this.opts.store.db, { runId, taskId: this.budgetTask(task.id), credentialId: spendCredential(candidate), amountUsd: amount }, this.now());
       // Handoff by fork: the target continues a copy of the source's conversation; on any failure it
       // gets the written package in a new session instead, as before.
       const forked = spec.fork ? await this.forkInto(runId, spec, candidate, cwd) : null;
@@ -1358,6 +1875,9 @@ export class Orchestrator {
   private attach(runId: string, adapter: AgentAdapter, handle: RunHandle, candidate: Candidate): void {
     let finish!: () => void;
     // Every start and resume hands over a prompt, so a turn runs from here; its boundary takes what is queued.
+    // A new process for a hibernated run is its wake-up, whoever started it (resume, retry, answer).
+    if (this.hibernation.wake(runId, this.pendingWake.get(runId) ?? "resume")) this.audit(this.db.run(runId).task_id, runId, "run.woke", {});
+    this.pendingWake.delete(runId);
     const live: Live = { adapter, handle, candidate, done: new Promise<void>((r) => (finish = r)), inTurn: true };
     this.live.set(runId, live);
     this.track(this.pump(runId, live).finally(finish));
@@ -1439,6 +1959,12 @@ export class Orchestrator {
   private async onStreamEnd(runId: string, ended: Ended): Promise<void> {
     const run = this.db.run(runId);
     if (run.ended_at) return;
+    // Stopped for hibernation: the run stays open and holds its step.
+    if (this.hibernating.delete(runId)) {
+      this.emitTask(run.task_id, "hibernation");
+      void this.tick();
+      return;
+    }
     const stopDetail = this.stopping.get(runId);
     if (stopDetail !== undefined) {
       this.endRun(runId, "stopped", stopDetail);
@@ -1503,6 +2029,11 @@ export class Orchestrator {
     // The runner may expire its own record; ours stays with the task (feature scan A18).
     if (run.native_session_id) this.track(this.copyTranscript(runId));
     settleReservation(this.opts.store.db, runId, this.now());
+    this.hibernation.wake(runId, "ended");
+    this.pendingWake.delete(runId);
+    // A Best of N variant's diff is what you compare; read it from git once its run is over.
+    const variant = this.bestOf.variantByTask(run.task_id);
+    if (variant) this.track(this.refreshVariantDiff(variant.id));
     // A handoff target that ends before it confirmed leaves the source paused and asks you.
     const pendingHandoff = this.confirming.get(runId);
     if (pendingHandoff) {
@@ -1609,8 +2140,10 @@ export class Orchestrator {
     else if (policy.writes === "docs" && ev.paths.length > 0 && !onlyDocPaths(ev.paths)) rule = "policy.role_docs_only";
     else if (policy.network === "denied" && ev.network) rule = "policy.role_no_network";
 
-    const decision: "deny" | "allow_once" | null = rule ? "deny" : risk === "low" ? "allow_once" : null;
-    const payload: RequestPayload = { kind: "approval", toolCallId: ev.toolCallId, command: ev.command, cwd: ev.cwd, paths: ev.paths, network: ev.network, policy: rule ?? (decision ? "policy.allowlisted" : null) };
+    // You approved this exact call while the run was hibernated; the woken session repeats it once.
+    const approvedAsleep = !rule && this.hibernation.takeApproval(run.id, ev.command, ev.cwd);
+    const decision: "deny" | "allow_once" | null = rule ? "deny" : risk === "low" || approvedAsleep ? "allow_once" : null;
+    const payload: RequestPayload = { kind: "approval", toolCallId: ev.toolCallId, command: ev.command, cwd: ev.cwd, paths: ev.paths, network: ev.network, policy: rule ?? (approvedAsleep ? "policy.approved_while_hibernated" : decision ? "policy.allowlisted" : null) };
     const answer: RequestAnswer | null = decision ? { kind: "approval", decision } : null;
     this.insertRequest(task.id, run.id, ev.requestId, risk, payload, answer);
     if (decision) {
@@ -1683,7 +2216,8 @@ export class Orchestrator {
         this.opts.store.db,
         live.candidate,
         {
-          taskId: task.id,
+          // A Best of N variant spends on its parent's budget and per-task caps.
+          taskId: this.budgetTask(task.id),
           runId: run.id,
           profileId: run.profile_id,
           model: run.model ?? model?.id ?? null,
@@ -1734,11 +2268,13 @@ export class Orchestrator {
     if (candidate?.profile.credential.kind !== "api_key") return null;
     const approved = new Set([...(runId ? this.approvalsFor(runId) : []), ...alsoApproved]);
     const db = this.opts.store.db;
-    const caps = reachedCaps(db, spendCredential(candidate), taskId, this.now(), { addUsd, excludeRunId: runId });
-    const task = this.db.task(taskId);
+    // A Best of N variant counts against its parent: one budget, one per-task cap for the group.
+    const root = this.budgetTask(taskId);
+    const caps = reachedCaps(db, spendCredential(candidate), root, this.now(), { addUsd, excludeRunId: runId });
+    const task = this.db.task(root);
     if (task.budget_usd !== null) {
-      const spent = this.db.spend(this.db.runs(taskId)).usd;
-      const held = reservedUsd(db, { taskId, excludeRunId: runId });
+      const spent = this.db.spend(this.budgetRuns(root)).usd;
+      const held = reservedUsd(db, { taskId: root, excludeRunId: runId });
       if (spent !== null && overCap(spent, held, addUsd, task.budget_usd)) {
         caps.push({ kind: "task_budget", spentUsd: spent, capUsd: task.budget_usd, credentialId: null, ...(held > 0 ? { reservedUsd: held } : {}), ...(addUsd > 0 ? { estimateUsd: addUsd } : {}) });
       }
@@ -1758,7 +2294,7 @@ export class Orchestrator {
     const caps: UnpricedSpend["caps"] = [];
     if (keyCaps?.dailyUsd != null) caps.push("daily_cap");
     if (keyCaps?.taskUsd != null) caps.push("task_cap");
-    if (task.budget_usd !== null) caps.push("task_budget");
+    if (this.db.task(this.budgetTask(task.id)).budget_usd !== null) caps.push("task_budget");
     return caps.length > 0 ? { model: model ?? candidate.model?.id ?? candidate.profile.defaultModel, caps } : null;
   }
 
@@ -2280,6 +2816,11 @@ export class Orchestrator {
     const alive = this.opts.isAlive ?? pidAlive;
     const tasks = new Set<string>();
     for (const r of this.db.openRuns()) {
+      // A hibernated run has no process to lose; it stays open and waits to wake as before.
+      if (this.hibernation.asleep(r.id)) {
+        tasks.add(r.task_id);
+        continue;
+      }
       // We never kill a recorded pid: Windows reuses pids, and the number may belong to something else now.
       const detail = r.pid !== null && alive(r.pid) ? "process_orphaned" : "process_gone";
       this.db.exec("update runs set ended_at = ?, end_reason = 'interrupted', end_detail = ?, resume_at = null where id = ?", this.iso(), detail, r.id);
@@ -2383,7 +2924,10 @@ export class Orchestrator {
   private latestPlan(taskId: string, runId?: string): Array<{ title: string; status: "pending" | "in_progress" | "completed" }> | null {
     const runs = this.db.runs(taskId).filter((r) => r.plan && (!runId || r.id === runId));
     const last = runs.at(-1);
-    return last?.plan ? JSON.parse(last.plan) : null;
+    if (last?.plan) return JSON.parse(last.plan);
+    // A Best of N variant works from its parent's plan (the planner ran there).
+    const parent = runId ? null : this.bestOf.parentOf(taskId);
+    return parent ? this.latestPlan(parent) : null;
   }
 
   private record(runId: string, ev: AgentEvent): void {
@@ -2424,6 +2968,9 @@ export class Orchestrator {
   private emitTask(taskId: string, cause: TaskChangeCause): void {
     const task = this.db.task(taskId);
     this.emit("tasks.changed", { taskId, projectId: task.project_id, status: this.db.status(task), cause });
+    // A variant's change is its parent's change too: the parent's status and compare view read it.
+    const parent = this.bestOf.parentOf(taskId);
+    if (parent) this.emit("tasks.changed", { taskId: parent, projectId: task.project_id, status: this.db.status(this.db.task(parent)), cause: "best_of" });
   }
 
   private emitRequest(requestId: string): void {
