@@ -20,6 +20,14 @@ export const GEMINI_POLICY = [
   "",
 ].join("\n");
 
+/**
+ * Gemini's own key names. With `security.environmentVariableRedaction.enabled`, Gemini CLI drops
+ * these (and any name with KEY, TOKEN, SECRET and the like) from the environment of the commands
+ * its shell tool runs (sanitizeEnvironment in core/services/environmentSanitization.ts, from
+ * v0.24.0; checked against v0.65.0 on 2026-10-30). Off by default, so the agent could read the key.
+ */
+export const GEMINI_KEY_NAMES = ["GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY"];
+
 export interface PreparedProfile {
   /** Why a setting could not be applied; the run goes on with Crewyard's own checks. */
   problems: string[];
@@ -28,7 +36,8 @@ export interface PreparedProfile {
 /**
  * Turns Gemini's subagents off for this profile: `experimental.enableAgents: false` in its
  * settings.json (default true, documented in the configuration reference) and a policy file that
- * denies the built-in subagent tools. A settings file we cannot parse is left alone and reported.
+ * denies the built-in subagent tools. Also keeps the key out of the agent's shell commands
+ * (GEMINI_KEY_NAMES). A settings file we cannot parse is left alone and reported.
  */
 export async function prepareGeminiProfile(configDir: string): Promise<PreparedProfile> {
   const home = join(configDir, ".gemini");
@@ -41,18 +50,30 @@ export async function prepareGeminiProfile(configDir: string): Promise<PreparedP
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("not an object");
       settings = parsed as Record<string, unknown>;
     } catch (err) {
-      problems.push(`Could not read ${settingsFile} (${err instanceof Error ? err.message : String(err)}); Gemini subagents stay on the policy file only.`);
+      problems.push(`Could not read ${settingsFile} (${err instanceof Error ? err.message : String(err)}); Gemini subagents stay on the policy file only, and its shell commands may see the key.`);
       settings = {};
     }
   }
   if (problems.length === 0) {
     const experimental = settings.experimental && typeof settings.experimental === "object" ? (settings.experimental as Record<string, unknown>) : {};
-    if (experimental.enableAgents !== false) await writeAtomic(settingsFile, `${JSON.stringify({ ...settings, experimental: { ...experimental, enableAgents: false } }, null, 2)}\n`);
+    const next = { ...settings, experimental: { ...experimental, enableAgents: false }, security: withRedaction(settings.security) };
+    if (JSON.stringify(next) !== JSON.stringify(settings)) await writeAtomic(settingsFile, `${JSON.stringify(next, null, 2)}\n`);
   }
   const policyFile = join(home, "policies", "crewyard.toml");
   const current = existsSync(policyFile) ? await readFile(policyFile, "utf8").catch(() => "") : "";
   if (current !== GEMINI_POLICY) await writeAtomic(policyFile, GEMINI_POLICY);
   return { problems };
+}
+
+/** `security` with redaction on and the key names blocked; an `allowed` entry for a key name is removed. */
+function withRedaction(security: unknown): Record<string, unknown> {
+  const sec = security && typeof security === "object" && !Array.isArray(security) ? (security as Record<string, unknown>) : {};
+  const red = sec.environmentVariableRedaction && typeof sec.environmentVariableRedaction === "object" ? (sec.environmentVariableRedaction as Record<string, unknown>) : {};
+  const list = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+  const keys = new Set(GEMINI_KEY_NAMES);
+  const blocked = [...new Set([...list(red.blocked), ...GEMINI_KEY_NAMES])];
+  const allowed = list(red.allowed).filter((n) => !keys.has(n.toUpperCase()));
+  return { ...sec, environmentVariableRedaction: { ...red, enabled: true, blocked, ...(red.allowed !== undefined ? { allowed } : {}) } };
 }
 
 /** Gemini's settings.json may carry // and /* *\/ comments; strings are left intact. */

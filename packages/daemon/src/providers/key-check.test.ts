@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CatalogProvider } from "@crewyard/core";
-import { authHeaders, checkKey, latencyClass, measureLatency, modelListCandidates, parseModelIds, SLOW_MS, type ModelsTarget } from "./key-check.ts";
+import { authHeaders, checkKey, latencyClass, measureLatency, modelListCandidates, parseModelIds, refusedModels, SLOW_MS, type ModelsTarget } from "./key-check.ts";
 
 type Base = Pick<CatalogProvider, "id" | "group" | "openaiBase" | "anthropicBase">;
 const p = (id: string, openaiBase: string | null, anthropicBase: string | null, group: CatalogProvider["group"] = "first-party"): Base => ({ id, group, openaiBase, anthropicBase });
@@ -177,5 +177,26 @@ describe("latency", () => {
       throw new TypeError("fetch failed");
     }) as typeof fetch;
     expect(await measureLatency("https://x", fetchFn)).toMatchObject({ ms: null, class: "unreachable", status: null });
+  });
+});
+
+describe("refusedModels", () => {
+  const count = (id: string) => `https://generativelanguage.googleapis.com/v1beta/models/${id}:countTokens`;
+
+  it("finds the Gemini models a key lists but cannot call, from countTokens 404s only", async () => {
+    const { fetchFn, calls } = server({
+      [count("gemini-2.5-flash-lite")]: () => json(404, { error: { status: "NOT_FOUND", message: "no longer available to new users" } }),
+      [count("gemini-3.1-flash-lite")]: () => json(200, { totalTokens: 1 }),
+      [count("gemini-2.5-flash")]: () => json(429, {}),
+    });
+    expect(await refusedModels({ id: "google" }, "k", ["gemini-2.5-flash-lite", "gemini-3.1-flash-lite", "gemini-2.5-flash"], fetchFn)).toEqual(["gemini-2.5-flash-lite"]);
+    expect(calls.every((c) => c.authed && !c.url.includes("key="))).toBe(true);
+  });
+
+  it("asks nothing for other providers or without a key", async () => {
+    const { fetchFn, calls } = server({});
+    expect(await refusedModels({ id: "deepseek" }, "k", ["deepseek-flash"], fetchFn)).toEqual([]);
+    expect(await refusedModels({ id: "google" }, null, ["gemini-2.5-flash"], fetchFn)).toEqual([]);
+    expect(calls).toEqual([]);
   });
 });

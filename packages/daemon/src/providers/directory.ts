@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { capabilities as acpCapabilities } from "@crewyard/adapter-acp";
 import { capabilities as claudeCapabilities } from "@crewyard/adapter-claude";
@@ -24,39 +24,69 @@ export function baseUrlFor(runner: ProfileRunner, provider: CatalogProvider | un
   if (!provider) return null;
   if (runner === "claude-code") return provider.id === "anthropic" ? null : provider.anthropicBase;
   if (runner === "codex") return provider.id === "openai" ? null : provider.openaiBase;
+  // OpenCode ships every models.dev provider; one marked "config" needs a provider block with this base.
+  if (runner === "opencode") return provider.runners.opencode === "config" ? provider.openaiBase : null;
   return null;
 }
 
-/** Env names the key is exposed under: the provider's own (opencode reads these) plus what each runner expects. */
+/**
+ * The one env name each runner reads the key from, and nothing more: every extra name is one more
+ * copy an agent's shell could see (PLAN.md §6). Claude Code reads only its Anthropic names, Codex
+ * the `env_key` of the provider block we write, OpenCode the provider's first models.dev name, and
+ * Gemini CLI GEMINI_API_KEY.
+ */
 export function keyNamesFor(runner: ProfileRunner, provider: CatalogProvider | undefined): string[] {
-  const names = new Set(provider?.env ?? []);
-  if (runner === "claude-code") names.add(provider?.id === "anthropic" ? "ANTHROPIC_API_KEY" : "ANTHROPIC_AUTH_TOKEN");
-  if (runner === "codex" && provider?.id === "openai") names.add("OPENAI_API_KEY");
-  if (runner === "gemini-cli") names.add("GEMINI_API_KEY");
-  return [...names];
+  if (runner === "claude-code") return [provider?.id === "anthropic" ? "ANTHROPIC_API_KEY" : "ANTHROPIC_AUTH_TOKEN"];
+  if (runner === "codex") return provider ? [codexEnvKey(provider)] : [];
+  if (runner === "gemini-cli") return ["GEMINI_API_KEY"];
+  const own = provider?.env[0];
+  return own ? [own] : [];
+}
+
+/** OpenAI's own Responses endpoint, for an OpenAI profile that brings an API key. */
+export const OPENAI_API_BASE = "https://api.openai.com/v1";
+/**
+ * codex 0.147's built-in `openai` provider has no env_key and app-server ignores OPENAI_API_KEY, so
+ * a keyed OpenAI profile gets a provider block of its own. It cannot be named `openai`: codex keeps
+ * the built-in and drops a user entry with that id.
+ */
+export const CODEX_OPENAI_KEY_PROVIDER = "openai-api-key";
+
+export function codexEnvKey(provider: CatalogProvider): string {
+  if (provider.id === "openai") return "OPENAI_API_KEY";
+  return provider.env[0] ?? `${provider.id.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_API_KEY`;
 }
 
 /**
  * Codex reaches a non-OpenAI provider only through `model_providers` in its config.toml
  * (wire_api "responses"; codex 0.147 rejects "chat"). The profile folder is ours, so the file is
- * rewritten before each run; for OpenAI itself it holds only the effort preset, or is removed.
+ * rewritten before each run. An OpenAI profile with a key gets its own provider block too; one
+ * that signs in with ChatGPT (no key) stays on the built-in provider.
+ *
+ * Every profile also gets a shell_environment_policy: codex 0.147 defaults to
+ * `ignore_default_excludes = true`, so the agent's commands inherit the key. With false, codex
+ * drops every name matching *KEY*, *SECRET* or *TOKEN* from them, and `exclude` names the key
+ * variables outright. That also keeps the key out of `logs_2.sqlite`, where codex logs each
+ * spawned command's environment at TRACE and has no setting to lower that level.
  */
-export function writeCodexConfig(configDir: string, provider: CatalogProvider | undefined, effort: EffortLevel | null = null): void {
+export function writeCodexConfig(configDir: string, provider: CatalogProvider | undefined, effort: EffortLevel | null = null, hasKey = true): void {
   const file = join(configDir, "config.toml");
-  const base = baseUrlFor("codex", provider);
   const reasoning = effort && provider && effortSupport("codex", provider.id) === "config" ? effort : null;
-  if (!provider || (!base && !reasoning)) {
-    if (existsSync(file)) rmSync(file, { force: true });
-    return;
-  }
-  const envKey = provider.env[0] ?? `${provider.id.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_API_KEY`;
   const q = (s: string) => JSON.stringify(s);
+  const block = provider ? codexProviderBlock(provider, hasKey) : null;
+  const excluded = [...new Set([...(provider ? [codexEnvKey(provider)] : []), "OPENAI_API_KEY", "CODEX_API_KEY"])];
   // Top-level keys first: anything after a [table] header belongs to that table.
   const body = [
     "# Managed by Crewyard for this profile; rewritten before each run.",
     ...(reasoning ? [`model_reasoning_effort = ${q(reasoning)}`] : []),
-    ...(base
-      ? [`model_provider = ${q(provider.id)}`, "", `[model_providers.${q(provider.id)}]`, `name = ${q(provider.name)}`, `base_url = ${q(base)}`, `env_key = ${q(envKey)}`, `wire_api = "responses"`]
+    ...(block ? [`model_provider = ${q(block.id)}`] : []),
+    "",
+    "[shell_environment_policy]",
+    'inherit = "all"',
+    "ignore_default_excludes = false",
+    `exclude = [${excluded.map(q).join(", ")}]`,
+    ...(block
+      ? ["", `[model_providers.${q(block.id)}]`, `name = ${q(block.name)}`, `base_url = ${q(block.base)}`, `env_key = ${q(block.envKey)}`, `wire_api = "responses"`]
       : []),
     "",
   ].join("\n");
@@ -64,6 +94,12 @@ export function writeCodexConfig(configDir: string, provider: CatalogProvider | 
   const tmp = `${file}.${process.pid}.tmp`;
   writeFileSync(tmp, body, "utf8");
   renameSync(tmp, file);
+}
+
+function codexProviderBlock(provider: CatalogProvider, hasKey: boolean): { id: string; name: string; base: string; envKey: string } | null {
+  if (provider.id === "openai") return hasKey ? { id: CODEX_OPENAI_KEY_PROVIDER, name: `${provider.name} (API key)`, base: OPENAI_API_BASE, envKey: codexEnvKey(provider) } : null;
+  const base = baseUrlFor("codex", provider);
+  return base ? { id: provider.id, name: provider.name, base, envKey: codexEnvKey(provider) } : null;
 }
 
 /**
@@ -119,12 +155,15 @@ export function providersDirectory(svc: ProvidersService): ProfileDirectory {
     const profile = profileFor(svc, p);
     const support = provider ? runnerSupport(provider, p.runner) : "none";
     const keyReady = !credential || credential.kind === "local" || credential.isSet;
+    // The last key check lists what this key can call; a model it left out is never proposed (B14).
+    const listed = credential ? svc.discoveredModels(credential.id) : [];
+    const modelUsable = !p.defaultModel || listed.length === 0 || listed.includes(p.defaultModel);
     return {
       profile,
       model: provider?.models.find((m) => m.id === p.defaultModel) ?? null,
       capabilities: CAPABILITIES[p.runner],
       // A provider that needs API-format conversion needs a proxy we do not run; Claude never runs without a key.
-      ready: support !== "none" && support !== "conversion" && keyReady && signedIn(p) && !(p.runner === "claude-code" && !credential),
+      ready: support !== "none" && support !== "conversion" && keyReady && modelUsable && signedIn(p) && !(p.runner === "claude-code" && !credential),
       // Spend is recorded and capped per API key; local providers have no key to cap.
       credentialId: credential?.kind === "api_key" ? credential.id : null,
       catalogVersion: svc.catalog.current().hash,
@@ -139,7 +178,7 @@ export function providersDirectory(svc: ProvidersService): ProfileDirectory {
       const p = svc.listProfiles().find((x) => x.id === profileId);
       if (!p) throw new Error(`Unknown profile: ${profileId}`);
       const provider = providerOf(p.providerId);
-      if (p.runner === "codex") writeCodexConfig(p.configDir, provider, p.effort);
+      if (p.runner === "codex") writeCodexConfig(p.configDir, provider, p.effort, p.credentialId !== null);
       const presets = presetEnv(p, provider);
       const secret = p.credentialId ? await svc.secrets.get(p.credentialId) : null;
       if (!secret) return presets;

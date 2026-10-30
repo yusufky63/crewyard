@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { PROVIDERS_CHANGED, type IdleRefreshView, type LimitSample, type PlanQuotaView, type ProvidersIpc, type SignInKind } from "@crewyard/core";
 import { defaultProtector } from "../providers/dpapi.ts";
 import { IdleLimits } from "../providers/idle-limits.ts";
@@ -5,6 +6,7 @@ import { getIdleRefresh, getPlanQuotaRefresh, getThresholds, latestWindows, setI
 import { PLAN_QUOTA } from "../providers/plan-quota.ts";
 import { orchestratorFor, type Orchestrator } from "../orchestrator/index.ts";
 import { profileFor, providersDirectory } from "../providers/directory.ts";
+import { purgeRunnerLogs } from "../providers/runner-logs.ts";
 import { ProvidersService } from "../providers/service.ts";
 import { SignInService, type SignInDriver } from "../providers/signin.ts";
 import type { HandlerContext, HandlerMap } from "./types.ts";
@@ -49,6 +51,14 @@ export function createProvidersHandlers(ctx: HandlerContext, service?: Providers
   // The app's real profiles feed crew proposals and runs; tests that inject a service stay unwired.
   const orch = service ? null : orchestratorFor(ctx);
   orch?.setDirectory(providersDirectory(svc));
+  // Codex logs from before the key fix may hold a key in clear text; removed once per data folder.
+  if (!service) {
+    try {
+      purgeRunnerLogs(join(ctx.info.dataDir, "profiles"));
+    } catch {
+      // A folder we cannot list is tried again on the next start.
+    }
+  }
   const db = ctx.store.db;
   const changed = (what: string) => ctx.emit(PROVIDERS_CHANGED, { what });
   const busy = opts.busy ?? ((id: string) => (orch?.db.activeCounts().byProfile.get(id) ?? 0) > 0);

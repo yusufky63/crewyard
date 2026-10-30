@@ -195,12 +195,20 @@ describe("ACP adapter against a fake Gemini agent", () => {
     expect((await readLog(logFile)).find((l) => l.kind === "launch")).toMatchObject({ argv: ["--acp", "--model", "gemini-2.5-pro"] });
   });
 
-  it("turns Gemini's subagents off in the profile folder, keeping the profile's other settings", async () => {
+  it("turns Gemini's subagents off and its env redaction on in the profile folder, keeping the profile's other settings", async () => {
     const { adapter, req, configDir } = await setup("subagents", "hello");
     await mkdir(join(configDir, ".gemini"), { recursive: true });
-    writeFileSync(join(configDir, ".gemini", "settings.json"), '{\n  // chosen in the CLI\n  "ui": { "theme": "Dracula" },\n  "experimental": { "other": 1 }\n}\n');
+    writeFileSync(
+      join(configDir, ".gemini", "settings.json"),
+      '{\n  // chosen in the CLI\n  "ui": { "theme": "Dracula" },\n  "experimental": { "other": 1 },\n  "security": { "environmentVariableRedaction": { "enabled": false, "allowed": ["GEMINI_API_KEY", "MY_VAR"] } }\n}\n',
+    );
     await collect(adapter, await adapter.start(req));
-    expect(JSON.parse(await readFile(join(configDir, ".gemini", "settings.json"), "utf8"))).toEqual({ ui: { theme: "Dracula" }, experimental: { other: 1, enableAgents: false } });
+    expect(JSON.parse(await readFile(join(configDir, ".gemini", "settings.json"), "utf8"))).toEqual({
+      ui: { theme: "Dracula" },
+      experimental: { other: 1, enableAgents: false },
+      // A key name the user allowed is taken back out: the agent's commands must not see the key.
+      security: { environmentVariableRedaction: { enabled: true, allowed: ["MY_VAR"], blocked: ["GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY"] } },
+    });
     expect(await readFile(join(configDir, ".gemini", "policies", "crewyard.toml"), "utf8")).toBe(GEMINI_POLICY);
     expect(GEMINI_POLICY).toMatch(/toolName = "codebase_investigator"\ndecision = "deny"/);
   });

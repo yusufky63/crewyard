@@ -8,6 +8,10 @@ import { appliedMigrationIds } from "../store.ts";
 // reads one consistent view through the WAL, so they are safe while agents write. A restore never
 // replaces the open database: the checked file is staged next to it and swapped in by the next
 // daemon start, before the store opens (applyStagedRestore, called from entry.ts).
+//
+// Backups and exports hold that database and nothing else. Profile folders (<dataDir>/profiles)
+// belong to the runners and are never copied: codex keeps a TRACE log there (logs_2.sqlite) that
+// older versions filled with the key (providers/runner-logs.ts), and sign-in tokens live there too.
 
 export const STAGED_RESTORE = "restore-pending.db";
 const BACKUP_FILE = /^crewyard-(manual|safety)-\d{8}-\d{6}(-\d+)?\.db$/;

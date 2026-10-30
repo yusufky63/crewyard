@@ -54,6 +54,17 @@ async function runTurn() {
       completed("completed");
       return;
     }
+    case "reviewer-tests": {
+      started();
+      // codex sends the whole argv shell-quoted; on Windows the script sits inside PowerShell.
+      const ps = String.raw`'C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.exe' -Command`;
+      const tests = await ask("item/commandExecution/requestApproval", { threadId: "thr-1", turnId: "turn-1", itemId: "cmd-1", startedAtMs: 1, environmentId: null, command: `${ps} 'npm test'`, cwd: "C:\\work\\my repo", commandActions: [{ type: "unknown", command: "npm test" }] });
+      log({ answered: "command", response: tests });
+      const chained = await ask("item/commandExecution/requestApproval", { threadId: "thr-1", turnId: "turn-1", itemId: "cmd-2", startedAtMs: 1, environmentId: null, command: `${ps} 'npm test; git push'`, cwd: "C:\\work\\my repo", commandActions: [{ type: "unknown", command: "npm test; git push" }] });
+      log({ answered: "command", response: chained });
+      completed("completed");
+      return;
+    }
     case "question": {
       started();
       const res = await ask("item/tool/requestUserInput", { threadId: "thr-1", turnId: "turn-1", itemId: "q-1", isBlocking: true, autoResolutionMs: null, questions: [

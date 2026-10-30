@@ -26,7 +26,7 @@ import { createOpencodeClient, type Event as OpenCodeEvent, type Message, type O
 import { OpenCodeMapper, type EventBody } from "./mapper.ts";
 import { mustReject, permissionRules } from "./policy.ts";
 import { EventQueue } from "./queue.ts";
-import { basicAuth, childEnv, launchServer, type OpenCodeServer } from "./server.ts";
+import { basicAuth, childEnv, launchServer, providerConfigEnv, type OpenCodeServer } from "./server.ts";
 
 /** The CLI version this adapter was checked against; others are flagged until the suite passes. */
 export const TESTED_VERSION = "1.19.5";
@@ -98,10 +98,20 @@ interface Run {
   sse: AbortController;
 }
 
-export function parseModel(model: string): ModelRef {
-  const slash = model.indexOf("/");
-  if (slash <= 0 || slash === model.length - 1) throw new Error(`OpenCode model ids look like "provider/model", got "${model}"`);
-  return { providerID: model.slice(0, slash), modelID: model.slice(slash + 1) };
+/**
+ * Profiles keep the catalog's model id, which is models.dev's (PLAN.md D9), and the catalog's
+ * provider id, which is the models.dev provider OpenCode also loads. OpenCode wants the two apart
+ * (`{ providerID, modelID }`), so the pair is formed here, at the edge. Model ids may contain
+ * slashes of their own (`x-ai/grok-4.3` on OpenRouter), so the id is never split.
+ */
+export function openCodeModel(providerId: string, model: string): ModelRef {
+  if (!providerId || !model.trim()) throw new Error(`OpenCode needs a provider and a model, got "${providerId}" and "${model}"`);
+  return { providerID: providerId, modelID: model };
+}
+
+/** The profile's inline provider block, for providers OpenCode does not ship (Profile.baseUrl set). */
+function providerEnv(req: { profile: Profile; model?: string | null }): Record<string, string> {
+  return providerConfigEnv(req.profile.providerId, req.profile.baseUrl, [req.model ?? null, req.profile.defaultModel]);
 }
 
 export class OpenCodeAdapter implements AgentAdapter {
@@ -215,7 +225,8 @@ export class OpenCodeAdapter implements AgentAdapter {
 
   /** OpenCode takes the model per prompt, so the switch applies from the next turn on. */
   async setModel(handle: RunHandle, model: string): Promise<void> {
-    this.live(handle).model = parseModel(model);
+    const run = this.live(handle);
+    run.model = openCodeModel(run.req.profile.providerId, model);
   }
 
   /**
@@ -227,7 +238,7 @@ export class OpenCodeAdapter implements AgentAdapter {
     if (!req.turnRef) return { files: false, history: false, detail: "OpenCode gave this turn no message id." };
     const executable = await this.executable();
     if (!executable) throw new Error("opencode was not found on PATH");
-    const server = await launchServer({ executable, prefixArgs: this.opts.prefixArgs, cwd: req.cwd, configDir: req.profile.configDir, env: req.env, readyTimeoutMs: this.opts.readyTimeoutMs });
+    const server = await launchServer({ executable, prefixArgs: this.opts.prefixArgs, cwd: req.cwd, configDir: req.profile.configDir, env: req.env, extraEnv: providerEnv(req), readyTimeoutMs: this.opts.readyTimeoutMs });
     try {
       const client = createOpencodeClient({ baseUrl: server.url, directory: req.cwd, headers: { Authorization: basicAuth(server.password) }, throwOnError: true });
       await client.session.revert({ sessionID: req.session.sessionId, messageID: req.turnRef });
@@ -241,7 +252,7 @@ export class OpenCodeAdapter implements AgentAdapter {
   async transcript(req: TranscriptRequest): Promise<TranscriptSource | null> {
     const executable = await this.executable();
     if (!executable) return null;
-    const res = await runCommand(executable, [...this.opts.prefixArgs, "export", req.session.sessionId], { cwd: req.cwd, timeoutMs: 60_000, env: childEnv(req.profile.configDir, req.env, newPassword()) });
+    const res = await runCommand(executable, [...this.opts.prefixArgs, "export", req.session.sessionId], { cwd: req.cwd, timeoutMs: 60_000, env: childEnv(req.profile.configDir, req.env, newPassword(), process.env, providerEnv(req)) });
     const text = res.stdout.trim();
     if (res.code !== 0 || !text.startsWith("{")) return null;
     return { kind: "text", text, ext: "json" };
@@ -272,7 +283,7 @@ export class OpenCodeAdapter implements AgentAdapter {
     if (this.version === null) this.version = parseVersion((await runCommand(executable, [...this.opts.prefixArgs, "--version"], { timeoutMs: 15_000 })).stdout);
     const unsupported = unsupportedVersion(this.version);
     if (unsupported) throw new Error(unsupported);
-    const server = await launchServer({ executable, prefixArgs: this.opts.prefixArgs, cwd: req.cwd, configDir: req.profile.configDir, env: req.env, readyTimeoutMs: this.opts.readyTimeoutMs });
+    const server = await launchServer({ executable, prefixArgs: this.opts.prefixArgs, cwd: req.cwd, configDir: req.profile.configDir, env: req.env, extraEnv: providerEnv(req), readyTimeoutMs: this.opts.readyTimeoutMs });
     const client = createOpencodeClient({ baseUrl: server.url, directory: req.cwd, headers: { Authorization: basicAuth(server.password) }, throwOnError: true });
     const runId = `opencode-${randomUUID()}`;
     const model = req.model ?? req.profile.defaultModel;
@@ -286,7 +297,7 @@ export class OpenCodeAdapter implements AgentAdapter {
       cliVersion: this.version,
       seq: 0,
       state: null,
-      model: model ? parseModel(model) : null,
+      model: model ? openCodeModel(req.profile.providerId, model) : null,
       awaiting: false,
       sawBusy: false,
       promptAt: 0,

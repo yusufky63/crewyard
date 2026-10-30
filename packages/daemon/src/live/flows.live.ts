@@ -179,7 +179,7 @@ describe.runIf(live)("crewyard live", () => {
       ["cx-dsp", { alias: "codex-deepseek-pro", runner: "codex", providerId: "deepseek", credentialId: credentials.DEEPSEEK_API_KEY ?? null, defaultModel: "deepseek-v4-pro" }],
       ["oc-ds", { alias: "opencode-deepseek", runner: "opencode", providerId: "deepseek", credentialId: credentials.DEEPSEEK_API_KEY ?? null, defaultModel: "deepseek-flash" }],
       ["oc-gm", { alias: "opencode-gemini", runner: "opencode", providerId: "google", credentialId: credentials.GEMINI_API_KEY ?? null, defaultModel: gemini }],
-      // OpenCode wants "provider/model"; these show what happens when a user types that instead.
+      // A user may type OpenCode's own "provider/model"; the app stores the catalog id instead.
       ["ocp-ds", { alias: "opencode-deepseek-prefixed", runner: "opencode", providerId: "deepseek", credentialId: credentials.DEEPSEEK_API_KEY ?? null, defaultModel: "deepseek/deepseek-flash" }],
       ["ocp-gm", { alias: "opencode-gemini-prefixed", runner: "opencode", providerId: "google", credentialId: credentials.GEMINI_API_KEY ?? null, defaultModel: `google/${gemini}` }],
       ["gm", { alias: "gemini-cli", runner: "gemini-cli", providerId: "google", credentialId: credentials.GEMINI_API_KEY ?? null, defaultModel: gemini }],
@@ -416,6 +416,8 @@ describe.runIf(live)("crewyard live", () => {
     ["gm", "gemini-cli", "research on Gemini CLI"],
     ["oc-gm", "opencode/google", "research on OpenCode + Gemini (catalog model id)"],
     ["ocp-gm", "opencode/google", "research on OpenCode + Gemini (provider/model id)"],
+    ["oc-ds", "opencode/deepseek", "research on OpenCode + DeepSeek (catalog model id)"],
+    ["ocp-ds", "opencode/deepseek", "research on OpenCode + DeepSeek (provider/model id)"],
     ["cx-ds", "codex/deepseek", "research on Codex + DeepSeek"],
     ["cx-oa", "codex/openai", "research on Codex + OpenAI"],
   ];
@@ -446,16 +448,18 @@ describe.runIf(live)("crewyard live", () => {
   }
 
   // Whether the agent's own shell commands can read a key. The probe prints only true/false per
-  // variable name, never a value.
+  // variable name, never a value; an empty variable counts as unreadable (OpenCode's guard blanks).
   it("key exposure to agent shell commands", { timeout: 25 * MIN }, async () => {
     if (!want("keyenv") || (await overBudget("keyenv"))) return;
-    const names = ["ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY", "DEEPSEEK_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY"];
-    const probe = `node -e "console.log('KEYENV ' + ${JSON.stringify(names).replace(/"/g, "'")}.map((k) => k + '=' + (k in process.env)).join(' '))"`;
-    for (const [impl, rev] of [
-      // Reviewers on another model than the implementer, so the independence rule keeps the pin.
-      ["cx-ds", "cx-dsp"],
-      ["cc-ds", "cx-dsp"],
-    ] as const) {
+    const names = ["ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY", "DEEPSEEK_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "OPENCODE_SERVER_PASSWORD"];
+    const probe = `node -e "console.log('KEYENV ' + ${JSON.stringify(names).replace(/"/g, "'")}.map((k) => k + '=' + Boolean(process.env[k])).join(' '))"`;
+    const pairs = (process.env.CREWYARD_LIVE_KEYENV ?? "cx-ds:cx-dsp,cc-ds:cx-dsp,oc-ds:cx-dsp,cx-oa:cx-dsp").split(",").map((p) => p.split(":") as [string, string]);
+    // Reviewers on another model than the implementer, so the independence rule keeps the pin.
+    for (const [impl, rev] of pairs) {
+      if (!profiles[impl] || !profiles[rev]) {
+        d.row({ flow: `key visible to agent shell (${impl})`, runner: impl, result: "skipped", costUsd: null, notes: "profile not created" });
+        continue;
+      }
       const t = await d.call("tasks.propose", {
         projectId,
         title: `Record the environment check (${impl})`,

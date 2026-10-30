@@ -257,3 +257,22 @@ describe("IdleLimits with buckets", () => {
     expect(ingested.map((s) => s.bucket ?? null)).toEqual(["mcp"]);
   });
 });
+
+describe("IdleLimits at shutdown", () => {
+  it("drops a pass that fails because the store already closed, instead of rejecting from its timer", async () => {
+    const idle = new IdleLimits({
+      enabled: () => {
+        throw new Error("database is not open");
+      },
+      candidates: () => [],
+      inUse: () => new Set(),
+      reporting: () => false,
+      held: () => false,
+      latest: () => [],
+      fetch: async () => [],
+      ingest: () => undefined,
+      changed: () => undefined,
+    });
+    await expect(idle.tick()).resolves.toBeUndefined();
+  });
+});

@@ -3,7 +3,8 @@ import type { CatalogProvider, KeyCheckReason, KeyState, LatencyClass } from "@c
 // Key check, model discovery and a reachability check (feature scan A6). Facts only from
 // elsewhere: the model-list URLs and headers each provider documents, and the candidate order
 // cc-switch tries for Anthropic-compatible bases (src-tauri/src/services/model_fetch.rs, opened
-// 2026-10-30). Every request is a GET of a model list, which no provider bills.
+// 2026-10-30). Every request is a GET of a model list, which no provider bills, apart from Gemini's
+// countTokens (refusedModels), which answered with a key whose prepaid credit was used up.
 
 export type ModelsAuth = "bearer" | "x-api-key" | "google" | "none";
 
@@ -148,6 +149,43 @@ export async function checkKey(targets: ModelsTarget[], key: string | null, fetc
     return open ? { state: "unknown", reason: "public_list", status: res.status, endpoint: t.url, models: ids } : { state: "valid", reason: null, status: res.status, endpoint: t.url, models: ids };
   }
   return last;
+}
+
+/**
+ * Models a key lists but cannot call. Gemini's list still names models it refuses to new API users
+ * (gemini-2.5-flash-lite answered generateContent and countTokens with 404 NOT_FOUND "no longer
+ * available to new users", 2026-10-30). countTokens runs no model and answered 200 on a key with no
+ * credit left while generateContent answered 402, so one countTokens per catalog model the key
+ * lists tells the two apart for free. Only a 404 counts; anything else keeps the model.
+ */
+export async function refusedModels(
+  provider: Pick<CatalogProvider, "id">,
+  key: string | null,
+  candidates: readonly string[],
+  fetchFn: typeof fetch = fetch,
+  timeoutMs = CHECK_TIMEOUT_MS,
+): Promise<string[]> {
+  if (provider.id !== "google" || !key) return [];
+  const refused: string[] = [];
+  const queue = [...new Set(candidates)];
+  const worker = async () => {
+    for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(id)}:countTokens`;
+      const status = await fetchFn(url, {
+        method: "POST",
+        headers: { ...authHeaders("google", key), "Content-Type": "application/json" },
+        body: JSON.stringify({ contents: [{ parts: [{ text: "ping" }] }] }),
+        signal: AbortSignal.timeout(timeoutMs),
+      }).then(
+        (r) => r.status,
+        () => null,
+      );
+      if (status === 404) refused.push(id);
+    }
+  };
+  // A few at a time: the catalog lists a few dozen Gemini models.
+  await Promise.all(Array.from({ length: 4 }, worker));
+  return refused.sort();
 }
 
 /** Above this a provider is "slow" (feature scan A6); the timeout is cc-switch's speed test default. */

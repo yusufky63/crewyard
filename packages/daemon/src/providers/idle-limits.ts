@@ -97,9 +97,15 @@ export class IdleLimits {
     this.timer = null;
   }
 
-  /** One pass; overlapping calls share the pass in flight. */
+  /**
+   * One pass; overlapping calls share the pass in flight. A pass that throws (the store already
+   * closed while the daemon shuts down) is dropped: it runs from a timer, where a rejection would
+   * be unhandled, and the next tick tries again.
+   */
   tick(): Promise<void> {
-    this.running ??= this.pass().finally(() => (this.running = null));
+    this.running ??= this.pass()
+      .catch(() => undefined)
+      .finally(() => (this.running = null));
     return this.running;
   }
 

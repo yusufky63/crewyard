@@ -24,6 +24,7 @@ import type {
 } from "@crewyard/core";
 import { exitCodeWithin, isShutdownExit, resolveBin } from "@crewyard/proc";
 import { AppServer, withAppServer, type Launcher } from "./appserver.ts";
+import { innerCommand, isAllowedCommand } from "./commands.ts";
 import {
   commandApproval,
   commandDecision,
@@ -135,6 +136,8 @@ interface Run {
   model: string | null;
   effort: string | null;
   readOnly: boolean;
+  /** The role's allowed commands (the project's test and build), run without asking even when read-only. */
+  allowCommands: string[];
   networkDenied: boolean;
   outputSchema: OutputSchema | null;
   /** StartRequest.nextTurn: the step's queued follow-ups at each turn boundary. */
@@ -333,6 +336,7 @@ export class CodexAdapter implements AgentAdapter {
       model: req.model ?? req.profile.defaultModel,
       effort: (req as CodexStartRequest).effort ?? null,
       readOnly: req.policy.writes === "none",
+      allowCommands: req.policy.allowCommands,
       networkDenied: req.policy.network === "denied",
       outputSchema: req.outputSchema ?? null,
       nextTurn: req.nextTurn ?? null,
@@ -389,7 +393,7 @@ export class CodexAdapter implements AgentAdapter {
     const model = req.model ?? req.profile.defaultModel;
     if (model) params.model = model;
     // Subagents stay off per thread too (see DEFAULT_ARGS); a profile's config.toml cannot turn them back on.
-    params.config = { "agents.enabled": false };
+    params.config = { "agents.enabled": false, ...shellEnvPolicy(req.env) };
     if (!readOnly && req.policy.network === "allowed") params.config.sandbox_workspace_write = { network_access: true };
     return params;
   }
@@ -470,8 +474,14 @@ export class CodexAdapter implements AgentAdapter {
     switch (method) {
       case "item/commandExecution/requestApproval": {
         const p = params as CommandExecutionRequestApprovalParams;
-        // In the read-only sandbox every escalation is a request to write or reach out; reviewers never get one.
-        if (run.readOnly) return this.declined(run, "command declined: read-only role", { decision: "decline" });
+        // In the read-only sandbox every escalation is a request to write or reach out. The role's
+        // own commands (the project's test and build) are the exception the reviewer contract names.
+        if (run.readOnly) {
+          // The command is named so the run's trace says what was let through or refused.
+          const what = (innerCommand(p.command ?? "") ?? p.command ?? "").slice(0, 200);
+          if (!p.networkApprovalContext && isAllowedCommand(p.command, run.allowCommands)) return this.declined(run, `command allowed: project test or build command: ${what}`, { decision: "accept" });
+          return this.declined(run, `command declined: read-only role: ${what}`, { decision: "decline" });
+        }
         if (run.networkDenied && p.networkApprovalContext) return this.declined(run, "network declined by role policy", { decision: "decline" });
         const answer = await this.ask(run, requestId, "approval", commandApproval(requestId, p));
         return { decision: commandDecision(answer) };
@@ -503,7 +513,7 @@ export class CodexAdapter implements AgentAdapter {
     }
   }
 
-  /** Answers a request without asking anyone, and leaves a trace in the run's events. */
+  /** Answers a request without asking anyone (declined, or allowed by role), and leaves a trace in the run's events. */
   private declined<T>(run: Run, detail: string, response: T): T {
     this.emit(run, { type: "run.state", state: "running", detail });
     return response;
@@ -563,6 +573,17 @@ function findNewestFirst(dir: string, match: (name: string) => boolean, depth: n
     if (found) return found;
   }
   return null;
+}
+
+/**
+ * Per-thread copy of the shell_environment_policy the daemon writes into config.toml: codex 0.147
+ * passes the app-server's whole environment, key included, to the agent's commands unless
+ * `ignore_default_excludes` is false (it then drops *KEY*, *SECRET*, *TOKEN*). `exclude` names
+ * the run's key variables too, in case a provider's key name matches none of those.
+ */
+export function shellEnvPolicy(secrets: Record<string, string>): Record<string, unknown> {
+  const names = [...new Set([...Object.keys(secrets), "OPENAI_API_KEY", "CODEX_API_KEY"])].sort();
+  return { "shell_environment_policy.ignore_default_excludes": false, "shell_environment_policy.exclude": names };
 }
 
 function textInput(text: string): CodexUserInput {
