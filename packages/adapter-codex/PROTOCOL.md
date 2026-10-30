@@ -60,7 +60,7 @@ The 0.166 repository schema leaves out experimental methods. A method missing fr
 | `item/completed` of the same | `tool.update` (output tail: 8,000 chars) |
 | `turn/plan/updated` | `plan.update` |
 | `turn/diff/updated` | `diff.update` (per-file +/- counts) |
-| `thread/tokenUsage/updated` | `usage.update`. `tokensIn` excludes cached tokens. Context used is the last request's total. Cost is Unknown. |
+| `thread/tokenUsage/updated` | `usage.update`. `tokensIn` excludes cached tokens. Context used is the last request's total. Cost is Unknown. Never sent for a `review/start` subagent: the adapter adds that subagent's totals from its rollout (`review-usage.ts`), so the run's totals include the review and never drop on resume. |
 | `account/rateLimits/updated` | `limit.update`, Reported. Only windows present in the update. Default bucket only. |
 | `error` with `willRetry` | `run.state` (`rate_limited` for usage or overload) |
 | `item/commandExecution/requestApproval`, `item/fileChange/requestApproval`, `item/permissions/requestApproval` | `request.approval` + `run.state: waiting_approval` |

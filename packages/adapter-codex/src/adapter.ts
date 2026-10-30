@@ -43,9 +43,11 @@ import {
   permissionsWrite,
   questionRequest,
   unknownSamples,
+  usageEvent,
   userInputResponse,
   type EventBody,
 } from "./mapping.ts";
+import { NO_USAGE, ReviewUsage, sameUsage, threadCreatedAt } from "./review-usage.ts";
 import type {
   CommandExecutionRequestApprovalParams,
   FileChangeRequestApprovalParams,
@@ -162,6 +164,15 @@ interface Run {
   review: ReviewTarget | null;
   /** The verdict turn after the review has been started. */
   reviewMapped: boolean;
+  /** The profile's CODEX_HOME, where codex writes the rollouts review-usage.ts reads. */
+  codexHome: string;
+  /** What codex's own review spends, read from its subagent's rollout while the review runs. */
+  reviewUsage: ReviewUsage | null;
+  reviewTimer: ReturnType<typeof setInterval> | null;
+  /** The read in flight; the end of the review waits for it and for one more. */
+  reviewRead: Promise<void> | null;
+  /** The review's last spend has been read; the review turn's end is held until then. */
+  reviewCounted: boolean;
   /** The StartRequest prompt, context for the verdict turn. */
   context: string;
   /** StartRequest.nextTurn: the step's queued follow-ups at each turn boundary. */
@@ -250,6 +261,9 @@ export class CodexAdapter implements AgentAdapter {
         throw goneOr(err);
       });
       this.attachThread(run, res.thread.id);
+      // codex restores the thread's own totals; a review it ran earlier is added back, or the
+      // totals would drop and the daemon would count the thread again as a restarted session.
+      run.mapper.subagentUsage = await new ReviewUsage(run.codexHome, run.threadId, threadCreatedAt(run.threadId)).total().catch(() => NO_USAGE);
       if (req.prompt.trim()) await this.startTurn(run, req.prompt);
       return run.handle;
     } catch (err) {
@@ -425,6 +439,11 @@ export class CodexAdapter implements AgentAdapter {
       outputSchema: req.outputSchema ?? null,
       review: req.review?.target ?? null,
       reviewMapped: false,
+      codexHome: req.profile.configDir,
+      reviewUsage: null,
+      reviewTimer: null,
+      reviewRead: null,
+      reviewCounted: false,
       context: req.prompt,
       nextTurn: req.nextTurn ?? null,
       pulling: false,
@@ -465,6 +484,7 @@ export class CodexAdapter implements AgentAdapter {
 
   private async abandon(run: Run): Promise<void> {
     run.stopping = true;
+    this.stopReviewReads(run);
     await run.server.kill();
     this.runs.delete(run.handle.runId);
   }
@@ -499,8 +519,34 @@ export class CodexAdapter implements AgentAdapter {
   /** codex's own review (feature scan A12), inline on the run's thread so the verdict turn can see it. */
   private async startReview(run: Run, target: ReviewTarget): Promise<void> {
     const params: ReviewStartParams = { threadId: run.threadId, target: codexTarget(target), delivery: "inline" };
+    run.reviewUsage = new ReviewUsage(run.codexHome, run.threadId, new Date());
     const res = await run.server.rpc.request<ReviewStartResponse>("review/start", params, { timeoutMs: 60_000 });
     run.mapper.turnId ??= res.turn.id;
+    // Read as it goes, so a spend cap can stop a long review instead of hearing of it at the end.
+    run.reviewTimer = setInterval(() => void this.readReviewUsage(run), REVIEW_READ_MS);
+  }
+
+  /** Reports what the review subagent has spent so far as part of the thread's totals. */
+  private readReviewUsage(run: Run): Promise<void> {
+    const reader = run.reviewUsage;
+    if (!reader) return Promise.resolve();
+    run.reviewRead ??= reader
+      .total()
+      .then((total) => {
+        if (run.ended || sameUsage(total, run.mapper.subagentUsage)) return;
+        run.mapper.subagentUsage = total;
+        this.emit(run, usageEvent(run.mapper.lastUsage, total));
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        run.reviewRead = null;
+      });
+    return run.reviewRead;
+  }
+
+  private stopReviewReads(run: Run): void {
+    if (run.reviewTimer) clearInterval(run.reviewTimer);
+    run.reviewTimer = null;
   }
 
   private onNotification(run: Run, method: string, params: unknown): void {
@@ -516,8 +562,26 @@ export class CodexAdapter implements AgentAdapter {
       return;
     }
     for (const body of run.mapper.map(method, params)) this.emit(run, body);
+    this.afterTurn(run);
+  }
+
+  private afterTurn(run: Run): void {
     const end = run.mapper.ended;
     if (!end || run.pulling) return;
+    // codex's review ended: its subagent may have written its last token_count after our last read.
+    if (run.reviewUsage && !run.reviewCounted) {
+      run.reviewCounted = true;
+      run.pulling = true;
+      this.stopReviewReads(run);
+      void Promise.resolve(run.reviewRead)
+        .then(() => this.readReviewUsage(run))
+        .then(() => {
+          run.pulling = false;
+          // Stopped while the last read ran: the run already ended, there is no verdict to ask for.
+          if (!run.ended) this.afterTurn(run);
+        });
+      return;
+    }
     // The review turn ended: one more turn in the same thread maps it to the run's verdict schema.
     if (end.reason === "completed" && run.review && !run.reviewMapped && run.outputSchema && !run.stopping && !run.ended) {
       run.reviewMapped = true;
@@ -654,6 +718,7 @@ export class CodexAdapter implements AgentAdapter {
 
   private finish(run: Run, reason: EndReason, detail?: string, output?: RunOutput): void {
     if (run.ended) return;
+    this.stopReviewReads(run);
     this.emit(run, { type: "run.ended", reason, ...(detail ? { detail } : {}), ...(output ? { output } : {}) });
     run.ended = true;
     for (const w of run.waiting.values()) w.resolve({ kind: "cancel" });
@@ -697,6 +762,9 @@ export function shellEnvPolicy(secrets: Record<string, string>): Record<string, 
 
 /** How long a fork waits for codex to finish compacting before it hands over the uncompacted fork. */
 const FORK_COMPACT_MS = 5 * 60_000;
+
+/** How often a running review's spend is read from its rollout (a few small file reads each). */
+const REVIEW_READ_MS = 3_000;
 
 function codexTarget(t: ReviewTarget): ReviewStartParams["target"] {
   return t.kind === "base_branch" ? { type: "baseBranch", branch: t.branch } : { type: "commit", sha: t.sha, title: t.title };

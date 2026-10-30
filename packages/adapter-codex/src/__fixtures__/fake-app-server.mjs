@@ -2,7 +2,7 @@
 // JSON-RPC, reads its scenario from $CODEX_HOME/fake.json and appends every message it receives
 // to $CODEX_HOME/fake-log.jsonl so tests can check what the adapter sent.
 
-import { appendFileSync, readFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 
@@ -36,6 +36,22 @@ const started = () => notify("turn/started", { threadId: "thr-1", turn: turn("in
 const completed = (status, error = null) => notify("turn/completed", { threadId: "thr-1", turn: turn(status, error) });
 const tick = () => new Promise((r) => setTimeout(r, 5));
 let turns = 0;
+
+const usage = (input, output) => ({ totalTokens: input + output, inputTokens: input, cachedInputTokens: 0, cacheWriteInputTokens: 0, outputTokens: output, reasoningOutputTokens: 0 });
+const pad = (n) => String(n).padStart(2, "0");
+/** A review subagent's rollout, named and laid out as codex 0.147.0 writes it (local time in the name). */
+function reviewRollout() {
+  const d = new Date();
+  const dir = join(home, "sessions", String(d.getFullYear()), pad(d.getMonth() + 1), pad(d.getDate()));
+  mkdirSync(dir, { recursive: true });
+  const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
+  const file = join(dir, `rollout-${stamp}-thr-review.jsonl`);
+  const meta = { session_id: "thr-1", id: "thr-review", parent_thread_id: "thr-1", timestamp: d.toISOString(), cwd: home, originator: "crewyard", cli_version: "0.147.0", source: { subagent: "review" }, base_instructions: { text: "x".repeat(6000) } };
+  writeFileSync(file, `${JSON.stringify({ timestamp: d.toISOString(), type: "session_meta", payload: meta })}\n`);
+  return file;
+}
+const tokenCount = (s) =>
+  `${JSON.stringify({ type: "event_msg", payload: { type: "token_count", info: { total_token_usage: { input_tokens: s.input, cached_input_tokens: s.cached, cache_write_input_tokens: 0, output_tokens: s.output, reasoning_output_tokens: s.reasoning, total_tokens: s.input + s.output } } } })}\n`;
 
 async function runTurn() {
   await tick();
@@ -122,9 +138,18 @@ async function runTurn() {
       started();
       if (turns === 1) {
         notify("item/completed", { threadId: "thr-1", turnId: "turn-1", completedAtMs: 1, item: { type: "enteredReviewMode", id: "rv-in", review: "current changes" } });
+        // As codex 0.147.0: the review subagent's spend goes only to its rollout, the last
+        // token_count landing just before the review ends.
+        if (config.reviewSpend) {
+          const file = reviewRollout();
+          appendFileSync(file, tokenCount({ ...config.reviewSpend, input: Math.round(config.reviewSpend.input / 2) }));
+          await tick();
+          appendFileSync(file, tokenCount(config.reviewSpend));
+        }
         notify("item/completed", { threadId: "thr-1", turnId: "turn-1", completedAtMs: 1, item: { type: "exitedReviewMode", id: "rv-out", review: config.reviewText ?? "" } });
       } else {
         const text = (config.answers ?? [])[turns - 2] ?? "";
+        if (config.reviewSpend) notify("thread/tokenUsage/updated", { threadId: "thr-1", turnId: "turn-1", tokenUsage: { total: usage(1000, 50), last: usage(1000, 50), modelContextWindow: 258_400 } });
         notify("item/completed", { threadId: "thr-1", turnId: "turn-1", completedAtMs: 1, item: { type: "agentMessage", id: `msg-${turns}`, text, phase: null, memoryCitation: null } });
       }
       completed("completed");
@@ -179,7 +204,6 @@ const handlers = {
     return { thread: { id: "thr-fork" } };
   },
   "thread/compact/start": (params) => {
-    const usage = (input, output) => ({ totalTokens: input + output, inputTokens: input, cachedInputTokens: 0, cacheWriteInputTokens: 0, outputTokens: output, reasoningOutputTokens: 0 });
     notify("thread/tokenUsage/updated", { threadId: params.threadId, turnId: "turn-c", tokenUsage: { total: usage(1000, 0), last: usage(1000, 0), modelContextWindow: null } });
     setTimeout(() => {
       notify("thread/tokenUsage/updated", { threadId: params.threadId, turnId: "turn-c", tokenUsage: { total: usage(1600, 120), last: usage(600, 120), modelContextWindow: null } });

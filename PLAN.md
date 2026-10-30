@@ -314,7 +314,7 @@ A run cannot create other runs. If an agent asks for more work, the request beco
 - **Run until green:** before an implementer of a code task finishes, the daemon runs the project's test command in its worktree; a failure goes back to the same session as the next turn.
 - **Review loop:** a reviewer's `changes` verdict returns its comments to the same implementer session (native resume), then Test and Review run again.
 - **Stop rules:** at most `loop.maxIterations` fix attempts per step (default 3), the spend caps, and stop when the worktree did not change since the last failing try. A stopped loop leaves the step failed and waiting for you.
-- **Pinned review:** reviewers read a detached checkout of the exact head; the verdict is stored with that sha, and the merge gate passes only a pass verdict for the PR head. Codex reviewers use its own `review/start`.
+- **Pinned review:** reviewers read a detached checkout of the exact head; the verdict is stored with that sha, and the merge gate passes only a pass verdict for the PR head. Codex reviewers use its own `review/start`; codex does not report that review's token usage, so the adapter reads it from the review subagent's rollout and adds it to the run's totals, while the review runs, so spend caps see it.
 - **Records:** every decision is recorded with its reason and shown in the timeline and the crew graph.
 
 ### 9.3 Crew reports and MCP servers (ADR 0007)

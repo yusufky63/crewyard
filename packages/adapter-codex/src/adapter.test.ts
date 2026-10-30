@@ -279,6 +279,23 @@ describe("CodexAdapter against a fake app-server", () => {
     expect(sentBy(log, "turn/start")[0]).toMatchObject({ threadId: "thr-old", input: [{ text: "Continue" }] });
   });
 
+  it("keeps an earlier native review's spend in a resumed thread's totals, so they never drop", async () => {
+    const dir = home({ scenario: "basic" });
+    // The review subagent codex ran on thr-old before, as its rollout records it.
+    const at = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const day = join(dir, "sessions", String(at.getFullYear()), pad(at.getMonth() + 1), pad(at.getDate()));
+    mkdirSync(day, { recursive: true });
+    const name = `rollout-${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}T${pad(at.getHours())}-${pad(at.getMinutes())}-${pad(at.getSeconds())}-rv-1.jsonl`;
+    const meta = { type: "session_meta", payload: { id: "rv-1", parent_thread_id: "thr-old", source: { subagent: "review" } } };
+    const count = { type: "event_msg", payload: { type: "token_count", info: { total_token_usage: { input_tokens: 50_000, cached_input_tokens: 40_000, cache_write_input_tokens: 0, output_tokens: 2_000, reasoning_output_tokens: 500, total_tokens: 52_000 } } } };
+    writeFileSync(join(day, name), `${JSON.stringify(meta)}\n${JSON.stringify(count)}\n`);
+    const adapter = new CodexAdapter(launcher);
+    const events = await collect(adapter, await adapter.resume({ runner: "codex", sessionId: "thr-old" }, request(dir, { prompt: "Continue" })));
+    // The turn's own 4,000 / 3,000 / 8,000 / 1,200 plus the review's 10,000 / 2,000 / 40,000 / 500.
+    expect(events.find((e) => e.type === "usage.update")).toMatchObject({ tokensIn: 14_000, tokensOut: 5_000, cacheRead: 48_000, reasoning: 1_700 });
+  });
+
   it("refuses to resume another runner's session", async () => {
     await expect(new CodexAdapter(launcher).resume({ runner: "opencode", sessionId: "x" }, request(home()))).rejects.toThrow(/opencode/);
   });
@@ -400,6 +417,20 @@ describe("native review and fork", () => {
     expect(JSON.stringify(turns[0]?.input)).toContain("Off by one in src/a.ts:3");
     expect(events.some((e) => e.type === "message.delta" && e.text.includes("[P1]"))).toBe(true);
     expect(ended(events)).toMatchObject({ reason: "completed", output: { ok: true, value: verdict } });
+  });
+
+  it("counts what codex's review subagent spent, which codex itself never reports", async () => {
+    const reviewSpend = { input: 50_000, cached: 40_000, output: 2_000, reasoning: 500 };
+    const dir = home({ scenario: "review", reviewText: "Looks right.", answers: [JSON.stringify({ ...verdict, verdict: "pass", comments: [] })], reviewSpend });
+    const adapter = new CodexAdapter(launcher);
+    const events = await collect(adapter, await adapter.start(request(dir, { policy: reviewer, outputSchema: REVIEW_VERDICT_OUTPUT, review: { target: { kind: "base_branch", branch: "main" } } })));
+    const usage = events.filter((e): e is Extract<AgentEvent, { type: "usage.update" }> => e.type === "usage.update");
+    // The subagent's last total landed just before the review ended: the end waited for it.
+    expect(usage[0]).toMatchObject({ tokensIn: 10_000, tokensOut: 2_000, cacheRead: 40_000, reasoning: 500, contextUsed: null });
+    // The verdict turn's own 1,000 in / 50 out on top: totals only grow, never read as a restart.
+    expect(usage.at(-1)).toMatchObject({ tokensIn: 11_000, tokensOut: 2_050, cacheRead: 40_000, reasoning: 500, contextSize: 258_400 });
+    expect(usage.map((u) => u.tokensIn)).toEqual([...usage.map((u) => u.tokensIn)].sort((a, b) => a - b));
+    expect(ended(events)).toMatchObject({ reason: "completed", output: { ok: true } });
   });
 
   it("pins a commit target to its sha", async () => {

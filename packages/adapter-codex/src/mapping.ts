@@ -24,6 +24,7 @@ import type {
   TurnPlanUpdatedNotification,
   TurnStartedNotification,
 } from "./protocol/index.ts";
+import { addUsage, NO_USAGE, type TokenUsageBreakdown } from "./review-usage.ts";
 
 // Pure translation between codex app-server messages and Crewyard's AgentEvent / Answer types.
 // The adapter adds the envelope (runId, seq, at, source) and owns process and request state.
@@ -116,9 +117,11 @@ export function unknownSamples(profileId: string, observedAt: string): LimitSamp
  * OpenAI counts cached tokens inside inputTokens. tokensIn here excludes them so tokensIn,
  * cacheRead and cacheWrite never overlap and a price lookup cannot count a token twice.
  * Context fill is the last request's total, which is what was in the window at that moment.
+ * `subagents` is what the thread's review subagents spent (review-usage.ts): codex never reports
+ * it, so it is added to the thread's own totals and the run's totals keep growing.
  */
-export function usageEvent(u: ThreadTokenUsage): EventBody {
-  const t = u.total;
+export function usageEvent(u: ThreadTokenUsage | null, subagents: TokenUsageBreakdown = NO_USAGE): EventBody {
+  const t = addUsage(u?.total ?? NO_USAGE, subagents);
   return {
     type: "usage.update",
     tokensIn: Math.max(0, t.inputTokens - t.cachedInputTokens),
@@ -126,8 +129,8 @@ export function usageEvent(u: ThreadTokenUsage): EventBody {
     cacheRead: t.cachedInputTokens,
     cacheWrite: t.cacheWriteInputTokens ?? 0,
     reasoning: t.reasoningOutputTokens,
-    contextUsed: u.last.totalTokens,
-    contextSize: u.modelContextWindow !== null && u.modelContextWindow > 0 ? u.modelContextWindow : null,
+    contextUsed: u ? u.last.totalTokens : null,
+    contextSize: u && u.modelContextWindow !== null && u.modelContextWindow > 0 ? u.modelContextWindow : null,
     // Subscription turns have no price; API-key cost is estimated by the daemon from the catalog.
     costUsd: null,
     costProvenance: "unknown",
@@ -270,6 +273,8 @@ export class NotificationMapper {
   compacted = false;
   /** The thread's last token usage notification, as codex sent it. */
   lastUsage: ThreadTokenUsage | null = null;
+  /** What the thread's review subagents spent so far; the adapter reads it from their rollouts. */
+  subagentUsage: TokenUsageBreakdown = NO_USAGE;
 
   map(method: string, params: unknown): EventBody[] {
     switch (method) {
@@ -330,7 +335,7 @@ export class NotificationMapper {
         return [{ type: "diff.update", files: parseDiffStats((params as TurnDiffUpdatedNotification).diff) }];
       case "thread/tokenUsage/updated":
         this.lastUsage = (params as ThreadTokenUsageUpdatedNotification).tokenUsage;
-        return [usageEvent(this.lastUsage)];
+        return [usageEvent(this.lastUsage, this.subagentUsage)];
       case "account/rateLimits/updated":
         return limitEvents((params as { rateLimits: RateLimitSnapshot }).rateLimits);
       case "error": {
