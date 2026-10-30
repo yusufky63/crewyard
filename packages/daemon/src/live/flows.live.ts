@@ -558,32 +558,30 @@ Then create a new file ENV_CHECK.md that holds its single output line, and commi
   });
 
   /**
-   * Handoff by fork (A11) live: Codex on DeepSeek flash hands its step to Codex on DeepSeek pro
-   * (same runner, same provider), draining the turn in flight first. The target gets a compacted
-   * fork of the thread; the task is cancelled once the target has taken over, since both DeepSeek
-   * models then ran for the implementer and no reviewer is left that is independent of it.
+   * Handoff by fork (A11) live: a Codex researcher on DeepSeek flash hands its step to Codex on
+   * DeepSeek pro (same runner, same provider), draining the turn in flight first, and the target
+   * continues a compacted fork of the thread. A research step, because with only a DeepSeek key a
+   * code crew has no reviewer left that is independent of both DeepSeek models.
    */
   it("handoff: fork and compact between two Codex profiles, drained", { timeout: 15 * MIN }, async () => {
     if (!want("handoff-fork") || (await overBudget("handoff-fork"))) return;
-    expect(profiles["cx-ds"] && profiles["cx-dsp"] && profiles["cc-ds"]).toBeTruthy();
+    expect(profiles["cx-ds"] && profiles["cx-dsp"]).toBeTruthy();
     const restore = setTestCommand(null);
     try {
-      const description = "Create the files one.txt, two.txt and three.txt at the repository root, each containing its own name. Create them one at a time and commit after each one. Do not run any command except git.";
-      const t = await d.call("tasks.propose", { projectId, title: "Add three files", description, kind: "code", size: "S", budgetUsd: 0.5, pins: { implementer: profiles["cx-ds"], reviewer: profiles["cc-ds"] } });
+      const description = "Look at this repository: list its files, read each source file, then write a short report of what each function does. Work through the files one at a time.";
+      const t = await d.call("tasks.propose", { projectId, title: "Describe the repository", description, kind: "research", size: "S", budgetUsd: 0.5, pins: { researcher: profiles["cx-ds"] } });
       await d.call("tasks.approve", { taskId: t.id });
-      const src = await d.waitFor("implementer working", async () => (await d.call("tasks.get", { taskId: t.id })).runs.find((r) => r.role === "implementer" && r.state === "running" && r.tokensIn > 0) ?? null, 5 * MIN, 1_000);
+      const src = await d.waitFor("researcher working", async () => (await d.call("tasks.get", { taskId: t.id })).runs.find((r) => r.role === "researcher" && r.state === "running" && r.tokensIn > 0) ?? null, 5 * MIN, 1_000);
       const asked = await d.attempt("runs.handoff", { runId: src.id, targetProfileId: profiles["cx-dsp"]!, stop: "drain" });
       d.log("fork handoff", asked.ok ? "accepted" : asked.error);
-      const end = await watch(t.id, (x) => x.handoffs[0]?.closedAt !== null && x.handoffs[0] !== undefined && !x.runs.some((r) => r.role === "implementer" && !r.endedAt), 10 * MIN);
+      const end = await watch(t.id, (x) => x.handoffs[0] !== undefined && x.handoffs[0].closedAt !== null && !x.runs.some((r) => !r.endedAt), 10 * MIN);
       const h = end.handoffs[0];
       const forked = d.audit("handoff.forked", t.id).at(-1)?.payload as { compacted?: boolean; summaryChars?: number } | undefined;
       const failed = d.audit("handoff.fork_failed", t.id).at(-1)?.payload;
       const target = end.runs.find((r) => r.profileId === profiles["cx-dsp"]);
-      const files = end.worktree ? ["one.txt", "two.txt", "three.txt"].filter((f) => existsSync(join(end.worktree!.path, f))) : [];
-      d.log("fork result", JSON.stringify({ outcome: h?.outcome, kind: h?.kind, stop: h?.stop, forked, failed, target: target ? `${target.endReason} in=${target.tokensIn}` : null, files }));
-      await d.call("tasks.cancel", { taskId: t.id });
+      d.log("fork result", JSON.stringify({ outcome: h?.outcome, kind: h?.kind, stop: h?.stop, forked, failed, target: target ? `${target.endReason} in=${target.tokensIn}` : null, status: end.status }));
       const ok = h?.outcome === "completed" && h.kind === "fork" && h.stop === "drain" && target?.endReason === "completed";
-      d.row({ flow: "handoff: fork + compact, drain", runner: "codex/deepseek-flash -> codex/deepseek-v4-pro", result: ok ? "pass" : "fail", costUsd: end.spend.usd, notes: `outcome ${h?.outcome}; kind ${h?.kind}; stop ${h?.stop}; compacted ${forked?.compacted ?? "-"}; fork failure ${failed ? JSON.stringify(failed) : "none"}; target ${target?.endReason ?? "-"}; files ${files.join(",")}` });
+      d.row({ flow: "handoff: fork + compact, drain", runner: "codex/deepseek-flash -> codex/deepseek-v4-pro", result: ok ? "pass" : "fail", costUsd: end.spend.usd, notes: `outcome ${h?.outcome}; kind ${h?.kind}; stop ${h?.stop}; compacted ${forked?.compacted ?? "-"}; fork failure ${failed ? JSON.stringify(failed) : "none"}; target ${target?.endReason ?? "-"}; task ${end.status}` });
     } finally {
       restore();
     }
