@@ -204,6 +204,14 @@ function build(projectId: string): { tasks: TaskDetail[]; requests: RequestView[
   };
   const review = detail(summary("t-review", "Refactor the session store", { status: "review", spend: { usd: 0.42, provenance: "estimated" }, createdAt: ago(100) }), v, reviewRuns, { loop: reviewLoop });
 
+  // 5b. Merged from the app: the row's PR chip reads merged (GitHub fixture PR #38), and nothing is left to run.
+  const mg = [member("implementer", 1, SOL, [OPUS]), member("reviewer", 2, OPUS, [GLM], ["implementer"])];
+  const mergedRuns = [
+    run("t-merged", mg[0]!, SOL, { state: "ended", startedAt: ago(28 * 60), endedAt: ago(27 * 60 + 20), endReason: "completed", diff: [{ path: "src/catalog/snapshot.ts", added: 42, removed: 18 }, { path: "src/catalog/snapshot.test.ts", added: 21, removed: 0 }] }),
+    run("t-merged", mg[1]!, OPUS, { state: "ended", startedAt: ago(27 * 60 + 20), endedAt: ago(27 * 60), endReason: "completed", cost: { usd: 0.18, provenance: "estimated" } }),
+  ];
+  const merged = detail(summary("t-merged", "Move the catalog snapshot into the data folder", { status: "merged", spend: { usd: 0.18, provenance: "estimated" }, createdAt: ago(28 * 60) }), mg, mergedRuns);
+
   // 6. Done, no code.
   const d = [member("researcher", 1, ARGON, [OPUS])];
   const doneRuns = [run("t-done", d[0]!, ARGON, { state: "ended", startedAt: ago(26 * 60), endedAt: ago(25 * 60), endReason: "completed", cwd: "C:\\Projeler\\crewyard", worktreeId: null })];
@@ -376,7 +384,7 @@ function build(projectId: string): { tasks: TaskDetail[]; requests: RequestView[
   ];
   // The failed rows first, so a 1280 px shot of the list shows how their errors fit.
   // New kinds of rows go last, so earlier shots of the list keep their first rows.
-  return { tasks: [noStart, credit, proposed, running, approval, capped, unpriced, review, done, bestOf, asleep, bestOfProposed, switched], requests };
+  return { tasks: [noStart, credit, proposed, running, approval, capped, unpriced, review, merged, done, bestOf, asleep, bestOfProposed, switched], requests };
 }
 
 let cache: { projectId: string; data: ReturnType<typeof build> } | null = null;
