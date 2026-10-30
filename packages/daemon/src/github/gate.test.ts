@@ -20,7 +20,7 @@ describe("merge gate", () => {
     for (const r of ["changes", "stale"] as const) {
       const g = evaluateGate({ ...base, ownerApproved: true, reviewed: r });
       expect([statusOf(g).reviewed, g.mergeable]).toEqual(["fail", false]);
-      expect(mergeBlock(g, "clean")).toBe("Merge gate not passed: reviewed");
+      expect(mergeBlock(g, "clean")).toBe("merge.gate: reviewed");
     }
     expect(statusOf(evaluateGate({ ...base, reviewed: "missing" })).reviewed).toBe("wait");
     // A PR no task with a reviewer owns has no such item.
