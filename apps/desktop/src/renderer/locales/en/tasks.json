@@ -207,13 +207,6 @@
     "needYou": "{{count}} need you",
     "needYouTitle": "Open requests in the Inbox"
   },
-  "toast": {
-    "requestTitle": "Crewyard needs you",
-    "requestBody": "An agent is waiting on you in “{{task}}”.",
-    "warnTitle": "Nearing a limit",
-    "criticalTitle": "Almost at a limit",
-    "limitBody": "{{window}} at {{pct}}%."
-  },
   "inspector": {
     "label": "Run details",
     "close": "Close panel (Esc)",

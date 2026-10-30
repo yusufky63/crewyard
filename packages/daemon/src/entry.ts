@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { IpcMessage } from "@crewyard/core";
 import { acquireDataDirLock, cleanOrphans, DataDirLockedError, recordDaemonStart, type DataDirLock } from "./recovery/index.ts";
 import { createHandlers, handleMessage, type Handlers } from "./server.ts";
+import { applyStagedRestore } from "./settings/data.ts";
 import { Store } from "./store.ts";
 
 // Runs as an Electron utility process. The main process relays renderer requests here and
@@ -28,7 +29,7 @@ let store: Store | null = null;
 
 // The message listener is registered before any await: a utility process with no listener can
 // exit with code 0 while startup is still awaiting, and requests sent meanwhile would be lost.
-// Startup order: own the data folder, open the database, kill the agent trees a killed daemon
+// Startup order: own the data folder, swap in a staged restore, open the database, kill the agent trees a killed daemon
 // left behind, and only then create the handlers, which start the orchestrator and label those
 // runs interrupted. Requests wait for all of it.
 const ready: Promise<Handlers> = (async () => {
@@ -41,6 +42,9 @@ const ready: Promise<Handlers> = (async () => {
     throw err;
   }
   if (lock.unsupported) console.warn(`Data folder lock unavailable, running without it: ${lock.unsupported}`);
+  // A restore chosen in Settings is swapped in here, with the folder locked and before anything
+  // opens the database.
+  applyStagedRestore(dataDir, dbPath);
   const s = new Store(dbPath);
   store = s;
   const orphans = await cleanOrphans(s);

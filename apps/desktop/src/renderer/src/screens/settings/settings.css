@@ -1,0 +1,49 @@
+/* Settings (DESIGN.md §6): a framed section index on the left, one panel per section on the right. */
+.settings .st-context { margin-top: 6px; font-size: var(--font-size-meta); max-width: 720px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings .st-layout { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 16px; align-items: start; }
+.settings .st-index { position: sticky; top: 0; display: grid; gap: 2px; padding: 6px; }
+.settings .st-index-item { display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 10px; color: var(--ink-2); font-size: 14px; text-align: left; border: 1px solid transparent; }
+.settings .st-index-item:hover { background: var(--raised); color: var(--ink); }
+.settings .st-index-item[aria-current] { background: var(--raised); color: var(--ink); border-color: var(--line); }
+.settings .st-sections { display: grid; gap: 16px; min-width: 0; }
+.settings .st-section { scroll-margin-top: 16px; }
+.settings .st-body { padding: 8px 16px 16px; display: grid; }
+
+.settings .st-row { display: flex; align-items: center; gap: 16px; min-height: var(--density-row); padding: 10px 0; border-top: 1px solid var(--line); }
+.settings .st-body > .st-row:first-child { border-top: 0; }
+.settings .st-text { flex: 1; min-width: 0; display: grid; gap: 3px; }
+.settings .st-label { font-size: var(--density-body); font-weight: 500; }
+.settings .st-hint { font-size: var(--font-size-meta); color: var(--ink-3); line-height: 1.45; max-width: 560px; }
+.settings .st-ctl { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.settings .st-note { font-size: var(--font-size-meta); color: var(--ink-3); padding: 8px 0 0; }
+.settings .st-warn { color: var(--warn); }
+.settings .st-ok { color: var(--ok); }
+.settings .st-path { font-size: var(--font-size-meta); color: var(--ink-2); max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings .st-break { overflow-wrap: anywhere; font-size: var(--font-size-meta); }
+
+.settings .st-time { display: inline-flex; align-items: center; gap: 6px; }
+.settings .st-time .pv-input { width: 96px; }
+.settings .st-time .pv-input:disabled { opacity: 0.45; }
+
+.settings .st-list { display: grid; border: 1px solid var(--line); margin: 0 0 10px; }
+.settings .st-list:empty { display: none; }
+.settings .st-list > .st-note { padding: 10px 12px; }
+.settings .st-item { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 6px 12px; border-top: 1px solid var(--line); font-size: 13px; }
+.settings .st-item:first-child { border-top: 0; }
+.settings .st-item-name { font-weight: 500; white-space: nowrap; }
+.settings .st-item-path, .settings .st-item-meta { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-size-meta); }
+.settings .st-item-acts { display: flex; gap: 4px; margin-left: auto; }
+
+.settings .st-fact { display: grid; grid-template-columns: 160px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 9px 0; border-top: 1px solid var(--line); }
+.settings .st-body > .st-fact:first-child { border-top: 0; }
+.settings .st-fact-v { font-size: var(--font-size-meta); color: var(--ink-2); overflow-wrap: anywhere; }
+.settings .st-meta { display: block; margin-top: 3px; color: var(--ink-3); font-size: var(--font-size-label); }
+.settings .st-banner { margin: 2px 0 10px; }
+.settings .st-outcome { display: flex; align-items: center; gap: 8px; font-size: var(--font-size-meta); padding: 0 0 10px; overflow-wrap: anywhere; }
+
+@media (max-width: 1180px) {
+  .settings .st-layout { grid-template-columns: minmax(0, 1fr); }
+  .settings .st-index { display: none; }
+  .settings .st-row { flex-wrap: wrap; }
+  .settings .st-ctl { justify-content: flex-start; }
+}

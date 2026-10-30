@@ -58,6 +58,20 @@ export class DaemonHost {
     this.child?.kill();
   }
 
+  /**
+   * Quit path: asks the daemon to stop every agent process tree (they are its children and would
+   * outlive a killed utility process on Windows), then ends it. Gives up waiting after `timeoutMs`.
+   */
+  async shutdown(timeoutMs = 8000): Promise<void> {
+    if (this.child) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<void>((resolve) => (timer = setTimeout(resolve, timeoutMs)));
+      await Promise.race([this.call("app.shutdown", undefined).catch(() => undefined), timeout]);
+      clearTimeout(timer);
+    }
+    this.stop();
+  }
+
   private settle(msg: IpcResponse): void {
     const p = this.pending.get(msg.id);
     if (!p) return;

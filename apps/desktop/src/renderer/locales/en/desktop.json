@@ -1,0 +1,67 @@
+{
+  "tray": {
+    "tooltip": "Crewyard",
+    "tooltipWork": "Crewyard · {{running}} running · {{needYou}} need you",
+    "open": "Open Crewyard",
+    "running": "Running agents: {{count}}",
+    "needYou": "Need you: {{count}}",
+    "openInbox": "Open the Inbox",
+    "quiet": "Quiet hours until {{time}}",
+    "quit": "Quit Crewyard…"
+  },
+  "quit": {
+    "title": "Quit Crewyard",
+    "message": "Quit and stop {{count}} agents?",
+    "detail": "These stop now:\n{{list}}\n\nEach run is marked interrupted and can be resumed from its task. Worktrees and commits stay where they are.",
+    "more": "and {{count}} more",
+    "taskLine": "{{task}} · {{project}}",
+    "confirm": "Quit and stop agents",
+    "cancel": "Keep running"
+  },
+  "hidden": {
+    "title": "Crewyard is still running",
+    "body": "Closing the window does not stop agents. Open Crewyard again from the tray icon."
+  },
+  "toast": {
+    "approvalTitle": {
+      "low": "Low-risk approval",
+      "medium": "Medium-risk approval",
+      "high": "High-risk approval",
+      "unknown": "Approval needed"
+    },
+    "network": "Network access",
+    "paths": "Writes to {{path}}",
+    "questionTitle": "An agent has a question",
+    "limitTitle": "Limit reached",
+    "limitResets": "{{window}} · resets {{time}}",
+    "limitNoReset": "{{window}} · no reset time reported",
+    "budgetTitle": "Spend cap reached",
+    "budgetBody": "Paused until you decide.",
+    "handoffTitle": "A handoff needs you",
+    "warnTitle": "Nearing a limit",
+    "criticalTitle": "Almost at a limit",
+    "limitPct": "{{window}} at {{pct}}%",
+    "limitUnknown": "{{window}}, usage unknown",
+    "test": "Test notification",
+    "testBody": "Notifications from Crewyard show like this."
+  },
+  "button": {
+    "approve": "Approve once",
+    "open": "Open in Inbox",
+    "handoff": "Hand off",
+    "wait": "Wait for reset"
+  },
+  "window": {
+    "5h": "5-hour window",
+    "weekly": "Weekly window",
+    "daily": "Daily window",
+    "context": "Context window",
+    "budget-day": "Daily spend cap",
+    "budget-task": "Task budget"
+  },
+  "dialog": {
+    "exportTitle": "Export the Crewyard database",
+    "restoreTitle": "Choose a database to restore",
+    "dbFilter": "SQLite database"
+  }
+}

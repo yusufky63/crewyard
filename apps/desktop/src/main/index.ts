@@ -1,9 +1,14 @@
 import { readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
-import type { IpcMethod } from "@crewyard/core";
-import type { AppInfo, TitleBarColors } from "../shared/api.ts";
+import { isAbsolute, join, relative, resolve } from "node:path";
+import { app, BrowserWindow, dialog, ipcMain, Notification, shell, type MessageBoxOptions } from "electron";
+import { inQuietHours, type IpcMethod, type IpcParams, type IpcResult, type NotificationSettings } from "@crewyard/core";
+import type { AppInfo, NavigateTarget, StartupState, TitleBarColors } from "../shared/api.ts";
 import { DaemonHost } from "./daemon-host.ts";
+import { pickMainLanguage, translator, type MainLanguage } from "./i18n.ts";
+import { Toaster } from "./notify/toaster.ts";
+import { HIDDEN_ARG, readStartup, writeStartup } from "./startup.ts";
+import { AppTray } from "./tray.ts";
+import { EMPTY_WORK, quitDetail, summarize, type WorkSummary } from "./work.ts";
 
 const isWin = process.platform === "win32";
 const here = import.meta.dirname;
@@ -36,13 +41,83 @@ if (shotProfile) {
   });
 }
 
+const smokeRun = process.env.CREWYARD_SMOKE === "1";
+/** Tray, toasts, close-to-tray and Start with Windows. Off for screenshot and smoke runs. */
+const desktop = isWin && !shotFile && !smokeRun;
+const startHidden = desktop && process.argv.includes(HIDDEN_ARG);
+
 app.setAppUserModelId("dev.crewyard.app");
+// A fixed activator CLSID, so a toast pressed in the Action Center after a restart still comes
+// back to this app through Notification.handleActivation.
+if (desktop) app.setToastActivatorCLSID("{74B586E4-570F-475A-B191-B804BBB49D94}");
 if (!shotFile && !app.requestSingleInstanceLock()) app.quit();
 
 let win: BrowserWindow | null = null;
-const daemon = new DaemonHost(join(here, "daemon.js"), join(app.getPath("userData"), "data"), (topic, payload) => {
+let language: MainLanguage = "en";
+let notifications: NotificationSettings | null = null;
+let work: WorkSummary = EMPTY_WORK;
+let tray: AppTray | null = null;
+let quitting = false;
+let closeHintShown = false;
+/** The renderer reports its language once it listens; navigation waits for that. */
+let rendererReady = false;
+let pendingNav: NavigateTarget | null = null;
+/** A start from Windows login stays in the tray until something asks for the window. */
+let wantVisible = !startHidden;
+let painted = false;
+
+const t = () => translator(language);
+const send = (topic: string, payload: unknown) => {
   for (const w of BrowserWindow.getAllWindows()) w.webContents.send("crewyard:event", topic, payload);
+};
+
+const daemon = new DaemonHost(join(here, "daemon.js"), join(app.getPath("userData"), "data"), (topic, payload) => {
+  send(topic, payload);
+  if (!desktop) return;
+  toaster.onEvent(topic, payload);
+  if (topic === "daemon.ready") {
+    void refreshSettings();
+    scheduleWork();
+  } else if (topic === "settings.changed") {
+    notifications = (payload as { notifications: NotificationSettings }).notifications;
+    tray?.render();
+  } else if (topic === "tasks.changed" || topic === "requests.changed") scheduleWork();
 });
+
+const callDaemon = <M extends IpcMethod>(method: M, params: IpcParams<M>) => daemon.call(method, params) as Promise<IpcResult<M>>;
+
+const toaster = new Toaster({
+  call: callDaemon,
+  settings: () => notifications,
+  t,
+  locale: () => language,
+  open: (target) => (target ? navigate(target) : showWindow()),
+});
+
+async function refreshSettings(): Promise<void> {
+  try {
+    notifications = (await callDaemon("settings.get", undefined)).notifications;
+    tray?.render();
+  } catch {
+    // daemon restarting; daemon.ready comes again
+  }
+}
+
+async function refreshWork(): Promise<WorkSummary> {
+  const [tasks, requests, projects] = await Promise.all([callDaemon("tasks.list", {}), callDaemon("requests.list", {}), callDaemon("projects.list", undefined)]);
+  work = summarize(tasks, requests, projects);
+  tray?.update(work);
+  return work;
+}
+
+let workTimer: ReturnType<typeof setTimeout> | null = null;
+/** Runs stream many changes a second; the tray re-reads at most twice a second. */
+function scheduleWork(): void {
+  workTimer ??= setTimeout(() => {
+    workTimer = null;
+    refreshWork().catch(() => undefined);
+  }, 500);
+}
 
 function createWindow(): BrowserWindow {
   const [shotW, shotH] = (process.env.CREWYARD_SHOT_SIZE ?? "1440x900").split("x").map(Number);
@@ -64,7 +139,18 @@ function createWindow(): BrowserWindow {
       nodeIntegration: false,
     },
   });
-  w.once("ready-to-show", () => w.show());
+  painted = false;
+  w.once("ready-to-show", () => {
+    painted = true;
+    if (wantVisible) w.show();
+  });
+  // Close is not stop (DESIGN.md §7): with agents running the window hides to the tray.
+  w.on("close", (e) => {
+    if (quitting || !desktop) return;
+    e.preventDefault();
+    void onCloseRequested();
+  });
+  w.webContents.on("did-start-loading", () => (rendererReady = false));
   // The renderer never navigates away; external https links open in the default browser.
   w.webContents.on("will-navigate", (e) => e.preventDefault());
   w.webContents.setWindowOpenHandler(({ url }) => {
@@ -89,6 +175,65 @@ function createWindow(): BrowserWindow {
   return w;
 }
 
+function showWindow(): void {
+  if (quitting) return;
+  wantVisible = true;
+  if (!win || win.isDestroyed()) win = createWindow();
+  if (!painted) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+}
+
+/** Opens the window on a screen, e.g. the Inbox item a toast was about. */
+function navigate(target: NavigateTarget): void {
+  pendingNav = target;
+  showWindow();
+  flushNav();
+}
+
+function flushNav(): void {
+  if (!rendererReady || !pendingNav || !win || win.isDestroyed()) return;
+  win.webContents.send("crewyard:event", "app.navigate", pendingNav);
+  pendingNav = null;
+}
+
+async function onCloseRequested(): Promise<void> {
+  const current = await refreshWork().catch(() => work);
+  if (current.running === 0) return requestQuit();
+  win?.hide();
+  if (!closeHintShown && notifications?.enabled !== false) {
+    closeHintShown = true;
+    toaster.plain("hidden.title", "hidden.body");
+  }
+}
+
+/** Every quit goes through here: it names what it stops and waits for a yes before stopping agents. */
+async function requestQuit(): Promise<void> {
+  if (quitting) return;
+  const current = await refreshWork().catch(() => work);
+  if (current.running > 0) {
+    const opts: MessageBoxOptions = {
+      type: "warning",
+      title: t()("quit.title"),
+      message: t()("quit.message", { count: current.running }),
+      detail: quitDetail(current, t()),
+      buttons: [t()("quit.confirm"), t()("quit.cancel")],
+      // Keep running is the default: Enter never stops agents.
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true,
+    };
+    const parent = win && !win.isDestroyed() && win.isVisible() ? win : null;
+    const { response } = parent ? await dialog.showMessageBox(parent, opts) : await dialog.showMessageBox(opts);
+    if (response !== 0) return;
+  }
+  quitting = true;
+  await daemon.shutdown();
+  tray?.destroy();
+  app.quit();
+}
+
 async function capture(w: BrowserWindow): Promise<void> {
   const image = await w.webContents.capturePage();
   if (shotFile) writeFileSync(shotFile, image.toPNG());
@@ -96,29 +241,100 @@ async function capture(w: BrowserWindow): Promise<void> {
   app.exit(0);
 }
 
+/** Only files and folders inside the Crewyard profile can be revealed from the renderer. */
+function insideProfile(path: unknown): string | null {
+  if (typeof path !== "string" || !isAbsolute(path)) return null;
+  const abs = resolve(path);
+  const rel = relative(app.getPath("userData"), abs);
+  return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel) ? abs : null;
+}
+
 ipcMain.handle("crewyard:call", (_e, method: IpcMethod, params: unknown) => daemon.call(method, params));
-ipcMain.handle("crewyard:app-info", (): AppInfo => ({ version: app.getVersion(), platform: process.platform, locales: app.getPreferredSystemLanguages() }));
+ipcMain.handle(
+  "crewyard:app-info",
+  (): AppInfo => ({
+    version: app.getVersion(),
+    platform: process.platform,
+    locales: app.getPreferredSystemLanguages(),
+    packaged: app.isPackaged,
+    versions: { electron: process.versions.electron, chrome: process.versions.chrome, node: process.versions.node },
+    userData: app.getPath("userData"),
+    exePath: process.execPath,
+  }),
+);
 ipcMain.handle("crewyard:pick-folder", async () => {
   const res = await dialog.showOpenDialog({ properties: ["openDirectory"] });
   return res.canceled ? null : (res.filePaths[0] ?? null);
+});
+ipcMain.handle("crewyard:pick-database", async (_e, mode: unknown, defaultName: unknown) => {
+  const filters = [{ name: t()("dialog.dbFilter"), extensions: ["db", "sqlite", "sqlite3"] }];
+  if (mode === "save") {
+    const name = typeof defaultName === "string" && /^[\w .-]{1,80}\.db$/.test(defaultName) ? defaultName : "crewyard.db";
+    const res = await dialog.showSaveDialog({ title: t()("dialog.exportTitle"), defaultPath: join(app.getPath("documents"), name), filters });
+    return res.canceled ? null : (res.filePath ?? null);
+  }
+  if (mode !== "open") return null;
+  const res = await dialog.showOpenDialog({ title: t()("dialog.restoreTitle"), properties: ["openFile"], filters });
+  return res.canceled ? null : (res.filePaths[0] ?? null);
+});
+ipcMain.handle("crewyard:startup", (): StartupState => readStartup(desktop));
+ipcMain.handle("crewyard:set-startup", (_e, next: unknown): StartupState => {
+  const n = (next ?? {}) as { openAtLogin?: unknown; hidden?: unknown };
+  if (typeof n.openAtLogin !== "boolean" || typeof n.hidden !== "boolean") return readStartup(desktop);
+  return writeStartup(desktop, { openAtLogin: n.openAtLogin, hidden: n.hidden });
+});
+ipcMain.on("crewyard:reveal", (_e, path: unknown) => {
+  const abs = insideProfile(path);
+  if (abs) shell.showItemInFolder(abs);
+});
+ipcMain.on("crewyard:language", (_e, lng: unknown) => {
+  if (lng === "en" || lng === "tr") language = lng;
+  tray?.render();
+  rendererReady = true;
+  flushNav();
+});
+ipcMain.on("crewyard:test-toast", () => {
+  if (desktop) toaster.plain("toast.test", "toast.testBody");
 });
 ipcMain.on("crewyard:titlebar", (_e, colors: TitleBarColors) => {
   if (isWin && win && !win.isDestroyed()) win.setTitleBarOverlay({ ...colors, height: 40 });
 });
 
-app.on("second-instance", () => {
-  if (!win) return;
-  if (win.isMinimized()) win.restore();
-  win.focus();
-});
+app.on("second-instance", () => showWindow());
 
 void app.whenReady().then(() => {
+  language = pickMainLanguage(app.getPreferredSystemLanguages());
   daemon.start();
+  if (desktop) {
+    // Every toast press arrives here, also when Windows started the app from the Action Center.
+    Notification.handleActivation((details) => void toaster.activate(details.arguments));
+    tray = new AppTray({
+      t,
+      open: showWindow,
+      openInbox: () => {
+        const r = work.firstRequest;
+        navigate({ screen: "inbox", projectId: r?.projectId ?? null, taskId: r?.taskId ?? null, requestId: r?.requestId ?? null });
+      },
+      quit: () => void requestQuit(),
+      quietUntil: () => (notifications && inQuietHours(notifications.quietHours, new Date()) ? notifications.quietHours.end : null),
+    });
+    // Quiet hours start and end with the clock, not with an event.
+    setInterval(() => tray?.render(), 60_000).unref();
+  }
   win = createWindow();
-  if (process.env.CREWYARD_SMOKE === "1") void smoke();
+  if (smokeRun) void smoke();
+});
+
+// Any other quit (an installer, a second "quit" from the taskbar) goes through the same confirm.
+app.on("before-quit", (e) => {
+  if (!desktop || quitting) return;
+  e.preventDefault();
+  void requestQuit();
 });
 
 app.on("window-all-closed", () => {
+  // With the tray, quitting is decided by requestQuit; without it, closing the window quits.
+  if (desktop) return;
   daemon.stop();
   app.quit();
 });
