@@ -1,10 +1,12 @@
-/* The intro, the last project and This machine each across the full width, then Recently used and
-   Getting started on the left and the import list on the right. Six project tiles once sat beside
-   the intro and towered over it (owner, 2026-10-30: "son projeler cardı çok büyük ve dengesiz
-   görünüyor", then "sadece son projeyi göster ve alt kısımdaki projelerde ise son kullanılanları göster"). */
+/* The intro and the last project across the full width, then Recently used and Getting started on
+   the left and the import list on the right, then This machine across the full width at the end.
+   Six project tiles once sat beside the intro and towered over it (owner, 2026-10-30: "son projeler
+   cardı çok büyük ve dengesiz görünüyor", then "sadece son projeyi göster ve alt kısımdaki
+   projelerde ise son kullanılanları göster"); This machine moved to the bottom on 2026-10-31
+   ("ana sayfada \"Bu bilgisayar\" kısmını alt kısma al"). */
 .start .launch-grid {
   display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.3fr); gap: 24px 40px; align-items: start; margin-top: 8px;
-  grid-template-areas: "intro intro" "recent recent" "machine machine" "others import" "checklist import";
+  grid-template-areas: "intro intro" "recent recent" "others import" "checklist import" "machine machine";
 }
 /* The label and the hero across the full width; the lead on the left and the three ways in on its
    right. With the hero in the same column as the buttons it broke after "from one" in English. */
@@ -49,7 +51,7 @@
 @media (max-width: 1180px) {
   .start .launch-intro { grid-template-columns: minmax(0, 1fr); }
   .start .launch-actions { margin-top: 16px; }
-  .start .launch-grid { grid-template-columns: 1fr; grid-template-areas: "intro" "machine" "recent" "others" "checklist" "import"; }
+  .start .launch-grid { grid-template-columns: 1fr; grid-template-areas: "intro" "recent" "others" "checklist" "import" "machine"; }
   .start .mtiles { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
 }
 .start .import-filter { padding: 8px 16px; border-top: 1px solid var(--line); }
@@ -112,7 +114,7 @@
 .start .sysdetails summary:hover { color: var(--ink); }
 /* Once Getting started is done its area is empty; the import list takes the full width. */
 /* With neither Recently used nor Getting started, the import list takes the full width. */
-.start .launch-grid:has(> .launch-checklist:empty):has(> .launch-others:empty) { grid-template-areas: "intro intro" "recent recent" "machine machine" "import import"; }
+.start .launch-grid:has(> .launch-checklist:empty):has(> .launch-others:empty) { grid-template-areas: "intro intro" "recent recent" "import import" "machine machine"; }
 @media (max-width: 1180px) {
-  .start .launch-grid:has(> .launch-checklist:empty):has(> .launch-others:empty) { grid-template-areas: "intro" "machine" "recent" "import"; }
+  .start .launch-grid:has(> .launch-checklist:empty):has(> .launch-others:empty) { grid-template-areas: "intro" "recent" "import" "machine"; }
 }

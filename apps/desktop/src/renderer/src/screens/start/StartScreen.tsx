@@ -250,9 +250,9 @@ export function StartScreen() {
   const list = projects.data ?? [];
   return (
     <section className="screen start" aria-label={t("title")}>
-      {/* Areas: the intro, the last project and This machine across the full width, so the machine's
-          state shows without scrolling at 1280 × 800; then Recently used and Getting started on the
-          left and the import list on the right. */}
+      {/* Areas: the intro and the last project across the full width; then Recently used and Getting
+          started on the left and the import list on the right; This machine last, across the full
+          width. The blocks are in that order here too, so Tab follows what you see. */}
       <div className="launch-grid">
         <div className="launch-intro">
           <div className="launch-copy">
@@ -287,9 +287,6 @@ export function StartScreen() {
             <p className="muted empty">{projects.isSuccess ? t("recent.empty", { root }) : ""}</p>
           )}
         </div>
-        <div className="launch-machine">
-          <MachineCheck />
-        </div>
         <div className="launch-others">
           <RecentList projects={list.slice(1, 1 + RECENT_MORE)} />
         </div>
@@ -298,6 +295,9 @@ export function StartScreen() {
         </div>
         <div className="launch-import">
           <ImportPanel />
+        </div>
+        <div className="launch-machine">
+          <MachineCheck />
         </div>
       </div>
     </section>
