@@ -2254,13 +2254,14 @@ export class Orchestrator {
     // totals of the run before it. So a run adds only the growth since the last total seen for
     // that session; a total that went down means the session counter restarted.
     const session = run.native_session_id ?? `run:${run.id}`;
-    const seen = this.db.nativeUsage(run.runner, session) ?? { tokensIn: 0, tokensOut: 0, cacheRead: 0, costUsd: null };
+    const seen = this.db.nativeUsage(run.runner, session) ?? { tokensIn: 0, tokensOut: 0, cacheRead: 0, reasoning: 0, costUsd: null };
     const restarted = ev.tokensIn < seen.tokensIn || ev.tokensOut < seen.tokensOut;
     const grow = (now: number, before: number) => (restarted ? now : Math.max(0, now - before));
     const dIn = grow(ev.tokensIn, seen.tokensIn);
     const dOut = grow(ev.tokensOut, seen.tokensOut);
     const dCache = grow(ev.cacheRead, seen.cacheRead);
-    this.db.setNativeUsage(run.runner, session, { tokensIn: ev.tokensIn, tokensOut: ev.tokensOut, cacheRead: ev.cacheRead, costUsd: ev.costUsd }, ev.at);
+    const dReasoning = grow(ev.reasoning, seen.reasoning);
+    this.db.setNativeUsage(run.runner, session, { tokensIn: ev.tokensIn, tokensOut: ev.tokensOut, cacheRead: ev.cacheRead, reasoning: ev.reasoning, costUsd: ev.costUsd }, ev.at);
 
     const live = this.live.get(run.id);
     const model = live?.candidate.model ?? null;
@@ -2294,7 +2295,7 @@ export class Orchestrator {
           tokensIn: dIn,
           tokensOut: dOut,
           tokensCache: dCache,
-          tokensReasoning: ev.reasoning,
+          tokensReasoning: dReasoning,
           costUsd: dCost,
           billed: ev.costUsd !== null && ev.costProvenance === "reported",
           fromCatalog: ev.costUsd === null,

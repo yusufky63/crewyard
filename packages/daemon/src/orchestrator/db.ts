@@ -399,12 +399,18 @@ export class OrchestratorDb {
   }
 
   /** Last running totals a runner reported for one native session (they survive resume). */
-  nativeUsage(runner: RunnerId, sessionId: string): { tokensIn: number; tokensOut: number; cacheRead: number; costUsd: number | null } | null {
-    const r = this.one<{ tokens_in: number; tokens_out: number; cache_read: number; cost_usd: number | null }>("select * from native_usage where runner = ? and session_id = ?", runner, sessionId);
-    return r ? { tokensIn: r.tokens_in, tokensOut: r.tokens_out, cacheRead: r.cache_read, costUsd: r.cost_usd } : null;
+  nativeUsage(runner: RunnerId, sessionId: string): { tokensIn: number; tokensOut: number; cacheRead: number; reasoning: number; costUsd: number | null } | null {
+    const r = this.one<{ tokens_in: number; tokens_out: number; cache_read: number; reasoning: number | null; cost_usd: number | null }>(
+      `select n.tokens_in, n.tokens_out, n.cache_read, r.reasoning, n.cost_usd from native_usage n
+       left join native_usage_reasoning r on r.runner = n.runner and r.session_id = n.session_id
+       where n.runner = ? and n.session_id = ?`,
+      runner,
+      sessionId,
+    );
+    return r ? { tokensIn: r.tokens_in, tokensOut: r.tokens_out, cacheRead: r.cache_read, reasoning: r.reasoning ?? 0, costUsd: r.cost_usd } : null;
   }
 
-  setNativeUsage(runner: RunnerId, sessionId: string, u: { tokensIn: number; tokensOut: number; cacheRead: number; costUsd: number | null }, at: string): void {
+  setNativeUsage(runner: RunnerId, sessionId: string, u: { tokensIn: number; tokensOut: number; cacheRead: number; reasoning?: number; costUsd: number | null }, at: string): void {
     this.exec(
       `insert into native_usage (runner, session_id, tokens_in, tokens_out, cache_read, cost_usd, updated_at) values (?, ?, ?, ?, ?, ?, ?)
        on conflict (runner, session_id) do update set tokens_in = excluded.tokens_in, tokens_out = excluded.tokens_out, cache_read = excluded.cache_read, cost_usd = excluded.cost_usd, updated_at = excluded.updated_at`,
@@ -415,6 +421,13 @@ export class OrchestratorDb {
       u.cacheRead,
       u.costUsd,
       at,
+    );
+    this.exec(
+      `insert into native_usage_reasoning (runner, session_id, reasoning) values (?, ?, ?)
+       on conflict (runner, session_id) do update set reasoning = excluded.reasoning`,
+      runner,
+      sessionId,
+      u.reasoning ?? 0,
     );
   }
 

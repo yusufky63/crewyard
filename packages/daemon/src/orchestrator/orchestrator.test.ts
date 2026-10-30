@@ -413,6 +413,20 @@ describe("usage and cost", () => {
     expect(o.get(unpriced.id).spend.provenance).toBe("unknown");
   });
 
+  it("records the growth of reasoning tokens in the ledger, like the other counts", async () => {
+    const report = (reasoning: number): FakeStep => ({
+      emit: { type: "usage.update", tokensIn: reasoning * 10, tokensOut: reasoning, cacheRead: 0, cacheWrite: 0, reasoning, contextUsed: null, contextSize: null, costUsd: null, costProvenance: "unknown" },
+    });
+    const pick: Picker = () => [running, report(100), report(250), say("done")];
+    const { o, project, store } = await setup({ pick, candidates: CANDIDATES().map((c) => ({ ...c, credentialId: `cred-${c.profile.id}` })) });
+    const t = await o.propose({ projectId: project.id, title: "Research A", pins: { researcher: "deepseek-key" } });
+    await o.approve({ taskId: t.id });
+    await waitFor(() => o.get(t.id).status === "done");
+    // Running totals of 100 then 250 are 250 reasoning tokens, not 350.
+    const rows = store.db.prepare("select tokens_reasoning from spend where task_id = ? order by id").all(t.id) as Array<{ tokens_reasoning: number }>;
+    expect(rows.map((r) => r.tokens_reasoning)).toEqual([100, 150]);
+  });
+
   it("prices estimated tokens at the provider's peak rate in its peak hours, and never touches billed cost", async () => {
     // DeepSeek's weekday windows. Friday 2026-10-30 07:59 UTC is inside one, as the overnight live run was.
     const peak = { factor: 2, days: [1, 2, 3, 4, 5], windows: ["01:00-04:00", "06:00-10:00"], ref: "https://api-docs.deepseek.com/quick_start/pricing", checked: "2026-10-30" };

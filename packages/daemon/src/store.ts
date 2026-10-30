@@ -723,6 +723,18 @@ export const MIGRATIONS: Migration[] = [
    );
    create index if not exists run_hibernation_run on run_hibernation(run_id, hibernated_at);`,
   },
+  // The reasoning total last seen per native session, so the ledger records its growth like the
+  // other counts instead of the running total on every report. A table of its own: SQLite has no
+  // idempotent `add column`, and every migration here must be safe to run twice.
+  {
+    id: "native-usage-reasoning",
+    sql: `create table if not exists native_usage_reasoning (
+     runner text not null,
+     session_id text not null,
+     reasoning integer not null,
+     primary key (runner, session_id)
+   );`,
+  },
 ];
 
 /** What the positional scheme applied: a database at `user_version` N has the first N of these. */
