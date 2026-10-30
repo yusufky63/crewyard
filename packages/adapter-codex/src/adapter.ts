@@ -29,6 +29,7 @@ import type {
 import { exitCodeWithin, isShutdownExit, resolveBin } from "@crewyard/proc";
 import { AppServer, withAppServer, type Launcher } from "./appserver.ts";
 import { innerCommand, isAllowedCommand } from "./commands.ts";
+import { mcpPlan, mcpToolApproval } from "./mcp.ts";
 import {
   commandApproval,
   commandDecision,
@@ -87,6 +88,8 @@ export const capabilities: AgentCapabilities = {
   // Only for ChatGPT sign-in; API-key profiles report Unknown.
   reportedLimits: true,
   readOnlyMode: true,
+  // mcp_servers.<name> in the thread config, enabled_tools per server (docs/adr/0007).
+  mcp: { toolFilter: true },
   // turn/steer adds input to the turn in flight (expectedTurnId guards against a turn that just ended).
   steer: true,
   // thread/rollback drops turns from the thread's history only; it "does not revert local file
@@ -150,6 +153,7 @@ interface Run {
   model: string | null;
   effort: string | null;
   readOnly: boolean;
+  cwd: string;
   /** The role's allowed commands (the project's test and build), run without asking even when read-only. */
   allowCommands: string[];
   networkDenied: boolean;
@@ -403,7 +407,8 @@ export class CodexAdapter implements AgentAdapter {
   // ------------------------------------------------------------ internals
 
   private async open(req: StartRequest): Promise<Run> {
-    const server = await AppServer.launch(this.launcher, { codexHome: req.profile.configDir, cwd: req.cwd, env: req.env });
+    // MCP server env (the report ticket, user secrets) rides on the app-server's env, never in the thread config.
+    const server = await AppServer.launch(this.launcher, { codexHome: req.profile.configDir, cwd: req.cwd, env: { ...req.env, ...mcpPlan(req.mcpServers ?? [], req.policy).env } });
     const runId = randomUUID();
     const run: Run = {
       handle: { runId, runner: "codex", pid: server.pid, nativeSession: null },
@@ -414,6 +419,7 @@ export class CodexAdapter implements AgentAdapter {
       model: req.model ?? req.profile.defaultModel,
       effort: (req as CodexStartRequest).effort ?? null,
       readOnly: req.policy.writes === "none",
+      cwd: req.cwd,
       allowCommands: req.policy.allowCommands,
       networkDenied: req.policy.network === "denied",
       outputSchema: req.outputSchema ?? null,
@@ -474,7 +480,8 @@ export class CodexAdapter implements AgentAdapter {
     const model = req.model ?? req.profile.defaultModel;
     if (model) params.model = model;
     // Subagents stay off per thread too (see DEFAULT_ARGS); a profile's config.toml cannot turn them back on.
-    params.config = { "agents.enabled": false, ...shellEnvPolicy(req.env) };
+    const mcp = mcpPlan(req.mcpServers ?? [], req.policy);
+    params.config = { "agents.enabled": false, ...shellEnvPolicy({ ...req.env, ...mcp.env }), ...mcp.config };
     if (!readOnly && req.policy.network === "allowed") params.config.sandbox_workspace_write = { network_access: true };
     return params;
   }
@@ -600,9 +607,16 @@ export class CodexAdapter implements AgentAdapter {
         const answer = await this.ask(run, requestId, "question", questionRequest(requestId, p));
         return userInputResponse(answer, p);
       }
-      case "mcpServer/elicitation/request":
-        // MCP forms are not surfaced in the Inbox yet; declining lets the tool fail cleanly.
-        return { action: "decline", content: null, _meta: null };
+      case "mcpServer/elicitation/request": {
+        const decline = { action: "decline", content: null, _meta: null };
+        // A tool-call approval from a user MCP server goes to the Inbox, rated like network access
+        // (docs/adr/0007). Forms are not surfaced yet; declining lets the tool fail cleanly.
+        const tool = mcpToolApproval(params);
+        if (!tool) return decline;
+        if (run.readOnly) return this.declined(run, `MCP tool declined: read-only role: ${tool.server}/${tool.tool}`.slice(0, 200), decline);
+        const answer = await this.ask(run, requestId, "approval", { type: "request.approval", requestId, toolCallId: null, command: null, cwd: run.cwd, paths: [], network: true });
+        return answer.kind === "approval" && answer.decision !== "deny" ? { action: "accept", content: null, _meta: null } : decline;
+      }
       default:
         throw new RpcError(METHOD_NOT_FOUND, `crewyard does not handle ${method}`);
     }

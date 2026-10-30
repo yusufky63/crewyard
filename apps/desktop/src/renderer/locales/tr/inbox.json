@@ -28,7 +28,9 @@
   "listLabel": "İstekler",
   "empty": "Şu an sizi bekleyen bir şey yok.",
   "forInfo": "Bilginize",
-  "errors": { "load": "İstekler arka plan hizmetinden okunamadı." },
+  "errors": {
+    "load": "İstekler arka plan hizmetinden okunamadı."
+  },
   "title": {
     "page": "Gelen kutusu",
     "question": "Bir ajandan soru",
@@ -50,8 +52,16 @@
     "handoff_handoff_failed": "Bir devir tamamlanamadı",
     "handoff_manual": "İstediğiniz devir başlatılamadı"
   },
-  "eyebrow": { "approval": "Araç onayı", "question": "Soru", "handoff": "Karar" },
-  "risk": { "low": "Düşük risk", "medium": "Orta risk", "high": "Yüksek risk" },
+  "eyebrow": {
+    "approval": "Araç onayı",
+    "question": "Soru",
+    "handoff": "Karar"
+  },
+  "risk": {
+    "low": "Düşük risk",
+    "medium": "Orta risk",
+    "high": "Yüksek risk"
+  },
   "detail": {
     "askedIn": "Soran görev:",
     "step": "{{total}} adımın {{step}}. adımı, {{role}}",
@@ -134,5 +144,24 @@
     "critical": "{{who}}, {{window}} kotasının %{{pct}} kadarını kullandı",
     "ahead_of_pace": "Bu hızla {{who}} yaklaşık {{minutes}} dakikada {{window}} kotasını doldurur",
     "noReset": "sıfırlanma zamanı bilinmiyor"
+  },
+  "report": {
+    "section_one": "Ajanlardan {{count}} bildirim",
+    "section_other": "Ajanlardan {{count}} bildirim",
+    "needs_input": "{{who}} senden yanıt bekliyor",
+    "stuck": "{{who}} takıldı",
+    "followup": "{{who}} yeni bir görev öneriyor",
+    "someone": "Bir ajan",
+    "fromAgent": "Ajanın mesajı",
+    "artifacts": "Dosyalar",
+    "reply": "Yanıtla",
+    "replyLabel": "Yanıtın",
+    "replyHint": "Ajana bir sonraki mesajın olarak gider.",
+    "send": "Gönder",
+    "cancel": "Vazgeç",
+    "accept": "Göreve dönüştür",
+    "acceptNote": "Önerilen ekiple taslak bir görev oluşturur. Sen onaylamadan hiçbir şey başlamaz.",
+    "openRun": "Çalıştırmayı aç",
+    "dismiss": "Kapat"
   }
 }

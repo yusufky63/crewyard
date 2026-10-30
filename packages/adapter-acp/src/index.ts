@@ -17,7 +17,9 @@ export const capabilities: AgentCapabilities = {
   setModel: false,
   usage: true,
   reportedLimits: false,
-  readOnlyMode: true
+  readOnlyMode: true,
+  // session/new mcpServers; ACP cannot limit a server to some of its tools (docs/adr/0007).
+  mcp: { toolFilter: false },
 };
 
 export function createAdapter(opts: AcpAdapterOptions = {}): AgentAdapter {

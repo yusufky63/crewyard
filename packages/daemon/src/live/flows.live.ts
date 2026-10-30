@@ -447,6 +447,55 @@ describe.runIf(live)("crewyard live", () => {
     });
   }
 
+  // The report server (docs/adr/0007): a read-only researcher calls report and propose_followup
+  // through the PowerShell relay and the daemon's pipe; the follow-up becomes a draft only.
+  for (const [key, runner] of [
+    ["cc-ds", "claude-code/deepseek"],
+    ["oc-ds", "opencode/deepseek"],
+  ] as const) {
+    const flow = `mcp report on ${runner}`;
+    it(flow, { timeout: 10 * MIN }, async () => {
+      if (!want("mcp") || (await overBudget(flow))) return;
+      const id = profiles[key];
+      if (!id) {
+        d.row({ flow, runner, result: "skipped", costUsd: null, notes: "profile not created" });
+        return;
+      }
+      const description = [
+        "You have MCP tools from the server named crewyard. Do exactly these steps, in order, and nothing else:",
+        '1. Call the crewyard report tool with kind "checkpoint" and text "Read package.json".',
+        '2. Call the crewyard propose_followup tool with title "Add a lint script" and description "The repo has no lint step."',
+        '3. Call the crewyard report tool with kind "done" and text "Test runner named".',
+        "4. Answer in one sentence which test runner the test script in package.json uses. Do not change any file.",
+      ].join("\n");
+      const t = await d.call("tasks.propose", { projectId, title: "Research: report through Crewyard", description, kind: "research", size: "S", budgetUsd: 0.2, pins: { researcher: id } });
+      const approved = await d.attempt("tasks.approve", { taskId: t.id });
+      if (!approved.ok) {
+        d.row({ flow, runner, result: "fail", costUsd: null, notes: `approve refused: ${approved.error}` });
+        return;
+      }
+      const end = await watch(t.id, (x) => ENDED.has(x.status) || x.status === "needs_input", 8 * MIN);
+      if (end.status === "needs_input") await d.call("tasks.cancel", { taskId: t.id });
+      const reports = await d.call("mcp.reports.list", { taskId: t.id, includeClosed: true });
+      const usage = (await d.call("mcp.servers.usage", { projectId })).filter((u) => u.taskId === t.id);
+      const types = reports.map((r) => r.type).sort();
+      d.log(flow, "reports", JSON.stringify(reports.map((r) => ({ type: r.type, title: r.title, text: r.text.slice(0, 80) }))), "servers", JSON.stringify(usage.map((u) => u.servers.map((s) => s.name))));
+      const followup = reports.find((r) => r.type === "followup");
+      let draft = "none";
+      if (followup) {
+        const tasksBefore = (await d.call("tasks.list", { projectId })).length;
+        const accepted = await d.call("mcp.followups.accept", { reportId: followup.id });
+        const created = await d.call("tasks.get", { taskId: accepted.taskId });
+        draft = `${created.status}, ${created.runs.length} runs, ${(await d.call("tasks.list", { projectId })).length - tasksBefore} new task`;
+        expect(created.status).toBe("proposed");
+        expect(created.runs).toHaveLength(0);
+        await d.call("tasks.cancel", { taskId: created.id });
+      }
+      const ok = types.includes("checkpoint") && types.includes("done") && types.includes("followup") && usage.some((u) => u.servers.some((s) => s.name === "crewyard"));
+      d.row({ flow, runner: `${runner} ${end.runs.at(-1)?.model ?? ""}`.trim(), result: ok ? "pass" : "fail", costUsd: end.spend.usd, notes: `status ${end.status}; reports ${types.join(", ") || "none"}; follow-up draft: ${draft}` });
+    });
+  }
+
   // Whether the agent's own shell commands can read a key. The probe prints only true/false per
   // variable name, never a value; an empty variable counts as unreadable (OpenCode's guard blanks).
   it("key exposure to agent shell commands", { timeout: 25 * MIN }, async () => {

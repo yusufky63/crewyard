@@ -18,3 +18,5 @@ export * from "./ipc/worktrees.ts";
 export * from "./ipc/usage.ts";
 export * from "./usage.ts";
 export * from "./timeline.ts";
+export * from "./mcp.ts";
+export * from "./ipc/mcp.ts";

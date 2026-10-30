@@ -28,7 +28,9 @@
   "listLabel": "Requests",
   "empty": "Nothing needs you right now.",
   "forInfo": "For your information",
-  "errors": { "load": "Requests could not be loaded from the background service." },
+  "errors": {
+    "load": "Requests could not be loaded from the background service."
+  },
   "title": {
     "page": "Inbox",
     "question": "A question from an agent",
@@ -50,8 +52,16 @@
     "handoff_handoff_failed": "A handoff did not complete",
     "handoff_manual": "Your handoff could not start"
   },
-  "eyebrow": { "approval": "Tool approval", "question": "Question", "handoff": "Decision" },
-  "risk": { "low": "Low risk", "medium": "Medium risk", "high": "High risk" },
+  "eyebrow": {
+    "approval": "Tool approval",
+    "question": "Question",
+    "handoff": "Decision"
+  },
+  "risk": {
+    "low": "Low risk",
+    "medium": "Medium risk",
+    "high": "High risk"
+  },
   "detail": {
     "askedIn": "Asked in",
     "step": "step {{step}} of {{total}}, {{role}}",
@@ -134,5 +144,24 @@
     "critical": "{{who}} at {{pct}}% of its {{window}}",
     "ahead_of_pace": "{{who}} fills its {{window}} in about {{minutes}} min at this pace",
     "noReset": "reset time unknown"
+  },
+  "report": {
+    "section_one": "{{count}} report from agents",
+    "section_other": "{{count}} reports from agents",
+    "needs_input": "{{who}} needs your input",
+    "stuck": "{{who}} is stuck",
+    "followup": "{{who}} proposes a follow-up task",
+    "someone": "An agent",
+    "fromAgent": "From the agent",
+    "artifacts": "Files",
+    "reply": "Reply",
+    "replyLabel": "Your answer",
+    "replyHint": "Sent to the agent as your next message.",
+    "send": "Send",
+    "cancel": "Cancel",
+    "accept": "Turn into a task",
+    "acceptNote": "Creates a draft task with a proposed crew. Nothing starts until you approve it.",
+    "openRun": "Open run",
+    "dismiss": "Dismiss"
   }
 }

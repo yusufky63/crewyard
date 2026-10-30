@@ -1,5 +1,6 @@
 import { reviewFixture } from "./reviewFixture.ts";
 import { NO_RUN_CONTROLS, type CandidateView, type CrewMemberView, type IpcMethod, type IpcParams, type IpcResult, type LimitNoticePayload, type LoopDecisionView, type RequestView, type RoleId, type RunView, type StallAlertView, type TaskDetail, type TaskSummary, type UndoPreview } from "@crewyard/core";
+import { fixtureReports, fixtureServers, fixtureUsage } from "../../shell/mcpFixture.ts";
 
 // Screenshot data. Used only when the page URL has `fixture`, which the main process sets only
 // in screenshot mode (CREWYARD_SHOT_QUERY); a normal run never reads anything from this file.
@@ -301,6 +302,12 @@ export function fixtureCall<M extends IpcMethod>(method: M, params: IpcParams<M>
       return d.requests.filter((q) => !p.taskId || q.taskId === p.taskId) as IpcResult<M>;
     case "stalls.list":
       return fixtureStalls(p.projectId ?? anyProject()).filter((a) => !p.taskId || a.taskId === p.taskId) as IpcResult<M>;
+    case "mcp.reports.list":
+      return fixtureReports(p.projectId ?? anyProject()).filter((r) => !p.taskId || r.taskId === p.taskId) as IpcResult<M>;
+    case "mcp.servers.list":
+      return fixtureServers(p.projectId) as IpcResult<M>;
+    case "mcp.servers.usage":
+      return fixtureUsage(p.projectId) as IpcResult<M>;
     case "runs.undoPreview":
       return fixtureUndo((params as { runId: string }).runId) as IpcResult<M>;
     case "github.repo":

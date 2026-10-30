@@ -1,4 +1,5 @@
 import type { LoopDecisionKind, Reason } from "./ipc/tasks.ts";
+import type { CrewReportType } from "./mcp.ts";
 import type { TimelineEvent } from "./ipc/usage.ts";
 
 // A task's timeline (PLAN.md M5): one lane per run with what it was doing over time, and a short
@@ -56,6 +57,7 @@ export type TimelineEntry =
   | { kind: "message"; at: number; runId: string | null; queued: boolean }
   | { kind: "retry"; at: number; runId: string | null }
   | { kind: "loop"; at: number; runId: string | null; memberId: string | null; decision: LoopDecisionKind; iteration: number; max: number; reason: Reason }
+  | { kind: "report"; at: number; runId: string | null; reportId: string; report: CrewReportType; text: string; title: string | null }
   | { kind: "ended"; at: number; runId: string; reason: string | null };
 
 export interface Timeline {
@@ -208,6 +210,10 @@ export function buildTimeline(runs: TimelineRun[], events: TimelineEvent[], now:
         flush(e.runId);
         entries.push({ kind: "loop", at, runId: e.runId, memberId: e.memberId, decision: e.decision, iteration: e.iteration, max: e.max, reason: e.reason });
         break;
+      case "report":
+        flush(e.runId);
+        entries.push({ kind: "report", at, runId: e.runId, reportId: e.reportId, report: e.report, text: e.text, title: e.title });
+        break;
       case "run.state":
         if (e.state !== "running" && e.state !== "starting") flush(e.runId);
         break;
@@ -222,7 +228,7 @@ export function buildTimeline(runs: TimelineRun[], events: TimelineEvent[], now:
   for (const r of sortedRuns) if (r.endedAt) entries.push({ kind: "ended", at: ms(r.endedAt), runId: r.id, reason: r.endReason });
 
   // Stable order: by time, then so a run starts before its steps and ends after them.
-  const RANK: Record<TimelineEntry["kind"], number> = { started: 0, wait: 1, request: 2, handoff: 2, message: 2, retry: 2, tools: 3, ended: 4, loop: 5 };
+  const RANK: Record<TimelineEntry["kind"], number> = { started: 0, wait: 1, request: 2, handoff: 2, message: 2, retry: 2, report: 2, tools: 3, ended: 4, loop: 5 };
   entries.sort((a, b) => a.at - b.at || RANK[a.kind] - RANK[b.kind]);
 
   const start = lanes.length ? Math.min(...lanes.map((l) => l.start)) : now;

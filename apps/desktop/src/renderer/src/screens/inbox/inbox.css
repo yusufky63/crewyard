@@ -53,3 +53,10 @@ button.ib-item:hover { background: var(--raised); }
 @media (max-width: 1279.98px) {
   .ib-grid, .ib-grid.split { grid-template-columns: minmax(0, 1fr); gap: 16px; }
 }
+/* Crew reports (docs/adr/0007): the agent's words in a quoted block under our own line. */
+.ib-muted { color: var(--ink-3); margin-top: 2px; }
+.ib-report-title { font-size: 13px; font-weight: 500; color: var(--ink); overflow-wrap: anywhere; }
+.ib-quote { display: block; margin-top: 2px; padding: 4px 0 4px 10px; border-left: 2px solid var(--line-strong); font-size: 13px; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+.ib-artifacts { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; font-size: 12px; }
+.ib-artifacts code { font: 400 12px / 1.4 var(--mono); color: var(--ink-2); overflow-wrap: anywhere; }
+.ib-reply { display: grid; gap: 4px; margin-top: 6px; }

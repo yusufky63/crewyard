@@ -10,6 +10,7 @@ import { ensureSystemEnv, exitCodeWithin, isShutdownExit, killTree, parseVersion
 import { AGENTS, type AgentSpec } from "./agents.ts";
 import { AcpMapper, chooseOutcome, mustReject, type EventBody } from "./mapper.ts";
 import { EventQueue } from "./queue.ts";
+import { acpMcpServers, mcpServerOf } from "./mcp.ts";
 
 export interface AcpAdapterOptions {
   /** Agent to drive for every profile; by default the spec is picked from profile.runner. */
@@ -216,7 +217,7 @@ export class AcpAdapter implements AgentAdapter {
     try {
       if (!run.canLoad) throw new Error(`${run.spec.label} does not support session/load, so its sessions cannot be resumed`);
       run.loading = true;
-      await run.conn.agent.request(acp.methods.agent.session.load, { sessionId: ref.sessionId, cwd: req.cwd, mcpServers: [] });
+      await run.conn.agent.request(acp.methods.agent.session.load, { sessionId: ref.sessionId, cwd: req.cwd, mcpServers: acpMcpServers(req.mcpServers ?? []) });
       run.loading = false;
       run.sessionId = ref.sessionId;
       run.handle.nativeSession = { runner: "acp", sessionId: ref.sessionId };
@@ -412,7 +413,7 @@ export class AcpAdapter implements AgentAdapter {
   }
 
   private async newSession(run: Run): Promise<string> {
-    const request = () => run.conn.agent.request(acp.methods.agent.session.new, { cwd: run.req.cwd, mcpServers: [] });
+    const request = () => run.conn.agent.request(acp.methods.agent.session.new, { cwd: run.req.cwd, mcpServers: acpMcpServers(run.req.mcpServers ?? []) });
     try {
       return (await request()).sessionId;
     } catch (err) {
@@ -489,13 +490,18 @@ export class AcpAdapter implements AgentAdapter {
     if (mustReject(run.req.policy, kind, paths, run.req.cwd)) {
       return Promise.resolve({ outcome: chooseOutcome(params.options, { kind: "approval", decision: "deny" }) });
     }
+    // The report server's tools change nothing in the worktree; a user server's are rated like network access.
+    const server = mcpServerOf(params.toolCall);
+    const spec = server ? (run.req.mcpServers ?? []).find((m) => m.name === server) : undefined;
+    if (spec?.builtin) return Promise.resolve({ outcome: chooseOutcome(params.options, { kind: "approval", decision: "allow_once" }) });
     const requestId = `perm-${++run.permissionCount}`;
     return new Promise((resolve) => {
       run.pending.set(requestId, { options: params.options, resolve });
       signal.addEventListener("abort", () => {
         if (run.pending.delete(requestId)) resolve({ outcome: { outcome: "cancelled" } });
       });
-      this.emit(run, [run.mapper.approval(requestId, params.toolCall, run.req.cwd)]);
+      const body = run.mapper.approval(requestId, params.toolCall, run.req.cwd);
+      this.emit(run, [server && body.type === "request.approval" ? { ...body, network: true } : body]);
     });
   }
 

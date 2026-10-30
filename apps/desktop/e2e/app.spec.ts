@@ -97,6 +97,43 @@ test("Inbox: answers an approval request and a question", async () => {
   await expect(page.getByText("Nothing needs you right now.")).toBeVisible();
 });
 
+test("Inbox: an agent reports through the MCP report server, gets a reply, and its follow-up becomes a draft only", async () => {
+  const { page } = h;
+  // The fake runner calls the report tools through the daemon's pipe with the run's ticket (docs/adr/0007).
+  h.setScripts({
+    researcher: [
+      [
+        running,
+        { mcp: { tool: "report", arguments: { kind: "needs_input", text: "Which region should the <b>cache</b> use?" } } },
+        { mcp: { tool: "propose_followup", arguments: { title: "Cache the session lookups", description: "The lookup runs twice per request." } } },
+        say("Waiting for the region."),
+        hold(),
+      ],
+    ],
+  });
+  const task = await startTask("Plan the session cache");
+  await openInbox();
+  const reports = page.locator(".ib-report");
+  await expect(reports).toHaveCount(2, { timeout: 20_000 });
+  const ask = reports.filter({ hasText: "needs your input" });
+  // The agent's words are text: the markup shows as typed, never as HTML.
+  await expect(ask.locator(".ib-quote")).toHaveText("Which region should the <b>cache</b> use?");
+  await ask.getByRole("button", { name: "Reply" }).click();
+  await ask.getByLabel("Your answer").fill("eu-west-1");
+  await ask.getByRole("button", { name: "Send" }).click();
+  await expect(reports).toHaveCount(1);
+
+  const tasksBefore = (await tasks()).length;
+  await reports.getByRole("button", { name: "Turn into a task" }).click();
+  await expect(page.getByLabel("New task")).toBeVisible();
+  await expect.poll(async () => (await tasks()).length).toBe(tasksBefore + 1);
+  const draft = (await taskByTitle("Cache the session lookups"))!;
+  expect(draft.status).toBe("proposed");
+  expect(await runsOf(draft.id)).toHaveLength(0);
+  await daemon(page, "tasks.cancel", { taskId: draft.id });
+  await daemon(page, "tasks.cancel", { taskId: task.id });
+});
+
 test("Limits: a limit notice hands off in Ask mode, a budget cap pauses and continues", async () => {
   const { page } = h;
   const resetsAt = new Date(Date.now() + 3 * 3_600_000).toISOString();

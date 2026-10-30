@@ -46,7 +46,15 @@
     "message": "You sent a message",
     "messageQueued": "You sent a message; it waits for the next run",
     "retry": "{{who}} checked again",
-    "ended": "{{who}} ended · {{reason}}"
+    "ended": "{{who}} ended · {{reason}}",
+    "report": {
+      "checkpoint": "{{who}} reported a checkpoint",
+      "needs_input": "{{who}} needs your input",
+      "stuck": "{{who}} is stuck",
+      "done": "{{who}} reported done",
+      "followup": "{{who}} proposed a follow-up task"
+    },
+    "fromAgent": "From the agent"
   },
   "trigger": {
     "limit": "after a limit",

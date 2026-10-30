@@ -1,4 +1,5 @@
 import type { AgentEvent, LimitWindow, Provenance, RiskLevel, RunnerId, RunOutput } from "./events.ts";
+import type { McpServerSpec } from "./mcp.ts";
 
 // What a runner can do. Unsupported operations are shown disabled with a reason, never hidden.
 export interface AgentCapabilities {
@@ -35,6 +36,12 @@ export interface AgentCapabilities {
   fork?: { compact: boolean };
   /** `StartRequest.review` runs the runner's own code review (Codex `review/start`, feature scan A12). */
   nativeReview?: boolean;
+  /**
+   * `StartRequest.mcpServers` reaches the runner through its own documented config (docs/adr/0007),
+   * and whether it can limit a server to some of its tools (needed to give read-only roles only a
+   * server's read tools). Absent: the run gets no MCP servers, including the report server.
+   */
+  mcp?: { toolFilter: boolean };
 }
 
 /** The session to copy and where the copy goes; both profiles run the same runner. */
@@ -182,6 +189,12 @@ export interface StartRequest {
    * `outputSchema`, which the run must still end with.
    */
   review?: { target: ReviewTarget };
+  /**
+   * Stdio MCP servers for this run only (docs/adr/0007): Crewyard's report server first, then the
+   * user's enabled servers the role may use. Only with `capabilities.mcp`; their env holds decrypted
+   * secrets, passed to the server's process only and never logged.
+   */
+  mcpServers?: McpServerSpec[];
 }
 
 export interface OutputSchema {

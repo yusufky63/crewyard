@@ -10,6 +10,7 @@ import { buildEnv, redact } from "./env.ts";
 import { EventMapper, type EventBody, type TurnOutcome } from "./mapper.ts";
 import { AsyncQueue } from "./queue.ts";
 import { crossProfileStore, findSession, isSessionProblem, removeFiles, sessionProblemDetail } from "./sessions.ts";
+import { isUserMcpTool, mcpAllowedTools, mcpServersOption, mcpToolRefused } from "./mcp.ts";
 import { PLAN_TOOLS, approvalResult, approvalScope, chainedOnAllowlisted, disallowedFor, permissionModeFor, policyDecision, questionResult, questionsFrom, readOnlyAllowRules } from "./tools.ts";
 
 /** The CLI version the installed SDK was built against (package.json "claudeCodeVersion"). */
@@ -385,10 +386,13 @@ export class ClaudeAdapter implements AgentAdapter {
       // approval. Writers: "default", every approval comes to canUseTool.
       permissionMode: permissionModeFor(req.policy),
       canUseTool: this.canUseTool(ctx),
-      allowedTools: [...PLAN_TOOLS, ...(req.policy.writes === "none" ? readOnlyAllowRules(req.policy) : [])],
+      allowedTools: [...PLAN_TOOLS, ...(req.policy.writes === "none" ? readOnlyAllowRules(req.policy) : []), ...mcpAllowedTools(req.mcpServers ?? [], req.policy)],
       disallowedTools: disallowedFor(req.policy),
       ...(req.outputSchema ? { outputFormat: { type: "json_schema", schema: req.outputSchema.jsonSchema } } : {}),
       hooks: this.policyHooks(req),
+      // Exactly the servers the daemon gave this run, never the repository's .mcp.json (docs/adr/0007).
+      mcpServers: mcpServersOption(req.mcpServers ?? []),
+      strictMcpConfig: true,
       ...(resumeId ? { resume: resumeId } : { sessionId }),
       spawnClaudeCodeProcess: (o) => {
         const child = this.deps.spawn(o.command, o.args, { cwd: o.cwd, env: o.env as NodeJS.ProcessEnv, stdio: ["pipe", "pipe", "pipe"] });
@@ -498,7 +502,10 @@ export class ClaudeAdapter implements AgentAdapter {
         this.emit(ctx, { type: "request.question", requestId, questions: questionsFrom(input) });
         this.emit(ctx, { type: "run.state", state: "waiting_input" });
       } else {
-        this.emit(ctx, { type: "request.approval", requestId, toolCallId: opts.toolUseID, cwd: ctx.req.cwd, ...approvalScope(toolName, input, opts.blockedPath) });
+        const scope = approvalScope(toolName, input, opts.blockedPath);
+        // A user MCP server is another program that may reach anything: rated like network access.
+        if (isUserMcpTool(toolName, ctx.req.mcpServers ?? [])) scope.network = true;
+        this.emit(ctx, { type: "request.approval", requestId, toolCallId: opts.toolUseID, cwd: ctx.req.cwd, ...scope });
         this.emit(ctx, { type: "run.state", state: "waiting_approval" });
       }
       const answer = await this.waitFor(ctx, requestId, opts.signal);
@@ -535,6 +542,9 @@ export class ClaudeAdapter implements AgentAdapter {
       const denied = policyDecision(input.tool_name, req.policy);
       if (denied?.behavior === "deny") {
         return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: denied.message } };
+      }
+      if (mcpToolRefused(input.tool_name, req.mcpServers ?? [], req.policy)) {
+        return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: "This MCP tool is not available to a read-only role." } };
       }
       if (chainedOnAllowlisted(input.tool_name, input.tool_input, req.policy)) {
         const reason = "Run the project's command on its own: chaining, redirection and substitution are not allowed for this read-only role.";

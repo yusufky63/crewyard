@@ -9,6 +9,7 @@ import { useNav } from "../../nav.ts";
 import { usePrefs, type Density, type ThemePref } from "../../prefs.ts";
 import { AboutSection, DataSection } from "./DataSection.tsx";
 import { KeepAwakeRows } from "./KeepAwake.tsx";
+import { McpSection } from "./McpSection.tsx";
 import { backTarget, SECTIONS, useSettingsNav, type SectionId } from "./model.ts";
 import { Row, Section, Seg, Toggle } from "./parts.tsx";
 import { StallRules } from "./StallRules.tsx";
@@ -277,6 +278,7 @@ export function SettingsScreen() {
           <Projects />
           <Notifications supported={startup.data?.supported ?? false} />
           <Startup />
+          <McpSection index={5} />
           <DataSection />
           <AboutSection />
         </div>

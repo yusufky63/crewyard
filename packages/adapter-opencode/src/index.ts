@@ -17,6 +17,8 @@ export const capabilities: AgentCapabilities = {
   usage: true,
   reportedLimits: false,
   readOnlyMode: true,
+  // mcp in the inline config, session permission rules per tool (docs/adr/0007).
+  mcp: { toolFilter: true },
   // No documented way to add to a busy session's running turn; a prompt sent then waits as the next turn.
   // Session revert to a turn's user message restores OpenCode's file snapshot and hides the turn from history.
   undo: { files: true, history: true },
