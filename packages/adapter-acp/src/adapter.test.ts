@@ -217,6 +217,12 @@ describe("ACP adapter against a fake Gemini agent", () => {
     expect((ended as { detail?: string }).detail).toMatch(/exited|closed/i);
   });
 
+  it("ends as interrupted when Windows ends the agent at shutdown", async () => {
+    const { adapter, req } = await setup("shutdown", "shutdown");
+    const run = await adapter.start(req);
+    expect(last(await collect(adapter, run))).toMatchObject({ type: "run.ended", reason: "interrupted", detail: "windows_shutdown" });
+  });
+
   it("authenticates an API-key profile when the agent asks for it, and never a sign-in profile", async () => {
     const keyed = await setup("auth-key", "hello", WORKTREE, { kind: "api_key", secretRef: "s" }, { FAKE_ACP_REQUIRE_AUTH: "1", GEMINI_API_KEY: "not-a-real-key" });
     const run = await keyed.adapter.start(keyed.req);

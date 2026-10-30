@@ -197,6 +197,10 @@ describe("CodexAdapter against a fake app-server", () => {
     const crashDir = home({ scenario: "crash" });
     const crashed = await collect(adapter, await adapter.start(request(crashDir)));
     expect(crashed.at(-1)).toMatchObject({ type: "run.ended", reason: "failed" });
+
+    // Windows ends children with 0x40010004 at sign-out or restart: interrupted, so it can resume.
+    const shutdown = await collect(adapter, await adapter.start(request(home({ scenario: "shutdown" }))));
+    expect(shutdown.at(-1)).toMatchObject({ type: "run.ended", reason: "interrupted", detail: "windows_shutdown" });
   });
 
   it("resumes a thread by id and starts a turn with the new prompt", async () => {

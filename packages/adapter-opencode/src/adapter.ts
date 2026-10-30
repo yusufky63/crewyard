@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AgentAdapter, AgentCapabilities, AgentEvent, Answer, EndReason, NativeSessionRef, Probe, Profile, RunHandle, RunState, StartRequest, UserInput } from "@crewyard/core";
-import { parseVersion, run as runCommand, which } from "@crewyard/proc";
+import { isShutdownExit, parseVersion, run as runCommand, which } from "@crewyard/proc";
 import { createOpencodeClient, type Event as OpenCodeEvent, type OpencodeClient, type PermissionRequest, type SessionStatus } from "@opencode-ai/sdk/v2";
 import { OpenCodeMapper, type EventBody } from "./mapper.ts";
 import { mustReject, permissionRules } from "./policy.ts";
@@ -216,7 +216,8 @@ export class OpenCodeAdapter implements AgentAdapter {
       sse: new AbortController(),
     };
     this.runs.set(runId, run);
-    void server.exited.then(() => this.end(run, "failed", `opencode serve exited unexpectedly: ${lastLine(server.stderrTail())}`));
+    // Windows ends children with a shutdown status at sign-out or restart: that run was interrupted, not failed.
+    void server.exited.then((code) => (isShutdownExit(code) ? this.end(run, "interrupted", "windows_shutdown") : this.end(run, "failed", `opencode serve exited unexpectedly: ${lastLine(server.stderrTail())}`)));
     return run;
   }
 

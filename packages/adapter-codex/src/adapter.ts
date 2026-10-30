@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AgentAdapter, AgentCapabilities, AgentEvent, Answer, EndReason, LimitSample, NativeSessionRef, Probe, Profile, RunHandle, StartRequest, UserInput } from "@crewyard/core";
-import { which } from "@crewyard/proc";
+import { exitCodeWithin, isShutdownExit, which } from "@crewyard/proc";
 import { AppServer, withAppServer, type Launcher } from "./appserver.ts";
 import {
   commandApproval,
@@ -269,7 +269,16 @@ export class CodexAdapter implements AgentAdapter {
     this.runs.set(runId, run);
     server.rpc.onNotification((method, params) => this.onNotification(run, method, params));
     server.rpc.onRequest((method, params, id) => this.onServerRequest(run, method, params, id));
-    server.rpc.onClose((reason) => this.finish(run, run.stopping ? "stopped" : "failed", run.stopping ? undefined : reason));
+    server.rpc.onClose((reason) => {
+      if (run.ended || run.stopping) return this.finish(run, "stopped");
+      // Output can close before the exit status arrives. Windows ends children with a shutdown
+      // status at sign-out or restart: that run was interrupted, not failed.
+      void exitCodeWithin(server.child, 2_000).then((code) => {
+        if (run.stopping) this.finish(run, "stopped");
+        else if (isShutdownExit(code)) this.finish(run, "interrupted", "windows_shutdown");
+        else this.finish(run, "failed", reason);
+      });
+    });
     try {
       await server.initialize({ experimentalApi: true });
     } catch (err) {

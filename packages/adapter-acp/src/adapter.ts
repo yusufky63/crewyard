@@ -4,7 +4,7 @@ import { Readable, Writable } from "node:stream";
 import type { ChildProcess } from "node:child_process";
 import * as acp from "@agentclientprotocol/sdk";
 import type { AgentAdapter, AgentCapabilities, AgentEvent, Answer, EndReason, NativeSessionRef, Probe, Profile, RunHandle, RunState, StartRequest, UserInput } from "@crewyard/core";
-import { killTree, parseVersion, run as runCommand, start, which } from "@crewyard/proc";
+import { exitCodeWithin, isShutdownExit, killTree, parseVersion, run as runCommand, start, which } from "@crewyard/proc";
 import { AGENTS, type AgentSpec } from "./agents.ts";
 import { AcpMapper, chooseOutcome, mustReject, type EventBody } from "./mapper.ts";
 import { EventQueue } from "./queue.ts";
@@ -245,7 +245,8 @@ export class AcpAdapter implements AgentAdapter {
     opened.child.stderr?.on("data", (d: string) => {
       current.stderr = (current.stderr + d).slice(-STDERR_TAIL);
     });
-    opened.child.once("exit", (code) => this.end(current, "failed", `${spec.label} exited (${code ?? "signal"}): ${lastLine(current.stderr)}`));
+    // Windows ends children with a shutdown status at sign-out or restart: that run was interrupted, not failed.
+    opened.child.once("exit", (code) => (isShutdownExit(code) ? this.end(current, "interrupted", "windows_shutdown") : this.end(current, "failed", `${spec.label} exited (${code ?? "signal"}): ${lastLine(current.stderr)}`)));
     try {
       const init = await opened.init;
       current.canLoad = init.agentCapabilities?.loadSession === true;
@@ -324,7 +325,10 @@ export class AcpAdapter implements AgentAdapter {
         stop = res.stopReason;
       } catch (err) {
         run.busy = false;
-        this.end(run, run.interrupted ? "interrupted" : "failed", message(err));
+        // The connection can drop before the exit status arrives; a shutdown exit wins over the error.
+        const shutdown = !run.interrupted && isShutdownExit(await exitCodeWithin(run.child, 2_000));
+        if (shutdown) this.end(run, "interrupted", "windows_shutdown");
+        else this.end(run, run.interrupted ? "interrupted" : "failed", message(err));
         return;
       }
       if (stop === "cancelled" || run.interrupted) break;

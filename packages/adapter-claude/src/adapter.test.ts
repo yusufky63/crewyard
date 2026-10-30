@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import { readFileSync } from "node:fs";
 import type { ChildProcess } from "node:child_process";
 import { AgentEvent, type Profile, type RolePolicy, type StartRequest } from "@crewyard/core";
@@ -250,6 +251,17 @@ describe("Claude adapter: control", () => {
     expect(events.filter((e) => e.type === "usage.update")).toHaveLength(2);
     expect(events.at(-1)).toMatchObject({ type: "run.ended", reason: "completed" });
     await expect(adapter.send(run, { kind: "text", text: "late" })).rejects.toThrow();
+  });
+
+  it("reports a CLI that Windows ended at shutdown as interrupted, not failed", async () => {
+    // 0x40010004 is the status Windows gives children it ends at sign-out or restart.
+    const fakeChild = Object.assign(new EventEmitter(), { pid: 4243, exitCode: null as number | null, stderr: { setEncoding: () => ({ on: () => {} }) } });
+    const spawn = vi.fn(() => fakeChild as unknown as ChildProcess);
+    const { adapter } = setup([[init(), { spawn: { pid: 4243 } }, { fail: "Claude Code process exited" }]], { spawn });
+    const run = await adapter.start(req());
+    setTimeout(() => fakeChild.emit("exit", 0x40010004, null), 20);
+    const events = await collect(adapter.events(run));
+    expect(events.at(-1)).toMatchObject({ type: "run.ended", reason: "interrupted", detail: "windows_shutdown" });
   });
 
   it("reports a crash as failed without leaking the key", async () => {
