@@ -555,7 +555,8 @@ Then create a new file ENV_CHECK.md that holds its single output line, and commi
       d.row({ flow, runner: "opencode/deepseek", result: "skipped", costUsd: null, notes: "profile not created" });
       return;
     }
-    const serving = () => new Set(processTable().filter((r) => r.name.toLowerCase() === "opencode.exe" && / serve /.test(r.commandLine ?? "")).map((r) => r.pid));
+    // cross-spawn quotes each argument through the .cmd shim: the line reads `opencode.exe" "serve" ...`.
+    const serving = () => new Set(processTable().filter((r) => r.name.toLowerCase() === "opencode.exe" && /[\s"]serve[\s"]/.test(r.commandLine ?? "")).map((r) => r.pid));
     const before = serving();
     const t = await d.call("tasks.propose", { projectId, title: "Research: describe every file", description: "Read every file in this repository, one at a time, and describe each in two sentences. Do not change any file.", kind: "research", size: "S", budgetUsd: 0.2, pins: { researcher: id } });
     await d.call("tasks.approve", { taskId: t.id });
