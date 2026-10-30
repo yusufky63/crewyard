@@ -4,6 +4,7 @@ import { app, BrowserWindow, dialog, ipcMain, Notification, shell, type MessageB
 import { inQuietHours, type IpcMethod, type IpcParams, type IpcResult, type NotificationSettings } from "@crewyard/core";
 import type { AppInfo, NavigateTarget, StartupState, TitleBarColors } from "../shared/api.ts";
 import { DaemonHost } from "./daemon-host.ts";
+import { e2eMode } from "./e2e.ts";
 import { pickMainLanguage, translator, type MainLanguage } from "./i18n.ts";
 import { Toaster } from "./notify/toaster.ts";
 import { HIDDEN_ARG, readStartup, writeStartup } from "./startup.ts";
@@ -41,16 +42,21 @@ if (shotProfile) {
   });
 }
 
+// Playwright runs (apps/desktop/e2e) bring their own throwaway profile; refused when packaged.
+const e2e = e2eMode(process.env, app.isPackaged);
+if (e2e.refused) console.error("CREWYARD_E2E is ignored in a packaged build");
+if (e2e.enabled) app.setPath("userData", e2e.profile);
+
 const smokeRun = process.env.CREWYARD_SMOKE === "1";
-/** Tray, toasts, close-to-tray and Start with Windows. Off for screenshot and smoke runs. */
-const desktop = isWin && !shotFile && !smokeRun;
+/** Tray, toasts, close-to-tray and Start with Windows. Off for screenshot, smoke and e2e runs. */
+const desktop = isWin && !shotFile && !smokeRun && !e2e.enabled;
 const startHidden = desktop && process.argv.includes(HIDDEN_ARG);
 
 app.setAppUserModelId("dev.crewyard.app");
 // A fixed activator CLSID, so a toast pressed in the Action Center after a restart still comes
 // back to this app through Notification.handleActivation.
 if (desktop) app.setToastActivatorCLSID("{74B586E4-570F-475A-B191-B804BBB49D94}");
-if (!shotFile && !app.requestSingleInstanceLock()) app.quit();
+if (!shotFile && !e2e.enabled && !app.requestSingleInstanceLock()) app.quit();
 
 let win: BrowserWindow | null = null;
 let language: MainLanguage = "en";

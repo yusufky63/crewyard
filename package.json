@@ -12,6 +12,7 @@
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run",
+    "e2e": "pnpm --filter @crewyard/desktop e2e",
     "tokens": "node scripts/build-tokens.mjs",
     "contrast": "node design/check-contrast.mjs",
     "catalog:sync": "node catalog/sync-catalog.mjs",
