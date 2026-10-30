@@ -10,15 +10,32 @@ export const DOC_PATTERNS = ["*.md", "*.mdx", "*.txt", "docs/*"];
 
 const NETWORK_TOOLS = ["webfetch", "websearch"];
 
+/**
+ * Inspection commands a read-only role may run without asking, so a reviewer can read the diff.
+ * OpenCode has no read-only command classifier of its own, so this list is short on purpose.
+ */
+export const READ_ONLY_COMMANDS = ["git diff", "git log", "git show", "git status", "git blame"];
+
+/** Command shapes that write even when the command itself only reads: redirection and `--output`. */
+const WRITING_SHAPES = ["*>*", "*--output*"];
+
 export function permissionRules(policy: RolePolicy): PermissionRuleset {
   const rules: PermissionRuleset = [];
+  // The task tool starts OpenCode's own subagents, whose work would bypass the crew's DAG; never.
+  rules.push({ permission: "task", pattern: "*", action: "deny" });
   if (policy.writes !== "worktree") rules.push({ permission: "edit", pattern: "*", action: "deny" });
   if (policy.writes === "docs") for (const pattern of DOC_PATTERNS) rules.push({ permission: "edit", pattern, action: "allow" });
-  // Every command goes through our approval layer (risk classes, Inbox) unless the role allowlists it.
-  rules.push({ permission: "bash", pattern: "*", action: "ask" });
-  for (const cmd of policy.allowCommands) {
-    rules.push({ permission: "bash", pattern: cmd, action: "allow" });
-    rules.push({ permission: "bash", pattern: `${cmd} *`, action: "allow" });
+  const allow = (cmd: string) => rules.push({ permission: "bash", pattern: cmd, action: "allow" }, { permission: "bash", pattern: `${cmd} *`, action: "allow" });
+  if (policy.writes === "none") {
+    // Read-only roles: the server refuses every command except the role's allowlist (its test and
+    // build commands) and plain inspection; nothing reaches the Inbox.
+    rules.push({ permission: "bash", pattern: "*", action: "deny" });
+    for (const cmd of [...policy.allowCommands, ...READ_ONLY_COMMANDS]) allow(cmd);
+    for (const pattern of WRITING_SHAPES) rules.push({ permission: "bash", pattern, action: "deny" });
+  } else {
+    // Every command goes through our approval layer (risk classes, Inbox) unless the role allowlists it.
+    rules.push({ permission: "bash", pattern: "*", action: "ask" });
+    for (const cmd of policy.allowCommands) allow(cmd);
   }
   const network = policy.network === "allowed" ? "allow" : policy.network === "denied" ? "deny" : "ask";
   for (const permission of NETWORK_TOOLS) rules.push({ permission, pattern: "*", action: network });
@@ -35,6 +52,9 @@ export function isDocsPath(path: string): boolean {
  * adapter without reaching the user, even if the server asked despite the ruleset.
  */
 export function mustReject(policy: RolePolicy, permission: string, patterns: string[]): boolean {
+  if (permission === "task") return true;
+  // The ruleset settles every command of a read-only role; a question about one means it was bypassed.
+  if (permission === "bash" && policy.writes === "none") return true;
   if (permission === "edit") {
     if (policy.writes === "none") return true;
     if (policy.writes === "docs") return patterns.length === 0 || !patterns.every(isDocsPath);

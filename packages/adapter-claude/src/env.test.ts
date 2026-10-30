@@ -1,5 +1,6 @@
 import type { Profile } from "@crewyard/core";
 import { describe, expect, it } from "vitest";
+import { WINDOWS_SYSTEM_VARS } from "@crewyard/proc";
 import { buildEnv, redact } from "./env.ts";
 
 const anthropic: Profile = {
@@ -62,5 +63,15 @@ describe("buildEnv", () => {
 describe("redact", () => {
   it("replaces every occurrence of every secret", () => {
     expect(redact("key sk-1234567890 and again sk-1234567890", ["sk-1234567890"])).toBe("key [redacted] and again [redacted]");
+  });
+});
+
+describe("Windows system variables", () => {
+  it("reach the child once each, whatever their spelling in the parent", () => {
+    const parent = { ...inherited, SystemRoot: "C:\\Windows", SystemDrive: "C:", ProgramData: "C:\\ProgramData", windir: "C:\\Windows", TEMP: "C:\\T", TMP: "C:\\T", USERPROFILE: "C:\\Users\\Test User", APPDATA: "C:\\A", LOCALAPPDATA: "C:\\L", PATHEXT: ".EXE;.CMD", ComSpec: "C:\\Windows\\system32\\cmd.exe" };
+    const { env } = buildEnv(deepseek, { ANTHROPIC_AUTH_TOKEN: "sk-deepseek-123456" }, null, parent);
+    for (const name of WINDOWS_SYSTEM_VARS) expect(Object.keys(env).filter((k) => k.toUpperCase() === name.toUpperCase()), name).toHaveLength(1);
+    expect(env.Path).toBe(parent.Path);
+    expect(env.ComSpec).toBe(parent.ComSpec);
   });
 });

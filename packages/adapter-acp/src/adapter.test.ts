@@ -2,7 +2,12 @@ import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { AgentEvent, type AgentAdapter, type Profile, type RolePolicy, type RunHandle, type StartRequest } from "@crewyard/core";
+import { existsSync, writeFileSync } from "node:fs";
+import { AgentEvent, REVIEW_VERDICT_OUTPUT, type AgentAdapter, type Profile, type RolePolicy, type RunHandle, type StartRequest } from "@crewyard/core";
+import { WINDOWS_SYSTEM_VARS } from "@crewyard/proc";
+import { agentEnv } from "./adapter.ts";
+import { gemini } from "./agents.ts";
+import { GEMINI_POLICY } from "./profile.ts";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { capabilities, createAdapter } from "./index.ts";
 
@@ -22,7 +27,7 @@ afterAll(async () => {
   await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 });
 
-const TOGGLES = ["FAKE_ACP_VERSION", "FAKE_ACP_HELP", "FAKE_ACP_LOAD"];
+const TOGGLES = ["FAKE_ACP_VERSION", "FAKE_ACP_HELP", "FAKE_ACP_LOAD", "FAKE_ACP_PLAN"];
 afterEach(() => {
   for (const k of TOGGLES) delete process.env[k];
 });
@@ -172,12 +177,43 @@ describe("ACP adapter against a fake Gemini agent", () => {
     expect((await readLog(logFile)).filter((l) => l.kind === "prompt").map((l) => l.text)).toEqual([req.prompt, "The user denied that request: Run the tests with pnpm."]);
   });
 
-  it("refuses edits for a read-only role without asking the user", async () => {
-    const { adapter, req } = await setup("readonly", "edit", READ_ONLY);
+  it("refuses edits for a read-only role without asking the user, with Gemini's plan mode as the first layer", async () => {
+    const { adapter, req, logFile } = await setup("readonly", "edit", READ_ONLY);
     const run = await adapter.start(req);
     const events = await collect(adapter, run);
     expect(events.some((e) => e.type === "request.approval")).toBe(false);
     expect(texts(events)).toEqual(["edit:cancel"]);
+    expect((await readLog(logFile)).find((l) => l.kind === "launch")).toMatchObject({ argv: ["--acp", "--model", "gemini-2.5-pro", "--approval-mode", "plan"] });
+  });
+
+  it("says so when the installed Gemini has no plan mode, and still refuses writes itself", async () => {
+    process.env.FAKE_ACP_PLAN = "0";
+    const { adapter, req, logFile } = await setup("readonly-noplan", "edit", READ_ONLY);
+    const events = await collect(adapter, await adapter.start(req));
+    expect(events.some((e) => e.type === "run.state" && /has no read-only mode/.test(e.detail ?? ""))).toBe(true);
+    expect(texts(events)).toEqual(["edit:cancel"]);
+    expect((await readLog(logFile)).find((l) => l.kind === "launch")).toMatchObject({ argv: ["--acp", "--model", "gemini-2.5-pro"] });
+  });
+
+  it("turns Gemini's subagents off in the profile folder, keeping the profile's other settings", async () => {
+    const { adapter, req, configDir } = await setup("subagents", "hello");
+    await mkdir(join(configDir, ".gemini"), { recursive: true });
+    writeFileSync(join(configDir, ".gemini", "settings.json"), '{\n  // chosen in the CLI\n  "ui": { "theme": "Dracula" },\n  "experimental": { "other": 1 }\n}\n');
+    await collect(adapter, await adapter.start(req));
+    expect(JSON.parse(await readFile(join(configDir, ".gemini", "settings.json"), "utf8"))).toEqual({ ui: { theme: "Dracula" }, experimental: { other: 1, enableAgents: false } });
+    expect(await readFile(join(configDir, ".gemini", "policies", "crewyard.toml"), "utf8")).toBe(GEMINI_POLICY);
+    expect(GEMINI_POLICY).toMatch(/toolName = "codebase_investigator"\ndecision = "deny"/);
+  });
+
+  it("leaves a settings file it cannot read alone and says so", async () => {
+    const { adapter, req, configDir } = await setup("subagents-broken", "hello");
+    await mkdir(join(configDir, ".gemini"), { recursive: true });
+    writeFileSync(join(configDir, ".gemini", "settings.json"), "{ not json");
+    const events = await collect(adapter, await adapter.start(req));
+    expect(await readFile(join(configDir, ".gemini", "settings.json"), "utf8")).toBe("{ not json");
+    expect(events.some((e) => e.type === "run.state" && /Could not read/.test(e.detail ?? ""))).toBe(true);
+    expect(existsSync(join(configDir, ".gemini", "policies", "crewyard.toml"))).toBe(true);
+    expect(last(events)).toMatchObject({ type: "run.ended", reason: "completed" });
   });
 
   it("lets a docs role ask about docs files only", async () => {
@@ -289,5 +325,52 @@ describe("ACP adapter against a fake Gemini agent", () => {
     expect(last(rest)).toMatchObject({ type: "run.ended", reason: "stopped" });
     expect(await gone(run.pid)).toBe(true);
     await adapter.stop(run);
+  });
+});
+
+describe("ACP adapter: schema-checked results through the prompt", () => {
+  const good = { verdict: "changes", summary: "One bug.", comments: [{ file: "src/a.ts", line: 4, severity: "minor", body: "Typo." }] };
+  const ended = (events: Ev[]) => events.find((e) => e.type === "run.ended") as Extract<Ev, { type: "run.ended" }>;
+  const prompts = async (file: string) => (await readLog(file)).filter((l) => l.kind === "prompt").map((l) => String(l.text));
+
+  it("asks for the JSON in the prompt and reads it from the final message", async () => {
+    const { adapter, req, logFile } = await setup("verdict ok", "verdict ok", READ_ONLY);
+    const events = await collect(adapter, await adapter.start({ ...req, outputSchema: REVIEW_VERDICT_OUTPUT }));
+    expect(ended(events)).toMatchObject({ reason: "completed", output: { ok: true, value: good } });
+    const sent = await prompts(logFile);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toContain(JSON.stringify(REVIEW_VERDICT_OUTPUT.jsonSchema));
+  });
+
+  it("retries once in the session, then takes the fixed answer", async () => {
+    const { adapter, req, logFile } = await setup("verdict fix", "verdict fix", READ_ONLY);
+    const events = await collect(adapter, await adapter.start({ ...req, outputSchema: REVIEW_VERDICT_OUTPUT }));
+    const sent = await prompts(logFile);
+    expect(sent).toHaveLength(2);
+    expect(sent[1]).toContain("contained no JSON object");
+    expect(ended(events)).toMatchObject({ reason: "completed", output: { ok: true, value: good } });
+  });
+
+  it("completes with the problem after one failed retry", async () => {
+    const { adapter, req, logFile } = await setup("verdict stubborn", "verdict stubborn", READ_ONLY);
+    const events = await collect(adapter, await adapter.start({ ...req, outputSchema: REVIEW_VERDICT_OUTPUT }));
+    expect(await prompts(logFile)).toHaveLength(2);
+    expect(ended(events)).toMatchObject({ reason: "completed", output: { ok: false, error: expect.stringMatching(/^verdict: /) } });
+  });
+});
+
+describe("ACP agent environment", () => {
+  it("passes every Windows system variable once, with the profile's own variables on top", () => {
+    const parent = { Path: "C:\\Windows", SystemRoot: "C:\\Windows", SystemDrive: "C:", ProgramData: "C:\\ProgramData", windir: "C:\\Windows", TEMP: "C:\\T", TMP: "C:\\T", USERPROFILE: "C:\\Users\\a b", APPDATA: "C:\\A", LOCALAPPDATA: "C:\\L", PATHEXT: ".EXE", ComSpec: "C:\\Windows\\system32\\cmd.exe" };
+    const profile: Profile = { id: "g", alias: "g", runner: "gemini-cli", providerId: "google", credential: { kind: "api_key", secretRef: "s" }, defaultModel: null, configDir: "C:\\profiles\\gemini dir", baseUrl: null };
+    const env = agentEnv(gemini, profile, { GEMINI_API_KEY: "k" }, parent);
+    for (const name of WINDOWS_SYSTEM_VARS) expect(Object.keys(env).filter((k) => k.toUpperCase() === name.toUpperCase()), name).toHaveLength(1);
+    expect(env.GEMINI_CLI_HOME).toBe(profile.configDir);
+    expect(env.GEMINI_API_KEY).toBe("k");
+  });
+
+  it("finds plan mode in the --approval-mode help line only", () => {
+    expect(gemini.readOnlyArgs("      --approval-mode  Set the approval mode [choices: default, auto_edit, yolo, plan]")).toEqual(["--approval-mode", "plan"]);
+    expect(gemini.readOnlyArgs("      --approval-mode  [choices: default, auto_edit, yolo]\n  --plan-file  unrelated")).toBeNull();
   });
 });

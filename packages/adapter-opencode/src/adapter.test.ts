@@ -2,7 +2,10 @@ import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { AgentEvent, type AgentAdapter, type RolePolicy, type RunHandle, type StartRequest } from "@crewyard/core";
+import { AgentEvent, REVIEW_VERDICT_OUTPUT, type AgentAdapter, type RolePolicy, type RunHandle, type StartRequest } from "@crewyard/core";
+import { WINDOWS_SYSTEM_VARS } from "@crewyard/proc";
+import { childEnv } from "./server.ts";
+import { unsupportedVersion } from "./adapter.ts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createAdapter } from "./index.ts";
 
@@ -85,6 +88,20 @@ describe("OpenCode adapter against a fake opencode serve", () => {
     const { adapter, req } = await setup("probe", "");
     const probe = await adapter.probe(req.profile);
     expect(probe).toMatchObject({ installed: true, version: "1.19.5", problems: [] });
+  });
+
+  it("refuses OpenCode 2.x at probe and at start, with the reason", async () => {
+    process.env.FAKE_OPENCODE_VERSION = "2.2.2";
+    try {
+      const { adapter, req } = await setup("v2", "basic");
+      const probe = await adapter.probe(req.profile);
+      expect(probe.version).toBe("2.2.2");
+      expect(probe.capabilities.launch).toBe(false);
+      expect(probe.problems).toEqual([expect.stringContaining("OpenCode 2.2.2 is not supported yet")]);
+      await expect(adapter.start(req)).rejects.toThrow(/changed the server API/);
+    } finally {
+      delete process.env.FAKE_OPENCODE_VERSION;
+    }
   });
 
   it("streams a turn, isolates the profile and ends with no process left", async () => {
@@ -279,5 +296,65 @@ describe("OpenCode adapter against a fake opencode serve", () => {
     expect(last(rest)).toMatchObject({ type: "run.ended", reason: "stopped" });
     expect(await gone(run.pid)).toBe(true);
     await adapter.stop(run);
+  });
+});
+
+describe("OpenCode adapter: schema-checked results", () => {
+  const good = { verdict: "pass", summary: "Fine.", comments: [] };
+  const ended = (events: Ev[]) => events.find((e) => e.type === "run.ended") as Extract<Ev, { type: "run.ended" }>;
+  const prompts = async (file: string) => (await readLog(file)).filter((l) => l.kind === "prompt") as Array<{ body: { format?: unknown; parts: Array<{ text: string }> } }>;
+
+  it("sends format with the prompt and reads the structured result", async () => {
+    const { adapter, req, logFile } = await setup("structured ok", "structured ok", READ_ONLY);
+    const events = await collect(adapter, await adapter.start({ ...req, outputSchema: REVIEW_VERDICT_OUTPUT }));
+    expect(ended(events)).toMatchObject({ reason: "completed", output: { ok: true, value: good } });
+    const sent = await prompts(logFile);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.body.format).toEqual({ type: "json_schema", schema: REVIEW_VERDICT_OUTPUT.jsonSchema });
+  });
+
+  it("retries once in the session when the result does not fit", async () => {
+    const { adapter, req, logFile } = await setup("structured fix", "structured fix", READ_ONLY);
+    const events = await collect(adapter, await adapter.start({ ...req, outputSchema: REVIEW_VERDICT_OUTPUT }));
+    const sent = await prompts(logFile);
+    expect(sent).toHaveLength(2);
+    expect(sent[1]?.body.parts[0]?.text).toContain("verdict: ");
+    expect(ended(events)).toMatchObject({ reason: "completed", output: { ok: true, value: good } });
+  });
+
+  it("falls back to JSON in the prompt when the provider refuses the forced tool choice", async () => {
+    const { adapter, req, logFile } = await setup("structured refused", "refused", READ_ONLY);
+    const events = await collect(adapter, await adapter.start({ ...req, outputSchema: REVIEW_VERDICT_OUTPUT }));
+    const sent = await prompts(logFile);
+    expect(sent).toHaveLength(2);
+    expect(sent[0]?.body.format).toBeDefined();
+    expect(sent[1]?.body.format).toEqual({ type: "text" });
+    expect(sent[1]?.body.parts[0]?.text).toMatch(/^refused\n\nWhen you have finished/);
+    expect(events.some((e) => e.type === "run.state" && /refused structured output/.test(e.detail ?? ""))).toBe(true);
+    expect(ended(events)).toMatchObject({ reason: "completed", output: { ok: true, value: good } });
+  });
+
+  it("completes with OpenCode's own error when the retry fails too", async () => {
+    const { adapter, req, logFile } = await setup("structured stubborn", "structured stubborn", READ_ONLY);
+    const events = await collect(adapter, await adapter.start({ ...req, outputSchema: REVIEW_VERDICT_OUTPUT }));
+    expect(await prompts(logFile)).toHaveLength(2);
+    expect(ended(events)).toMatchObject({ reason: "completed", output: { ok: false, error: expect.stringContaining("StructuredOutputError") } });
+  });
+});
+
+describe("OpenCode child environment", () => {
+  it("passes every Windows system variable once and no inherited OPENCODE_ setting", () => {
+    const parent = { Path: "C:\\Windows", SystemRoot: "C:\\Windows", SystemDrive: "C:", ProgramData: "C:\\ProgramData", windir: "C:\\Windows", TEMP: "C:\\T", TMP: "C:\\T", USERPROFILE: "C:\\Users\\a b", APPDATA: "C:\\A", LOCALAPPDATA: "C:\\L", PATHEXT: ".EXE", ComSpec: "C:\\Windows\\system32\\cmd.exe", Opencode_Config: "C:\\x.json" };
+    const env = childEnv("C:\\profiles\\oc dir", { KEY: "k" }, "pw", parent);
+    for (const name of WINDOWS_SYSTEM_VARS) expect(Object.keys(env).filter((k) => k.toUpperCase() === name.toUpperCase()), name).toHaveLength(1);
+    expect(env.Opencode_Config).toBeUndefined();
+    expect(env.OPENCODE_SERVER_PASSWORD).toBe("pw");
+  });
+
+  it("knows which versions it refuses", () => {
+    expect(unsupportedVersion("1.19.5")).toBeNull();
+    expect(unsupportedVersion("1.25.0")).toBeNull();
+    expect(unsupportedVersion(null)).toBeNull();
+    expect(unsupportedVersion("2.0.0")).toMatch(/not supported yet/);
   });
 });

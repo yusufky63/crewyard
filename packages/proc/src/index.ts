@@ -219,6 +219,30 @@ export function killTree(pid: number): Promise<void> {
   });
 }
 
+/**
+ * Windows system variables every child needs. Without SystemRoot, Winsock and crypto fail; without
+ * SystemDrive or ProgramData, Node and git pick wrong paths (emdash #3315). Adapters build their
+ * own child env, so each one passes it through ensureSystemEnv as the last step.
+ */
+export const WINDOWS_SYSTEM_VARS = ["SystemRoot", "SystemDrive", "ProgramData", "windir", "TEMP", "TMP", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "PATH", "PATHEXT", "COMSPEC"] as const;
+
+/**
+ * Copies every Windows system variable that `env` lacks from `source`. Names compare without
+ * case, as Windows does: a copied process.env has "Path", and adding "PATH" next to it would give
+ * the child two entries of which only one wins. Values already in `env` are kept, so an
+ * adapter's own override (a profile USERPROFILE, say) stays.
+ */
+export function ensureSystemEnv<T extends Record<string, string | undefined>>(env: T, source: NodeJS.ProcessEnv = process.env): T {
+  const present = new Set(Object.keys(env).filter((k) => env[k] !== undefined).map((k) => k.toUpperCase()));
+  const sourceKeys = Object.keys(source);
+  for (const name of WINDOWS_SYSTEM_VARS) {
+    if (present.has(name.toUpperCase())) continue;
+    const key = sourceKeys.find((k) => k.toUpperCase() === name.toUpperCase() && source[k] !== undefined);
+    if (key) (env as Record<string, string>)[key] = source[key] as string;
+  }
+  return env;
+}
+
 /** First "x.y.z"-looking token in a --version output, e.g. "codex-cli 0.166.0" -> "0.166.0". */
 export function parseVersion(text: string): string | null {
   return text.match(/\d+\.\d+(?:\.\d+)?(?:[-+][\w.]+)?/)?.[0] ?? null;

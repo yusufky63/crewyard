@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import type { AgentAdapter, AgentCapabilities, AgentEvent, Answer, EndReason, LimitSample, NativeSessionRef, Probe, Profile, RunHandle, StartRequest, UserInput } from "@crewyard/core";
+import { checkOutput, outputRetryPrompt, parseOutputText } from "@crewyard/core";
+import type { AgentAdapter, AgentCapabilities, AgentEvent, Answer, EndReason, LimitSample, NativeSessionRef, OutputSchema, Probe, Profile, RunHandle, RunOutput, StartRequest, UserInput } from "@crewyard/core";
 import { exitCodeWithin, isShutdownExit, which } from "@crewyard/proc";
 import { AppServer, withAppServer, type Launcher } from "./appserver.ts";
 import {
@@ -107,6 +108,9 @@ interface Run {
   effort: string | null;
   readOnly: boolean;
   networkDenied: boolean;
+  outputSchema: OutputSchema | null;
+  /** The one in-session retry for a result that did not fit has been sent. */
+  outputRetried: boolean;
   waiting: Map<string, Waiting>;
   /** Answers that arrived before codex asked; a reconnecting UI can do this. */
   early: Map<string, Answer>;
@@ -263,6 +267,8 @@ export class CodexAdapter implements AgentAdapter {
       effort: (req as CodexStartRequest).effort ?? null,
       readOnly: req.policy.writes === "none",
       networkDenied: req.policy.network === "denied",
+      outputSchema: req.outputSchema ?? null,
+      outputRetried: false,
       waiting: new Map(),
       early: new Map(),
       seq: 0,
@@ -313,7 +319,9 @@ export class CodexAdapter implements AgentAdapter {
     };
     const model = req.model ?? req.profile.defaultModel;
     if (model) params.model = model;
-    if (!readOnly && req.policy.network === "allowed") params.config = { sandbox_workspace_write: { network_access: true } };
+    // Subagents stay off per thread too (see DEFAULT_ARGS); a profile's config.toml cannot turn them back on.
+    params.config = { "agents.enabled": false };
+    if (!readOnly && req.policy.network === "allowed") params.config.sandbox_workspace_write = { network_access: true };
     return params;
   }
 
@@ -321,6 +329,8 @@ export class CodexAdapter implements AgentAdapter {
     const params: TurnStartParams = { threadId: run.threadId, input: [textInput(text)] };
     if (run.model) params.model = run.model;
     if (run.effort) params.effort = run.effort;
+    // Every turn: the run's result is the final message of whichever turn ends it.
+    if (run.outputSchema) params.outputSchema = run.outputSchema.jsonSchema as TurnStartParams["outputSchema"];
     const res = await run.server.rpc.request<TurnStartResponse>("turn/start", params, { timeoutMs: 60_000 });
     run.mapper.turnId ??= res.turn.id;
   }
@@ -339,7 +349,25 @@ export class CodexAdapter implements AgentAdapter {
     }
     for (const body of run.mapper.map(method, params)) this.emit(run, body);
     const end = run.mapper.ended;
-    if (end) this.finish(run, end.reason, end.detail);
+    if (!end) return;
+    if (end.reason !== "completed" || !run.outputSchema) return this.finish(run, end.reason, end.detail);
+    const output = this.readOutput(run, run.outputSchema);
+    if (output) this.finish(run, "completed", end.detail, output);
+  }
+
+  /**
+   * codex constrains the final message with outputSchema; we parse and check it as well. A result
+   * that does not fit gets one more turn in the same thread with the problem, then the run
+   * completes with whatever the check says. Returns null while that retry is under way.
+   */
+  private readOutput(run: Run, schema: OutputSchema): RunOutput | null {
+    const parsed = run.mapper.lastAgentMessage === null ? { ok: false as const, error: "no JSON result was returned" } : parseOutputText(run.mapper.lastAgentMessage);
+    const output = parsed.ok ? checkOutput(schema, parsed.value) : parsed;
+    if (output.ok || run.outputRetried || run.stopping) return output;
+    run.outputRetried = true;
+    run.mapper.ended = null;
+    this.startTurn(run, outputRetryPrompt(schema, output.error)).catch((err: unknown) => this.finish(run, "completed", undefined, { ok: false, error: `the retry could not start: ${message(err)}` }));
+    return null;
   }
 
   private async onServerRequest(run: Run, method: string, params: unknown, id: RpcId): Promise<unknown> {
@@ -410,9 +438,9 @@ export class CodexAdapter implements AgentAdapter {
     run.queue.push({ ...body, runId: run.handle.runId, seq: run.seq++, at: new Date().toISOString(), source: { adapter: "codex", cliVersion: run.server.cliVersion } } as AgentEvent);
   }
 
-  private finish(run: Run, reason: EndReason, detail?: string): void {
+  private finish(run: Run, reason: EndReason, detail?: string, output?: RunOutput): void {
     if (run.ended) return;
-    this.emit(run, detail ? { type: "run.ended", reason, detail } : { type: "run.ended", reason });
+    this.emit(run, { type: "run.ended", reason, ...(detail ? { detail } : {}), ...(output ? { output } : {}) });
     run.ended = true;
     for (const w of run.waiting.values()) w.resolve({ kind: "cancel" });
     run.waiting.clear();

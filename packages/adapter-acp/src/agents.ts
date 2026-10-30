@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import type { Profile } from "@crewyard/core";
+import { prepareGeminiProfile, type PreparedProfile } from "./profile.ts";
 
 // What differs between ACP agents: how to start ACP mode, how to keep each profile in its own
 // folder, and how an API-key profile authenticates. The protocol driver itself is shared.
@@ -13,6 +14,13 @@ export interface AgentSpec {
   /** Picks the ACP flag from the installed CLI's --help output; null when it has none. */
   acpArgs(help: string): string[] | null;
   modelArgs(model: string): string[];
+  /**
+   * Flags that make the agent's own engine read-only, picked from --help like acpArgs; null when
+   * the installed version has no such mode (our permission check is then the only layer).
+   */
+  readOnlyArgs(help: string): string[] | null;
+  /** Writes the settings Crewyard keeps in the profile folder (subagents off) before each start. */
+  prepare(profile: Profile): Promise<PreparedProfile>;
   /** Variables that point the agent at the profile folder. */
   env(profile: Profile): Record<string, string>;
   /** Why this CLI version cannot be kept inside the profile folder, or null when it can. */
@@ -70,6 +78,14 @@ export const gemini: AgentSpec = {
     return null;
   },
   modelArgs: (model) => ["--model", model],
+  // Plan mode: "a strict, read-only mode" in which writes are refused by Gemini itself, except
+  // Markdown plans in its own plans folder (geminicli.com/docs/cli/plan-mode, checked 2026-10-30).
+  // Older versions do not list "plan" among the --approval-mode choices.
+  readOnlyArgs(help) {
+    const line = help.split(/\r?\n/).find((l) => /--approval-mode\b/.test(l));
+    return line && /\bplan\b/.test(line) ? ["--approval-mode", "plan"] : null;
+  },
+  prepare: (profile) => prepareGeminiProfile(profile.configDir),
   env: (profile) => ({ GEMINI_CLI_HOME: profile.configDir, GEMINI_FORCE_FILE_STORAGE: "true" }),
   isolationProblem(version) {
     if (version && versionAtLeast(version, GEMINI_ISOLATION_MIN)) return null;

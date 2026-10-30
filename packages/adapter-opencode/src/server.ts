@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { killTree, start } from "@crewyard/proc";
+import { ensureSystemEnv, killTree, start } from "@crewyard/proc";
 
 // One `opencode serve` per run, bound to 127.0.0.1 on a port the OS picks, with Basic auth and a
 // password that exists only for this launch. The account lives in the profile folder: OpenCode
@@ -48,12 +48,12 @@ export function profileEnv(configDir: string): Record<string, string> {
   };
 }
 
-export function childEnv(configDir: string, secrets: Record<string, string>, password: string): NodeJS.ProcessEnv {
+export function childEnv(configDir: string, secrets: Record<string, string>, password: string, inherited: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   // Inherited OPENCODE_* settings (a config path, inline config, a server password) would point the
   // child at another account, so none of them pass through.
-  for (const [k, v] of Object.entries(process.env)) if (!/^OPENCODE_/i.test(k)) env[k] = v;
-  return { ...env, ...secrets, ...profileEnv(configDir), OPENCODE_SERVER_PASSWORD: password };
+  for (const [k, v] of Object.entries(inherited)) if (!/^OPENCODE_/i.test(k)) env[k] = v;
+  return ensureSystemEnv({ ...env, ...secrets, ...profileEnv(configDir), OPENCODE_SERVER_PASSWORD: password }, inherited);
 }
 
 export async function launchServer(opts: ServerOptions): Promise<OpenCodeServer> {

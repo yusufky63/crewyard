@@ -1,4 +1,5 @@
 import type { Profile } from "@crewyard/core";
+import { ensureSystemEnv } from "@crewyard/proc";
 
 // The SDK `env` option replaces the child's whole environment, so we build it ourselves:
 // inherited variables minus anything that could pick another account or provider, then the
@@ -58,7 +59,7 @@ export function buildEnv(profile: Profile, secrets: Record<string, string>, mode
     env.ANTHROPIC_API_KEY = key;
   }
 
-  return { env, secrets: Object.values(secrets).filter((v) => v.length >= 8) };
+  return { env: ensureSystemEnv(env, inherited), secrets: Object.values(secrets).filter((v) => v.length >= 8) };
 }
 
 /** Replaces every secret value in a string; used on error text and stderr before it leaves the adapter. */

@@ -2,12 +2,13 @@ import type { ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
 import type { CanUseTool, HookCallback, Options, Query, SDKMessage, SDKResultMessage, SDKUserMessage, SpawnedProcess } from "@anthropic-ai/claude-agent-sdk";
-import type { AgentAdapter, AgentCapabilities, AgentEvent, Answer, NativeSessionRef, Probe, Profile, RunHandle, StartRequest, UserInput } from "@crewyard/core";
+import { checkOutput, outputRetryPrompt } from "@crewyard/core";
+import type { AgentAdapter, AgentCapabilities, AgentEvent, Answer, NativeSessionRef, Probe, Profile, RunHandle, RunOutput, StartRequest, UserInput } from "@crewyard/core";
 import { exitCodeWithin, isShutdownExit, killTree, parseVersion, run, start as spawnChild, which } from "@crewyard/proc";
 import { buildEnv, redact } from "./env.ts";
 import { EventMapper, type EventBody, type TurnOutcome } from "./mapper.ts";
 import { AsyncQueue } from "./queue.ts";
-import { PLAN_TOOLS, approvalResult, approvalScope, disallowedFor, policyDecision, questionResult, questionsFrom } from "./tools.ts";
+import { PLAN_TOOLS, approvalResult, approvalScope, disallowedFor, permissionModeFor, policyDecision, questionResult, questionsFrom, readOnlyAllowRules } from "./tools.ts";
 
 /** The CLI version the installed SDK was built against (package.json "claudeCodeVersion"). */
 export const SDK_CLI_VERSION = "2.1.312";
@@ -51,6 +52,10 @@ interface RunCtx {
   /** Set by us, so it wins over whatever the last result said. */
   forced: TurnOutcome | null;
   outcome: TurnOutcome | null;
+  /** The checked result when the request asked for one (StartRequest.outputSchema). */
+  output: RunOutput | null;
+  /** The one in-session retry for a result that did not fit has been sent. */
+  outputRetried: boolean;
   done: Promise<void>;
 }
 
@@ -186,6 +191,8 @@ export class ClaudeAdapter implements AgentAdapter {
       child: null,
       forced: null,
       outcome: null,
+      output: null,
+      outputRetried: false,
     } as Omit<RunCtx, "q" | "done"> as RunCtx;
 
     const options: Options = {
@@ -195,11 +202,13 @@ export class ClaudeAdapter implements AgentAdapter {
       env,
       abortController: abort,
       includePartialMessages: true,
-      // Without this the CLI may start in "auto" and approve tools without asking us.
-      permissionMode: "default",
+      // Read-only roles: "dontAsk", so the CLI's own engine refuses anything that would need an
+      // approval. Writers: "default", every approval comes to canUseTool.
+      permissionMode: permissionModeFor(req.policy),
       canUseTool: this.canUseTool(ctx),
-      allowedTools: PLAN_TOOLS,
+      allowedTools: [...PLAN_TOOLS, ...(req.policy.writes === "none" ? readOnlyAllowRules(req.policy) : [])],
       disallowedTools: disallowedFor(req.policy),
+      ...(req.outputSchema ? { outputFormat: { type: "json_schema", schema: req.outputSchema.jsonSchema } } : {}),
       hooks: this.policyHooks(req),
       ...(resumeId ? { resume: resumeId } : { sessionId }),
       spawnClaudeCodeProcess: (o) => {
@@ -242,7 +251,8 @@ export class ClaudeAdapter implements AgentAdapter {
       // Windows ends children with a shutdown status at sign-out or restart: interrupted, not failed.
       // The SDK's stream can end before the exit status arrives, so wait for it briefly.
       if (!ctx.forced && end.reason === "failed" && ctx.child && isShutdownExit(await exitCodeWithin(ctx.child, 2_000))) end = { reason: "interrupted", detail: "windows_shutdown" };
-      this.emit(ctx, { type: "run.ended", reason: end.reason, ...(end.detail ? { detail: redact(end.detail, ctx.secrets) } : {}) });
+      const output = ctx.req.outputSchema && end.reason === "completed" ? (ctx.output ?? { ok: false, error: "no JSON result was returned" }) : null;
+      this.emit(ctx, { type: "run.ended", reason: end.reason, ...(end.detail ? { detail: redact(end.detail, ctx.secrets) } : {}), ...(output ? { output } : {}) });
       ctx.events.end();
     }
   }
@@ -269,7 +279,27 @@ export class ClaudeAdapter implements AgentAdapter {
     if (covered) for (const id of covered) ctx.outstanding.delete(id);
     // Older CLIs do not echo uuids; treat the result as covering everything sent so far.
     else ctx.outstanding.clear();
+    if (!ctx.forced && (msg.queued_turn_count ?? 0) === 0 && ctx.outstanding.size === 0) this.checkOutput(ctx, msg);
     if (ctx.forced || ((msg.queued_turn_count ?? 0) === 0 && ctx.outstanding.size === 0)) ctx.input.end();
+  }
+
+  /**
+   * The CLI validates outputFormat itself and retries inside the turn; this is our own check on
+   * top, with one more try in the session when the answer still does not fit. A run that ran out
+   * of structured-output retries did its work: it completes, and the output says what was wrong.
+   */
+  private checkOutput(ctx: RunCtx, msg: SDKResultMessage): void {
+    const schema = ctx.req.outputSchema;
+    if (!schema) return;
+    const exhausted = msg.subtype === "error_max_structured_output_retries";
+    if (!exhausted && ctx.outcome?.reason !== "completed") return;
+    if (exhausted) ctx.outcome = { reason: "completed" };
+    const result = checkOutput(schema, msg.subtype === "success" ? msg.structured_output : undefined);
+    ctx.output = exhausted && !result.ok ? { ok: false, error: `the runner gave up on the schema (${msg.errors?.join("; ") || msg.subtype})` } : result;
+    if (!result.ok && !ctx.outputRetried) {
+      ctx.outputRetried = true;
+      this.pushInput(ctx, outputRetryPrompt(schema, ctx.output.ok ? "" : ctx.output.error));
+    }
   }
 
   private canUseTool(ctx: RunCtx): CanUseTool {
@@ -308,19 +338,17 @@ export class ClaudeAdapter implements AgentAdapter {
 
   /**
    * Settings files (the profile's or the repository's) can pre-allow tools, and then canUseTool
-   * is never asked. For read-only roles a PreToolUse hook runs first: write tools are denied and
-   * shell commands always come back to us as an approval.
+   * is never asked. A PreToolUse hook runs before any rule: subagent tools, and write or network
+   * tools the role may not use, are denied there too, as a second layer behind disallowedTools.
+   * Shell commands of read-only roles are left to the engine's "dontAsk" mode; an "ask" here would
+   * turn every command into a denial, including the read-only ones a reviewer needs.
    */
   private policyHooks(req: StartRequest): Options["hooks"] {
-    if (req.policy.writes !== "none" && req.policy.network !== "denied") return undefined;
     const hook: HookCallback = async (input) => {
       if (input.hook_event_name !== "PreToolUse") return {};
       const denied = policyDecision(input.tool_name, req.policy);
       if (denied?.behavior === "deny") {
         return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: denied.message } };
-      }
-      if (req.policy.writes === "none" && (input.tool_name === "Bash" || input.tool_name === "PowerShell")) {
-        return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "ask", permissionDecisionReason: "Read-only role: every command needs approval." } };
       }
       return {};
     };

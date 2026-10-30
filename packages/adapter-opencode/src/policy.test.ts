@@ -4,8 +4,30 @@ import { isDocsPath, mustReject, permissionRules } from "./policy.ts";
 describe("OpenCode role policy", () => {
   it("denies every edit for read-only roles, after the agent's own allow rules", () => {
     const rules = permissionRules({ writes: "none", allowCommands: [], network: "ask" });
-    expect(rules[0]).toEqual({ permission: "edit", pattern: "*", action: "deny" });
+    expect(rules).toContainEqual({ permission: "edit", pattern: "*", action: "deny" });
     expect(rules.filter((r) => r.permission === "edit" && r.action !== "deny")).toEqual([]);
+  });
+
+  it("turns OpenCode's own subagents off for every role", () => {
+    for (const writes of ["none", "docs", "worktree"] as const) {
+      expect(permissionRules({ writes, allowCommands: [], network: "ask" })).toContainEqual({ permission: "task", pattern: "*", action: "deny" });
+    }
+    expect(mustReject({ writes: "worktree", allowCommands: [], network: "ask" }, "task", ["general"])).toBe(true);
+  });
+
+  it("lets the server refuse a read-only role's commands except its allowlist and plain inspection", () => {
+    const rules = permissionRules({ writes: "none", allowCommands: ["pnpm test"], network: "denied" });
+    const bash = rules.filter((r) => r.permission === "bash");
+    expect(bash[0]).toEqual({ permission: "bash", pattern: "*", action: "deny" });
+    expect(bash).toContainEqual({ permission: "bash", pattern: "pnpm test *", action: "allow" });
+    expect(bash).toContainEqual({ permission: "bash", pattern: "git diff *", action: "allow" });
+    expect(bash.some((r) => r.action === "ask")).toBe(false);
+    // Later rules win: redirection and --output are refused even on an allowed command.
+    expect(bash.slice(-2)).toEqual([
+      { permission: "bash", pattern: "*>*", action: "deny" },
+      { permission: "bash", pattern: "*--output*", action: "deny" },
+    ]);
+    expect(mustReject({ writes: "none", allowCommands: [], network: "ask" }, "bash", ["git push"])).toBe(true);
   });
 
   it("lets docs roles edit docs only; later rules win in OpenCode", () => {

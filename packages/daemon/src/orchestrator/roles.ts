@@ -1,7 +1,9 @@
 import type { RoleId, RolePolicy, RunnerId, TaskKind, TaskSize } from "@crewyard/core";
 
-// Built-in role templates (PLAN.md §9.1). Permissions are enforced by the approval layer in
-// requests.ts, never by the prompt: a read-only role's write request is denied before anyone sees it.
+// Built-in role templates (PLAN.md §9.1). Permissions are never enforced by the prompt: each
+// runner's own engine refuses a read-only role's writes (sandbox, permission mode or ruleset), and
+// the approval layer denies any write request that still gets through before anyone sees it.
+// Planner and reviewer end with a schema-checked JSON result (results.ts).
 
 export interface RoleTemplate {
   id: RoleId;
@@ -9,7 +11,7 @@ export interface RoleTemplate {
   policy: RolePolicy;
   /** Gets the task's worktree as its own lease; only one writer at a time. */
   writesCode: boolean;
-  /** Runner must support read-only enforcement through our approval layer. */
+  /** Runner must support read-only enforcement (its own engine plus our approval layer). */
   needsReadOnly: boolean;
   /** Reasoning models score higher for this role. */
   prefersReasoning: boolean;
@@ -33,7 +35,7 @@ export const ROLES: Record<RoleId, RoleTemplate> = {
     prefersReasoning: true,
     tokenShare: 0.15,
     independentOf: [],
-    contract: "A plan with numbered steps, acceptance criteria and risks. Do not change any file.",
+    contract: "A plan with numbered steps, acceptance criteria and risks, given as the JSON result your final answer must be. Do not change any file.",
   },
   implementer: {
     id: "implementer",
@@ -55,7 +57,7 @@ export const ROLES: Record<RoleId, RoleTemplate> = {
     prefersReasoning: true,
     tokenShare: 0.2,
     independentOf: ["implementer"],
-    contract: "A verdict, pass or changes, and comments with file and line. Do not change any file; you may run the tests.",
+    contract: "A verdict, pass or changes, with a summary and comments with file, line and severity, given as the JSON result your final answer must be. Do not change any file; you may run the tests.",
   },
   tester: {
     id: "tester",
