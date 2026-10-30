@@ -4,6 +4,7 @@ import type { CandidateView, CrewEdit, CrewMemberView, FallbackMode, RoleId, Tas
 import { Button, Label, TickMeter } from "@crewyard/ui";
 import { ProvBadge } from "../providers/shared.tsx";
 import { act, useErrorText } from "./data.ts";
+import { IssueNote } from "./IssuePicker.tsx";
 import { ErrorLine, useFormat, Who } from "./parts.tsx";
 
 const ROLE_ICON: Record<RoleId, typeof Code> = {
@@ -153,6 +154,7 @@ export function CrewProposal({ task, onClose }: { task: TaskDetail; onClose: () 
         </div>
       </div>
       <h2 className="tk-crew-task">{task.title}</h2>
+      <IssueNote taskId={task.id} description={task.description} />
       <div className="tk-crew-grid">
         {members.map((m, i) => (
           <RoleTile key={m.id} index={i} member={m} chosen={chosenOf(m)} budget={task.budgetUsd} hideReasons={hideReasons} onSwap={(profileId) => setEdits((e) => ({ ...e, [m.id]: profileId }))} />

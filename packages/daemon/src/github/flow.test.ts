@@ -71,6 +71,10 @@ function github() {
     if (/\/commits\/[^/]+\/check-runs/.test(path)) return json({ check_runs: s.checks });
     if (/\/commits\/[^/]+\/statuses/.test(path)) return json([]);
     if (path.startsWith("/repos/octo/app/compare/")) return json({ ahead_by: 1, behind_by: s.behind });
+    if (path === "/repos/octo/app/pulls/41") {
+      const pr = s.pulls.find((p) => p.number === 41);
+      return pr ? json({ ...pr, state: pr.merged_at ? "closed" : "open", mergeable_state: pr.merged_at ? "unknown" : "clean" }) : json({ message: "Not Found" }, 404);
+    }
     if (path.startsWith("/repos/octo/app/pulls/41/comments")) return json(s.comments);
     if (path.startsWith("/repos/octo/app/pulls/41/reviews")) return json(s.reviews);
     if (/^\/repos\/octo\/app\/actions\/jobs\/\d+\/logs$/.test(path)) return new Response("2026-10-30T10:00:00.0000000Z FAIL src/limiter.test.ts\n2026-10-30T10:00:01.0000000Z expected 200 to be 429\n", { status: 200 });

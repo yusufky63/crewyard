@@ -381,6 +381,31 @@ export const MIGRATIONS: Migration[] = [
      created_at text not null
    );`,
   },
+  // Diff review drafts (line comments kept until the owning run accepted them) and the GitHub
+  // issue a task was imported from.
+  {
+    id: "github-review",
+    sql: `create table if not exists review_drafts (
+     id text primary key,
+     task_id text not null references tasks(id),
+     dedupe_key text not null,
+     path text not null,
+     line integer not null,
+     side text not null,
+     body text not null,
+     hunk text not null,
+     created_at text not null,
+     unique (task_id, dedupe_key)
+   );
+   create index if not exists review_drafts_task on review_drafts(task_id, created_at);
+   create table if not exists task_issues (
+     task_id text primary key references tasks(id),
+     number integer not null,
+     url text not null,
+     title text not null,
+     linked_at text not null
+   );`,
+  },
 ];
 
 /** What the positional scheme applied: a database at `user_version` N has the first N of these. */

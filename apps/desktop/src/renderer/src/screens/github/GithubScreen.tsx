@@ -3,10 +3,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Check, CircleHelp, Clock, ExternalLink, GitMerge, RefreshCw, ShieldAlert, ShieldCheck, Upload, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button, Label, Panel, ProvenanceBadge, TickMeter } from "@crewyard/ui";
-import type { ActionsMinutes, GateItem, GithubProblem, PullSummary, PushCandidate, WorkflowFinding } from "@crewyard/core";
+import type { ActionsMinutes, GithubProblem, PullSummary, PushCandidate, WorkflowFinding } from "@crewyard/core";
 import { call, useDaemon } from "../../ipc.ts";
 import { useNav } from "../../nav.ts";
 import { useGithubLive, useMinuteTick, useNumber, useRelative } from "./live.ts";
+import { gateTextKey, gateTitleKey } from "./pullModel.ts";
 import { TaskPullsPanel } from "./TaskPull.tsx";
 import { WorktreeDisk } from "./WorktreeDisk.tsx";
 import "./github.css";
@@ -201,7 +202,7 @@ function WorktreesPanel({ projectId }: { projectId: string }) {
   );
 }
 
-const GATE_ICON = { pass: Check, wait: Clock, fail: X, unknown: CircleHelp } as const;
+const GATE_ICON = { pass: Check, wait: Clock, fail: X, unknown: CircleHelp, warn: AlertTriangle } as const;
 
 function GateChips({ pr }: { pr: PullSummary }) {
   const { t } = useTranslation("github");
@@ -213,15 +214,15 @@ function GateChips({ pr }: { pr: PullSummary }) {
       </span>
     );
   }
-  const title = (i: GateItem) => (i.id === "questions" && i.status === "unknown" ? t("pulls.gateTitle.questions_unknown") : i.id === "approval" && pr.state === "draft" ? t("pulls.gateTitle.draft") : undefined);
   return (
     <ul className="gh-gate" aria-label={t("pulls.colGate")}>
       {pr.gate.items.map((i) => {
         const Icon = GATE_ICON[i.status];
+        const titleKey = gateTitleKey(i, pr.mergeState, pr.state === "draft");
         return (
-          <li key={i.id} className={`g-${i.status}`} title={title(i)}>
+          <li key={i.id} className={`g-${i.status}`} title={titleKey ? t(titleKey, { base: pr.base }) : undefined}>
             <Icon {...ICON} />
-            {t(`pulls.gate.${i.id}.${i.status}`, { base: pr.base })}
+            {t(gateTextKey(i, pr.mergeState), { base: pr.base })}
           </li>
         );
       })}
@@ -289,7 +290,10 @@ function PullRow({ projectId, pr, method, now }: { projectId: string; pr: PullSu
       setMsg({ text: t("pulls.merged", { number: pr.number }), bad: false });
       setConfirm(false);
     } catch (err) {
-      setMsg({ text: t("pulls.mergeFailed", { message: err instanceof Error ? err.message : String(err) }), bad: true });
+      // The daemon refuses DIRTY and BEHIND with a code ("merge.dirty"); anything else is GitHub's own text.
+      const raw = (err instanceof Error ? err.message : String(err)).replace(/^.*Error: /, "").trim();
+      const message = /^merge\.[a-z_]+$/.test(raw) ? t(`taskPull.error.${raw.replace(".", "_")}`) : raw;
+      setMsg({ text: t("pulls.mergeFailed", { message }), bad: true });
     } finally {
       setBusy(false);
       void qc.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).startsWith("github.") });

@@ -43,6 +43,7 @@
 .gh .gh-gate .g-wait svg { color: var(--warn); }
 .gh .gh-gate .g-fail { color: var(--bad); }
 .gh .gh-gate .g-unknown { color: var(--ink-3); }
+.gh .gh-gate .g-warn svg { color: var(--warn); }
 .gh .gh-confirm td { background: var(--raised); }
 .gh .gh-confirm-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 13px; }
 .gh .gh-confirm-row .end { margin-left: auto; display: inline-flex; gap: 8px; }
@@ -84,6 +85,7 @@
 .tp-gate .g-wait svg { color: var(--warn); }
 .tp-gate .g-fail { color: var(--bad); }
 .tp-gate .g-unknown { color: var(--ink-3); }
+.tp-gate .g-warn svg { color: var(--warn); }
 .tp-field { display: grid; gap: 6px; }
 .tp-field input, .tp-field textarea { width: 100%; font: 400 13px / 1.45 var(--ui); color: var(--ink); background: var(--canvas); border: 1px solid var(--line-strong); padding: 8px 10px; resize: vertical; }
 .tp-field textarea { font: 400 12px / 1.5 var(--mono); }

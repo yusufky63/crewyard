@@ -137,6 +137,26 @@
       "merge": "a merge commit",
       "squash": "squash",
       "rebase": "rebase"
+    },
+    "mergeState": {
+      "clean": "Mergeable",
+      "has_hooks": "Mergeable",
+      "dirty": "Conflicts with {{base}}",
+      "behind": "Update from {{base}} first",
+      "blocked": "Blocked by branch rules",
+      "unstable": "Some checks not green",
+      "draft": "Draft",
+      "unknown": "Merge state unknown"
+    },
+    "mergeStateTitle": {
+      "clean": "GitHub reports this pull request as mergeable (CLEAN).",
+      "has_hooks": "GitHub reports this pull request as mergeable; the repo runs merge hooks (HAS_HOOKS).",
+      "dirty": "GitHub reports merge conflicts (DIRTY). Resolve them on the branch; merging stays closed until then.",
+      "behind": "The branch rules want it up to date with {{base}} (BEHIND). Update the branch; merging stays closed until then.",
+      "blocked": "Branch protection still needs something, such as a required review (BLOCKED). GitHub checks it again when you merge.",
+      "unstable": "A check that is not required is not passing (UNSTABLE). It does not hold the merge.",
+      "draft": "Draft pull requests cannot be merged.",
+      "unknown": "GitHub has not computed the merge state yet. Refresh in a moment; merging stays closed until it is known."
     }
   },
   "workflows": {
@@ -280,7 +300,9 @@
       "pull_gate_closed": "Not every item before a pull request passes any more.",
       "worktree_busy": "This worktree is already being removed.",
       "feedback_busy": "This feedback is already being sent.",
-      "feedback_no_owner": "No step of this task owns the branch."
+      "feedback_no_owner": "No step of this task owns the branch.",
+      "merge_dirty": "GitHub reports conflicts with the base branch. Resolve them on the branch first.",
+      "merge_behind": "The branch is behind its base and the branch rules require it up to date. Update it first."
     }
   }
 }

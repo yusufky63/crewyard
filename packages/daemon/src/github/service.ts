@@ -6,6 +6,7 @@ import type {
   GithubProblem,
   GithubSync,
   MergeMethod,
+  MergeState,
   PullSummary,
   PullsResult,
   PushQueue,
@@ -14,7 +15,7 @@ import type {
   WorktreesSummary,
 } from "@crewyard/core";
 import { BACKGROUND_FLOOR, GithubError, type GithubClient } from "./client.ts";
-import { evaluateGate, summarizeChecks, type CheckRunLike, type StatusLike } from "./gate.ts";
+import { evaluateGate, mergeBlock, summarizeChecks, toMergeState, type CheckRunLike, type StatusLike } from "./gate.ts";
 import * as git from "./git.ts";
 import { readMinutes } from "./minutes.ts";
 import { checkWorkflows, triggeredBy, type WorkflowFile } from "./workflows.ts";
@@ -233,7 +234,15 @@ export class GithubService {
     const checks = await this.checksFor(meta.owner, meta.repo, p.head.sha);
     let aheadBy: number | null = null;
     let behindBy: number | null = null;
+    let mergeState: MergeState | null = null;
     if (!merged) {
+      // The list endpoint leaves mergeable_state out; only the single-PR read has it (ETag-cached).
+      try {
+        const one = await client.get<{ mergeable_state?: string | null }>(`/repos/${meta.owner}/${meta.repo}/pulls/${p.number}`);
+        mergeState = toMergeState(one.data.mergeable_state);
+      } catch {
+        // stays null; the gate treats it as unknown
+      }
       try {
         const cmp = await client.get<{ ahead_by: number; behind_by: number }>(
           `/repos/${meta.owner}/${meta.repo}/compare/${p.base.ref}...${p.head.sha}`,
@@ -256,10 +265,11 @@ export class GithubService {
       author: p.user?.login ?? null,
       aheadBy,
       behindBy,
+      mergeState,
       mergedAt: p.merged_at ?? null,
       mergedBy: null,
       checks,
-      gate: merged ? null : evaluateGate({ checks, behindBy, draft, openQuestions: this.openQuestions(projectId, p.head.ref), ownerApproved: false }),
+      gate: merged ? null : evaluateGate({ checks, behindBy, mergeState, draft, openQuestions: this.openQuestions(projectId, p.head.ref), ownerApproved: false }),
     };
   }
 
@@ -428,11 +438,9 @@ export class GithubService {
       if (!pr || pr.state === "merged") throw new Error(`#${number} is not an open pull request`);
       if (pr.headSha !== headSha) throw new Error(`#${number} has new commits since it was reviewed`);
       // The explicit call is the owner's approval; every other item must pass on a fresh read.
-      const gate = evaluateGate({ checks: pr.checks, behindBy: pr.behindBy, draft: pr.state === "draft", openQuestions: this.openQuestions(projectId, pr.head), ownerApproved: true });
-      if (!gate.mergeable) {
-        const blocking = gate.items.filter((i) => i.status !== "pass").map((i) => i.id);
-        throw new Error(`Merge gate not passed: ${blocking.join(", ")}`);
-      }
+      const gate = evaluateGate({ checks: pr.checks, behindBy: pr.behindBy, mergeState: pr.mergeState, draft: pr.state === "draft", openQuestions: this.openQuestions(projectId, pr.head), ownerApproved: true });
+      const blocked = mergeBlock(gate, pr.mergeState);
+      if (blocked) throw new Error(blocked);
       const res = await this.deps.client.write<{ merged: boolean; sha: string | null }>("PUT", `/repos/${meta.owner}/${meta.repo}/pulls/${number}/merge`, {
         merge_method: meta.mergeMethod,
         sha: headSha,

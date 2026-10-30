@@ -1,4 +1,4 @@
-import type { TaskPullView } from "@crewyard/core";
+import type { GateItem, MergeState, TaskPullView } from "@crewyard/core";
 
 // Pure view rules for a task's PR; used by the task row, the inspector and the GitHub screen.
 
@@ -25,4 +25,17 @@ export type PullLabel = "none" | "open" | "draft" | "merged" | "closed";
 
 export function pullLabel(v: TaskPullView): PullLabel {
   return v.pull?.state ?? "none";
+}
+
+/** i18n key of a merge-gate chip; the merge-state chip names GitHub's own state. */
+export function gateTextKey(i: GateItem, mergeState: MergeState | null): string {
+  return i.id === "merge_state" ? `pulls.mergeState.${mergeState ?? "unknown"}` : `pulls.gate.${i.id}.${i.status}`;
+}
+
+/** Tooltip key that says why a chip holds the merge, or what a warning means. */
+export function gateTitleKey(i: GateItem, mergeState: MergeState | null, draft: boolean): string | undefined {
+  if (i.id === "merge_state") return `pulls.mergeStateTitle.${mergeState ?? "unknown"}`;
+  if (i.id === "questions" && i.status === "unknown") return "pulls.gateTitle.questions_unknown";
+  if (i.id === "approval" && draft) return "pulls.gateTitle.draft";
+  return undefined;
 }

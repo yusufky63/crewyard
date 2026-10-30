@@ -244,6 +244,109 @@
     "stop": "Stop agent",
     "stopConfirm": "Stop {{who}}?"
   },
+  "issues": {
+    "import": "Import issue",
+    "importTitle": "Fill the task from an open GitHub issue of this repo",
+    "title": "Import a GitHub issue",
+    "close": "Close",
+    "search": "Filter by number, title or label",
+    "listLabel": "Open issues",
+    "untrusted": "Issue text is written on GitHub. It fills the composer as quoted data; you can edit it, and nothing starts until you approve a crew.",
+    "loading": "Reading open issues…",
+    "loadingOne": "Reading…",
+    "none": "This repo has no open issues.",
+    "noMatch": "No open issue matches.",
+    "by": "by {{author}}",
+    "chip": "Issue #{{number}}",
+    "detach": "Keep the text but drop the link to issue #{{number}}",
+    "composerNote": "Imported from GitHub. Check the text before proposing; it reaches the crew as quoted data",
+    "fromIssue": "From GitHub issue",
+    "proposalNote": "The task text quotes this issue. It was written on GitHub, so read it before you approve: the crew gets it as data, not as instructions.",
+    "showText": "Show the task text",
+    "problem": {
+      "no_gh": "GitHub CLI (gh) is not installed, so issues cannot be read.",
+      "signed_out": "gh is not signed in. Run gh auth login, then try again.",
+      "not_a_repo": "This project folder is not a git repository.",
+      "no_remote": "This project has no GitHub remote.",
+      "not_github": "This project's remote is not on GitHub.",
+      "rate_limited": "GitHub's rate limit is reached. Try again after it resets.",
+      "offline": "GitHub could not be reached.",
+      "error": "GitHub could not be read."
+    }
+  },
+  "review": {
+    "open": "Review diff",
+    "openTurn": "Last turn",
+    "drafted_one": "{{count}} comment drafted, not sent yet.",
+    "drafted_other": "{{count}} comments drafted, not sent yet.",
+    "title": "Review changes of {{title}}",
+    "eyebrow": "Review changes",
+    "base": "base {{sha}}",
+    "totals_one": "{{count}} file · +{{added}} −{{removed}}",
+    "totals_other": "{{count}} files · +{{added}} −{{removed}}",
+    "scope": "Which changes",
+    "scopeName": {
+      "worktree": "Worktree",
+      "turn": "Last turn"
+    },
+    "scopeHint": {
+      "worktree": "Everything on the task branch and in its folder against the base commit",
+      "turn": "Only the files the agent reported for its last turn"
+    },
+    "noTurn": "This runner did not report the files of its last turn.",
+    "close": "Close (Esc)",
+    "files_one": "{{count}} file",
+    "files_other": "{{count}} files",
+    "commentCount_one": "{{count}} comment",
+    "commentCount_other": "{{count}} comments",
+    "drafts_one": "{{count}} draft comment",
+    "drafts_other": "{{count}} draft comments",
+    "noDrafts": "No comments yet. Pick a line and press Enter, or double-click it.",
+    "notInView": "This line is not in the current view.",
+    "remove": "Remove the comment on {{where}}",
+    "cut": "The diff is very large, so later files are left out. Narrow it with Last turn or review the branch elsewhere.",
+    "problem": {
+      "no_worktree": "This task has no worktree, so there is no diff to review.",
+      "missing": "The worktree folder is gone.",
+      "git": "git could not read the diff of this worktree."
+    },
+    "loading": "Reading the diff…",
+    "empty": "No changes against the base commit.",
+    "emptyTurn": "None of the files from the last turn differ from the base commit.",
+    "listLabel": "Diff lines",
+    "keys": "↑ ↓ or J K move · Enter or C comments · N P next and previous file · Delete removes a comment · Esc closes",
+    "status": {
+      "added": "added",
+      "modified": "modified",
+      "deleted": "deleted",
+      "renamed": "renamed",
+      "binary": "binary"
+    },
+    "note": {
+      "truncated": "Cut here to keep the view fast. The file has +{{added}} −{{removed}} in total.",
+      "binary": "Binary file, not shown.",
+      "no_lines": "No line changes (mode or rename only)."
+    },
+    "kind": {
+      "add": "added",
+      "del": "removed",
+      "context": "unchanged"
+    },
+    "addAt": "Comment on {{where}}",
+    "draft": "Draft",
+    "commentHead": "Comment on",
+    "placeholder": "What should the agent change here?",
+    "editorKeys": "Ctrl Enter adds · Esc cancels",
+    "cancel": "Cancel",
+    "add": "Add comment",
+    "sendNote": "Goes to {{who}} as one message with each file:line and its code quoted. A working agent reads it at its next turn; a finished step continues. Drafts stay until the agent has them.",
+    "noOwner": "No step of this task writes in the worktree, so there is nobody to send comments to.",
+    "send_one": "Send {{count}} comment",
+    "send_other": "Send {{count}} comments",
+    "sending": "Sending…",
+    "sent_one": "Sent {{count}} comment to {{who}}.",
+    "sent_other": "Sent {{count}} comments to {{who}}."
+  },
   "errors": {
     "load": "Tasks could not be loaded from the background service.",
     "other": "Something went wrong: {{message}}",
@@ -279,6 +382,18 @@
     "worktree_branch_elsewhere": "The task's branch is checked out in another worktree.",
     "worktree_locked": "The worktree is locked.",
     "worktree_path_taken": "A folder already sits where the worktree should go.",
-    "adapter_failed": "The runner reported an error."
+    "adapter_failed": "The runner reported an error.",
+    "review_busy": "These comments are already being sent.",
+    "review_no_drafts": "There are no draft comments to send.",
+    "review_cancelled": "The task is cancelled, so comments cannot be sent.",
+    "review_no_owner": "No step of this task owns the branch.",
+    "review_too_long": "The comments are too long for one message. Send fewer at a time.",
+    "review_too_many": "A task holds at most 200 draft comments. Send these first.",
+    "review_empty_comment": "Write a comment first.",
+    "review_comment_too_long": "This comment is too long.",
+    "review_bad_line": "That line cannot take a comment.",
+    "issue_no_github": "GitHub could not be read for this project.",
+    "issue_is_pull": "That number is a pull request, not an issue.",
+    "issue_bad_link": "Only an issue of this project's own repo can be linked."
   }
 }

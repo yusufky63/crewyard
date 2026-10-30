@@ -229,3 +229,20 @@ export async function removeWorktree(repoPath: string, path: string): Promise<{ 
   const res = await git(repoPath, ["worktree", "remove", path], 60_000);
   return { ok: res.code === 0, output: `${res.stdout}${res.stderr}`.trim() };
 }
+
+/** Read limit of @crewyard/proc's run(); output at this size was cut. */
+const OUTPUT_CAP = 4 * 1024 * 1024;
+
+/**
+ * Everything in a worktree against its base commit: committed, staged and unstaged changes to
+ * tracked files. Never touches the index, so untracked files are listed separately.
+ */
+export async function worktreeDiff(path: string, baseSha: string): Promise<{ ok: boolean; text: string; cut: boolean }> {
+  const res = await git(path, ["diff", "--no-color", "--no-ext-diff", "--find-renames", "-U3", baseSha, "--"], 60_000);
+  return { ok: res.code === 0, text: res.stdout, cut: res.stdout.length >= OUTPUT_CAP };
+}
+
+export async function untrackedFiles(path: string): Promise<string[]> {
+  const res = await git(path, ["ls-files", "--others", "--exclude-standard", "-z"]);
+  return res.code === 0 ? res.stdout.split("\0").filter(Boolean) : [];
+}

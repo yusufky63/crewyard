@@ -67,8 +67,18 @@ export interface ChecksSummary {
   failingNames: string[];
 }
 
-export type GateItemId = "checks" | "up_to_date" | "questions" | "approval";
-export type GateStatus = "pass" | "wait" | "fail" | "unknown";
+export type GateItemId = "checks" | "up_to_date" | "merge_state" | "questions" | "approval";
+/**
+ * `warn` is shown but does not hold the merge back: GitHub itself enforces branch protection
+ * (BLOCKED) at merge time, and UNSTABLE only means a non-required check is not green.
+ */
+export type GateStatus = "pass" | "wait" | "fail" | "unknown" | "warn";
+
+/**
+ * GitHub's `mergeable_state` for an open PR (REST, lower case of GraphQL's mergeStateStatus).
+ * `unknown` while GitHub is still computing it.
+ */
+export type MergeState = "clean" | "dirty" | "behind" | "blocked" | "unstable" | "has_hooks" | "draft" | "unknown";
 
 export interface GateItem {
   id: GateItemId;
@@ -99,6 +109,8 @@ export interface PullSummary {
   /** Commits the head is behind its base; null when GitHub has not computed it yet. */
   behindBy: number | null;
   aheadBy: number | null;
+  /** null for merged pull requests and when the single-PR read failed. */
+  mergeState: MergeState | null;
   mergedAt: string | null;
   mergedBy: string | null;
   checks: ChecksSummary;
@@ -294,6 +306,103 @@ export interface TaskPullView {
   problem: GithubProblem | null;
 }
 
+// ---- Issue import (A4): an open issue fills the composer. Its text is untrusted data.
+
+export interface IssueSummary {
+  number: number;
+  title: string;
+  url: string;
+  author: string | null;
+  labels: string[];
+  comments: number;
+  updatedAt: string;
+}
+
+export interface IssueDetail extends IssueSummary {
+  /** Raw Markdown from GitHub; shown as data and quoted when it reaches an agent. */
+  body: string;
+}
+
+export interface IssuesResult {
+  /** "owner/repo", the repo the issues were read from. */
+  repo: string | null;
+  issues: IssueSummary[];
+  problem: GithubProblem | null;
+}
+
+/** The issue a task was imported from. */
+export interface TaskIssue {
+  taskId: string;
+  number: number;
+  url: string;
+  title: string;
+  linkedAt: string;
+}
+
+// ---- Diff review (A2): line comments on a task's changes, sent to the owning run in one batch.
+
+export type DiffLineKind = "context" | "add" | "del";
+
+export interface DiffLine {
+  kind: DiffLineKind;
+  /** Line number in the base version; null for added lines. */
+  old: number | null;
+  /** Line number in the worktree version; null for removed lines. */
+  new: number | null;
+  text: string;
+}
+
+export interface DiffHunk {
+  header: string;
+  lines: DiffLine[];
+}
+
+export type DiffFileStatus = "added" | "modified" | "deleted" | "renamed" | "binary";
+
+export interface DiffFile {
+  path: string;
+  /** The path before a rename. */
+  oldPath: string | null;
+  status: DiffFileStatus;
+  added: number;
+  removed: number;
+  hunks: DiffHunk[];
+  /** Lines were cut to keep the viewer responsive; the counts above are still complete. */
+  truncated: boolean;
+}
+
+/**
+ * `worktree`: everything on the task branch and in its folder against the base commit.
+ * `turn`: the same lines, limited to the files the runner reported for the run's last turn
+ * (runners report file lists, not hunks).
+ */
+export type DiffScope = "worktree" | "turn";
+
+export interface TaskDiff {
+  taskId: string;
+  scope: DiffScope;
+  runId: string | null;
+  baseSha: string | null;
+  files: DiffFile[];
+  /** git's output passed the read limit, so later files may be missing. */
+  cut: boolean;
+  problem: "no_worktree" | "missing" | "git" | null;
+}
+
+export type CommentSide = "old" | "new";
+
+export interface ReviewComment {
+  id: string;
+  taskId: string;
+  path: string;
+  line: number;
+  side: CommentSide;
+  body: string;
+  /** The hunk lines around the comment, as the diff showed them. */
+  hunk: string;
+  createdAt: string;
+}
+
 export interface GithubIpc {
   "github.auth": { params: void; result: GithubAuth };
   /** Local git state; also reads visibility and default branch from GitHub when cached. */
@@ -337,6 +446,25 @@ export interface GithubIpc {
   "github.setRouting": { params: { projectId: string; enabled: boolean }; result: { enabled: boolean } };
   /** Sends held feedback to the step that owns the branch; a finished step continues on its profile. */
   "github.sendFeedback": { params: { taskId: string }; result: { sent: number } };
+  /** Open issues of the project's repo (pull requests left out), most recently updated first. */
+  "github.issues": { params: { projectId: string }; result: IssuesResult };
+  "github.issue": { params: { projectId: string; number: number }; result: IssueDetail };
+  /** Records the issue a proposed task was imported from. Starts nothing. */
+  "github.linkIssue": { params: { taskId: string; number: number; url: string; title: string }; result: TaskIssue };
+  "github.taskIssue": { params: { taskId: string }; result: TaskIssue | null };
+  /** Parsed diff of the task's worktree against its base; large files are cut with a notice. */
+  "github.taskDiff": { params: { taskId: string; scope: DiffScope; runId?: string }; result: TaskDiff };
+  /** Draft line comments, kept until delivery is confirmed. */
+  "github.reviewDrafts": { params: { taskId: string }; result: ReviewComment[] };
+  /** Adds a draft; the same text on the same line is kept once. */
+  "github.addReviewComment": { params: { taskId: string; path: string; line: number; side: CommentSide; body: string; hunk: string }; result: ReviewComment[] };
+  "github.removeReviewComment": { params: { taskId: string; id: string }; result: ReviewComment[] };
+  /**
+   * Sends every draft to the run that owns the branch as one message through the runs.message
+   * path (it waits for the next turn while the agent works). A finished step continues on its
+   * profile. Drafts are cleared only once the message was accepted.
+   */
+  "github.sendReview": { params: { taskId: string }; result: { sent: number; runId: string } };
 }
 
 /** Live topics pushed through ctx.emit. */

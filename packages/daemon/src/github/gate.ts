@@ -1,4 +1,4 @@
-import type { ChecksSummary, GateItem, MergeGate } from "@crewyard/core";
+import type { ChecksSummary, GateItem, GateStatus, MergeGate, MergeState } from "@crewyard/core";
 
 // Merge needs every gate (PLAN.md §10): checks passed, branch up to date, no open questions, and
 // the owner's approval. Unknown never counts as passing.
@@ -7,11 +7,40 @@ export interface GateInput {
   checks: ChecksSummary;
   /** Commits behind the base; null while GitHub has not computed it. */
   behindBy: number | null;
+  /** GitHub's mergeable_state; null when it was not read. */
+  mergeState: MergeState | null;
   draft: boolean;
   /** Open agent questions on this branch, from the orchestrator; null when nobody can say. */
   openQuestions: number | null;
   ownerApproved: boolean;
 }
+
+/**
+ * DIRTY (conflicts) and BEHIND (protection wants the branch up to date) hold the merge with that
+ * reason. BLOCKED and UNSTABLE are shown as a warning: the first is GitHub's own protection, which
+ * it enforces when the merge is sent; the second means a non-required check is not green, which
+ * the checks item already reports.
+ */
+export function mergeStateStatus(state: MergeState | null, draft: boolean): GateStatus {
+  switch (state) {
+    case "clean":
+    case "has_hooks":
+      return "pass";
+    case "dirty":
+    case "behind":
+      return "fail";
+    case "blocked":
+    case "unstable":
+      return "warn";
+    case "draft":
+      return draft ? "wait" : "unknown";
+    default:
+      return "unknown";
+  }
+}
+
+/** The merge may go ahead past this item; only the merge-state warning is allowed through. */
+const clears = (i: GateItem) => i.status === "pass" || (i.id === "merge_state" && i.status === "warn");
 
 export function evaluateGate(input: GateInput): MergeGate {
   const checks: GateItem["status"] =
@@ -22,11 +51,26 @@ export function evaluateGate(input: GateInput): MergeGate {
   const items: GateItem[] = [
     { id: "checks", status: checks },
     { id: "up_to_date", status: upToDate },
+    { id: "merge_state", status: mergeStateStatus(input.mergeState, input.draft) },
     { id: "questions", status: questions },
     { id: "approval", status: approval },
   ];
-  const others = items.filter((i) => i.id !== "approval").every((i) => i.status === "pass");
+  const others = items.filter((i) => i.id !== "approval").every(clears);
   return { items, mergeable: others && approval === "pass", readyForApproval: others && !input.draft };
+}
+
+/** Why a merge is refused, as an error code the UI translates; null when the gate lets it through. */
+export function mergeBlock(gate: MergeGate, state: MergeState | null): string | null {
+  // Conflicts and a stale branch say exactly what to do, so they get their own reason.
+  if (state === "dirty" || state === "behind") return `merge.${state}`;
+  const blocking = gate.items.filter((i) => !clears(i)).map((i) => i.id);
+  return blocking.length ? `Merge gate not passed: ${blocking.join(", ")}` : null;
+}
+
+/** GitHub's REST value, kept only when it is one we know. */
+export function toMergeState(raw: string | null | undefined): MergeState {
+  const v = (raw ?? "").toLowerCase();
+  return (["clean", "dirty", "behind", "blocked", "unstable", "has_hooks", "draft"] as const).find((s) => s === v) ?? "unknown";
 }
 
 export interface CheckRunLike {

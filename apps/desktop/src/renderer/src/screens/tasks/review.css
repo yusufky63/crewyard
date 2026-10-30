@@ -1,0 +1,80 @@
+/* Diff review (A2). Row heights match ROW_HEIGHT in review.ts: the windowing depends on it. */
+.rv-entry .row { display: flex; gap: 8px; flex-wrap: wrap; }
+.rv-small { font-size: 12px; }
+.rv-entry .rv-small { margin-top: 8px; }
+
+.rv-dialog { margin: auto; padding: 0; width: min(1320px, calc(100vw - 48px)); height: calc(100vh - 64px); max-height: none; max-width: none; color: var(--ink); overflow: hidden; }
+.rv-dialog[open] { display: flex; flex-direction: column; }
+.rv-dialog::backdrop { background: var(--scrim); }
+
+.rv-head { display: flex; align-items: center; gap: 16px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.rv-head-text { min-width: 0; flex: 1; display: grid; gap: 2px; }
+.rv-head h2 { font-size: 15px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rv-sub { display: flex; gap: 12px; flex-wrap: wrap; }
+.rv-x, .rv-icon { width: 28px; height: 28px; display: grid; place-items: center; color: var(--ink-2); flex: none; }
+.rv-x:hover, .rv-icon:hover { background: var(--raised); color: var(--ink); }
+
+.rv-main { flex: 1; min-height: 0; display: grid; grid-template-columns: 280px minmax(0, 1fr); }
+.rv-side { border-right: 1px solid var(--line); padding: 12px; overflow-y: auto; display: grid; align-content: start; gap: 8px; }
+.rv-files, .rv-drafts { list-style: none; display: grid; gap: 2px; margin-bottom: 8px; }
+.rv-files button { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 8px; align-items: center; min-height: 28px; padding: 0 6px; text-align: left; font-size: 12px; color: var(--ink-2); }
+.rv-files button:hover, .rv-files button[aria-current] { background: var(--raised); color: var(--ink); }
+.rv-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+.rv-add { color: var(--ok); }
+.rv-del { color: var(--bad); }
+.rv-count { min-width: 18px; padding: 0 4px; text-align: center; background: var(--accent-soft); color: var(--ink); }
+.rv-drafts li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px; align-items: start; }
+.rv-drafts li > button:first-child { display: grid; gap: 2px; padding: 6px; text-align: left; font-size: 12px; min-height: 28px; }
+.rv-drafts li > button:first-child:hover { background: var(--raised); }
+.rv-drafts li > button:first-child:disabled { cursor: default; }
+.rv-where { color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rv-body { color: var(--ink); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+
+.rv-diff { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.rv-banner { padding: 8px 16px; font-size: 12px; color: var(--ink); background: var(--warn-soft); border-bottom: 1px solid var(--line); }
+.rv-pad { padding: 16px; font-size: 13px; }
+.rv-view { flex: 1; min-height: 0; overflow: auto; position: relative; background: var(--sunken); }
+.rv-view:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.rv-canvas { position: relative; min-width: 100%; }
+.rv-keys { padding: 6px 16px; font-size: 11px; border-top: 1px solid var(--line); font-family: var(--mono); }
+
+.rv-row { position: absolute; left: 0; min-width: 100%; width: max-content; box-sizing: border-box; }
+.rv-file { display: flex; align-items: center; gap: 12px; padding: 0 12px; height: 36px; background: var(--surface); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); font-size: 12px; }
+.rv-file .rv-path { direction: ltr; color: var(--ink); }
+.rv-hunk { display: flex; align-items: center; padding: 0 12px 0 112px; height: 24px; font-size: 11px; color: var(--ink-3); background: var(--canvas); white-space: pre; }
+.rv-notice { display: flex; align-items: center; padding: 0 12px 0 112px; height: 28px; font-size: 12px; color: var(--ink-2); background: var(--warn-soft); }
+
+.rv-line { display: grid; grid-template-columns: 48px 48px 16px auto 24px; align-items: center; height: 20px; font-size: 12px; line-height: 20px; cursor: default; }
+.rv-line .rv-no { padding-right: 8px; text-align: right; color: var(--ink-3); user-select: none; }
+.rv-line .rv-sign { text-align: center; user-select: none; }
+.rv-line .rv-code { white-space: pre; padding-right: 16px; color: var(--ink); }
+.rv-line.k-add { background: var(--ok-soft); }
+.rv-line.k-add .rv-sign { color: var(--ok); }
+.rv-line.k-del { background: var(--bad-soft); }
+.rv-line.k-del .rv-sign { color: var(--bad); }
+.rv-line.is-active, .rv-comment.is-active { box-shadow: inset 2px 0 0 var(--accent); }
+.rv-line.is-active .rv-no { color: var(--ink); }
+.rv-plus { width: 20px; height: 20px; display: grid; place-items: center; color: var(--ink-2); visibility: hidden; position: sticky; right: 4px; }
+.rv-line:hover .rv-plus, .rv-line.is-active .rv-plus { visibility: visible; }
+.rv-plus:hover { color: var(--ink); background: var(--raised); }
+
+.rv-comment { height: 52px; padding: 6px 12px 6px 112px; background: var(--surface); border-left: 2px solid var(--accent); display: grid; gap: 2px; align-content: start; font-size: 13px; }
+.rv-comment-head { display: flex; align-items: center; gap: 10px; height: 18px; font-size: 12px; }
+.rv-comment-head .rv-icon { width: 22px; height: 22px; }
+.rv-comment-body { max-width: 900px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.rv-editor { height: 136px; padding: 8px 12px 8px 112px; background: var(--surface); border-left: 2px solid var(--accent); display: grid; grid-template-rows: auto 1fr auto; gap: 6px; width: 100%; }
+.rv-editor textarea { width: min(900px, 100%); resize: none; border: 1px solid var(--line-strong); background: var(--canvas); color: var(--ink); padding: 6px 8px; font: inherit; font-size: 13px; }
+.rv-editor-label { display: flex; gap: 8px; }
+.rv-editor-actions { display: flex; align-items: center; gap: 8px; width: min(900px, 100%); }
+.rv-editor-actions .rv-small { margin-right: auto; }
+
+.rv-foot { display: flex; align-items: center; gap: 16px; padding: 12px 16px; border-top: 1px solid var(--line); }
+.rv-note { font-size: 12px; color: var(--ink-2); max-width: 560px; }
+.rv-msgs { margin-left: auto; font-size: 12px; min-width: 0; }
+.rv-msgs .tk-error { margin-top: 0; }
+.rv-ok { color: var(--ok); }
+
+@media (max-width: 1100px) {
+  .rv-main { grid-template-columns: 220px minmax(0, 1fr); }
+}

@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { ChecksSummary } from "@crewyard/core";
-import { evaluateGate, summarizeChecks } from "./gate.ts";
+import { evaluateGate, mergeBlock, mergeStateStatus, summarizeChecks, toMergeState } from "./gate.ts";
 
 const passed: ChecksSummary = { state: "passed", total: 3, passed: 3, failing: 0, pending: 0, failingNames: [] };
-const base = { checks: passed, behindBy: 0, draft: false, openQuestions: 0, ownerApproved: false };
+const base = { checks: passed, behindBy: 0, mergeState: "clean" as const, draft: false, openQuestions: 0, ownerApproved: false };
 const statusOf = (g: ReturnType<typeof evaluateGate>) => Object.fromEntries(g.items.map((i) => [i.id, i.status]));
 
 describe("merge gate", () => {
   it("waits only for the owner when everything else passes", () => {
     const g = evaluateGate(base);
-    expect(statusOf(g)).toEqual({ checks: "pass", up_to_date: "pass", questions: "pass", approval: "wait" });
+    expect(statusOf(g)).toEqual({ checks: "pass", up_to_date: "pass", merge_state: "pass", questions: "pass", approval: "wait" });
     expect(g.readyForApproval).toBe(true);
     expect(g.mergeable).toBe(false);
     expect(evaluateGate({ ...base, ownerApproved: true }).mergeable).toBe(true);
@@ -23,8 +23,8 @@ describe("merge gate", () => {
   });
 
   it("never treats unknown as passing", () => {
-    const g = evaluateGate({ ...base, ownerApproved: true, behindBy: null, openQuestions: null, checks: { ...passed, state: "none", total: 0 } });
-    expect(statusOf(g)).toEqual({ checks: "unknown", up_to_date: "unknown", questions: "unknown", approval: "pass" });
+    const g = evaluateGate({ ...base, ownerApproved: true, behindBy: null, mergeState: null, openQuestions: null, checks: { ...passed, state: "none", total: 0 } });
+    expect(statusOf(g)).toEqual({ checks: "unknown", up_to_date: "unknown", merge_state: "unknown", questions: "unknown", approval: "pass" });
     expect(g.mergeable).toBe(false);
   });
 
@@ -34,6 +34,43 @@ describe("merge gate", () => {
     const draft = evaluateGate({ ...base, draft: true, ownerApproved: true });
     expect(draft.mergeable).toBe(false);
     expect(draft.readyForApproval).toBe(false);
+  });
+});
+
+describe("merge state", () => {
+  it("holds the merge on DIRTY and BEHIND and names the reason", () => {
+    for (const state of ["dirty", "behind"] as const) {
+      const g = evaluateGate({ ...base, mergeState: state, ownerApproved: true });
+      expect(statusOf(g).merge_state).toBe("fail");
+      expect(g.mergeable).toBe(false);
+      expect(g.readyForApproval).toBe(false);
+      expect(mergeBlock(g, state)).toBe(`merge.${state}`);
+    }
+  });
+
+  it("shows BLOCKED and UNSTABLE as a warning that GitHub enforces itself", () => {
+    for (const state of ["blocked", "unstable"] as const) {
+      const g = evaluateGate({ ...base, mergeState: state, ownerApproved: true });
+      expect(statusOf(g).merge_state).toBe("warn");
+      expect(g.mergeable).toBe(true);
+      expect(mergeBlock(g, state)).toBeNull();
+    }
+  });
+
+  it("lets CLEAN and HAS_HOOKS through and never treats an uncomputed state as passing", () => {
+    expect(mergeStateStatus("clean", false)).toBe("pass");
+    expect(mergeStateStatus("has_hooks", false)).toBe("pass");
+    const g = evaluateGate({ ...base, mergeState: "unknown", ownerApproved: true });
+    expect(g.mergeable).toBe(false);
+    expect(mergeBlock(g, "unknown")).toBe("Merge gate not passed: merge_state");
+    expect(mergeStateStatus("draft", true)).toBe("wait");
+  });
+
+  it("maps GitHub's REST values and keeps anything new as unknown", () => {
+    expect(toMergeState("CLEAN")).toBe("clean");
+    expect(toMergeState("behind")).toBe("behind");
+    expect(toMergeState("something_new")).toBe("unknown");
+    expect(toMergeState(null)).toBe("unknown");
   });
 });
 

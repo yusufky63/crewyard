@@ -45,6 +45,8 @@ const live = (p: TaskPull, title: string): PullSummary => ({
   author: "yusufky63",
   behindBy: 0,
   aheadBy: 2,
+  // GitHub found a conflict with main, so the merge gate holds the merge and says why.
+  mergeState: p.state === "merged" ? null : "dirty",
   mergedAt: p.mergedAt,
   mergedBy: null,
   checks: passed,
@@ -55,11 +57,12 @@ const live = (p: TaskPull, title: string): PullSummary => ({
           items: [
             { id: "checks", status: "pass" },
             { id: "up_to_date", status: "pass" },
+            { id: "merge_state", status: "fail" },
             { id: "questions", status: "pass" },
             { id: "approval", status: "wait" },
           ],
           mergeable: false,
-          readyForApproval: true,
+          readyForApproval: false,
         },
 });
 

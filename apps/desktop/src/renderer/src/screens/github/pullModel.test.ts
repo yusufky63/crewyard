@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { TaskPullView } from "@crewyard/core";
 import { fixtureTaskPulls } from "./fixture.ts";
-import { nextStep, pullLabel } from "./pullModel.ts";
+import { gateTextKey, gateTitleKey, nextStep, pullLabel } from "./pullModel.ts";
 
 const [open, draft, merged] = fixtureTaskPulls("p") as [TaskPullView, TaskPullView, TaskPullView];
 
@@ -18,9 +18,12 @@ describe("next PR step", () => {
   });
 
   it("offers merge only when every gate but your approval passes, and held feedback comes first", () => {
-    expect(nextStep(open)).toBe("merge");
-    expect(nextStep({ ...open, live: { ...open.live!, gate: { ...open.live!.gate!, readyForApproval: false } } })).toBeNull();
-    expect(nextStep({ ...open, feedback: [{ ...open.feedback[0]!, state: "held" }] })).toBe("feedback");
+    // The fixture's PR conflicts with main (DIRTY), so merge is not offered until that clears.
+    expect(nextStep(open)).toBeNull();
+    const clean = { ...open, live: { ...open.live!, mergeState: "clean" as const, gate: { ...open.live!.gate!, readyForApproval: true } } };
+    expect(nextStep(clean)).toBe("merge");
+    expect(nextStep({ ...clean, live: { ...clean.live, gate: { ...clean.live.gate, readyForApproval: false } } })).toBeNull();
+    expect(nextStep({ ...clean, feedback: [{ ...open.feedback[0]!, state: "held" }] })).toBe("feedback");
     expect(nextStep({ ...open, pull: { ...open.pull!, state: "draft" } })).toBeNull();
   });
 
@@ -33,5 +36,16 @@ describe("next PR step", () => {
   it("labels only a merged PR as merged", () => {
     expect([open, draft, merged].map(pullLabel)).toEqual(["open", "none", "merged"]);
     expect(pullLabel({ ...open, pull: { ...open.pull!, state: "closed" } })).toBe("closed");
+  });
+});
+
+describe("merge gate chips", () => {
+  it("names GitHub's merge state and says why it holds the merge", () => {
+    const item = { id: "merge_state" as const, status: "fail" as const };
+    expect(gateTextKey(item, "dirty")).toBe("pulls.mergeState.dirty");
+    expect(gateTitleKey(item, "behind", false)).toBe("pulls.mergeStateTitle.behind");
+    expect(gateTextKey({ id: "merge_state", status: "unknown" }, null)).toBe("pulls.mergeState.unknown");
+    expect(gateTextKey({ id: "checks", status: "pass" }, "dirty")).toBe("pulls.gate.checks.pass");
+    expect(gateTitleKey({ id: "approval", status: "wait" }, "clean", true)).toBe("pulls.gateTitle.draft");
   });
 });
