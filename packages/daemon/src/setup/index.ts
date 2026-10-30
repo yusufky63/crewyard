@@ -3,11 +3,11 @@ import type { FolderDetection } from "@crewyard/core";
 import { run } from "@crewyard/proc";
 import { parseLongPaths } from "../machine.ts";
 import { readProjectConfig } from "./config.ts";
-import { checkPathLength, defaultWorktreeRoot, detectProjectType, folderState, gitState, listWorkflows } from "./detect.ts";
+import { caseTwins, checkPathLength, defaultWorktreeRoot, detectProjectType, folderState, gitState, listWorkflows } from "./detect.ts";
 
 export { validateProjectConfig, writeProjectConfig, readProjectConfig, CONFIG_REL } from "./config.ts";
 export { gitInit, createPrivateRepo, writeCi, listRepos, cloneRepo } from "./actions.ts";
-export { checkPathLength } from "./detect.ts";
+export { caseTwinProblem, checkPathLength } from "./detect.ts";
 
 export async function longPathsEnabled(): Promise<boolean | null> {
   if (process.platform !== "win32") return null;
@@ -33,5 +33,6 @@ export async function detectFolder(path: string, known: Set<string>, longPaths: 
     longPathsEnabled: longPaths,
     existingConfig,
     workflows: listWorkflows(abs),
+    caseTwins: caseTwins(abs),
   };
 }

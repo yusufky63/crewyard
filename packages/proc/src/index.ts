@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { join } from "node:path";
 import spawn from "cross-spawn";
 import type { ChildProcess, SpawnOptions } from "node:child_process";
 
@@ -15,12 +16,28 @@ export interface RunResult {
 
 const MAX_OUTPUT = 4 * 1024 * 1024;
 
+const isShim = (command: string) => isWin && /\.(cmd|bat)$/i.test(command);
+
+/**
+ * A .cmd/.bat shim runs through cmd.exe, which ends the command line at the first line break:
+ * everything after it, including later arguments, is silently dropped (verified with Git for
+ * Windows 2.56 and cross-spawn 7.0.6). Refusing is better than running a cut-down command, so
+ * multi-line text (prompts) must go over stdin or a file instead.
+ */
+export function shimArgsProblem(command: string, args: readonly string[]): string | null {
+  if (!isShim(command)) return null;
+  const i = args.findIndex((a) => /[\r\n]/.test(a));
+  return i < 0 ? null : `argument ${i + 1} contains a line break, which cmd.exe cannot pass to ${command}`;
+}
+
 /**
  * Runs a short command and collects its output. Times out instead of hanging the daemon.
  * Goes through cross-spawn because Node refuses to start .cmd/.bat files without a shell
  * (EINVAL), and every npm-installed agent CLI on Windows is a .cmd shim.
  */
 export function run(command: string, args: string[], opts: { cwd?: string; timeoutMs?: number; env?: NodeJS.ProcessEnv } = {}): Promise<RunResult> {
+  const refused = shimArgsProblem(command, args);
+  if (refused) return Promise.resolve({ code: null, stdout: "", stderr: refused });
   return new Promise((resolve) => {
     let stdout = "";
     let stderr = "";
@@ -47,19 +64,140 @@ export function run(command: string, args: string[], opts: { cwd?: string; timeo
   });
 }
 
-/** Finds an executable on PATH. On Windows this prefers .exe, then .cmd/.bat shims. */
-export async function which(name: string): Promise<string | null> {
-  const res = await run(isWin ? "where.exe" : "which", [name], { timeoutMs: 5_000 });
+// Only these can be started without a shell. npm also drops an extensionless sh script and a .ps1
+// next to every .cmd shim; where.exe lists them, but neither runs here.
+const SPAWNABLE = /\.(exe|com|cmd|bat)$/i;
+const winRank = (p: string) => (/\.(exe|com)$/i.test(p) ? 0 : 1);
+
+/**
+ * Picks the binary from where.exe's hits (PATH order): a real .exe beats a .cmd shim anywhere on
+ * PATH, because the shim re-parses its arguments through cmd.exe (agent-orchestrator #3409).
+ */
+export function pickWindowsHit(hits: readonly string[]): string | null {
+  return hits.filter((p) => SPAWNABLE.test(p)).sort((a, b) => winRank(a) - winRank(b))[0] ?? null;
+}
+
+// By full path: cross-spawn's own lookup of a bare "where.exe" would search the current folder first.
+const WHERE = join(process.env.SystemRoot ?? "C:\\Windows", "System32", "where.exe");
+
+/**
+ * Finds an executable on PATH. On Windows `$PATH:` keeps where.exe from also searching the current
+ * folder, so a git.exe planted in a repo is never picked up.
+ */
+export async function which(name: string, opts: { env?: NodeJS.ProcessEnv } = {}): Promise<string | null> {
+  const res = await run(isWin ? WHERE : "which", [isWin ? `$PATH:${name}` : name], { timeoutMs: 5_000, env: opts.env });
   if (res.code !== 0) return null;
   const hits = res.stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-  if (!isWin) return hits[0] ?? null;
-  const rank = (p: string) => (/\.exe$/i.test(p) ? 0 : /\.(cmd|bat)$/i.test(p) ? 1 : 2);
-  return hits.sort((a, b) => rank(a) - rank(b))[0] ?? null;
+  return isWin ? pickWindowsHit(hits) : (hits[0] ?? null);
+}
+
+/**
+ * Remembers async answers (probes, binary lookups) per key. Callers that arrive while one is in
+ * flight share it, so a burst of screens asking at once starts one probe (agent-orchestrator
+ * #6444, #5887). Each caller says how old an answer it accepts; failures are never kept.
+ */
+export class ProbeCache<T> {
+  private readonly done = new Map<string, { at: number; value: T }>();
+  private readonly flying = new Map<string, Promise<T>>();
+
+  constructor(private readonly now: () => number = Date.now) {}
+
+  get(key: string, maxAgeMs: number, probe: () => Promise<T>): Promise<T> {
+    const hit = this.done.get(key);
+    if (hit && this.now() - hit.at <= maxAgeMs) return Promise.resolve(hit.value);
+    const pending = this.flying.get(key);
+    if (pending) return pending;
+    const p = probe().then(
+      (value) => {
+        this.done.set(key, { at: this.now(), value });
+        this.flying.delete(key);
+        return value;
+      },
+      (err: unknown) => {
+        this.flying.delete(key);
+        throw err;
+      },
+    );
+    this.flying.set(key, p);
+    return p;
+  }
+
+  clear(): void {
+    this.done.clear();
+  }
+}
+
+const bins = new ProbeCache<string | null>();
+
+/**
+ * which() through a shared cache keyed by PATH, so the machine check and the adapter that spawns
+ * resolve the same file (agent-orchestrator #6468). A PATH change misses the cache at once.
+ */
+export function resolveBin(name: string, maxAgeMs = 30_000): Promise<string | null> {
+  return bins.get(`${name}\0${process.env.PATH ?? ""}`, maxAgeMs, () => which(name));
 }
 
 /** Starts a long-running child (an agent CLI). cross-spawn handles .cmd shims without shell: true. */
 export function start(command: string, args: string[], opts: SpawnOptions = {}): ChildProcess {
+  const refused = shimArgsProblem(command, args);
+  if (refused) throw new Error(refused);
   return spawn(command, args, { ...opts, shell: false, windowsHide: true });
+}
+
+/**
+ * Splits child output into lines without letting one line grow without bound. A line longer than
+ * `maxBytes` (UTF-16 units, close enough for a cap) is dropped while it streams in and reported
+ * once with its size, so a runaway JSONL record cannot hold the daemon's memory (Agent Monitor
+ * #341). Only the new chunk is scanned for newlines, so long lines stay linear.
+ */
+export class LineSplitter {
+  private parts: string[] = [];
+  private size = 0;
+  private dropping = false;
+
+  constructor(
+    private readonly maxBytes = 16 * 1024 * 1024,
+    private readonly onOversize: (bytes: number) => void = () => {},
+  ) {}
+
+  push(chunk: string): string[] {
+    const out: string[] = [];
+    let from = 0;
+    for (let nl = chunk.indexOf("\n"); nl >= 0; nl = chunk.indexOf("\n", from)) {
+      this.add(chunk.slice(from, nl));
+      const line = this.take();
+      if (line !== null) out.push(line);
+      from = nl + 1;
+    }
+    this.add(chunk.slice(from));
+    return out;
+  }
+
+  /** Whatever is left when the stream ends without a trailing newline. */
+  flush(): string[] {
+    const line = this.take();
+    return line === null ? [] : [line];
+  }
+
+  private add(piece: string): void {
+    if (piece === "") return;
+    this.size += piece.length;
+    if (this.dropping) return;
+    if (this.size > this.maxBytes) {
+      this.dropping = true;
+      this.parts = [];
+    } else this.parts.push(piece);
+  }
+
+  private take(): string | null {
+    const size = this.size;
+    const line = this.dropping ? null : this.parts.join("").replace(/\r$/, "");
+    if (this.dropping) this.onOversize(size);
+    this.parts = [];
+    this.size = 0;
+    this.dropping = false;
+    return line === null || line.trim() === "" ? null : line;
+  }
 }
 
 /** Kills a process and everything it started. On Windows a plain kill() leaves grandchildren running. */

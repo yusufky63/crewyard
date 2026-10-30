@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import type { SetupIpc } from "@crewyard/core";
 import { assertFolder } from "../projects.ts";
-import { checkPathLength, cloneRepo, createPrivateRepo, detectFolder, gitInit, listRepos, longPathsEnabled, writeCi, writeProjectConfig } from "../setup/index.ts";
+import { caseTwinProblem, checkPathLength, cloneRepo, createPrivateRepo, detectFolder, gitInit, listRepos, longPathsEnabled, writeCi, writeProjectConfig } from "../setup/index.ts";
 import type { HandlerContext, HandlerMap } from "./types.ts";
 
 // Handlers for the New project wizard and .mission/project.json. Owned by the project setup work.
@@ -16,6 +16,8 @@ export function createSetupHandlers(ctx: HandlerContext): HandlerMap<SetupIpc> {
     "setup.pathCheck": async ({ path, worktreeRoot }) => checkPathLength(assertFolder(path), resolve(worktreeRoot), await getLongPaths()),
     "setup.create": async ({ path, config }) => {
       const abs = assertFolder(path);
+      const twin = caseTwinProblem(abs);
+      if (twin) throw new Error(twin);
       const written = await writeProjectConfig(abs, config);
       const added = store.addProject(abs, written.config.name);
       const project = store.markOpened(added.id);

@@ -4,7 +4,7 @@ import { SDK_CLI_VERSION } from "@crewyard/adapter-claude";
 import { MIN_CODEX_VERSION } from "@crewyard/adapter-codex";
 import { TESTED_VERSION } from "@crewyard/adapter-opencode";
 import type { DefenderCheck, MachineEnv, MachineReport, ToolCheck, ToolId, VersionGate, VersionGateStatus } from "@crewyard/core";
-import { parseVersion, run, which } from "@crewyard/proc";
+import { parseVersion, ProbeCache, resolveBin, run } from "@crewyard/proc";
 
 // The "This machine" check on the Start screen. Read-only: it never installs or changes anything.
 
@@ -45,8 +45,37 @@ export function versionGate(id: ToolId, version: string | null): VersionGate | n
   return ok ? { ...base, status: "ok", update: null } : { ...base, status: g.miss, update: g.update };
 }
 
-export async function checkTool(id: ToolId): Promise<ToolCheck> {
-  const path = await which(TOOL_BINS[id]);
+/**
+ * How old a probe answer each caller accepts, in ms. Probes start real processes (`claude
+ * --version` alone can take seconds on Windows), and at boot the main process, the Start screen and
+ * the setup wizard ask at once; within these windows they share one probe instead of starting one
+ * each (agent-orchestrator #6444, #5887). Short enough that "Check again" after installing a CLI
+ * sees it.
+ */
+export const PROBE_FRESHNESS = { tool: 5_000, env: 5_000, defender: 10_000 } as const;
+
+const tools = new ProbeCache<ToolCheck>();
+const envs = new ProbeCache<MachineEnv>();
+const defenders = new ProbeCache<DefenderCheck>();
+
+/** Forgets every probe answer; for tests. */
+export function resetProbes(): void {
+  tools.clear();
+  envs.clear();
+  defenders.clear();
+}
+
+export function checkTool(id: ToolId, maxAgeMs: number = PROBE_FRESHNESS.tool): Promise<ToolCheck> {
+  return tools.get(id, maxAgeMs, () => probeTool(id));
+}
+
+/**
+ * Resolves through the shared binary cache with a fresh lookup, so the path shown here is the one
+ * an adapter using resolveBin() spawns next (agent-orchestrator #6468), and runs `--version` on
+ * that exact file rather than the bare name.
+ */
+async function probeTool(id: ToolId): Promise<ToolCheck> {
+  const path = await resolveBin(TOOL_BINS[id], 0);
   if (!path) return { id, found: false, path: null, version: null, detail: null, gate: null };
   const res = await run(path, ["--version"], { timeoutMs: 15_000 });
   const version = parseVersion(res.stdout || res.stderr);
@@ -55,7 +84,7 @@ export async function checkTool(id: ToolId): Promise<ToolCheck> {
 
 /** `gh api user --jq .login` prints the login when signed in; anything else means not signed in. */
 async function ghLogin(): Promise<string | null> {
-  const gh = await which("gh");
+  const gh = await resolveBin("gh", 0);
   if (!gh) return null;
   const res = await run(gh, ["api", "user", "--jq", ".login"], { timeoutMs: 15_000 });
   const login = res.stdout.trim();
@@ -74,9 +103,11 @@ async function longPaths(): Promise<boolean | null> {
   return res.code === 0 ? parseLongPaths(res.stdout) : null;
 }
 
-export async function checkEnv(): Promise<MachineEnv> {
-  const [ghUser, longPathsEnabled] = await Promise.all([ghLogin(), longPaths()]);
-  return { checkedAt: new Date().toISOString(), platform: `${process.platform} ${process.arch}`, ghUser, longPathsEnabled };
+export function checkEnv(maxAgeMs: number = PROBE_FRESHNESS.env): Promise<MachineEnv> {
+  return envs.get("env", maxAgeMs, async () => {
+    const [ghUser, longPathsEnabled] = await Promise.all([ghLogin(), longPaths()]);
+    return { checkedAt: new Date().toISOString(), platform: `${process.platform} ${process.arch}`, ghUser, longPathsEnabled };
+  });
 }
 
 export async function checkMachine(): Promise<MachineReport> {
@@ -173,10 +204,12 @@ const DEFENDER_SCRIPT = [
 ].join("; ");
 
 /** `scanRoot` stands in for the projects folder until a project is added. */
-export async function checkDefender(worktreeRoots: string[], scanRoot: string): Promise<DefenderCheck> {
+export function checkDefender(worktreeRoots: string[], scanRoot: string, maxAgeMs: number = PROBE_FRESHNESS.defender): Promise<DefenderCheck> {
   const folders = worktreeRoots.length > 0 ? defenderFolders(worktreeRoots) : [join(scanRoot, ".mc", "worktrees")];
-  if (process.platform !== "win32") return defenderReport(NO_DEFENDER, folders);
-  const ps = (await which("powershell")) ?? "powershell.exe";
-  const res = await run(ps, ["-NoProfile", "-NonInteractive", "-Command", DEFENDER_SCRIPT], { timeoutMs: 30_000 });
-  return defenderReport(res.code === 0 ? parseDefender(res.stdout) : NO_DEFENDER, folders);
+  if (process.platform !== "win32") return Promise.resolve(defenderReport(NO_DEFENDER, folders));
+  return defenders.get(folders.join("|"), maxAgeMs, async () => {
+    const ps = (await resolveBin("powershell")) ?? "powershell.exe";
+    const res = await run(ps, ["-NoProfile", "-NonInteractive", "-Command", DEFENDER_SCRIPT], { timeoutMs: 30_000 });
+    return defenderReport(res.code === 0 ? parseDefender(res.stdout) : NO_DEFENDER, folders);
+  });
 }

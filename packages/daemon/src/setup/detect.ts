@@ -192,6 +192,31 @@ export function checkPathLength(dir: string, worktreeRoot: string, longPathsEnab
   return { longest, longestRelative: walk.path, limit, ok: limit === null || longest < limit, truncated: walk.truncated, filesSeen: walk.seen };
 }
 
+/**
+ * Folders next to `dir` whose names differ from it only by letter case. NTFS folders with case
+ * sensitivity turned on (WSL, `fsutil file setCaseSensitiveInfo`) can hold both `App` and `app`;
+ * everything else here compares paths without case (the projects table, the default worktree root
+ * `.mc\worktrees\<name>`), so the two would share one project and one worktree folder
+ * (vibe-kanban #2164). `list` is injectable for tests.
+ */
+export function caseTwins(dir: string, list: (parent: string) => string[] = readdirSync): string[] {
+  const abs = resolve(dir);
+  const name = basename(abs);
+  let siblings: string[];
+  try {
+    siblings = list(dirname(abs));
+  } catch {
+    return [];
+  }
+  return siblings.filter((s) => s !== name && s.toLowerCase() === name.toLowerCase()).map((s) => join(dirname(abs), s));
+}
+
+/** The refusal for `setup.create`, or null. Raw text like the other folder errors here. */
+export function caseTwinProblem(dir: string, list?: (parent: string) => string[]): string | null {
+  const twins = caseTwins(dir, list);
+  return twins.length ? `${dir} and ${twins.join(", ")} differ only by letter case; rename one first, since Crewyard would treat them as one project and one worktree folder.` : null;
+}
+
 export function folderState(dir: string): { exists: boolean; empty: boolean } {
   if (!existsSync(dir) || !statSync(dir).isDirectory()) return { exists: false, empty: false };
   return { exists: true, empty: readdirSync(dir).length === 0 };

@@ -64,6 +64,8 @@ export interface FolderDetection {
   existingConfig: ProjectConfig | null;
   /** Workflow files already in .github/workflows. */
   workflows: string[];
+  /** Sibling folders whose names differ only by letter case; setup.create refuses while any exist. */
+  caseTwins?: string[];
 }
 
 export interface GithubRepoItem {

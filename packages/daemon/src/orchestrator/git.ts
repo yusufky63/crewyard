@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import { run } from "@crewyard/proc";
 import { OrchestratorError } from "./errors.ts";
 
@@ -42,6 +42,8 @@ export interface Registration {
   path: string;
   branch: string | null;
   locked: boolean;
+  /** git's own verdict that the folder is gone (`prunable <reason>`). */
+  prunable: boolean;
 }
 
 /** `git worktree list --porcelain -z`: NUL-terminated attribute lines, an empty field between entries. */
@@ -52,25 +54,75 @@ export function parseWorktreeList(out: string): Registration[] {
     if (field === "") {
       if (cur) regs.push(cur);
       cur = null;
-    } else if (field.startsWith("worktree ")) cur = { path: field.slice(9), branch: null, locked: false };
+    } else if (field.startsWith("worktree ")) cur = { path: field.slice(9), branch: null, locked: false, prunable: false };
     else if (cur && field.startsWith("branch ")) cur.branch = field.slice(7).replace(/^refs\/heads\//, "");
     else if (cur && (field === "locked" || field.startsWith("locked "))) cur.locked = true;
+    else if (cur && (field === "prunable" || field.startsWith("prunable "))) cur.prunable = true;
   }
   if (cur) regs.push(cur);
   return regs;
 }
 
 const samePath = (a: string, b: string) => resolve(a).toLowerCase() === resolve(b).toLowerCase();
+const inside = (child: string, dir: string) => resolve(child).toLowerCase().startsWith(`${resolve(dir).toLowerCase()}${sep}`);
+
+/**
+ * git check-ref-format rules for a branch we create (git-check-ref-format(1)), so a bad name
+ * fails with our own error before git runs. Task branches are `crewyard/<slug>` and always pass;
+ * this guards names built elsewhere, e.g. from a domain account (`DOMAIN\first.last`, claude-squad #220).
+ */
+export function isValidBranchName(name: string): boolean {
+  if (!name || name === "@" || name.startsWith("-") || name.endsWith("/") || name.endsWith(".")) return false;
+  // Control characters and space, then ~ ^ : ? * [ \, "..", "@{" and "//" are never allowed.
+  if ([...name].some((ch) => ch <= " " || ch === "\x7f")) return false;
+  if (/[~^:?*[\\]|\.\.|@\{|\/\//.test(name)) return false;
+  return !name.split("/").some((part) => part === "" || part.startsWith(".") || part.endsWith(".lock"));
+}
+
+/**
+ * Resolves the commit a task branch starts from. A base that does not resolve gets a clear error:
+ * either it does not exist, or it is a symbolic ref (typically `origin/HEAD` after the remote's
+ * default branch was renamed) whose target was deleted (emdash #3198).
+ */
+export async function resolveBase(repoPath: string, base: string | null, bin = "git"): Promise<string> {
+  const rev = base ?? "HEAD";
+  if (rev.startsWith("-")) throw new OrchestratorError("worktree.base_missing", { base: rev });
+  const res = await run(bin, ["rev-parse", "--verify", "--end-of-options", `${rev}^{commit}`], { cwd: repoPath, env: GIT_ENV, timeoutMs: 60_000 });
+  if (res.code === 0) return res.stdout.trim();
+  const dangling = res.stderr.match(/dangling symref (\S+)/)?.[1];
+  if (dangling) {
+    const target = await run(bin, ["symbolic-ref", "--quiet", dangling], { cwd: repoPath, env: GIT_ENV });
+    throw new OrchestratorError("worktree.base_dangling", { base: rev, ref: dangling, target: target.stdout.trim() });
+  }
+  throw new OrchestratorError("worktree.base_missing", { base: rev });
+}
+
+/**
+ * Drops registrations git calls prunable (folder gone) inside this worktree root. They are
+ * Crewyard's own task worktrees: the branch stays and a later start re-adds the folder, while
+ * left alone they make `worktree add` fail with "already registered" or "already used by
+ * worktree" (emdash #3247). One `git worktree remove` each, never a repo-wide `prune`:
+ * registrations outside the root (the user's own, maybe on a drive unplugged right now) and
+ * locked ones are not ours to drop.
+ */
+export async function pruneOwnStale(repoPath: string, root: string, regs: Registration[], bin = "git"): Promise<string[]> {
+  const stale = regs.filter((r) => r.prunable && !r.locked && inside(r.path, root) && !existsSync(r.path));
+  for (const r of stale) await git(repoPath, ["worktree", "remove", r.path], bin);
+  return stale.map((r) => r.path);
+}
 
 /**
  * Creates the task's worktree on a new branch from `base` (or the repo's HEAD), or reuses it,
- * e.g. after a restart. Every recovery path here touches only this one registration and never
- * deletes a folder: a repo-wide `git worktree prune` would also drop sibling registrations whose
- * folders are briefly unreachable, and a folder git does not know may hold someone's work.
+ * e.g. after a restart. Stale registrations in the task's worktree root are dropped first (see
+ * pruneOwnStale); nothing else is pruned and no folder is ever deleted: a folder git does not
+ * know may hold someone's work.
  */
 export async function ensureWorktree(repoPath: string, path: string, branch: string, base: string | null, bin = "git"): Promise<WorktreeInfo> {
-  const baseSha = (await git(repoPath, ["rev-parse", "--verify", `${base ?? "HEAD"}^{commit}`], bin)).trim();
-  const regs = parseWorktreeList(await git(repoPath, ["worktree", "list", "--porcelain", "-z"], bin));
+  if (!isValidBranchName(branch)) throw new OrchestratorError("worktree.bad_branch", { branch });
+  const baseSha = await resolveBase(repoPath, base, bin);
+  const list = async () => parseWorktreeList(await git(repoPath, ["worktree", "list", "--porcelain", "-z"], bin));
+  let regs = await list();
+  if ((await pruneOwnStale(repoPath, dirname(path), regs, bin)).length > 0) regs = await list();
   const here = regs.find((r) => samePath(r.path, path));
   const elsewhere = regs.find((r) => r.branch === branch && !samePath(r.path, path));
   if (elsewhere) throw new OrchestratorError("worktree.branch_elsewhere", { branch, path: elsewhere.path });
@@ -80,8 +132,9 @@ export async function ensureWorktree(repoPath: string, path: string, branch: str
   if (here?.locked) throw new OrchestratorError("worktree.locked", { path });
   if (!here && folder && readdirSync(path).length > 0) throw new OrchestratorError("worktree.path_taken", { path });
 
-  // Registered but its folder is gone: `add --force` re-registers just this path, and git still
-  // refuses it if a non-empty folder appeared in the meantime, so a lost race fails instead of overwriting.
+  // Registered, folder gone, but not prunable yet (e.g. outside our root): `add --force`
+  // re-registers just this path, and git still refuses it if a non-empty folder appeared in the
+  // meantime, so a lost race fails instead of overwriting.
   const force = here ? ["--force"] : [];
   mkdirSync(dirname(path), { recursive: true });
   const exists = await run(bin, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`], { cwd: repoPath, env: GIT_ENV });
@@ -92,14 +145,29 @@ export async function ensureWorktree(repoPath: string, path: string, branch: str
 
 export const headSha = async (cwd: string, bin = "git") => (await git(cwd, ["rev-parse", "HEAD"], bin)).trim();
 
-/** Local work-in-progress commit at a turn boundary (PLAN.md §8.2 step 4). Nothing is pushed. */
-export async function checkpoint(cwd: string, message: string, bin = "git"): Promise<{ sha: string; committed: boolean }> {
+/** Files `git add --ignore-errors` could not read, from its "unable to index file" lines. */
+export function unindexedFiles(stderr: string): string[] {
+  return [...stderr.matchAll(/unable to index file '(.+)'/g)].map((m) => m[1]!);
+}
+
+/**
+ * Local work-in-progress commit at a turn boundary (PLAN.md §8.2 step 4). Nothing is pushed.
+ * A file another process holds open (editor, dev server, antivirus) makes a plain `git add -A`
+ * fail for every file; `--ignore-errors` stages the rest and names the skipped ones, which stay
+ * as changes in the worktree for the next turn.
+ */
+export async function checkpoint(cwd: string, message: string, bin = "git"): Promise<{ sha: string; committed: boolean; skipped: string[] }> {
   const dirty = (await git(cwd, ["status", "--porcelain"], bin)).trim().length > 0;
+  let skipped: string[] = [];
+  let committed = false;
   if (dirty) {
-    await git(cwd, ["add", "-A"], bin);
-    await git(cwd, ["commit", "-m", message], bin);
+    const add = await run(bin, ["add", "-A", "--ignore-errors"], { cwd, env: GIT_ENV, timeoutMs: 60_000 });
+    skipped = unindexedFiles(add.stderr);
+    if (add.code !== 0 && skipped.length === 0) throw new OrchestratorError("git.failed", { command: "add", detail: add.stderr.trim().slice(0, 400) });
+    committed = (await run(bin, ["diff", "--cached", "--quiet"], { cwd, env: GIT_ENV })).code === 1;
+    if (committed) await git(cwd, ["commit", "-m", message], bin);
   }
-  return { sha: await headSha(cwd, bin), committed: dirty };
+  return { sha: await headSha(cwd, bin), committed, skipped };
 }
 
 /**
@@ -110,7 +178,7 @@ export async function removeWorktreeKeepBranch(repoPath: string, path: string, b
   await git(repoPath, ["worktree", "remove", path], bin);
 }
 
-export const diffStat =async (cwd: string, baseSha: string, bin = "git") => (await git(cwd, ["diff", "--stat", baseSha, "HEAD"], bin)).trim();
+export const diffStat = async (cwd: string, baseSha: string, bin = "git") => (await git(cwd, ["diff", "--stat", baseSha, "HEAD"], bin)).trim();
 
 export const isClean = async (cwd: string, bin = "git") => (await git(cwd, ["status", "--porcelain"], bin)).trim().length === 0;
 

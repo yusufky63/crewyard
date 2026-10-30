@@ -42,9 +42,15 @@ export async function readRemote(path: string): Promise<{ name: string; url: str
   return url ? { name, url } : null;
 }
 
+/**
+ * The remote's default branch as the local clone knows it. `<remote>/HEAD` can still point at a
+ * branch the remote deleted (renamed default, emdash #3198); that counts as unknown, so callers
+ * fall back to GitHub's answer instead of a base that does not exist.
+ */
 export async function defaultBranch(path: string, remote: string): Promise<string | null> {
   const ref = await out(path, ["symbolic-ref", "--quiet", "--short", `refs/remotes/${remote}/HEAD`]);
-  return ref ? ref.slice(remote.length + 1) : null;
+  if (!ref) return null;
+  return (await out(path, ["rev-parse", "--verify", "--quiet", `refs/remotes/${ref}`])) ? ref.slice(remote.length + 1) : null;
 }
 
 export async function currentBranch(path: string): Promise<string | null> {
@@ -237,9 +243,49 @@ const OUTPUT_CAP = 4 * 1024 * 1024;
  * Everything in a worktree against its base commit: committed, staged and unstaged changes to
  * tracked files. Never touches the index, so untracked files are listed separately.
  */
-export async function worktreeDiff(path: string, baseSha: string): Promise<{ ok: boolean; text: string; cut: boolean }> {
+export async function worktreeDiff(path: string, baseSha: string): Promise<{ ok: boolean; text: string; cut: boolean; unreadable: string[] }> {
+  const args = ["diff", "--no-color", "--no-ext-diff", "-U3", baseSha];
   const res = await git(path, ["diff", "--no-color", "--no-ext-diff", "--find-renames", "-U3", baseSha, "--"], 60_000);
-  return { ok: res.code === 0, text: res.stdout, cut: res.stdout.length >= OUTPUT_CAP };
+  if (res.code === 0) return { ok: true, text: res.stdout, cut: res.stdout.length >= OUTPUT_CAP, unreadable: [] };
+  // One file held open by another process makes git fail for all of them ("cannot hash"; orca
+  // #33953). Listing names never reads file contents, so diff the rest file by file (renames then
+  // show as a delete and an add).
+  const names = await git(path, ["diff", "--name-only", "-z", baseSha, "--"]);
+  if (names.code !== 0) return { ok: false, text: "", cut: false, unreadable: [] };
+  const parts = await perFile(path, args, names.stdout.split("\0").filter(Boolean));
+  const text = parts.ok.join("");
+  return { ok: true, text, cut: text.length >= OUTPUT_CAP, unreadable: parts.failed };
+}
+
+const FALLBACK_BATCH = 50;
+
+/**
+ * Runs `git <args> -- <files>` in batches and only splits a batch that fails, so a thousand
+ * changed files with one locked among them cost about twenty-one git runs, not a thousand.
+ */
+export async function perFile(path: string, args: string[], files: string[]): Promise<{ ok: string[]; failed: string[] }> {
+  const ok: string[] = [];
+  const failed: string[] = [];
+  // A file named like a glob ("a*.txt") must match only itself.
+  const spec = (f: string) => `:(literal)${f}`;
+  let size = 0;
+  for (let i = 0; i < files.length && size < OUTPUT_CAP; i += FALLBACK_BATCH) {
+    const batch = files.slice(i, i + FALLBACK_BATCH);
+    const res = await git(path, [...args, "--", ...batch.map(spec)], 60_000);
+    if (res.code === 0) {
+      ok.push(res.stdout);
+      size += res.stdout.length;
+      continue;
+    }
+    for (const file of batch) {
+      const one = batch.length === 1 ? res : await git(path, [...args, "--", spec(file)], 60_000);
+      if (one.code === 0) {
+        ok.push(one.stdout);
+        size += one.stdout.length;
+      } else failed.push(file);
+    }
+  }
+  return { ok, failed };
 }
 
 export async function untrackedFiles(path: string): Promise<string[]> {

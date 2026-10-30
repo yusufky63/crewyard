@@ -1,4 +1,5 @@
 export * from "./events.ts";
+export * from "./event-caps.ts";
 export * from "./adapter.ts";
 export * from "./state.ts";
 export * from "./limits.ts";

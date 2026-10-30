@@ -3,9 +3,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { freemem } from "node:os";
 import { join, resolve } from "node:path";
 import {
+  capEvent,
   classifyRisk,
   defaultProjectConfig,
   estimateCost,
+  EVENT_LIMITS,
   ProjectConfig,
   type AgentAdapter,
   type AgentEvent,
@@ -38,6 +40,7 @@ import {
   type TasksIpc,
   type TasksTopics,
   type UnpricedSpend,
+  utf8Length,
 } from "@crewyard/core";
 import type { Store } from "../store.ts";
 import { Bootstrapper } from "../worktrees/bootstrap.ts";
@@ -102,6 +105,9 @@ type LaunchSpec = {
 
 /** How many handoffs one crew step may take on its own before it asks you (the standby chain is 2 long). */
 const MAX_AUTO_HANDOFFS = 2;
+
+/** Largest tool output kept whole on disk when its event is cut; bigger ones keep only the head. */
+const KEEP_FULL_MAX = 8 * 1024 * 1024;
 
 const pidAlive = (pid: number) => {
   try {
@@ -1652,8 +1658,27 @@ export class Orchestrator {
   private record(runId: string, ev: AgentEvent): void {
     const run = this.db.run(runId);
     const task = this.db.task(run.task_id);
-    this.opts.store.appendEvent({ kind: `run.${ev.type}`, source: ev.source.adapter, payload: ev, projectId: task.project_id, taskId: task.id, runId });
-    this.emit("runs.event", { taskId: task.id, runId, event: ev });
+    // The log and the window get a capped copy; the caller keeps the full event for its rules
+    // (risk is classified on the whole command).
+    const { event } = capEvent(ev, EVENT_LIMITS, (field, full) => this.keepFull(task.id, runId, ev.seq, field, full));
+    this.opts.store.appendEvent({ kind: `run.${ev.type}`, source: ev.source.adapter, payload: event, projectId: task.project_id, taskId: task.id, runId });
+    this.emit("runs.event", { taskId: task.id, runId, event });
+  }
+
+  /**
+   * The full text of a cut tool output, in the task's folder under the data folder: the same
+   * per-user place as the event log that already holds its head, never sent to the window or to an
+   * agent. Past KEEP_FULL_MAX only the head is kept.
+   */
+  private keepFull(taskId: string, runId: string, seq: number, field: string, full: string): string | null {
+    if (utf8Length(full) > KEEP_FULL_MAX) return null;
+    const path = join(this.opts.dataDir, "tasks", taskId, "output", `${runId}-${seq}-${field}.txt`);
+    try {
+      writeFileAtomic(path, full);
+      return path;
+    } catch {
+      return null;
+    }
   }
 
   private audit(taskId: string, runId: string | null, kind: string, payload: unknown): void {
