@@ -46,9 +46,11 @@
 
 /* Notifications popover. */
 .tb-pop {
-  position: fixed; z-index: var(--z-popover); width: 380px; max-height: min(520px, calc(100vh - 96px)); overflow: auto;
+  position: fixed; z-index: var(--z-popover); width: 400px; display: flex; flex-direction: column; max-height: min(560px, calc(100vh - 96px));
   padding: 6px; background: var(--surface); border: 1px solid var(--line-strong); -webkit-app-region: no-drag;
 }
+/* The list scrolls inside the frame, so the corner ticks (drawn 1 px outside) never cause scrollbars. */
+.tb-pop-body { overflow-y: auto; overflow-x: hidden; min-height: 0; }
 .tb-pop::before { content: ""; position: absolute; inset: -1px; pointer-events: none; z-index: 1; background: var(--ink-3); -webkit-mask: var(--tick-mask); mask: var(--tick-mask); }
 .tb-pop:focus { outline: none; }
 .tb-pop-head { display: flex; align-items: center; gap: 8px; padding: 6px 10px 8px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
@@ -71,3 +73,6 @@
   .tb-search-t { display: none; }
   .tb-search { flex: 0 0 auto; min-width: 0; }
 }
+
+/* focusMain() parks focus on <main> after a jump; it is a starting point for Tab, not a control. */
+main[tabindex="-1"]:focus { outline: none; }

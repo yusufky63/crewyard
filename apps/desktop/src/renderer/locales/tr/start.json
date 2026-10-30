@@ -61,7 +61,8 @@
       "step3": "Yukarıdaki klasörü seçin.",
       "orAdmin": "Ya da yönetici olarak açtığınız PowerShell'de şunu çalıştırın:",
       "checkAdmin": "Mevcut listeyi görmek için yönetici olarak açtığınız PowerShell'de şunu çalıştırın:",
-      "never": "Her istisna korumada bir boşluktur; yalnızca çalışma ağaçları yavaş geliyorsa ekleyin. Crewyard bu ayarları sadece okur, hiçbir zaman değiştirmez."
+      "never": "Her istisna korumada bir boşluktur; yalnızca çalışma ağaçları yavaş geliyorsa ekleyin. Crewyard bu ayarları sadece okur, hiçbir zaman değiştirmez.",
+      "how": "Nasıl eklenir"
     }
   },
   "recent": {

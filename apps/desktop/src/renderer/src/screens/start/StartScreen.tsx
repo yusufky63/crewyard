@@ -143,21 +143,25 @@ function DefenderRow({ check, pending, error }: { check: DefenderCheck | undefin
               </li>
             ))}
           </ul>
-          <ol className="syssteps">
-            <li>{t("machine.defender.step1")}</li>
-            <li>{t("machine.defender.step2")}</li>
-            <li>{t("machine.defender.step3")}</li>
-          </ol>
-          <p>{t("machine.defender.orAdmin")}</p>
-          {folders.map((f) => (
-            <Cmd key={f.path} text={`Add-MpPreference -ExclusionPath "${f.path}"`} />
-          ))}
-          {state === "unknown" && (
-            <>
-              <p>{t("machine.defender.checkAdmin")}</p>
-              <Cmd text="(Get-MpPreference).ExclusionPath" />
-            </>
-          )}
+          {/* The steps stay one click away: this check is advice, not something to fix before work starts. */}
+          <details className="sysdetails">
+            <summary>{t("machine.defender.how")}</summary>
+            <ol className="syssteps">
+              <li>{t("machine.defender.step1")}</li>
+              <li>{t("machine.defender.step2")}</li>
+              <li>{t("machine.defender.step3")}</li>
+            </ol>
+            <p>{t("machine.defender.orAdmin")}</p>
+            {folders.map((f) => (
+              <Cmd key={f.path} text={`Add-MpPreference -ExclusionPath "${f.path}"`} />
+            ))}
+            {state === "unknown" && (
+              <>
+                <p>{t("machine.defender.checkAdmin")}</p>
+                <Cmd text="(Get-MpPreference).ExclusionPath" />
+              </>
+            )}
+          </details>
           <p className="muted">{t("machine.defender.never")}</p>
         </>
       ) : null}

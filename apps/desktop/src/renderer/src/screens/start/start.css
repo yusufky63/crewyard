@@ -48,7 +48,12 @@
 
 /* Recent project tiles: branch, running agents, open questions. */
 .start .tile-state { display: grid; gap: 4px; font: 400 11px / 1.35 var(--mono); color: var(--ink-2); min-width: 0; }
-.start .tile-branch { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.start .tile-branch svg { flex: none; color: var(--ink-3); }
-.start .tile-branch-t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.start .tile-activity { display: flex; gap: 12px; color: var(--ink-3); }
+.start .tile-branch { display: flex; align-items: flex-start; gap: 6px; min-width: 0; }
+.start .tile-branch svg { flex: none; color: var(--ink-3); margin-top: 1px; }
+.start .tile-branch-t { min-width: 0; overflow: hidden; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.start .tile-activity { display: flex; flex-wrap: wrap; gap: 2px 12px; color: var(--ink-3); }
+.start .tile-activity > span { white-space: nowrap; }
+.start .sysdetails[open] { padding-bottom: 4px; }
+.start .sysdetails > * + * { margin-top: 8px; }
+.start .sysdetails summary { width: max-content; cursor: pointer; font: 500 11px / 1.2 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); padding: 4px 0; }
+.start .sysdetails summary:hover { color: var(--ink); }

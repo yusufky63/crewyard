@@ -8,6 +8,20 @@ import { FIXTURE } from "../../screens/tasks/fixture.ts";
 // Where the title bar's switcher, search and notifications take the user. Project screens need an
 // open project, so every target opens its project first.
 
+/**
+ * After a jump the old focus target is gone; give focus to the new screen's main area so the next
+ * Tab starts there, unless the target already focused something (the composer for New task).
+ */
+export function focusMain(): void {
+  requestAnimationFrame(() => {
+    if (document.activeElement && document.activeElement !== document.body) return;
+    const main = document.querySelector<HTMLElement>("main");
+    if (!main) return;
+    if (!main.hasAttribute("tabindex")) main.setAttribute("tabindex", "-1");
+    main.focus({ preventScroll: true });
+  });
+}
+
 /** Marks the project opened (the Start screen sorts by it) and lands on the project home. */
 export async function openProjectById(qc: QueryClient, projectId: string): Promise<void> {
   if (!FIXTURE) await call("projects.open", { projectId }).catch(() => undefined);

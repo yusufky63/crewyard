@@ -61,7 +61,8 @@
       "step3": "Pick the folder above.",
       "orAdmin": "Or run this in PowerShell opened as administrator:",
       "checkAdmin": "To see the current list, run this in PowerShell opened as administrator:",
-      "never": "An exclusion is a gap in protection, so add it only if worktrees feel slow. Crewyard only reads these settings and never changes them."
+      "never": "An exclusion is a gap in protection, so add it only if worktrees feel slow. Crewyard only reads these settings and never changes them.",
+      "how": "How to add it"
     }
   },
   "recent": {

@@ -8,7 +8,7 @@ import { useNav } from "../../nav.ts";
 import { projectScreens } from "../../registry.ts";
 import { openSetup } from "../../screens/setup/draft.ts";
 import { useWork } from "../../screens/tasks/data.ts";
-import { goInProject, openFolder, openProjectById, openTask, startNewTask } from "./actions.ts";
+import { focusMain, goInProject, openFolder, openProjectById, openTask, startNewTask } from "./actions.ts";
 import { moveActive, rankCommands, type Command } from "./search.ts";
 
 // Ctrl K command search (DESIGN.md §7): go to a screen, open a project, open a task by title or
@@ -116,7 +116,7 @@ function Palette({ initialQuery, onClose }: { initialQuery: string; onClose(): v
   const run = (e: Entry) => {
     // Running moves focus to the target screen, so the opener does not get it back.
     close(false);
-    void e.run();
+    void Promise.resolve(e.run()).then(focusMain);
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {

@@ -10,7 +10,7 @@ import { ProvBadge } from "../../screens/providers/shared.tsx";
 import { useWork } from "../../screens/tasks/data.ts";
 import { useActivity } from "../../screens/tasks/live.ts";
 import { useFormat, useNow } from "../../screens/tasks/parts.tsx";
-import { openNotice, openRequest } from "./actions.ts";
+import { focusMain, openNotice, openRequest } from "./actions.ts";
 import { moveActive } from "./search.ts";
 import { badgeCount, openRequests, recentNotices } from "./notices.ts";
 
@@ -115,13 +115,10 @@ function Popover({ anchor, requests, notices, error, onClose }: { anchor: RefObj
     const down = (e: PointerEvent) => {
       if (!ref.current?.contains(e.target as Node) && !anchor.current?.contains(e.target as Node)) onClose();
     };
-    const blur = () => onClose();
+    // No close on window blur: clicking a Windows toast or another app and coming back should find
+    // the list where it was.
     document.addEventListener("pointerdown", down, true);
-    window.addEventListener("blur", blur);
-    return () => {
-      document.removeEventListener("pointerdown", down, true);
-      window.removeEventListener("blur", blur);
-    };
+    return () => document.removeEventListener("pointerdown", down, true);
   }, [anchor, onClose]);
 
   const closeAndRefocus = () => {
@@ -144,7 +141,7 @@ function Popover({ anchor, requests, notices, error, onClose }: { anchor: RefObj
 
   const go = (fn: () => Promise<void>) => {
     onClose();
-    void fn();
+    void fn().then(focusMain);
   };
 
   const empty = requests.length === 0 && notices.length === 0;
@@ -154,6 +151,7 @@ function Popover({ anchor, requests, notices, error, onClose }: { anchor: RefObj
         <span className="lbl strong">{t("notifications.title")}</span>
         <span className="lbl end">{t("notifications.context", { open: requests.length, notices: notices.length })}</span>
       </div>
+      <div className="tb-pop-body">
       {error && <p className="tb-empty muted">{t("notifications.error")}</p>}
       {empty && !error && <p className="tb-empty muted">{t("notifications.empty")}</p>}
       {requests.length > 0 && (
@@ -188,6 +186,7 @@ function Popover({ anchor, requests, notices, error, onClose }: { anchor: RefObj
           ))}
         </section>
       )}
+      </div>
     </div>
   );
 }
