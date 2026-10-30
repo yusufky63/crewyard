@@ -104,6 +104,10 @@ Build our own app, small and Windows-first, using these projects as references, 
 - **Provider data:** models.dev and cc-switch are both MIT; `catalog/curated.json` cites the cc-switch file and line for every endpoint it takes.
 - **Copying code:** none. Every repo here, whatever its license, is read to learn how it works; Crewyard's code is written for its own architecture (AGENTS.md).
 
+## Follow-up scan (2026-10-30)
+
+A second, deeper pass over these repos, the four runners' docs and six newer projects is in [docs/research/2026-10-30-feature-scan.md](docs/research/2026-10-30-feature-scan.md): fixes for what we already built, ranked additions, Windows pitfalls, quota endpoint facts and corrections to this page.
+
 ## Not verified
 
 - No app was run. Windows behaviour is inferred.
