@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { app } from "electron";
 import type { UpdateState } from "../../shared/api.ts";
 import { createEngine } from "./engine.ts";
-import { decideFeed, releaseInfo } from "./feed.ts";
+import { decideFeed, releaseInfo, type ReleaseInfo } from "./feed.ts";
 import { Updater, type UpdatePrefs } from "./updater.ts";
 
 // Wires the updater to this Electron app: what the build says about itself, the feed electron-builder
@@ -44,15 +44,16 @@ function prefsAt(path: string): UpdatePrefs {
   };
 }
 
-export function createUpdater(onChange: (s: UpdateState) => void): Updater {
-  const pkg = (() => {
-    try {
-      return JSON.parse(readText(join(app.getAppPath(), "package.json")) ?? "null") as unknown;
-    } catch {
-      return null;
-    }
-  })();
-  const release = releaseInfo(pkg);
+/** What the packaged package.json says about this build; main reads it first, for the debugging check too. */
+export function readRelease(): ReleaseInfo {
+  try {
+    return releaseInfo(JSON.parse(readText(join(app.getAppPath(), "package.json")) ?? "null"));
+  } catch {
+    return releaseInfo(null);
+  }
+}
+
+export function createUpdater(release: ReleaseInfo, onChange: (s: UpdateState) => void): Updater {
   const installed = existsSync(join(dirname(process.execPath), `Uninstall ${app.getName()}.exe`));
   const yml = app.isPackaged ? readText(join(process.resourcesPath, "app-update.yml")) : null;
   const decision = decideFeed({ platform: process.platform, packaged: app.isPackaged, installed }, release, yml);

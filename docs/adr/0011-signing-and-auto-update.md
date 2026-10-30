@@ -135,6 +135,10 @@ These rules hold:
   - After "Restart to install", the installer replaced the app in place, the exe reads 0.1.1 and is signed, and Crewyard started again by itself. Settings then showed 0.1.1.
   - `updater.log` recorded each refusal and the passed check. The feed server only saw requests for `latest.yml`, the installer and a blockmap. The blockmap is not in the test feed, so electron-updater fell back from a differential to a full download.
   - The uninstaller removed the uninstall entry, and the profile, the updater cache and the temp folder (certificates included) were deleted.
+- **A packaged build refuses remote debugging** (checked later the same day, on an unsigned `pnpm package`).
+  - Started with `--remote-debugging-port=9339` spelled `--`, `-`, `/` or in mixed case, or with `--remote-debugging-pipe`, it exits with code 1 in about 100 ms and prints the refusal. `/json/version` on 127.0.0.1:9339 refused connections for the 6 s after each start.
+  - Started without a switch, it opens normally. An unpackaged run with the switch still serves `/json/version`, so the probe sees a listener when there is one.
+  - `update-flow.mjs` still passed all 26 checks, driving its test-root builds over CDP.
 - **Screenshots** of the Updates section in dark and light at 1280 and 1920 px are in the session notes folder, not in the repository. They cover the downloaded, downloading, refused, available (Turkish), current and off states, plus the real flow from the harness.
 
 ## Sources
@@ -175,7 +179,7 @@ These rules hold:
 - **The signature check fails closed.** It refuses when it cannot run, and when the publisher is missing from a signed build's `app-update.yml` the updater stays off.
 - **The test root** needs a loopback feed in both places, at build time (`release.cjs`) and at run time (`feed.ts`), so a release build cannot carry one. It pins one exact self-signed root, and a tampered file is still `HashMismatch` under it.
 - **Residual risk: `latest.yml` is not signed.** Someone who controls the feed can offer an older installer that is validly signed by us, under a higher version number. HTTPS and access control on the host are the mitigation for now. The fix is Ed25519-signed update manifests, once electron-builder 27 and electron-updater 7 leave alpha. The first release that embeds the public key protects every later one.
-- **Finding outside this ADR's scope:** the packaged app honours `--remote-debugging-port`, which opens a DevTools listener on 127.0.0.1 when someone starts Crewyard with it. The test harness uses exactly that to drive an installed copy. A packaged release build should refuse it; a build with a test root may keep it for this test.
+- **Remote debugging is refused in packaged builds** (`src/main/debug-switches.ts`). `--remote-debugging-port` opened a DevTools listener on 127.0.0.1 and `--remote-debugging-pipe` hands the window to whoever holds the pipe, so any local process that started Crewyard with one could drive it. The first thing the main process does is check both, through `app.commandLine.hasSwitch` and `process.argv` (`--`, `-` or `/`, any case). It then quits with a console error before the app is ready, so no listener ever opens. The one exception is a build with a test root: the test harness drives the installed test build over CDP, `release.cjs` bakes a root in only with a loopback feed, and the asar integrity fuse protects the `package.json` that carries it. Unpackaged runs (`pnpm dev`, Playwright, screenshots) are not affected. The Node inspector switches were already off through the `enableNodeCliInspectArguments` fuse.
 
 ## Rollback
 
@@ -197,4 +201,4 @@ These rules hold:
    - In every case, set `CREWYARD_SIGN_PUBLISHER` to the certificate's full subject DN. Every later certificate must match it, or one release signed with the old certificate must list both DNs.
 2. **An HTTPS feed host** for `latest.yml`, `Crewyard-Setup-<version>-x64.exe` and its `.blockmap`, uploaded together for each release, with write access limited to you.
 3. **The build:** `CREWYARD_SIGN=1`, the certificate variables, `CREWYARD_UPDATE_URL`, then `pnpm package`, then upload `dist\latest.yml`, the installer and the blockmap. Do it on your machine, once per release; CI stays on ubuntu (AGENTS.md).
-4. **Before the first public release:** adopt signed update manifests once electron-builder 27 is stable, and refuse `--remote-debugging-port` in packaged release builds.
+4. **Before the first public release:** adopt signed update manifests once electron-builder 27 is stable. Packaged builds already refuse `--remote-debugging-port` and `--remote-debugging-pipe` (Security notes).

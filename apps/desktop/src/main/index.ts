@@ -4,6 +4,7 @@ import { app, BrowserWindow, dialog, ipcMain, Notification, powerMonitor, powerS
 import { inQuietHours, type AppSettings, type IpcMethod, type IpcParams, type IpcResult, type NotificationSettings } from "@crewyard/core";
 import type { AppInfo, NavigateTarget, StartupState, TitleBarColors } from "../shared/api.ts";
 import { DaemonHost } from "./daemon-host.ts";
+import { refusedDebugSwitches } from "./debug-switches.ts";
 import { e2eMode } from "./e2e.ts";
 import { pickMainLanguage, translator, type MainLanguage } from "./i18n.ts";
 import { batteryPct, KeepAwake } from "./keep-awake.ts";
@@ -12,11 +13,20 @@ import { desktopFeatures } from "./platform.ts";
 import { secretHost } from "./secrets.ts";
 import { HIDDEN_ARG, readStartup, writeStartup } from "./startup.ts";
 import { AppTray } from "./tray.ts";
-import { createUpdater } from "./updater/index.ts";
+import { createUpdater, readRelease } from "./updater/index.ts";
 import { EMPTY_WORK, quitDetail, summarize, type WorkSummary } from "./work.ts";
 
 const isWin = process.platform === "win32";
 const here = import.meta.dirname;
+
+// Before anything else: a DevTools listener would start with the app (debug-switches.ts). Before the
+// app is ready, app.exit ends the process on the spot.
+const release = readRelease();
+const refusedDebug = refusedDebugSwitches({ packaged: app.isPackaged, testRoot: release.testRoot, argv: process.argv, hasSwitch: (s) => app.commandLine.hasSwitch(s) });
+if (refusedDebug.length > 0) {
+  console.error(`${refusedDebug.map((s) => `--${s}`).join(" and ")} ${refusedDebug.length > 1 ? "are" : "is"} refused in a packaged build`);
+  app.exit(1);
+}
 
 // Screenshot mode (CREWYARD_SHOT=<file.png>) runs with a throwaway profile so it never touches
 // the user's settings or database. Used for the light/dark and width checks before merging UI work.
@@ -87,7 +97,7 @@ const send = (topic: string, payload: unknown) => {
 };
 
 // Checks only when you ask or turned automatic checks on; downloads and installs only on a click.
-const updater = createUpdater((s) => send("update.changed", s));
+const updater = createUpdater(release, (s) => send("update.changed", s));
 
 // Opt-in; it only ever holds the machine in the real desktop app, never in screenshot or smoke runs.
 const keepAwake = new KeepAwake({ blocker: powerSaveBlocker, onChange: (s) => send("keepAwake.changed", s) });

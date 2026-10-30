@@ -76,8 +76,9 @@ function releaseOptions(env) {
     forceCodeSigning: sign,
     win,
     publish: feed ? [{ provider: "generic", url: feed.url }] : null,
-    // Read by the main process (src/main/updater/build-info.ts). It lives inside the asar, which the
-    // integrity fuse protects, unlike app-update.yml next to it.
+    // Read by the main process (src/main/updater/feed.ts releaseInfo) for updates and for the remote
+    // debugging check (src/main/debug-switches.ts). It lives inside the asar, which the integrity fuse
+    // protects, unlike app-update.yml next to it.
     metadata: { crewyardRelease: { signed: sign, testRoot } },
   };
 }
