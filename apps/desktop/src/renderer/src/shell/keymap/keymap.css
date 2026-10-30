@@ -1,0 +1,11 @@
+/* Keyboard map overlay: groups in two columns where there is room, one at 960 px or 200% scaling. */
+.km-intro { font-size: 13px; }
+.km-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px 28px; }
+.km-group { display: grid; gap: 8px; align-content: start; }
+.km-group h3 { color: var(--ink-3); }
+.km-list { display: grid; margin: 0; }
+.km-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; min-height: 32px; border-top: 1px solid var(--line); font-size: 13px; }
+.km-row dt { color: var(--ink-2); }
+.km-row dd { margin: 0; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px 6px; }
+.km-chord { display: inline-flex; align-items: center; gap: 4px; }
+.km-or { font-size: 11px; color: var(--ink-3); margin-right: 2px; }

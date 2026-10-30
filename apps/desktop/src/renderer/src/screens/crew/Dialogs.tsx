@@ -3,6 +3,7 @@ import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { CandidateView } from "@crewyard/core";
 import { BrandIcon, Button } from "@crewyard/ui";
+import { matches } from "../../keys.ts";
 
 /** Native modal <dialog>: focus stays inside, Esc cancels, focus returns to the opener. */
 function Dialog({ title, onClose, children, footer }: { title: string; onClose: () => void; children: ReactNode; footer: ReactNode }) {
@@ -108,7 +109,7 @@ export function MessageDialog({ target, live, onSend, onClose }: { target: strin
         data-autofocus
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === "Enter" && e.ctrlKey) {
+          if (matches(e, "submit")) {
             e.preventDefault();
             send();
           }

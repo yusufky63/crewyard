@@ -18,6 +18,7 @@ import { MemberStatusLabel, runnerName, TaskStatusLabel, useFormatters } from ".
 import { buildGraph, defaultLayout, mergeLayout, type GraphNodeModel, type Point } from "./model.ts";
 import "@xyflow/react/dist/base.css";
 import "./crew.css";
+import { matches } from "../../keys.ts";
 
 // Crew graph (DESIGN.md §6): one task's crew as a graph. Moving nodes changes only the saved
 // layout, never who does the work. Run actions go through the tasks IPC; layouts through crew.*.
@@ -184,10 +185,10 @@ function CrewView({ task, fixture }: { task: TaskDetail; fixture: boolean }) {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
       if (menu || dialog || el?.closest("input, textarea, select, [contenteditable], dialog")) return;
-      if ((e.key === "f" || e.key === "F") && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey && !list) {
+      if (matches(e, "graph.full") && !list) {
         e.preventDefault();
         setFull((f) => !f);
-      } else if (e.key === "Escape" && full && !useInspector.getState().target) {
+      } else if (matches(e, "close") && full && !useInspector.getState().target) {
         setFull(false);
       }
     };
@@ -338,7 +339,7 @@ function CrewView({ task, fixture }: { task: TaskDetail; fixture: boolean }) {
                         onMenu(n.id, e.clientX, e.clientY);
                       }}
                       onKeyDown={(e) => {
-                        if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
+                        if (matches(e, "graph.menu")) {
                           e.preventDefault();
                           const r = e.currentTarget.getBoundingClientRect();
                           onMenu(n.id, r.left + 24, r.bottom);

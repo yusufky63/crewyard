@@ -6,6 +6,7 @@ import { CrewEdge, type CrewFlowEdge } from "./CrewEdge.tsx";
 import { CrewNode, useNodeTitle, type CrewFlowNode } from "./CrewNode.tsx";
 import { NODE_H, NODE_W, nudge, selectedPath, SNAP, type GraphModel, type Point } from "./model.ts";
 import { routeEdge, spreadPorts, type Box } from "./route.ts";
+import { matches } from "../../keys.ts";
 
 // The React Flow canvas. Positions are owned by CrewScreen (saved per task); this component only
 // reports moves. Edges are routed here from the node boxes on every render, so they follow a
@@ -42,19 +43,19 @@ export function CrewCanvas({ model, taskTitle, positions, selected, full, onMove
 
   const onKey = useCallback(
     (id: string, e: KeyboardEvent<HTMLDivElement>) => {
-      if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
+      if (matches(e, "graph.menu")) {
         e.preventDefault();
         const r = e.currentTarget.getBoundingClientRect();
         onMenu(id, r.left + 24, r.bottom - 8);
         return;
       }
-      if (e.key === "Enter" || e.key === " ") {
+      if (matches(e, "graph.select")) {
         e.preventDefault();
         onSelect(id);
         return;
       }
       const p = positions[id];
-      const next = p && nudge(p, e.key, e.altKey);
+      const next = p && matches(e, "graph.move") && nudge(p, e.key, true);
       if (next) {
         e.preventDefault();
         onMove(id, next, true);
@@ -127,9 +128,9 @@ export function CrewCanvas({ model, taskTitle, positions, selected, full, onMove
   useEffect(() => {
     const onDocKey = (e: globalThis.KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
-      if (e.ctrlKey || e.altKey || e.metaKey || el?.closest("input, textarea, select, [contenteditable], dialog, [role=menu]")) return;
-      if (e.key === "+" || e.key === "=") void flow.zoomIn();
-      else if (e.key === "-") void flow.zoomOut();
+      if (el?.closest("input, textarea, select, [contenteditable], dialog, [role=menu]")) return;
+      if (matches(e, "graph.zoomIn")) void flow.zoomIn();
+      else if (matches(e, "graph.zoomOut")) void flow.zoomOut();
     };
     document.addEventListener("keydown", onDocKey);
     return () => document.removeEventListener("keydown", onDocKey);

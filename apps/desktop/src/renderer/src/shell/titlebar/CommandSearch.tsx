@@ -10,6 +10,7 @@ import { openSetup } from "../../screens/setup/draft.ts";
 import { useWork } from "../../screens/tasks/data.ts";
 import { focusMain, goInProject, openFolder, openProjectById, openTask, startNewTask } from "./actions.ts";
 import { moveActive, rankCommands, type Command } from "./search.ts";
+import { ariaKeys, keyText } from "../../keys.ts";
 
 // Ctrl K command search (DESIGN.md §7): go to a screen, open a project, open a task by title or
 // start a new task. A combobox over a listbox: focus stays in the field, arrows move the active
@@ -73,11 +74,11 @@ export function CommandSearch({ open, initialQuery = "", onOpen, onClose }: { op
   const { t } = useTranslation("titlebar");
   return (
     <>
-      <button className="tb-search" onClick={onOpen} aria-haspopup="dialog" aria-expanded={open} aria-keyshortcuts="Control+K">
+      <button className="tb-search" onClick={onOpen} aria-haspopup="dialog" aria-expanded={open} aria-keyshortcuts={ariaKeys("palette")}>
         <Search size={15} strokeWidth={1.75} aria-hidden="true" />
         <span className="tb-search-t">{t("search.trigger")}</span>
         <span className="kbd" aria-hidden="true">
-          Ctrl K
+          {keyText("palette")}
         </span>
       </button>
       {open && <Palette initialQuery={initialQuery} onClose={onClose} />}

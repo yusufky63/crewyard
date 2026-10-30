@@ -4,6 +4,7 @@ import { CommandSearch } from "./titlebar/CommandSearch.tsx";
 import { Notifications } from "./titlebar/Notifications.tsx";
 import { ProjectSwitcher } from "./titlebar/ProjectSwitcher.tsx";
 import "./titlebar/titlebar.css";
+import { matches } from "../keys.ts";
 
 // Screenshot mode only (the main process sets the query): ?tb=search&tbq=... or ?tb=notifications
 // opens a layer so it can be captured.
@@ -22,7 +23,7 @@ export function TitleBar() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "k") {
+      if (matches(e, "palette")) {
         e.preventDefault();
         setLayer((l) => (l === "search" ? null : "search"));
       }

@@ -1,0 +1,37 @@
+{
+  "title": "Keyboard shortcuts",
+  "intro": "These work wherever their screen is open. Shortcuts with a single key do nothing while you type in a field.",
+  "short": "Keys",
+  "button": "Keyboard shortcuts ({{keys}})",
+  "or": "or",
+  "space": "Space",
+  "group": {
+    "global": "Everywhere",
+    "tasks": "Tasks and crews",
+    "graph": "Crew graph",
+    "review": "Diff review"
+  },
+  "action": {
+    "palette": "Search screens, projects and tasks",
+    "sidebar": "Collapse or expand the sidebar",
+    "help": "Show this list",
+    "close": "Close the topmost layer: menu, dialog, inspector, then full screen",
+    "submit": "Submit the composer, approve the focused crew, send a message or comment",
+    "graph.full": "Full screen on or off",
+    "graph.menu": "Open the menu of the focused node",
+    "graph.move": "Move the focused node by one grid step",
+    "graph.select": "Select the focused node",
+    "graph.zoomIn": "Zoom in",
+    "graph.zoomOut": "Zoom out",
+    "review.next": "Next line",
+    "review.prev": "Previous line",
+    "review.pageDown": "One page down",
+    "review.pageUp": "One page up",
+    "review.first": "First line",
+    "review.last": "Last line",
+    "review.nextFile": "Next file",
+    "review.prevFile": "Previous file",
+    "review.comment": "Comment on the line",
+    "review.remove": "Delete the focused draft comment"
+  }
+}

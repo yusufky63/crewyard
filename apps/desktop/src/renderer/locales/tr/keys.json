@@ -1,0 +1,37 @@
+{
+  "title": "Klavye kısayolları",
+  "intro": "Kısayollar ait oldukları ekran açıkken çalışır. Tek tuşlu kısayollar bir alana yazarken devre dışıdır.",
+  "short": "Tuşlar",
+  "button": "Klavye kısayolları ({{keys}})",
+  "or": "ya da",
+  "space": "Boşluk",
+  "group": {
+    "global": "Her yerde",
+    "tasks": "Görevler ve ekipler",
+    "graph": "Ekip grafiği",
+    "review": "Fark incelemesi"
+  },
+  "action": {
+    "palette": "Ekran, proje ve görev ara",
+    "sidebar": "Kenar çubuğunu daralt ya da genişlet",
+    "help": "Bu listeyi göster",
+    "close": "En üstteki katmanı kapat: menü, iletişim kutusu, denetçi, sonra tam ekran",
+    "submit": "Oluşturucuyu gönder, seçili ekibi onayla, mesajı ya da yorumu gönder",
+    "graph.full": "Tam ekranı aç ya da kapat",
+    "graph.menu": "Seçili düğümün menüsünü aç",
+    "graph.move": "Seçili düğümü bir ızgara adımı taşı",
+    "graph.select": "Odaktaki düğümü seç",
+    "graph.zoomIn": "Yakınlaştır",
+    "graph.zoomOut": "Uzaklaştır",
+    "review.next": "Sonraki satır",
+    "review.prev": "Önceki satır",
+    "review.pageDown": "Bir sayfa aşağı",
+    "review.pageUp": "Bir sayfa yukarı",
+    "review.first": "İlk satır",
+    "review.last": "Son satır",
+    "review.nextFile": "Sonraki dosya",
+    "review.prevFile": "Önceki dosya",
+    "review.comment": "Satıra yorum yaz",
+    "review.remove": "Odaktaki taslak yorumu sil"
+  }
+}
