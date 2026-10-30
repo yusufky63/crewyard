@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CandidateView, LimitNoticePayload, RequestPayload, RequestView } from "@crewyard/core";
-import { canAllowAlways, defaultTarget, denyAnswer, emptyForm, formAnswer, formReady, handoffChoices, infoNotices, orderRequests, titleKey } from "./model.ts";
+import { canAllowAlways, defaultTarget, denyAnswer, emptyForm, formAnswer, formReady, handoffChoices, infoNotices, orderRequests, stallText, titleKey } from "./model.ts";
 
 type Handoff = Extract<RequestPayload, { kind: "handoff" }>;
 const req = (id: string, taskId: string, createdAt: string): RequestView =>
@@ -65,5 +65,14 @@ describe("inbox", () => {
       ["a", "critical"],
       ["b", "warn"],
     ]);
+  });
+});
+
+describe("stall alerts", () => {
+  it("names each rule with its own numbers, never the agent's text", () => {
+    expect(stallText({ rule: "no_events", minutes: 12, count: null, detail: null })).toEqual({ key: "stall.no_events", params: { minutes: 12 }, failure: null });
+    expect(stallText({ rule: "request_unanswered", minutes: 45, count: null, detail: null })).toEqual({ key: "stall.request_unanswered", params: { minutes: 45 }, failure: null });
+    expect(stallText({ rule: "same_failure", minutes: null, count: 3, detail: "transient 429" })).toEqual({ key: "stall.same_failure", params: { count: 3 }, failure: { kind: "transient", status: "429" } });
+    expect(stallText({ rule: "same_failure", minutes: null, count: 4, detail: "other" }).failure).toEqual({ kind: "other", status: null });
   });
 });

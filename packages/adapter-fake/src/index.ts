@@ -30,6 +30,9 @@ interface RunState {
   early: Map<string, Answer>;
   received: Answer[];
   inputs: UserInput[];
+  /** Text steered into the running script (steer()). */
+  steered: UserInput[];
+  nextTurn: StartRequest["nextTurn"];
   interrupted: boolean;
 }
 
@@ -45,9 +48,9 @@ export class FakeAdapter implements AgentAdapter {
     return { installed: true, executable: null, version: "0.0.0", signedIn: true, capabilities, problems: [] };
   }
 
-  async start(_req: StartRequest): Promise<RunHandle> {
+  async start(req: StartRequest): Promise<RunHandle> {
     const runId = `fake-${++this.counter}`;
-    this.runs.set(runId, { script: [...this.script], answers: new Map(), early: new Map(), received: [], inputs: [], interrupted: false });
+    this.runs.set(runId, { script: [...this.script], answers: new Map(), early: new Map(), received: [], inputs: [], steered: [], nextTurn: req.nextTurn, interrupted: false });
     return { runId, runner: "fake", pid: null, nativeSession: { runner: "fake", sessionId: runId } };
   }
 
@@ -63,11 +66,22 @@ export class FakeAdapter implements AgentAdapter {
       }
       else yield { ...step.emit, runId: run.runId, seq: seq++, at: new Date().toISOString(), source: { adapter: "fake", cliVersion: null } } as AgentEvent;
     }
+    // Turn boundary, as the real adapters do: queued follow-ups become further (empty) turns.
+    while (!state.interrupted && state.nextTurn) {
+      const next = await state.nextTurn();
+      if (!next) break;
+      state.inputs.push({ kind: "text", text: next });
+    }
     yield { type: "run.ended", reason: state.interrupted ? "stopped" : "completed", runId: run.runId, seq, at: new Date().toISOString(), source: { adapter: "fake", cliVersion: null } };
   }
 
   async send(run: RunHandle, input: UserInput): Promise<void> {
     this.mustGet(run).inputs.push(input);
+  }
+
+  /** Records steered text; capabilities leave `steer` off, so only tests that claim it use this. */
+  async steer(run: RunHandle, input: UserInput): Promise<void> {
+    this.mustGet(run).steered.push(input);
   }
 
   async answer(run: RunHandle, requestId: string, answer: Answer): Promise<void> {
@@ -98,9 +112,9 @@ export class FakeAdapter implements AgentAdapter {
   }
 
   /** Test helper: what the run received through answer() and send(). */
-  inspect(run: RunHandle): { answers: Answer[]; inputs: UserInput[] } {
+  inspect(run: RunHandle): { answers: Answer[]; inputs: UserInput[]; steered: UserInput[] } {
     const s = this.mustGet(run);
-    return { answers: [...s.received], inputs: [...s.inputs] };
+    return { answers: [...s.received], inputs: [...s.inputs], steered: [...s.steered] };
   }
 
   private mustGet(run: RunHandle): RunState {

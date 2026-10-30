@@ -1,4 +1,4 @@
-import type { CandidateView, CrewMemberView, RunView, TaskDetail } from "@crewyard/core";
+import { NO_RUN_CONTROLS, type CandidateView, type CrewMemberView, type RunView, type TaskDetail } from "@crewyard/core";
 
 // Screenshot and test fixture only. CrewScreen loads it solely when the `fixture` query param is
 // present, which the main process passes only in screenshot mode (CREWYARD_SHOT_QUERY). A normal
@@ -56,6 +56,9 @@ function run(id: string, memberId: string, role: RunView["role"], c: CandidateVi
     resumedFrom: null,
     nativeSessionId: null,
     queuedMessages: 0,
+    queue: [],
+    controls: NO_RUN_CONTROLS,
+    transcriptPath: null,
     tokensIn: 0,
     tokensOut: 0,
     cost: { usd: null, provenance: "unknown" },

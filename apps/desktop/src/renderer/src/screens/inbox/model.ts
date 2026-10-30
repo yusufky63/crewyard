@@ -1,4 +1,4 @@
-import type { LimitNoticePayload, RequestAnswer, RequestPayload, RequestView, RiskLevel } from "@crewyard/core";
+import type { LimitNoticePayload, RequestAnswer, RequestPayload, RequestView, RiskLevel, StallAlertView } from "@crewyard/core";
 
 // Pure Inbox logic (PLAN.md §11): ordering, titles, which answers each request allows, and how a
 // question form becomes an answer. Kept free of React so it is tested directly.
@@ -84,4 +84,26 @@ export function infoNotices(notices: LimitNoticePayload[], taskIds: Set<string>)
     if (!prev || n.observedAt >= prev.observedAt) latest.set(key, n);
   }
   return [...latest.values()].sort((a, b) => b.observedAt.localeCompare(a.observedAt));
+}
+
+export interface StallText {
+  /** Key under the inbox namespace. */
+  key: string;
+  params: Record<string, number>;
+  /** same_failure: the failure class the daemon named (`transient 429`), split for translation. */
+  failure: { kind: string; status: string | null } | null;
+}
+
+/** The Inbox line for a stall alert: its own numbers and codes, never the agent's text. */
+export function stallText(a: Pick<StallAlertView, "rule" | "minutes" | "count" | "detail">): StallText {
+  switch (a.rule) {
+    case "no_events":
+      return { key: "stall.no_events", params: { minutes: a.minutes ?? 0 }, failure: null };
+    case "request_unanswered":
+      return { key: "stall.request_unanswered", params: { minutes: a.minutes ?? 0 }, failure: null };
+    case "same_failure": {
+      const [kind = "other", status = null] = (a.detail ?? "other").split(" ");
+      return { key: "stall.same_failure", params: { count: a.count ?? 0 }, failure: { kind, status } };
+    }
+  }
 }

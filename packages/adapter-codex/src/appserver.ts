@@ -1,5 +1,5 @@
 import { mkdir } from "node:fs/promises";
-import { ensureSystemEnv, killTree, parseVersion, start, which } from "@crewyard/proc";
+import { ensureSystemEnv, killTree, parseVersion, resolveBin, start } from "@crewyard/proc";
 import type { ChildProcess } from "node:child_process";
 import type { InitializeParams, InitializeResponse } from "./protocol/index.ts";
 import { JsonRpcConnection } from "./rpc.ts";
@@ -62,7 +62,7 @@ export class AppServer {
   }
 
   static async launch(launcher: Launcher, opts: LaunchOptions): Promise<AppServer> {
-    const command = launcher.command ?? (await which("codex"));
+    const command = launcher.command ?? (await resolveBin("codex"));
     if (!command) throw new Error("codex is not installed or not on PATH");
     await mkdir(opts.codexHome, { recursive: true });
     const child = start(command, launcher.args ?? DEFAULT_ARGS, { cwd: opts.cwd, env: childEnv(opts), stdio: ["pipe", "pipe", "pipe"] });

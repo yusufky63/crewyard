@@ -14,7 +14,50 @@ export interface AgentCapabilities {
   reportedLimits: boolean;
   /** Read-only enforcement (needed for reviewer roles): the runner's own engine where it has one, plus our approval layer. */
   readOnlyMode: boolean;
+  /**
+   * Adds a message to the turn in flight (Codex `turn/steer`). Absent or false: messages wait in
+   * the step's queue for the next turn boundary, and "Steer now" is disabled with the reason.
+   */
+  steer?: boolean;
+  /**
+   * `rewind()` undoes the last turn with the runner's own mechanism, and what that covers: files
+   * (Claude file checkpoints, OpenCode snapshots) and history (Codex thread rollback, OpenCode
+   * revert). Absent: no documented way, so Undo is disabled with the reason.
+   */
+  undo?: { files: boolean; history: boolean };
+  /** `transcript()` can point at, or export, the runner's own session record. */
+  transcript?: boolean;
 }
+
+/** What `rewind()` undid on the runner's side; the worktree's git checkpoint covers the rest. */
+export interface RewindResult {
+  /** The runner restored the files it tracks (Claude file checkpoints, OpenCode snapshots). */
+  files: boolean;
+  /** The runner's conversation forgot the turn (Codex thread rollback, OpenCode revert). */
+  history: boolean;
+  /** Why something was not undone, in one line; never contains secrets. */
+  detail: string | null;
+}
+
+export interface RewindRequest {
+  profile: Profile;
+  cwd: string;
+  /** Decrypted secrets, as for a start; passed through env only. */
+  env: Record<string, string>;
+  session: NativeSessionRef;
+  /** The turn.started `turnRef` of the turn to undo. */
+  turnRef: string | null;
+}
+
+export interface TranscriptRequest {
+  profile: Profile;
+  cwd: string;
+  env: Record<string, string>;
+  session: NativeSessionRef;
+}
+
+/** The runner's own record of a session: a file it keeps, or text it exported for us. */
+export type TranscriptSource = { kind: "file"; path: string; ext: string } | { kind: "text"; text: string; ext: string };
 
 /** A runner + provider + credential + model + its own config folder (PLAN.md D9). */
 export interface Profile {
@@ -64,6 +107,13 @@ export interface StartRequest {
    * on run.ended as `output`.
    */
   outputSchema?: OutputSchema;
+  /**
+   * Called at each turn boundary, before the adapter would end the run. Returns the next message
+   * (the step's queued follow-ups, joined) to start another turn in the same session, or null to
+   * let the run finish. Messages typed while a turn runs wait in our persisted queue instead of
+   * the runner's, so they stay editable until this hands them over.
+   */
+  nextTurn?: () => Promise<string | null>;
 }
 
 export interface OutputSchema {
@@ -172,6 +222,15 @@ export interface AgentAdapter {
   limits?(profile: Profile): Promise<LimitSample[]>;
   /** Ends the run and its whole process tree. */
   stop(run: RunHandle): Promise<void>;
+  /** Adds text to the turn in flight; throws when no turn is running. Only with `capabilities.steer`. */
+  steer?(run: RunHandle, input: UserInput): Promise<void>;
+  /**
+   * Undoes the last turn of a session that has no live process, with the runner's own mechanism.
+   * Only with `capabilities.undo`. Never starts a model turn.
+   */
+  rewind?(req: RewindRequest): Promise<RewindResult>;
+  /** Where the runner keeps this session's transcript, or its export. Null when it has none. */
+  transcript?(req: TranscriptRequest): Promise<TranscriptSource | null>;
 }
 
 export type { RiskLevel };

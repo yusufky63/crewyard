@@ -79,7 +79,8 @@ describe("Claude adapter: one turn", () => {
     expect(events.map((e) => e.seq)).toEqual(events.map((_, i) => i));
     expect(events.every((e) => e.source.adapter === "claude-code")).toBe(true);
     expect(events.map((e) => e.type)).toEqual([
-      "run.state", "run.state", "thought.delta", "message.delta", "tool.call", "request.approval", "run.state", "run.state",
+      // turn.started carries the uuid of the prompt we sent: the turn's file checkpoint id.
+      "run.state", "turn.started", "run.state", "thought.delta", "message.delta", "tool.call", "request.approval", "run.state", "run.state",
       "tool.update", "tool.update", "tool.call", "plan.update", "message.delta", "usage.update", "run.ended",
     ]);
     expect(events.filter((e) => e.type === "message.delta").map((e) => e.type === "message.delta" && e.text)).toEqual(["Running the tests.", "All green."]);
@@ -355,5 +356,73 @@ describe("Claude adapter: probe", () => {
     expect(compareVersions("2.1.306", "2.1.312")).toBeLessThan(0);
     expect(compareVersions("2.2.0", "2.1.312")).toBeGreaterThan(0);
     expect(compareVersions("2.1.312-beta.1", "2.1.312")).toBe(0);
+  });
+});
+
+describe("Claude adapter: turn control", () => {
+  it("asks for queued follow-ups at the turn boundary and sends them as the next turn of the same session", async () => {
+    const { adapter, rec } = setup([[init(), result()], [result()]]);
+    const queued = ["Also add a test.", null];
+    const nextTurn = vi.fn(async () => queued.shift() ?? null);
+    const events = await collect(adapter.events(await adapter.start(req({ nextTurn }))));
+    expect(rec.prompts.map((p) => p.message.content)).toEqual(["Fix the failing test", "Also add a test."]);
+    expect(nextTurn).toHaveBeenCalledTimes(2);
+    // Each prompt we send starts a turn, named by the uuid Claude Code checkpoints files under.
+    const turns = events.filter((e) => e.type === "turn.started") as Array<Extract<AgentEvent, { type: "turn.started" }>>;
+    expect(turns.map((e) => e.turnRef)).toEqual(rec.prompts.map((p) => p.uuid));
+    expect(events.at(-1)).toMatchObject({ type: "run.ended", reason: "completed" });
+    expect(rec.options?.enableFileCheckpointing).toBe(true);
+    expect(rec.options?.extraArgs).toEqual({ "replay-user-messages": null });
+  });
+
+  it("does not ask for follow-ups after a failed turn", async () => {
+    const nextTurn = vi.fn(async () => "never sent");
+    const { adapter, rec } = setup([[init(), errorResult("error_during_execution")]]);
+    await collect(adapter.events(await adapter.start(req({ nextTurn }))));
+    expect(nextTurn).not.toHaveBeenCalled();
+    expect(rec.prompts).toHaveLength(1);
+  });
+
+  it("rewinds a finished session's files with the CLI's own --rewind-files, on the profile's key only", async () => {
+    const calls: Array<{ args: string[]; env: NodeJS.ProcessEnv | undefined; cwd: string | undefined }> = [];
+    const run = vi.fn(async (_cmd: string, args: string[], opts: { env?: NodeJS.ProcessEnv; cwd?: string } = {}) => {
+      calls.push({ args, env: opts.env, cwd: opts.cwd });
+      return { code: 0, stdout: "Files rewound to state at message u-1\n", stderr: "" };
+    });
+    const { adapter } = setup([], { run });
+    const rewind = { profile, cwd: req().cwd, env: { ANTHROPIC_API_KEY: KEY }, session: { runner: "claude-code" as const, sessionId: SESSION }, turnRef: "u-1" };
+    expect(await adapter.rewind!(rewind)).toEqual({ files: true, history: false, detail: null });
+    expect(calls[0]!.args).toEqual(["-p", "--resume", SESSION, "--rewind-files", "u-1"]);
+    expect(calls[0]!.cwd).toBe(req().cwd);
+    expect(calls[0]!.env).toMatchObject({ CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING: "true", ANTHROPIC_API_KEY: KEY, CLAUDE_CONFIG_DIR: profile.configDir });
+
+    run.mockResolvedValueOnce({ code: 1, stdout: "", stderr: `No file checkpoint found for this message (key ${KEY})\n` });
+    const failed = await adapter.rewind!(rewind);
+    expect(failed.files).toBe(false);
+    expect(failed.detail).toContain("No file checkpoint found");
+    expect(failed.detail).not.toContain(KEY);
+    expect(await adapter.rewind!({ ...rewind, turnRef: null })).toMatchObject({ files: false });
+  });
+
+  it("finds the session's JSONL in the profile folder", async () => {
+    const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "crewyard claude profile "));
+    try {
+      mkdirSync(join(dir, "projects", "C--Work-Trees-demo-repo"), { recursive: true });
+      writeFileSync(join(dir, "projects", "C--Work-Trees-demo-repo", `${SESSION}.jsonl`), "{}\n");
+      const { adapter } = setup([]);
+      const t = { profile: { ...profile, configDir: dir }, cwd: dir, env: {}, session: { runner: "claude-code" as const, sessionId: SESSION } };
+      expect(await adapter.transcript!(t)).toEqual({ kind: "file", path: join(dir, "projects", "C--Work-Trees-demo-repo", `${SESSION}.jsonl`), ext: "jsonl" });
+      expect(await adapter.transcript!({ ...t, session: { ...t.session, sessionId: "other" } })).toBeNull();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("claims undo for files only and no steer", () => {
+    expect(capabilities.undo).toEqual({ files: true, history: false });
+    expect(capabilities.steer).toBeUndefined();
   });
 });

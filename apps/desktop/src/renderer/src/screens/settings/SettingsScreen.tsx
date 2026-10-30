@@ -11,6 +11,7 @@ import { AboutSection, DataSection } from "./DataSection.tsx";
 import { KeepAwakeRows } from "./KeepAwake.tsx";
 import { backTarget, SECTIONS, useSettingsNav, type SectionId } from "./model.ts";
 import { Row, Section, Seg, Toggle } from "./parts.tsx";
+import { StallRules } from "./StallRules.tsx";
 import "../providers/providers.css";
 import "./settings.css";
 
@@ -171,6 +172,7 @@ function Notifications({ supported }: { supported: boolean }) {
           {t("notifications.test")}
         </Button>
       </Row>
+      <StallRules stalls={settings.stalls} save={save} />
       {error && <p className="pv-error st-note">{t("saveFailed", { error })}</p>}
     </Section>
   );

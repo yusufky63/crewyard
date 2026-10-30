@@ -1,5 +1,19 @@
 {
   "nav": "Settings",
+  "stalls": {
+    "title": "Stall alerts",
+    "hint": "An item in the Inbox when a run seems stuck. Nothing is stopped or retried for you. 0 turns a rule off.",
+    "noEventsMinutes": "A running turn says nothing for",
+    "noEventsHint": "No events at all while the agent is working, not even a tool call.",
+    "sameFailureCount": "A step fails the same way",
+    "sameFailureHint": "Runs in a row that end with the same kind of error.",
+    "requestMinutes": "A question or approval waits for",
+    "requestHint": "Counted from when the agent asked.",
+    "cooldownMinutes": "Then stay quiet for",
+    "cooldownHint": "How long the same alert waits before it can come back after it closes.",
+    "minutes": "min",
+    "runs": "runs"
+  },
   "title": "Settings",
   "context": "Kept on this PC · {{path}}",
   "back": "Back",

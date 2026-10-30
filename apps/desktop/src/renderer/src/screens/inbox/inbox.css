@@ -20,6 +20,10 @@ button.ib-item:hover { background: var(--raised); }
 .ib-icon { color: var(--ink-2); margin-top: 2px; }
 .ib-high { color: var(--bad); margin-top: 2px; }
 .ib-info .t { font-weight: 400; }
+/* Stall alerts: amber like every "needs you" state, with their actions inline (no detail pane). */
+.ib-warn { color: var(--warn); margin-top: 2px; }
+.ib-stall .t { font-weight: 500; }
+.ib-stall-acts { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 6px; }
 
 .ib-detail { padding: 20px; min-width: 0; }
 .ib-detail h2 { font-size: 17px; font-weight: 600; margin: 8px 0 6px; letter-spacing: -0.01em; overflow-wrap: anywhere; }

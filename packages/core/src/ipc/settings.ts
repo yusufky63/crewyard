@@ -47,14 +47,39 @@ export interface KeepAwakeSettings {
   minBatteryPct: number;
 }
 
+/**
+ * Stall rules (feature scan A7): each fires a notice and an Inbox item, then stays quiet for the
+ * cooldown. 0 turns a rule off. Stored under `app.stalls`, read by the orchestrator on each check.
+ */
+export interface StallSettings {
+  /** A running turn with no events for this many minutes. */
+  noEventsMinutes: number;
+  /** This many runs of a step in a row ending with the same failure. */
+  sameFailureCount: number;
+  /** A question or approval unanswered for this many minutes. */
+  requestMinutes: number;
+  /** Minutes before the same rule may fire again for the same run, step or request. */
+  cooldownMinutes: number;
+}
+
+/** Bounds the Settings screen and the daemon both enforce. */
+export const STALL_LIMITS = {
+  noEventsMinutes: { min: 0, max: 240 },
+  sameFailureCount: { min: 0, max: 20 },
+  requestMinutes: { min: 0, max: 1440 },
+  cooldownMinutes: { min: 1, max: 1440 },
+} as const satisfies Record<keyof StallSettings, { min: number; max: number }>;
+
 export interface AppSettings {
   notifications: NotificationSettings;
   keepAwake: KeepAwakeSettings;
+  stalls: StallSettings;
 }
 
 export interface SettingsPatch {
   notifications?: Partial<Omit<NotificationSettings, "quietHours">> & { quietHours?: Partial<QuietHours> };
   keepAwake?: Partial<KeepAwakeSettings>;
+  stalls?: Partial<StallSettings>;
 }
 
 export interface BackupEntry {

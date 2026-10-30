@@ -1,6 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import {
   deriveTaskStatus,
+  NO_RUN_CONTROLS,
   type CandidateView,
   type CostEstimate,
   type CrewMemberView,
@@ -183,7 +184,17 @@ const toSample = (r: SampleRow): LimitSample => ({
   ...(r.bucket ? { bucket: r.bucket, bucketLabel: r.bucket_label } : {}),
 });
 
+/** What a run view adds from outside its row: the step's queue, Steer and Undo availability, our transcript copy. */
+export type RunExtras = Pick<RunView, "queue" | "controls" | "transcriptPath">;
+
 export class OrchestratorDb {
+  /** Set by the orchestrator, which knows live processes and adapters; this default knows only rows. */
+  runExtras: (r: RunRow) => RunExtras = (r) => ({
+    queue: this.queued(r.member_id).map((m) => ({ id: m.id, text: m.text, createdAt: "", editedAt: null, kind: "user" as const })),
+    controls: NO_RUN_CONTROLS,
+    transcriptPath: null,
+  });
+
   constructor(readonly db: DatabaseSync) {}
 
   private one<T>(sql: string, ...args: Array<string | number | null>): T | undefined {
@@ -554,6 +565,7 @@ export class OrchestratorDb {
   }
 
   runView(r: RunRow): RunView {
+    const extras = this.runExtras(r);
     const pending = this.openRequestsForRun(r.id)[0] ?? null;
     const openHandoff = this.one<{ id: string }>("select id from handoffs where from_run_id = ? and closed_at is null", r.id);
     let state: RunView["state"];
@@ -587,7 +599,8 @@ export class OrchestratorDb {
       handoffId: r.handoff_id,
       resumedFrom: r.resumed_from,
       nativeSessionId: r.native_session_id,
-      queuedMessages: this.queued(r.member_id).length,
+      queuedMessages: extras.queue.length,
+      ...extras,
       tokensIn: r.tokens_in,
       tokensOut: r.tokens_out,
       cost: { usd: r.cost_usd, provenance: r.cost_provenance },

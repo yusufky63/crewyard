@@ -99,6 +99,7 @@ describe("NotificationMapper on a full turn", () => {
   it("produces schema-valid events in protocol order", () => {
     events.forEach(valid);
     expect(events.map((e) => e.type)).toEqual([
+      "turn.started",
       "run.state",
       "thought.delta",
       "plan.update",

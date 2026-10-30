@@ -1,4 +1,5 @@
 import type { Readable, Writable } from "node:stream";
+import { LineSplitter } from "@crewyard/proc";
 
 // JSON-RPC 2.0 as codex app-server speaks it: one JSON object per line, no "jsonrpc" field.
 // Both sides send requests, so this is symmetric: we call the server, and the server calls us for
@@ -25,6 +26,9 @@ export class RpcError extends Error {
   }
 }
 
+/** Longest frame we read; codex frames are small, a diff or a command output may run to megabytes. */
+export const MAX_LINE = 16 * 1024 * 1024;
+
 export const METHOD_NOT_FOUND = -32601;
 export const INTERNAL_ERROR = -32603;
 
@@ -50,28 +54,6 @@ export function classify(msg: unknown): Incoming | null {
   return null;
 }
 
-/**
- * Splits a byte stream into lines. Chunks can end mid-line or mid-character; the caller feeds
- * already-decoded UTF-8 text (setEncoding handles split multi-byte characters).
- */
-export class LineDecoder {
-  private buffer = "";
-
-  push(chunk: string): string[] {
-    this.buffer += chunk;
-    const lines = this.buffer.split("\n");
-    this.buffer = lines.pop() ?? "";
-    return lines.map((l) => (l.endsWith("\r") ? l.slice(0, -1) : l)).filter((l) => l.trim() !== "");
-  }
-
-  /** Whatever is left when the stream ends without a trailing newline. */
-  flush(): string[] {
-    const rest = this.buffer.trim();
-    this.buffer = "";
-    return rest ? [rest] : [];
-  }
-}
-
 export function encode(msg: object): string {
   return `${JSON.stringify(msg)}\n`;
 }
@@ -89,7 +71,8 @@ interface Pending {
 export class JsonRpcConnection {
   private nextId = 1;
   private readonly pending = new Map<RpcId, Pending>();
-  private readonly decoder = new LineDecoder();
+  // Bounded: one runaway line is dropped and noted instead of holding the daemon's memory.
+  private readonly decoder = new LineSplitter(MAX_LINE, (bytes) => this.remember(`dropped a ${bytes}-character line`));
   private onRequestFn: RequestHandler = async (method) => {
     throw new RpcError(METHOD_NOT_FOUND, `unsupported server request ${method}`);
   };

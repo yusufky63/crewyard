@@ -1,7 +1,28 @@
 import { randomUUID } from "node:crypto";
+import { existsSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import { checkOutput, outputRetryPrompt, parseOutputText } from "@crewyard/core";
-import type { AgentAdapter, AgentCapabilities, AgentEvent, Answer, EndReason, LimitSample, NativeSessionRef, OutputSchema, Probe, Profile, RunHandle, RunOutput, StartRequest, UserInput } from "@crewyard/core";
-import { exitCodeWithin, isShutdownExit, which } from "@crewyard/proc";
+import type {
+  AgentAdapter,
+  AgentCapabilities,
+  AgentEvent,
+  Answer,
+  EndReason,
+  LimitSample,
+  NativeSessionRef,
+  OutputSchema,
+  Probe,
+  Profile,
+  RewindRequest,
+  RewindResult,
+  RunHandle,
+  RunOutput,
+  StartRequest,
+  TranscriptRequest,
+  TranscriptSource,
+  UserInput,
+} from "@crewyard/core";
+import { exitCodeWithin, isShutdownExit, resolveBin } from "@crewyard/proc";
 import { AppServer, withAppServer, type Launcher } from "./appserver.ts";
 import {
   commandApproval,
@@ -56,6 +77,12 @@ export const capabilities: AgentCapabilities = {
   // Only for ChatGPT sign-in; API-key profiles report Unknown.
   reportedLimits: true,
   readOnlyMode: true,
+  // turn/steer adds input to the turn in flight (expectedTurnId guards against a turn that just ended).
+  steer: true,
+  // thread/rollback drops turns from the thread's history only; it "does not revert local file
+  // changes" (ThreadRollbackParams in codex-cli 0.147.0), so files come back through our git checkpoint.
+  undo: { files: false, history: true },
+  transcript: true,
 };
 
 /** Oldest codex-cli this adapter was checked against. */
@@ -110,6 +137,10 @@ interface Run {
   readOnly: boolean;
   networkDenied: boolean;
   outputSchema: OutputSchema | null;
+  /** StartRequest.nextTurn: the step's queued follow-ups at each turn boundary. */
+  nextTurn: (() => Promise<string | null>) | null;
+  /** A turn ended and nextTurn is being asked; the end is held until it answers. */
+  pulling: boolean;
   /** The one in-session retry for a result that did not fit has been sent. */
   outputRetried: boolean;
   waiting: Map<string, Waiting>;
@@ -132,7 +163,7 @@ export class CodexAdapter implements AgentAdapter {
   }
 
   async probe(profile: Profile): Promise<Probe> {
-    const executable = this.launcher.command ?? (await which("codex"));
+    const executable = this.launcher.command ?? (await resolveBin("codex"));
     const base: Probe = { installed: executable !== null, executable, version: null, signedIn: null, capabilities, problems: [] };
     if (!executable) return { ...base, problems: ["codex is not installed or not on PATH"] };
     try {
@@ -213,6 +244,42 @@ export class CodexAdapter implements AgentAdapter {
     }
   }
 
+  /** "Steer now": codex turn/steer into the turn in flight; refused when none runs. */
+  async steer(handle: RunHandle, input: UserInput): Promise<void> {
+    const run = this.mustGet(handle);
+    const turnId = run.mapper.turnId;
+    if (run.ended || !turnId) throw new Error("no turn is running to steer");
+    await run.server.rpc.request("turn/steer", { threadId: run.threadId, input: [textInput(input.text)], expectedTurnId: turnId }, { timeoutMs: 30_000 });
+  }
+
+  /**
+   * Drops the thread's last turn from its history, on a thread with no live process: resume it
+   * without starting a turn, then thread/rollback. Files are left to the caller (git).
+   */
+  async rewind(req: RewindRequest): Promise<RewindResult> {
+    return withAppServer(this.launcher, { codexHome: req.profile.configDir, cwd: req.cwd, env: req.env }, async (server) => {
+      await server.rpc.request("thread/resume", { threadId: req.session.sessionId, cwd: req.cwd, excludeTurns: true }, { timeoutMs: 60_000 });
+      try {
+        await server.rpc.request("thread/rollback", { threadId: req.session.sessionId, numTurns: 1 }, { timeoutMs: 60_000 });
+        return { files: false, history: true, detail: null };
+      } catch (err) {
+        // Newer codex builds replace thread/rollback with thread/revert, whose parameters are not documented yet.
+        if (err instanceof RpcError && err.code === METHOD_NOT_FOUND) return { files: false, history: false, detail: `codex ${server.cliVersion ?? ""} has no thread/rollback`.trim() };
+        throw err;
+      }
+    });
+  }
+
+  /** The thread's rollout under CODEX_HOME: `sessions/YYYY/MM/DD/rollout-<time>-<thread id>.jsonl`, newest days first. */
+  async transcript(req: TranscriptRequest): Promise<TranscriptSource | null> {
+    const suffix = `-${req.session.sessionId}.jsonl`;
+    for (const base of ["sessions", "archived_sessions"]) {
+      const found = findNewestFirst(join(req.profile.configDir, base), (name) => name.endsWith(suffix), 3);
+      if (found) return { kind: "file", path: found, ext: "jsonl" };
+    }
+    return null;
+  }
+
   async answer(handle: RunHandle, requestId: string, answer: Answer): Promise<void> {
     const run = this.mustGet(handle);
     const waiting = run.waiting.get(requestId);
@@ -268,6 +335,8 @@ export class CodexAdapter implements AgentAdapter {
       readOnly: req.policy.writes === "none",
       networkDenied: req.policy.network === "denied",
       outputSchema: req.outputSchema ?? null,
+      nextTurn: req.nextTurn ?? null,
+      pulling: false,
       outputRetried: false,
       waiting: new Map(),
       early: new Map(),
@@ -349,7 +418,33 @@ export class CodexAdapter implements AgentAdapter {
     }
     for (const body of run.mapper.map(method, params)) this.emit(run, body);
     const end = run.mapper.ended;
-    if (!end) return;
+    if (!end || run.pulling) return;
+    // Turn boundary: the step's queued follow-ups start the next turn in the same thread.
+    if (end.reason === "completed" && run.nextTurn && !run.stopping && !run.ended) {
+      run.pulling = true;
+      run.mapper.ended = null;
+      void this.pullNext(run, end);
+      return;
+    }
+    this.settle(run, end);
+  }
+
+  private async pullNext(run: Run, end: { reason: EndReason; detail?: string }): Promise<void> {
+    const next = await run.nextTurn!().catch(() => null);
+    run.pulling = false;
+    if (next && !run.ended && !run.stopping) {
+      try {
+        await this.startTurn(run, next);
+        return;
+      } catch {
+        // The thread would not take another turn; the run ends as the last turn did.
+      }
+    }
+    this.settle(run, end);
+  }
+
+  private settle(run: Run, end: { reason: EndReason; detail?: string }): void {
+    run.mapper.ended = end;
     if (end.reason !== "completed" || !run.outputSchema) return this.finish(run, end.reason, end.detail);
     const output = this.readOutput(run, run.outputSchema);
     if (output) this.finish(run, "completed", end.detail, output);
@@ -454,6 +549,20 @@ export class CodexAdapter implements AgentAdapter {
     if (!state) throw new Error(`Unknown run ${run.runId}`);
     return state;
   }
+}
+
+/** Depth-first over date folders, newest name first, for the first file that matches. */
+function findNewestFirst(dir: string, match: (name: string) => boolean, depth: number): string | null {
+  if (!existsSync(dir)) return null;
+  const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) => b.name.localeCompare(a.name));
+  for (const e of entries) if (e.isFile() && match(e.name)) return join(dir, e.name);
+  if (depth === 0) return null;
+  for (const e of entries) {
+    if (!e.isDirectory()) continue;
+    const found = findNewestFirst(join(dir, e.name), match, depth - 1);
+    if (found) return found;
+  }
+  return null;
 }
 
 function textInput(text: string): CodexUserInput {

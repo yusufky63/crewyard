@@ -16,7 +16,11 @@ export const capabilities: AgentCapabilities = {
   setModel: true,
   usage: true,
   reportedLimits: false,
-  readOnlyMode: true
+  readOnlyMode: true,
+  // No documented way to add to a running turn: follow-ups wait for the turn boundary.
+  // File checkpoints restore what Write and Edit changed; the conversation keeps the turn (docs: agent-sdk/file-checkpointing).
+  undo: { files: true, history: false },
+  transcript: true,
 };
 
 /** `deps` exists for the replay tests; the app always calls this without arguments. */

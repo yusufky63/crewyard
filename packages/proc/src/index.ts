@@ -100,7 +100,12 @@ export class ProbeCache<T> {
   private readonly done = new Map<string, { at: number; value: T }>();
   private readonly flying = new Map<string, Promise<T>>();
 
-  constructor(private readonly now: () => number = Date.now) {}
+  private readonly now: () => number;
+
+  // Plain fields, not parameter properties: live scripts run this file through Node's type stripping.
+  constructor(now: () => number = Date.now) {
+    this.now = now;
+  }
 
   get(key: string, maxAgeMs: number, probe: () => Promise<T>): Promise<T> {
     const hit = this.done.get(key);
@@ -155,10 +160,13 @@ export class LineSplitter {
   private size = 0;
   private dropping = false;
 
-  constructor(
-    private readonly maxBytes = 16 * 1024 * 1024,
-    private readonly onOversize: (bytes: number) => void = () => {},
-  ) {}
+  private readonly maxBytes: number;
+  private readonly onOversize: (bytes: number) => void;
+
+  constructor(maxBytes = 16 * 1024 * 1024, onOversize: (bytes: number) => void = () => {}) {
+    this.maxBytes = maxBytes;
+    this.onOversize = onOversize;
+  }
 
   push(chunk: string): string[] {
     const out: string[] = [];

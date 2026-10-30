@@ -3,8 +3,10 @@ import { randomUUID } from "node:crypto";
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
 import type { CanUseTool, HookCallback, Options, Query, SDKMessage, SDKResultMessage, SDKUserMessage, SpawnedProcess } from "@anthropic-ai/claude-agent-sdk";
 import { checkOutput, outputRetryPrompt } from "@crewyard/core";
-import type { AgentAdapter, AgentCapabilities, AgentEvent, Answer, NativeSessionRef, Probe, Profile, RunHandle, RunOutput, StartRequest, UserInput } from "@crewyard/core";
-import { exitCodeWithin, isShutdownExit, killTree, parseVersion, run, start as spawnChild, which } from "@crewyard/proc";
+import { existsSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+import type { AgentAdapter, AgentCapabilities, AgentEvent, Answer, NativeSessionRef, Probe, Profile, RewindRequest, RewindResult, RunHandle, RunOutput, StartRequest, TranscriptRequest, TranscriptSource, UserInput } from "@crewyard/core";
+import { exitCodeWithin, isShutdownExit, killTree, parseVersion, resolveBin, run, start as spawnChild } from "@crewyard/proc";
 import { buildEnv, redact } from "./env.ts";
 import { EventMapper, type EventBody, type TurnOutcome } from "./mapper.ts";
 import { AsyncQueue } from "./queue.ts";
@@ -20,7 +22,8 @@ export type QueryFn = (params: { prompt: AsyncIterable<SDKUserMessage>; options:
 
 export interface ClaudeAdapterDeps {
   query: QueryFn;
-  which: typeof which;
+  /** Finds the CLI; resolveBin by default, so the run spawns the file the machine check showed. */
+  which: (name: string) => Promise<string | null>;
   run: typeof run;
   spawn: typeof spawnChild;
   killTree: typeof killTree;
@@ -146,6 +149,40 @@ export class ClaudeAdapter implements AgentAdapter {
     await this.mustGet(run).q.setModel(model);
   }
 
+  /**
+   * Rewinds the files Claude Code changed in a turn back to its checkpoint, on a session with no
+   * live process: `claude -p --resume <session> --rewind-files <user message uuid>` exits without
+   * sending a prompt (agent-sdk/file-checkpointing). The conversation itself keeps the turn.
+   */
+  async rewind(req: RewindRequest): Promise<RewindResult> {
+    if (req.profile.credential.kind === "plan_signin") throw new Error("Claude profiles run on an API key; claude.ai sign-in is not supported.");
+    if (!req.turnRef) return { files: false, history: false, detail: "Claude Code gave this turn no checkpoint id." };
+    const executable = await this.deps.which("claude");
+    if (!executable) throw new Error("Claude Code is not installed or not on PATH.");
+    const { env, secrets } = buildEnv(req.profile, req.env, req.profile.defaultModel, this.deps.env);
+    const res = await this.deps.run(executable, ["-p", "--resume", req.session.sessionId, "--rewind-files", req.turnRef], {
+      cwd: req.cwd,
+      timeoutMs: 120_000,
+      env: { ...env, CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING: "true" },
+    });
+    if (res.code === 0) return { files: true, history: false, detail: null };
+    const said = (res.stderr.trim() || res.stdout.trim()).split(/\r?\n/).pop() ?? "";
+    return { files: false, history: false, detail: redact(said, secrets).slice(0, 300) || `claude exited with ${res.code}` };
+  }
+
+  /** The session's JSONL under the profile folder: `<CLAUDE_CONFIG_DIR>/projects/<project>/<session>.jsonl`. */
+  async transcript(req: TranscriptRequest): Promise<TranscriptSource | null> {
+    const root = join(req.profile.configDir, "projects");
+    if (!existsSync(root)) return null;
+    const name = `${req.session.sessionId}.jsonl`;
+    for (const dir of readdirSync(root, { withFileTypes: true })) {
+      if (!dir.isDirectory()) continue;
+      const path = join(root, dir.name, name);
+      if (existsSync(path)) return { kind: "file", path, ext: "jsonl" };
+    }
+    return null;
+  }
+
   async stop(run: RunHandle): Promise<void> {
     const ctx = this.runs.get(run.runId);
     if (!ctx) return;
@@ -202,6 +239,9 @@ export class ClaudeAdapter implements AgentAdapter {
       env,
       abortController: abort,
       includePartialMessages: true,
+      // Undo last turn: backups before Write and Edit, keyed by the uuid of each user message we send.
+      enableFileCheckpointing: true,
+      extraArgs: { "replay-user-messages": null },
       // Read-only roles: "dontAsk", so the CLI's own engine refuses anything that would need an
       // approval. Writers: "default", every approval comes to canUseTool.
       permissionMode: permissionModeFor(req.policy),
@@ -236,7 +276,7 @@ export class ClaudeAdapter implements AgentAdapter {
     try {
       for await (const msg of ctx.q) {
         for (const body of ctx.mapper.map(msg)) this.emit(ctx, body);
-        this.afterMessage(ctx, msg);
+        await this.afterMessage(ctx, msg);
       }
     } catch (err) {
       if (!ctx.forced) {
@@ -257,7 +297,7 @@ export class ClaudeAdapter implements AgentAdapter {
     }
   }
 
-  private afterMessage(ctx: RunCtx, msg: SDKMessage): void {
+  private async afterMessage(ctx: RunCtx, msg: SDKMessage): Promise<void> {
     if (msg.type === "system" && msg.subtype === "init" && ctx.mapper.apiKeySource && SIGNIN_SOURCES.has(ctx.mapper.apiKeySource)) {
       // The profile folder holds a claude.ai login; refuse to run on it.
       ctx.forced = { reason: "failed", detail: "This Claude profile is signed in to claude.ai. Crewyard runs Claude only on API keys." };
@@ -265,22 +305,28 @@ export class ClaudeAdapter implements AgentAdapter {
       ctx.q.close();
       return;
     }
-    if (msg.type === "result") this.onResult(ctx, msg);
+    if (msg.type === "result") await this.onResult(ctx, msg);
   }
 
   /**
    * One run is one prompt plus whatever send() adds while it is working. When the CLI reports
-   * no queued sends and every message we sent has had its turn, we close the input so the CLI
-   * exits and the run ends; a follow-up after that goes through resume().
+   * no queued sends and every message we sent has had its turn, the turn boundary asks for the
+   * step's queued follow-ups (StartRequest.nextTurn); with none, we close the input so the CLI
+   * exits and the run ends, and a follow-up after that goes through resume().
    */
-  private onResult(ctx: RunCtx, msg: SDKResultMessage): void {
+  private async onResult(ctx: RunCtx, msg: SDKResultMessage): Promise<void> {
     ctx.outcome = ctx.mapper.outcome(msg);
     const covered = msg.user_message_uuids ?? (msg.user_message_uuid ? [msg.user_message_uuid] : null);
     if (covered) for (const id of covered) ctx.outstanding.delete(id);
     // Older CLIs do not echo uuids; treat the result as covering everything sent so far.
     else ctx.outstanding.clear();
-    if (!ctx.forced && (msg.queued_turn_count ?? 0) === 0 && ctx.outstanding.size === 0) this.checkOutput(ctx, msg);
-    if (ctx.forced || ((msg.queued_turn_count ?? 0) === 0 && ctx.outstanding.size === 0)) ctx.input.end();
+    const idle = () => (msg.queued_turn_count ?? 0) === 0 && ctx.outstanding.size === 0;
+    if (!ctx.forced && idle() && ctx.outcome.reason === "completed" && ctx.req.nextTurn) {
+      const next = await ctx.req.nextTurn().catch(() => null);
+      if (next && !ctx.forced && this.pushInput(ctx, next)) return;
+    }
+    if (!ctx.forced && idle()) this.checkOutput(ctx, msg);
+    if (ctx.forced || idle()) ctx.input.end();
   }
 
   /**
@@ -355,10 +401,14 @@ export class ClaudeAdapter implements AgentAdapter {
     return { PreToolUse: [{ hooks: [hook] }] };
   }
 
+  /** Each message we send starts a turn, and its uuid is that turn's file checkpoint id. */
   private pushInput(ctx: RunCtx, text: string): boolean {
     const uuid = randomUUID();
     const ok = ctx.input.push({ type: "user", message: { role: "user", content: text }, parent_tool_use_id: null, uuid });
-    if (ok) ctx.outstanding.add(uuid);
+    if (ok) {
+      ctx.outstanding.add(uuid);
+      this.emit(ctx, { type: "turn.started", turnRef: uuid });
+    }
     return ok;
   }
 
@@ -390,4 +440,4 @@ export function compareVersions(a: string, b: string): number {
   return 0;
 }
 
-export const defaultDeps = (): ClaudeAdapterDeps => ({ query: sdkQuery, which, run, spawn: spawnChild, killTree, env: process.env });
+export const defaultDeps = (): ClaudeAdapterDeps => ({ query: sdkQuery, which: (name) => resolveBin(name), run, spawn: spawnChild, killTree, env: process.env });

@@ -1,5 +1,19 @@
 {
   "nav": "Ayarlar",
+  "stalls": {
+    "title": "Takılma uyarıları",
+    "hint": "Bir çalışma takılmış görünürse Gelen kutusuna bir öğe düşer. Sizin yerinize hiçbir şey durdurulmaz ya da yeniden denenmez. 0 kuralı kapatır.",
+    "noEventsMinutes": "Süren bir tur hiç ses vermezse",
+    "noEventsHint": "Ajan çalışırken hiçbir olay gelmez, bir araç çağrısı bile.",
+    "sameFailureCount": "Bir adım aynı şekilde başarısız olursa",
+    "sameFailureHint": "Aynı tür hatayla biten art arda çalışmalar.",
+    "requestMinutes": "Bir soru ya da onay beklerse",
+    "requestHint": "Ajanın sorduğu andan itibaren sayılır.",
+    "cooldownMinutes": "Sonra şu kadar sessiz kal",
+    "cooldownHint": "Aynı uyarı kapandıktan sonra yeniden çıkabilmek için bu kadar bekler.",
+    "minutes": "dk",
+    "runs": "çalışma"
+  },
   "title": "Ayarlar",
   "context": "Bu bilgisayarda tutulur · {{path}}",
   "back": "Geri",

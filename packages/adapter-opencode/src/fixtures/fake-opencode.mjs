@@ -35,6 +35,16 @@ const expectedAuth = `Basic ${Buffer.from(`opencode:${process.env.OPENCODE_SERVE
 // Sessions persist in the profile's data folder, like opencode.db, so resume works across launches.
 const STORE = process.env.XDG_DATA_HOME ? join(process.env.XDG_DATA_HOME, "fake-sessions.json") : null;
 const sessions = new Map(STORE && existsSync(STORE) ? JSON.parse(readFileSync(STORE, "utf8")).map((s) => [s.id, { ...s, status: "idle", queued: 0 }]) : []);
+// `opencode export <session>`: the session as JSON on stdout, read from the same store.
+if (argv[0] === "export") {
+  const found = sessions.get(argv[1]);
+  if (!found) {
+    process.stderr.write(`Session not found: ${argv[1]}\n`);
+    process.exit(1);
+  }
+  process.stdout.write(JSON.stringify({ info: { id: found.id, title: found.title }, messages: found.messages }));
+  process.exit(0);
+}
 const persist = () => {
   if (STORE) writeFileSync(STORE, JSON.stringify([...sessions.values()].map(({ id, title, permission, messages }) => ({ id, title, permission, messages }))));
 };
@@ -262,6 +272,15 @@ const server = createServer(async (req, res) => {
       json(res, 204);
       enqueue(s, prompt, user.id);
       return;
+    }
+    if (req.method === "POST" && parts[2] === "revert") {
+      const b = await body(req);
+      log({ kind: "revert", session: s.id, body: b });
+      const at = s.messages.findIndex((m) => m.info.id === b.messageID);
+      if (at < 0) return json(res, 400, { name: "BadRequestError", data: { message: "no such message" } });
+      s.revert = { messageID: b.messageID };
+      persist();
+      return json(res, 200, { id: s.id, slug: "fake", projectID: "p", directory: process.cwd(), title: s.title, version: "1.19.5", time: { created: now(), updated: now() }, revert: s.revert });
     }
     if (req.method === "POST" && parts[2] === "abort") {
       log({ kind: "abort", session: s.id });

@@ -112,6 +112,12 @@ export const AgentEvent = z.discriminatedUnion("type", [
     reached: z.boolean(),
   }),
   z.object({ ...envelope, type: z.literal("run.state"), state: RunState, detail: z.string().optional() }),
+  /**
+   * A turn began in the runner. `turnRef` is the runner's own handle for rewinding it: the Claude
+   * user message uuid (rewindFiles), the OpenCode user message id (session revert), the Codex turn
+   * id. Null when the runner gave none.
+   */
+  z.object({ ...envelope, type: z.literal("turn.started"), turnRef: z.string().nullable() }),
   z.object({ ...envelope, type: z.literal("run.ended"), reason: EndReason, detail: z.string().optional(), output: RunOutput.optional() }),
 ]);
 export type AgentEvent = z.infer<typeof AgentEvent>;

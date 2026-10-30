@@ -459,7 +459,9 @@ describe("recovery", () => {
     await o.resume(run.id);
     await waitFor(() => o.get(t.id).status === "done");
     expect(o.get(t.id).runs[0]!.queuedMessages).toBe(0);
-    expect(adapter.inspect(adapter.started[1]!.runId).inputs.map((i) => i.text)).toEqual(["Use the OS keychain, not a file."]);
+    // It goes with the resume prompt, as part of the same turn, not as a separate send.
+    expect(adapter.started[1]!.req.prompt).toBe("Continue the task where you stopped.\n\nUse the OS keychain, not a file.");
+    expect(adapter.inspect(adapter.started[1]!.runId).inputs).toEqual([]);
     await expect(o.message(run.id, "late")).rejects.toThrow("run.ended");
   });
 

@@ -6,7 +6,7 @@ import type { ChildProcess } from "node:child_process";
 import * as acp from "@agentclientprotocol/sdk";
 import { checkOutput, outputInstruction, outputRetryPrompt, parseOutputText } from "@crewyard/core";
 import type { AgentAdapter, AgentCapabilities, AgentEvent, Answer, EndReason, NativeSessionRef, OutputSchema, Probe, Profile, RunHandle, RunOutput, RunState, StartRequest, UserInput } from "@crewyard/core";
-import { ensureSystemEnv, exitCodeWithin, isShutdownExit, killTree, parseVersion, run as runCommand, start, which } from "@crewyard/proc";
+import { ensureSystemEnv, exitCodeWithin, isShutdownExit, killTree, parseVersion, resolveBin, run as runCommand, start } from "@crewyard/proc";
 import { AGENTS, type AgentSpec } from "./agents.ts";
 import { AcpMapper, chooseOutcome, mustReject, type EventBody } from "./mapper.ts";
 import { EventQueue } from "./queue.ts";
@@ -286,7 +286,7 @@ export class AcpAdapter implements AgentAdapter {
   }
 
   private async executable(spec: AgentSpec): Promise<string | null> {
-    return this.opts.executable ?? (await which(spec.command));
+    return this.opts.executable ?? (await resolveBin(spec.command));
   }
 
   private async cliInfo(spec: AgentSpec, executable: string, profile: Profile): Promise<CliInfo> {
@@ -431,7 +431,7 @@ export class AcpAdapter implements AgentAdapter {
 
   /**
    * Prompts run one at a time; input sent during a turn waits for it. The run ends when the inbox
-   * is empty, after the result check when the request asked for one.
+   * is empty and nextTurn has nothing queued, after the result check when the request asked for one.
    */
   private async turns(run: Run): Promise<void> {
     run.busy = true;
@@ -452,6 +452,14 @@ export class AcpAdapter implements AgentAdapter {
         return;
       }
       if (stop === "cancelled" || run.interrupted) break;
+      // Turn boundary: the step's queued follow-ups become the next prompt in the same session.
+      if (run.inbox.length === 0 && stop === "end_turn" && run.req.nextTurn) {
+        const next = await run.req.nextTurn().catch(() => null);
+        if (next && !run.ended && !run.interrupted) {
+          run.inbox.push(next);
+          continue;
+        }
+      }
       const schema = run.req.outputSchema;
       if (run.inbox.length === 0 && stop === "end_turn" && schema) this.readOutput(run, schema);
     }
