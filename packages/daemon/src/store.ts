@@ -1,6 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
-import type { ProjectSummary } from "@crewyard/core";
+import { MAX_EVENT_JSON, utf8Length, type ProjectSummary } from "@crewyard/core";
 
 // SQLite through node:sqlite (built into Node 24 and Electron 45), so there is no native module to
 // rebuild on Windows. Facts and an append-only event log; status is derived elsewhere (PLAN.md D5).
@@ -478,11 +478,17 @@ export class Store {
     applyMigrations(this.db, MIGRATIONS);
   }
 
-  /** Appends an event; a repeated dedupe key is ignored so replays never double-count. */
+  /**
+   * Appends an event; a repeated dedupe key is ignored so replays never double-count. A payload
+   * past MAX_EVENT_JSON is stored as a marker only: one runaway event must not bloat the log or
+   * every later read of it. Agent events are capped field by field before they get here.
+   */
   appendEvent(e: EventInput): number | null {
+    let payload = JSON.stringify(e.payload) ?? "null";
+    if (payload.length > MAX_EVENT_JSON / 3 && utf8Length(payload) > MAX_EVENT_JSON) payload = JSON.stringify({ truncated: true, bytes: utf8Length(payload) });
     const res = this.db
       .prepare("insert or ignore into events (at, project_id, task_id, run_id, kind, source, payload, dedupe_key) values (?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(new Date().toISOString(), e.projectId ?? null, e.taskId ?? null, e.runId ?? null, e.kind, e.source, JSON.stringify(e.payload), e.dedupeKey ?? null);
+      .run(new Date().toISOString(), e.projectId ?? null, e.taskId ?? null, e.runId ?? null, e.kind, e.source, payload, e.dedupeKey ?? null);
     return res.changes ? Number(res.lastInsertRowid) : null;
   }
 
