@@ -48,7 +48,7 @@ export type Verdict =
   | { action: "gone" }
   | { action: "skip"; reason: SkipReason };
 
-export type SkipReason = "owner_alive" | "image_mismatch" | "created_before_run" | "parent_reused" | "identity_unverified" | "process_query_failed" | "unsupported_platform";
+export type SkipReason = "owner_alive" | "image_mismatch" | "created_before_run" | "parent_reused" | "identity_unverified" | "process_query_failed" | "unsupported_platform" | "kill_limit" | "kill_stalled";
 
 export interface OrphanReport {
   checked: number;
@@ -71,6 +71,14 @@ export const RUNNER_IMAGES: Record<string, readonly string[]> = {
 
 /** Clock granularity between SQLite ISO strings and the Windows creation time. */
 const CLOCK_SLACK_MS = 1_000;
+/**
+ * Kills run one at a time, at most this many per start, and stop after one that hangs: each
+ * taskkill /T walks the whole process table, and during a filesystem stall unbounded kills feed
+ * the stall (orca #24829). What is left over is logged as skipped with the pid, so it can be
+ * ended by hand; the runs are labelled interrupted either way.
+ */
+const MAX_KILLS = 16;
+const STALLED_KILL_MS = 5_000;
 /** daemon_sessions keeps this many starts; older runs fall back to the command-line check. */
 const KEEP_SESSIONS = 200;
 
@@ -157,6 +165,7 @@ export interface CleanupDeps {
   list?: ProcessLister;
   kill?: (pid: number) => Promise<void>;
   platform?: NodeJS.Platform;
+  now?: () => number;
 }
 
 /**
@@ -190,13 +199,22 @@ export async function cleanOrphans(store: Store, deps: CleanupDeps = {}): Promis
   }
 
   const kill = deps.kill ?? killTree;
+  const now = deps.now ?? Date.now;
+  const killedPids = new Set<number>();
+  let stalled = false;
   for (const r of runs) {
     const owner = owners.get(r.runId) ?? null;
     const verdict = verifyOrphan(r, procs.get(r.pid), owner, owner ? procs.get(owner.pid) : undefined);
     if (verdict.action === "gone") report.gone.push({ runId: r.runId, pid: r.pid });
     else if (verdict.action === "skip") report.skipped.push({ runId: r.runId, pid: r.pid, reason: verdict.reason });
+    else if (killedPids.has(r.pid)) report.killed.push({ runId: r.runId, pid: r.pid, by: verdict.by });
+    else if (stalled) report.skipped.push({ runId: r.runId, pid: r.pid, reason: "kill_stalled" });
+    else if (killedPids.size >= MAX_KILLS) report.skipped.push({ runId: r.runId, pid: r.pid, reason: "kill_limit" });
     else {
+      const t0 = now();
       await kill(r.pid);
+      stalled = now() - t0 > STALLED_KILL_MS;
+      killedPids.add(r.pid);
       report.killed.push({ runId: r.runId, pid: r.pid, by: verdict.by });
     }
   }
@@ -204,7 +222,7 @@ export async function cleanOrphans(store: Store, deps: CleanupDeps = {}): Promis
   if (report.killed.length) {
     try {
       // Only a process that is still the one we killed counts as a survivor, not a fresh reuse of its pid.
-      const after = await list(report.killed.map((k) => k.pid));
+      const after = await list([...killedPids]);
       report.survivors = after.filter((p) => procs.get(Number(p.pid))?.createdAt === p.createdAt).map((p) => Number(p.pid));
     } catch {
       // The kill already ran; a failed re-check only loses the survivor count.

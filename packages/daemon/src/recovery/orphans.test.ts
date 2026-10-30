@@ -133,6 +133,35 @@ describe("cleanOrphans", () => {
     expect(kill).not.toHaveBeenCalled();
   });
 
+  it("kills each pid once, at most 16 per start, and stops after a kill that hangs", async () => {
+    const { store } = newStore();
+    recordDaemonStart(store, owner);
+    for (let i = 0; i < 18; i++) seed(store, { id: `r${String(i).padStart(2, "0")}`, pid: 7000 + i, cwd: WT, startedAt: T0 });
+    seed(store, { id: "s-dup", pid: 7000, cwd: WT, startedAt: T0 });
+    const list = async (ids: number[]) => ids.filter((p) => p >= 7000).map((pid) => proc({ pid }));
+    const killed: number[] = [];
+    const report = await cleanOrphans(store, { list, kill: async (pid) => void killed.push(pid) });
+    expect(killed).toHaveLength(16);
+    expect(new Set(killed).size).toBe(16);
+    expect(report.killed.filter((k) => k.pid === 7000).map((k) => k.runId)).toEqual(["r00", "s-dup"]);
+    expect(report.skipped).toEqual([
+      { runId: "r16", pid: 7016, reason: "kill_limit" },
+      { runId: "r17", pid: 7017, reason: "kill_limit" },
+    ]);
+
+    const { store: s2 } = newStore();
+    recordDaemonStart(s2, owner);
+    for (let i = 0; i < 3; i++) seed(s2, { id: `q${i}`, pid: 7100 + i, cwd: WT, startedAt: T0 });
+    let clock = 0;
+    const slow = await cleanOrphans(s2, {
+      list: async (ids) => ids.filter((p) => p >= 7000).map((pid) => proc({ pid })),
+      kill: async () => void (clock += 6_000),
+      now: () => clock,
+    });
+    expect(slow.killed.map((k) => k.pid)).toEqual([7100]);
+    expect(slow.skipped.map((s) => s.reason)).toEqual(["kill_stalled", "kill_stalled"]);
+  });
+
   it("keeps a bounded history of daemon starts", () => {
     const { store } = newStore();
     for (let i = 0; i < 230; i++) recordDaemonStart(store, { pid: 1000 + i, startedAt: later(i * 1000) });
