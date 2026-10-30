@@ -57,6 +57,7 @@ const SESSIONS: SignInSession[] = [
 const LIMITS: LimitsOverview = {
   samplesAvailable: true,
   thresholds: DEFAULT_THRESHOLDS,
+  idleRefresh: { enabled: true, everyMinutes: 5, endpoint: "codex app-server: account/rateLimits/read" },
   windows: [
     { profileId: "p-work", window: "5h", usedPct: 62, resetsAt: ahead(140), provenance: "reported", observedAt: ago(2) },
     { profileId: "p-work", window: "weekly", usedPct: 41, resetsAt: ahead(60 * 24 * 4), provenance: "reported", observedAt: ago(2) },

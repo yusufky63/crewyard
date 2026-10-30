@@ -82,6 +82,11 @@ export interface SignInDeps {
   changed: (what: string) => void;
   /** After a sign-in succeeds, e.g. to read plan limits right away. */
   onSignedIn?: (profileId: string) => void;
+  /**
+   * The account behind the profile may have changed (signed out, or signed in, possibly as someone
+   * else). Plan readings belong to one account, so the caller marks the old ones as no longer known.
+   */
+  accountChanged?: (profileId: string, kind: SignInKind) => void;
   now?: () => Date;
 }
 
@@ -188,7 +193,10 @@ export class SignInService {
       await this.probe(profileId).catch(() => undefined);
       // Success is told by the probed badge from here on; failures stay until the next try.
       if (r.success && this.live.get(profileId) === live) this.live.delete(profileId);
-      if (r.success) this.deps.onSignedIn?.(profileId);
+      if (r.success) {
+        this.deps.accountChanged?.(profileId, kind);
+        this.deps.onSignedIn?.(profileId);
+      }
       this.deps.changed("signin");
     });
     return this.view(live);
@@ -219,6 +227,7 @@ export class SignInService {
       .catch(() => undefined);
     this.svc.resetProfileFolder(profileId);
     this.live.delete(profileId);
+    this.deps.accountChanged?.(profileId, kind);
     const before = this.svc.signInStatus(profileId);
     this.svc.saveSignIn({ profileId, state: "signed_out", plan: null, cliVersion: before?.cliVersion ?? null, update: before?.update ?? null, problem: null, probedAt: this.now().toISOString() });
     this.deps.changed("signin");

@@ -148,11 +148,21 @@ export interface UsageWindowView {
   observedAt: string;
 }
 
+/** Background reads of plan windows between runs; listed on the Limits screen with what they call. */
+export interface IdleRefreshView {
+  enabled: boolean;
+  /** Base interval; each read is spread by about 10%, halved while a window is rising. */
+  everyMinutes: number;
+  /** The runner method each read calls, through the profile's own CLI. */
+  endpoint: string;
+}
+
 export interface LimitsOverview {
   /** False until the orchestrator creates usage_samples; every plan window is then Unknown. */
   samplesAvailable: boolean;
   windows: UsageWindowView[];
   thresholds: Thresholds;
+  idleRefresh: IdleRefreshView;
 }
 
 /** One line of the sidebar accounts block, already sorted most urgent first. */
@@ -225,6 +235,7 @@ export interface ProvidersIpc {
   "providers.capsSet": { params: { credentialId: string } & CredentialCaps; result: CredentialSummary };
   "providers.limits": { params: void; result: LimitsOverview };
   "providers.thresholdsSet": { params: Pick<Thresholds, "warn" | "critical">; result: Thresholds };
+  "providers.idleRefreshSet": { params: { enabled: boolean }; result: IdleRefreshView };
   "providers.accounts": { params: void; result: AccountRow[] };
   /** Stored probe results for every profile that signs in on its own. */
   "providers.signInStatus": { params: void; result: SignInStatus[] };

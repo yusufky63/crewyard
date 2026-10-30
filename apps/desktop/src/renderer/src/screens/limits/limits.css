@@ -35,6 +35,10 @@
 .limits .setrow .end { margin-left: auto; }
 .limits .lim-pct { display: inline-flex; align-items: center; gap: 6px; font: 500 12px / 1 var(--mono); }
 .limits .lim-pct .pv-input { width: 56px; text-align: right; }
+.limits .lim-idle { display: grid; gap: 6px; padding: 12px 16px 14px; border-top: 1px solid var(--line); font-size: 12px; }
+.limits .lim-idle-head { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.limits .lim-idle-head input { accent-color: var(--accent); }
+.limits .lim-idle code { font-size: 11px; color: var(--ink-2); overflow-wrap: anywhere; }
 
 @media (max-width: 1180px) {
   .limits .grid2 { grid-template-columns: 1fr; }

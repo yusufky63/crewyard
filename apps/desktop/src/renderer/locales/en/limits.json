@@ -56,7 +56,10 @@
     "critical": "Mark as critical at",
     "hint": "Applies to plan windows and daily caps.",
     "invalid": "Use whole percentages, with notify below critical.",
-    "save": "Save"
+    "save": "Save",
+    "idle": "Refresh plan windows between runs",
+    "idleHint": "About every {{minutes}} minutes, spread a little, and only for signed-in Codex profiles a task uses; twice as often while a window is rising. Runs report their own windows.",
+    "idleCalls": "Each refresh calls"
   },
   "provenance": { "reported": "Reported", "estimated": "Estimated", "unknown": "Unknown" },
   "accounts": {

@@ -56,7 +56,10 @@
     "critical": "Kritik sayılacak oran",
     "hint": "Plan pencerelerine ve günlük sınırlara uygulanır.",
     "invalid": "Tam sayı yüzdeler kullan; uyarı oranı kritikten düşük olmalı.",
-    "save": "Kaydet"
+    "save": "Kaydet",
+    "idle": "Plan pencerelerini çalıştırmalar arasında yenile",
+    "idleHint": "Yaklaşık {{minutes}} dakikada bir, biraz kaydırılarak ve yalnızca bir görevin kullandığı, oturumu açık Codex profilleri için; bir pencere dolmaya devam ederken iki kat sık. Çalışan işler kendi pencerelerini zaten bildirir.",
+    "idleCalls": "Her yenilemede çağrılan:"
   },
   "provenance": { "reported": "Bildirilen", "estimated": "Tahmini", "unknown": "Bilinmiyor" },
   "accounts": {

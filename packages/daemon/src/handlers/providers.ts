@@ -1,7 +1,7 @@
-import { PROVIDERS_CHANGED, type ProvidersIpc, type SignInKind } from "@crewyard/core";
+import { PROVIDERS_CHANGED, type IdleRefreshView, type LimitSample, type ProvidersIpc, type SignInKind } from "@crewyard/core";
 import { defaultProtector } from "../providers/dpapi.ts";
 import { IdleLimits } from "../providers/idle-limits.ts";
-import { getThresholds, latestWindows, setThresholds, spendSummary, usageSamplesAvailable } from "../providers/ledger.ts";
+import { getIdleRefresh, getThresholds, latestWindows, setIdleRefresh, setThresholds, spendSummary, usageSamplesAvailable } from "../providers/ledger.ts";
 import { orchestratorFor, type Orchestrator } from "../orchestrator/index.ts";
 import { profileFor, providersDirectory } from "../providers/directory.ts";
 import { ProvidersService } from "../providers/service.ts";
@@ -17,6 +17,8 @@ export interface ProvidersHandlerOptions {
 }
 
 const CLOSED = new Set(["done", "merged", "cancelled"]);
+/** What each idle read calls, shown next to the setting so nothing is polled behind the user's back. */
+const IDLE_ENDPOINT = "codex app-server: account/rateLimits/read";
 const DAY_MS = 24 * 60 * 60_000;
 
 /**
@@ -50,8 +52,23 @@ export function createProvidersHandlers(ctx: HandlerContext, service?: Providers
   const changed = (what: string) => ctx.emit(PROVIDERS_CHANGED, { what });
   const busy = opts.busy ?? ((id: string) => (orch?.db.activeCounts().byProfile.get(id) ?? 0) > 0);
 
-  const signIn: SignInService = new SignInService({ svc, drivers: opts.drivers, busy, changed, onSignedIn: (id) => void idle.refreshNow(id) });
+  const latest = (id: string): LimitSample[] => latestWindows(db).filter((w) => w.profileId === id && w.window !== "context");
+  const signIn: SignInService = new SignInService({
+    svc,
+    drivers: opts.drivers,
+    busy,
+    changed,
+    onSignedIn: (id) => void idle.refreshNow(id),
+    // Readings from the previous account must not stand for the new one: mark them Unknown.
+    accountChanged: (id, kind) => {
+      if (kind !== "chatgpt") return;
+      const at = new Date().toISOString();
+      for (const s of latest(id)) if (s.provenance !== "unknown") orch?.ingestSample({ profileId: id, window: s.window, usedPct: null, resetsAt: null, provenance: "unknown", observedAt: at });
+      changed("limits");
+    },
+  });
   const idle: IdleLimits = new IdleLimits({
+    enabled: () => getIdleRefresh(db),
     candidates: () =>
       svc
         .signInStatuses()
@@ -61,15 +78,15 @@ export function createProvidersHandlers(ctx: HandlerContext, service?: Providers
     inUse: () => (orch ? profilesInUse(orch, new Date()) : new Set()),
     reporting: busy,
     held: (id) => signIn.pending(id),
-    lastSampleAt: (id) =>
-      latestWindows(db)
-        .filter((w) => w.profileId === id && w.window !== "context")
-        .reduce<string | null>((max, w) => (max === null || w.observedAt > max ? w.observedAt : max), null),
+    latest,
     fetch: (profile) => signIn.driver("chatgpt").limits?.(profile) ?? Promise.resolve([]),
     // Through the orchestrator, so the same 80/95% rules and notices apply as during runs.
     ingest: (sample) => orch?.ingestSample(sample),
     changed: () => changed("limits"),
+    // An expired or removed sign-in shows at once instead of after the next app start.
+    failed: (id) => void signIn.probe(id).catch(() => undefined),
   });
+  const idleView = (): IdleRefreshView => ({ enabled: getIdleRefresh(db), everyMinutes: idle.intervalMs / 60_000, endpoint: IDLE_ENDPOINT });
 
   // Background work starts with the first request, so creating handlers in tests stays inert.
   let started = false;
@@ -139,7 +156,12 @@ export function createProvidersHandlers(ctx: HandlerContext, service?: Providers
       changed("caps");
       return c;
     }),
-    "providers.limits": withTouch(() => ({ samplesAvailable: usageSamplesAvailable(db), windows: latestWindows(db), thresholds: getThresholds(db) })),
+    "providers.limits": withTouch(() => ({ samplesAvailable: usageSamplesAvailable(db), windows: latestWindows(db), thresholds: getThresholds(db), idleRefresh: idleView() })),
+    "providers.idleRefreshSet": withTouch(({ enabled }) => {
+      setIdleRefresh(db, enabled);
+      changed("idle-refresh");
+      return idleView();
+    }),
     "providers.thresholdsSet": withTouch(({ warn, critical }) => {
       const t = setThresholds(db, warn, critical);
       changed("thresholds");

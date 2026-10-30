@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { BrandIcon, Button, Dot, Label, Panel, TickMeter } from "@crewyard/ui";
-import type { CatalogProvider, CredentialSummary, ProfileSummary, SignInSession, SignInStatus, Thresholds, UsageWindowView } from "@crewyard/core";
+import type { CatalogProvider, CredentialSummary, IdleRefreshView, ProfileSummary, SignInSession, SignInStatus, Thresholds, UsageWindowView } from "@crewyard/core";
 import { call } from "../../ipc.ts";
 import { useProvidersQuery as useDaemon } from "../providers/data.ts";
 import { providerColor, ProvBadge, RUNNER_COLOR, useMoney, useProvidersLive, useWhen } from "../providers/shared.tsx";
@@ -317,7 +317,36 @@ function AlertsPanel() {
       </div>
       {/* Keyed by the saved values so the inputs start from them again after a save. */}
       {current && <AlertsForm key={`${current.warn}-${current.critical}`} current={current} />}
+      {limits.data && <IdleRefreshRow view={limits.data.idleRefresh} />}
     </Panel>
+  );
+}
+
+/** The background plan-window reads, switchable and with what they call spelled out (cc-switch #3519). */
+function IdleRefreshRow({ view }: { view: IdleRefreshView }) {
+  const { t } = useTranslation("limits");
+  const qc = useQueryClient();
+  const [busy, setBusy] = useState(false);
+  const toggle = async (enabled: boolean) => {
+    setBusy(true);
+    try {
+      await call("providers.idleRefreshSet", { enabled });
+      await qc.invalidateQueries({ queryKey: ["providers.limits"] });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="lim-idle">
+      <label className="lim-idle-head">
+        <input type="checkbox" checked={view.enabled} disabled={busy} onChange={(e) => void toggle(e.target.checked)} />
+        <span>{t("alerts.idle")}</span>
+      </label>
+      <p className="muted">{t("alerts.idleHint", { minutes: view.everyMinutes })}</p>
+      <p className="muted">
+        {t("alerts.idleCalls")} <code className="mono">{view.endpoint}</code>
+      </p>
+    </div>
   );
 }
 
