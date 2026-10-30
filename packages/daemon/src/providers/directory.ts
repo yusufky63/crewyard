@@ -40,9 +40,16 @@ export function keyNamesFor(runner: ProfileRunner, provider: CatalogProvider | u
   if (runner === "claude-code") return [provider?.id === "anthropic" ? "ANTHROPIC_API_KEY" : "ANTHROPIC_AUTH_TOKEN"];
   if (runner === "codex") return provider ? [codexEnvKey(provider)] : [];
   if (runner === "gemini-cli") return ["GEMINI_API_KEY"];
-  const own = provider?.env[0];
+  const own = provider ? (OPENCODE_KEY_ENV[provider.id] ?? provider.env[0]) : undefined;
   return own ? [own] : [];
 }
+
+/**
+ * Providers whose first models.dev env name is not the one OpenCode's model SDK reads. Google lists
+ * GOOGLE_API_KEY first, and OpenCode 1.19.5 then failed every turn with "Google Generative AI API
+ * key is missing" (live run, 2026-10-30): its Google SDK reads GOOGLE_GENERATIVE_AI_API_KEY.
+ */
+const OPENCODE_KEY_ENV: Record<string, string> = { google: "GOOGLE_GENERATIVE_AI_API_KEY" };
 
 /** OpenAI's own Responses endpoint, for an OpenAI profile that brings an API key. */
 export const OPENAI_API_BASE = "https://api.openai.com/v1";

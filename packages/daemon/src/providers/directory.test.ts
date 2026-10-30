@@ -48,6 +48,8 @@ describe("providers directory", () => {
     expect(keyNamesFor("codex", svc.catalog.provider("openai"))).toEqual(["OPENAI_API_KEY"]);
     expect(keyNamesFor("opencode", deepseek)).toEqual(["DEEPSEEK_API_KEY"]);
     expect(keyNamesFor("gemini-cli", svc.catalog.provider("google"))).toEqual(["GEMINI_API_KEY"]);
+    // models.dev lists GOOGLE_API_KEY first; OpenCode's Google SDK reads only this one.
+    expect(keyNamesFor("opencode", svc.catalog.provider("google"))).toEqual(["GOOGLE_GENERATIVE_AI_API_KEY"]);
   });
 
   it("hands the decrypted key only to envFor, under the runner's names", async () => {
