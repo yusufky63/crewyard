@@ -92,8 +92,8 @@
 .tp-toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2); cursor: pointer; }
 .tp-feedback { list-style: none; display: grid; gap: 10px; }
 .tp-feedback li { display: grid; gap: 6px; padding-top: 10px; border-top: 1px solid var(--line); }
-.tp-fb-head { display: flex; align-items: center; gap: 6px; font-size: 13px; min-width: 0; }
-.tp-fb-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.tp-fb-head { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; font-size: 13px; min-width: 0; }
+.tp-fb-title { min-width: 0; overflow-wrap: anywhere; }
 .tp-fb-state { margin-left: auto; font-size: 12px; white-space: nowrap; }
 .tp-fb-excerpt { margin: 0; font-size: 11px; line-height: 1.5; color: var(--ink-2); background: var(--sunken); border: 1px solid var(--line); padding: 6px 8px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 120px; overflow: auto; }
 .tp-blocks { list-style: none; display: grid; gap: 4px; font-size: 12px; color: var(--warn); }
