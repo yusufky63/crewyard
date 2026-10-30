@@ -1,0 +1,78 @@
+/* Title bar controls (DESIGN.md §4, §5). The bar itself is a drag region (app.css); everything
+   here that takes a click opts out of it, and the layers it opens sit outside the bar. */
+
+.titlebar .tb-search, .titlebar .tb-btn, .titlebar .tb-chip { -webkit-app-region: no-drag; }
+.tb-chip-name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+
+.tb-search {
+  position: relative; flex: 1 1 auto; max-width: 420px; min-width: 160px;
+  display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 6px 0 10px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink-3); font-size: 13px; text-align: left;
+}
+.tb-search::before { content: ""; position: absolute; inset: -1px; pointer-events: none; background: var(--tk, var(--ink-3)); -webkit-mask: var(--tick-mask); mask: var(--tick-mask); }
+.tb-search:hover { border-color: var(--line-strong); color: var(--ink-2); --tk: var(--ink); }
+.tb-search-t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tb-search .kbd { flex: none; }
+
+.tb-btn { position: relative; width: 34px; height: 28px; display: grid; place-items: center; color: var(--ink-2); flex: none; }
+.tb-btn:hover, .tb-btn[aria-expanded="true"] { background: var(--raised); color: var(--ink); }
+.tb-count {
+  position: absolute; top: 1px; right: 1px; min-width: 16px; padding: 2px 3px;
+  font: 500 10px / 1 var(--mono); color: var(--warn); background: var(--warn-soft); text-align: center;
+}
+
+/* Command search: a transparent layer catches outside presses; no dimming, blur or glass. */
+.tb-layer { position: fixed; inset: 0; z-index: var(--z-dialog); -webkit-app-region: no-drag; }
+.tb-palette {
+  position: absolute; top: 48px; left: 50%; transform: translateX(-50%);
+  width: min(600px, calc(100vw - 32px)); display: flex; flex-direction: column; max-height: min(520px, calc(100vh - 96px));
+  background: var(--surface); border: 1px solid var(--line-strong);
+}
+.tb-palette::before { content: ""; position: absolute; inset: -1px; pointer-events: none; z-index: 1; background: var(--ink-2); -webkit-mask: var(--tick-mask); mask: var(--tick-mask); }
+.tb-palette-field { display: flex; align-items: center; gap: 10px; padding: 0 12px; height: 46px; border-bottom: 1px solid var(--line); color: var(--ink-3); }
+.tb-palette-field input { flex: 1; min-width: 0; height: 100%; border: 0; background: none; outline: none; font-size: 14px; color: var(--ink); }
+.tb-palette-field input::placeholder { color: var(--ink-3); }
+.tb-palette-list { overflow: auto; padding: 6px; min-height: 0; }
+.tb-option { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 6px 10px; cursor: pointer; color: var(--ink); }
+.tb-option[aria-selected="true"] { background: var(--raised); box-shadow: inset 2px 0 0 var(--accent); }
+.tb-option-icon { display: grid; place-items: center; width: 16px; color: var(--ink-3); flex: none; }
+.tb-option-text { display: grid; gap: 2px; min-width: 0; flex: 1; }
+.tb-option-title { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tb-option-meta { font: 400 11px / 1.3 var(--mono); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tb-option .lbl { flex: none; }
+.tb-palette-foot { display: flex; gap: 16px; padding: 8px 12px; border-top: 1px solid var(--line); }
+.tb-palette-foot .kbd { text-transform: none; letter-spacing: 0; }
+.tb-empty { padding: 14px 12px; font-size: 13px; margin: 0; }
+
+/* Notifications popover. */
+.tb-pop {
+  position: fixed; z-index: var(--z-popover); width: 400px; display: flex; flex-direction: column; max-height: min(560px, calc(100vh - 96px));
+  padding: 6px; background: var(--surface); border: 1px solid var(--line-strong); -webkit-app-region: no-drag;
+}
+/* The list scrolls inside the frame, so the corner ticks (drawn 1 px outside) never cause scrollbars. */
+.tb-pop-body { overflow-y: auto; overflow-x: hidden; min-height: 0; }
+.tb-pop::before { content: ""; position: absolute; inset: -1px; pointer-events: none; z-index: 1; background: var(--ink-3); -webkit-mask: var(--tick-mask); mask: var(--tick-mask); }
+.tb-pop:focus { outline: none; }
+.tb-pop-head { display: flex; align-items: center; gap: 8px; padding: 6px 10px 8px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.tb-pop-head .end { margin-left: auto; }
+.tb-pop-head .strong { color: var(--ink); }
+.tb-pop-sub { padding: 8px 10px 4px; }
+.tb-n-item { display: flex; align-items: flex-start; gap: 10px; width: 100%; min-height: 44px; padding: 8px 10px; text-align: left; color: var(--ink); }
+.tb-n-item:hover, .tb-n-item:focus { background: var(--raised); outline: none; }
+.tb-n-item:focus-visible { box-shadow: inset 2px 0 0 var(--accent); }
+.tb-n-icon { color: var(--ink-3); margin-top: 1px; flex: none; }
+.tb-n-high { color: var(--warn); margin-top: 1px; flex: none; }
+.tb-n-text { display: grid; gap: 3px; min-width: 0; flex: 1; }
+.tb-n-text .t { font-size: 13px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.tb-n-text .t.mono { font-family: var(--mono); font-size: 12px; }
+.tb-n-text .s { font: 400 11px / 1.3 var(--mono); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tb-n-item .k { font: 400 11px / 1.3 var(--mono); color: var(--ink-3); white-space: nowrap; flex: none; }
+
+/* Narrow windows: the search shrinks to its icon and shortcut before anything else wraps. */
+@media (max-width: 1100px) {
+  .tb-search-t { display: none; }
+  .tb-search { flex: 0 0 auto; min-width: 0; }
+}
+
+/* focusMain() parks focus on <main> after a jump; it is a starting point for Tab, not a control. */
+main[tabindex="-1"]:focus { outline: none; }

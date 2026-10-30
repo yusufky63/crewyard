@@ -1,0 +1,49 @@
+{
+  "switcher": {
+    "label": "Proje değiştir",
+    "labelWith": "Proje değiştir, açık olan: {{name}}",
+    "noProject": "Açık proje yok",
+    "recent": "Son projeler",
+    "start": "Başlangıç ekranı",
+    "openFolder": "Klasör aç…",
+    "newProject": "Yeni proje"
+  },
+  "search": {
+    "trigger": "Ekran, proje ya da görev ara",
+    "label": "Komut araması",
+    "placeholder": "Ekran, proje ya da görev başlığı yazın",
+    "results": "Sonuçlar",
+    "none": "“{{query}}” ile eşleşen bir şey yok.",
+    "start": "Başlangıç ekranı",
+    "newTask": "Yeni görev",
+    "openFolder": "Klasör aç…",
+    "hintMove": "gez",
+    "hintOpen": "aç",
+    "hintClose": "kapat",
+    "group": {
+      "screen": "Ekran",
+      "action": "Eylem",
+      "project": "Proje",
+      "task": "Görev"
+    }
+  },
+  "notifications": {
+    "label": "Bildirimler",
+    "labelCount_one": "Bildirimler, {{count}} yeni",
+    "labelCount_other": "Bildirimler, {{count}} yeni",
+    "title": "Bildirimler",
+    "context": "{{open}} açık · {{notices}} limit",
+    "requests": "Sizi bekleyenler",
+    "limits": "Limitler, son 24 saat",
+    "empty": "Sizi bekleyen bir şey yok, son 24 saatte limit bildirimi de gelmedi.",
+    "error": "İstekler arka plan hizmetinden alınamadı.",
+    "resets": "{{time}} sıfırlanır",
+    "noReset": "sıfırlanma zamanı bilinmiyor",
+    "notice": {
+      "warn": "{{who}}, {{window}} kotasının %{{pct}} kadarını kullandı",
+      "critical": "{{who}}, {{window}} kotasının %{{pct}} kadarını kullandı",
+      "ahead_of_pace": "Bu hızla {{who}} yaklaşık {{minutes}} dakikada {{window}} kotasını doldurur",
+      "reached": "{{who}}, {{window}} kotasını doldurdu"
+    }
+  }
+}
