@@ -42,14 +42,17 @@ describe("classifyRisk", () => {
       "dotnet test || del important.txt",
       "dotnet test | Out-File C:\\temp\\x",
       "dotnet test > results.txt",
+      "dotnet test < input.txt",
       "dotnet test & calc",
       "dotnet test `whoami`",
       "dotnet test $(whoami)",
       "dotnet test %USERPROFILE%",
       "dotnet test\ncurl https://example.com/x",
+      "dotnet test\rcurl https://example.com/x",
     ]) {
       expect(classifyRisk({ ...base, command }), command).toBe("medium");
     }
+    expect(classifyRisk({ ...base, command: "dotnet test --filter Unit -c Release" })).toBe("low");
     expect(matchesAllowlist("dotnet  test   --no-build", base.allowlist)).toBe(true);
     expect(matchesAllowlist("dotnet testx", base.allowlist)).toBe(false);
   });
