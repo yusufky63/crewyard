@@ -23,6 +23,7 @@ const inherited = {
   CLAUDE_CODE_USE_BEDROCK: "1",
   CLAUDECODE: "1",
   CLAUDE_CODE_GIT_BASH_PATH: "C:\\Program Files\\Git\\bin\\bash.exe",
+  Claude_Code_Subprocess_Env_Scrub: "0",
 };
 
 describe("buildEnv", () => {
@@ -33,8 +34,22 @@ describe("buildEnv", () => {
       CLAUDE_CODE_GIT_BASH_PATH: "C:\\Program Files\\Git\\bin\\bash.exe",
       CLAUDE_CONFIG_DIR: anthropic.configDir,
       CLAUDE_AGENT_SDK_CLIENT_APP: "crewyard/0.1.0",
+      CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1",
       ANTHROPIC_API_KEY: "sk-ant-own-key-123",
     });
+  });
+
+  it("keeps a provider's own key variable out of Claude Code, which reads only its Anthropic name", () => {
+    const { env, secrets } = buildEnv(deepseek, { ANTHROPIC_AUTH_TOKEN: "sk-deepseek-key-1", DEEPSEEK_API_KEY: "sk-deepseek-key-1" }, null, inherited);
+    expect(env.DEEPSEEK_API_KEY).toBeUndefined();
+    expect(Object.values(env).filter((v) => v === "sk-deepseek-key-1")).toHaveLength(1);
+    expect(env.CLAUDE_CODE_SUBPROCESS_ENV_SCRUB).toBe("1");
+    expect(secrets).toEqual(["sk-deepseek-key-1", "sk-deepseek-key-1"]);
+  });
+
+  it("redacts only credentials, so model slot names stay readable in error text", () => {
+    const { secrets } = buildEnv(deepseek, { ANTHROPIC_AUTH_TOKEN: "sk-deepseek-key-1", ANTHROPIC_DEFAULT_HAIKU_MODEL: "deepseek-v4-flash", CLAUDE_CODE_EFFORT_LEVEL: "high" }, null, inherited);
+    expect(redact("model deepseek-v4-flash refused key sk-deepseek-key-1", secrets)).toBe("model deepseek-v4-flash refused key [redacted]");
   });
 
   it("gives Anthropic-compatible providers a bearer token, the base URL and every model slot", () => {

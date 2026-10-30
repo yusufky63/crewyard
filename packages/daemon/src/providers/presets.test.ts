@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -157,9 +157,11 @@ describe("presets at run time", () => {
     const svc = setup();
     const folder = join(tempDir(), "codex home");
     writeCodexConfig(folder, svc.catalog.provider("openai"), "high");
-    expect(readFileSync(join(folder, "config.toml"), "utf8")).toContain('model_reasoning_effort = "high"');
+    const openai = readFileSync(join(folder, "config.toml"), "utf8");
+    expect(openai).toContain('model_reasoning_effort = "high"');
+    expect(openai.indexOf("model_reasoning_effort")).toBeLessThan(openai.indexOf("["));
     writeCodexConfig(folder, svc.catalog.provider("openai"), null);
-    expect(existsSync(join(folder, "config.toml"))).toBe(false);
+    expect(readFileSync(join(folder, "config.toml"), "utf8")).not.toContain("model_reasoning_effort");
     writeCodexConfig(folder, svc.catalog.provider("deepseek"), "high");
     const toml = readFileSync(join(folder, "config.toml"), "utf8");
     expect(toml).not.toContain("model_reasoning_effort");

@@ -20,13 +20,13 @@ import {
   type UsageWindowView,
 } from "@crewyard/core";
 import { balanceKind, fetchBalance } from "./balances.ts";
-import { checkKey, measureLatency, modelListCandidates } from "./key-check.ts";
+import { checkKey, measureLatency, modelListCandidates, refusedModels } from "./key-check.ts";
 import { fetchPlanQuota, planQuotaTarget, type PlanQuota } from "./plan-quota.ts";
 import { CatalogService } from "./catalog.ts";
 import type { Protector } from "./dpapi.ts";
 import { latestWindows, spentToday } from "./ledger.ts";
 import { SecretStore } from "./secrets.ts";
-import { checkAlias, checkPresets, checkRunner, validateProfile } from "./validate.ts";
+import { canonicalModel, checkAlias, checkPresets, checkRunner, validateProfile } from "./validate.ts";
 
 export interface ProvidersDeps {
   db: DatabaseSync;
@@ -289,11 +289,12 @@ export class ProvidersService {
     return (this.db.prepare(`${PROFILE_SELECT} order by p.runner, p.alias`).all() as unknown as ProfileRow[]).map(toProfile);
   }
 
-  createProfile(input: ProfileInput): ProfileSummary {
-    const runner = checkRunner(input.runner);
-    const alias = checkAlias(input.alias);
-    const credential = input.credentialId ? this.credential(input.credentialId) : null;
-    const provider = this.catalog.provider(input.providerId);
+  createProfile(raw: ProfileInput): ProfileSummary {
+    const runner = checkRunner(raw.runner);
+    const alias = checkAlias(raw.alias);
+    const credential = raw.credentialId ? this.credential(raw.credentialId) : null;
+    const provider = this.catalog.provider(raw.providerId);
+    const input: ProfileInput = { ...raw, defaultModel: canonicalModel(raw.defaultModel, provider, this.discoveredModels(raw.credentialId)) };
     const presets = checkPresets(runner, provider, input);
     validateProfile({ ...input, ...presets, alias, runner }, provider, credential, this.discoveredModels(input.credentialId));
     if (this.db.prepare("select 1 from profiles where runner = ? and alias = ?").get(runner, alias)) throw new Error(`A ${runner} profile named ${alias} already exists`);
@@ -328,6 +329,7 @@ export class ProvidersService {
       defaultModel: patch.defaultModel !== undefined ? patch.defaultModel : row.default_model,
     };
     const provider = this.catalog.provider(next.providerId);
+    next.defaultModel = canonicalModel(next.defaultModel, provider, this.discoveredModels(next.credentialId));
     const pick = <K extends keyof ProfilePresets>(k: K): ProfilePresets[K] => (patch[k] !== undefined ? (patch[k] as ProfilePresets[K]) : current[k]);
     const presets = checkPresets(row.runner, provider, { note: pick("note"), effort: pick("effort"), readOnly: pick("readOnly"), modelSlots: pick("modelSlots") });
     validateProfile({ ...next, ...presets }, provider, next.credentialId ? this.credential(next.credentialId) : null, this.discoveredModels(next.credentialId));
@@ -544,7 +546,10 @@ export class ProvidersService {
     if (!provider) throw new Error(`Unknown provider: ${c.providerId}`);
     const key = c.kind === "api_key" ? await this.secrets.get(c.id) : null;
     const res = await checkKey(modelListCandidates(provider), key, this.fetchFn);
-    const models = res.models.length || res.state === "invalid" ? res.models : this.discoveredModels(c.id);
+    // A listed model the provider still refuses for this key is left out, so it is never proposed (B14).
+    const refused = res.state === "valid" ? await refusedModels(provider, key, provider.models.map((m) => m.id).filter((id) => res.models.includes(id)), this.fetchFn) : [];
+    const listed = res.models.filter((id) => !refused.includes(id));
+    const models = listed.length || res.state === "invalid" ? listed : this.discoveredModels(c.id);
     this.db
       .prepare(
         `insert into key_checks (credential_id, provider_id, state, reason, status, endpoint, models, checked_at) values (?, ?, ?, ?, ?, ?, ?, ?)

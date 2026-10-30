@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { AgentEvent, REVIEW_VERDICT_OUTPUT, type Profile, type RolePolicy, type StartRequest } from "@crewyard/core";
 import { WINDOWS_SYSTEM_VARS } from "@crewyard/proc";
 import { afterEach, describe, expect, it } from "vitest";
-import { CodexAdapter, compareVersions, type CodexStartRequest } from "./adapter.ts";
+import { CodexAdapter, compareVersions, shellEnvPolicy, type CodexStartRequest } from "./adapter.ts";
 import { DEFAULT_ARGS, childEnv } from "./appserver.ts";
 import { startLogin } from "./login.ts";
 
@@ -75,7 +75,9 @@ describe("CodexAdapter against a fake app-server", () => {
     expect(log[0]).toMatchObject({ env: { CODEX_HOME: dir, CREWYARD_TEST_SECRET: "s3cret", OPENAI_API_KEY: null }, cwd: dir });
     expect(sentBy(log, "initialize")[0]).toMatchObject({ clientInfo: { name: "crewyard" }, capabilities: { experimentalApi: true } });
     expect(log.some((e) => (e.in as { method?: string } | undefined)?.method === "initialized")).toBe(true);
-    expect(sentBy(log, "thread/start")[0]).toEqual({ cwd: dir, approvalPolicy: "on-request", sandbox: "workspace-write", model: "gpt-5.5-codex", config: { "agents.enabled": false } });
+    expect(sentBy(log, "thread/start")[0]).toEqual({ cwd: dir, approvalPolicy: "on-request", sandbox: "workspace-write", model: "gpt-5.5-codex", config: { "agents.enabled": false, ...shellEnvPolicy({ CREWYARD_TEST_SECRET: "s3cret" }) } });
+    expect((sentBy(log, "thread/start")[0] as { config: object }).config).toMatchObject({ "shell_environment_policy.ignore_default_excludes": false, "shell_environment_policy.exclude": ["CODEX_API_KEY", "CREWYARD_TEST_SECRET", "OPENAI_API_KEY"] });
+    expect(JSON.stringify(sentBy(log, "thread/start"))).not.toContain("s3cret");
     expect(sentBy(log, "turn/start")[0]).toEqual({ threadId: "thr-1", input: [{ type: "text", text: "Fix the bug", text_elements: [] }], model: "gpt-5.5-codex", effort: "high" });
   });
 
@@ -138,6 +140,16 @@ describe("CodexAdapter against a fake app-server", () => {
     const log = received(dir);
     expect(sentBy(log, "thread/start")[0]).toMatchObject({ sandbox: "read-only" });
     expect(log.filter((e) => e.answered).map((e) => e.response)).toEqual([{ decision: "decline" }, { decision: "decline" }]);
+  });
+
+  it("lets a read-only role run the project's test command and nothing chained to it", async () => {
+    const dir = home({ scenario: "reviewer-tests" });
+    const adapter = new CodexAdapter(launcher);
+    const run = await adapter.start(request(dir, { policy: { writes: "none", allowCommands: ["npm test"], network: "denied" } }));
+    const events = await collect(adapter, run);
+    expect(events.some((e) => e.type === "request.approval")).toBe(false);
+    expect(events.filter((e) => e.type === "run.state" && e.detail).map((e) => (e.type === "run.state" ? e.detail : ""))).toEqual(["command allowed: project test or build command: npm test", "command declined: read-only role: npm test; git push"]);
+    expect(received(dir).filter((e) => e.answered).map((e) => e.response)).toEqual([{ decision: "accept" }, { decision: "decline" }]);
   });
 
   it("maps requestUserInput to a question and answers by question id", async () => {

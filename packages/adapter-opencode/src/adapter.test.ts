@@ -39,7 +39,7 @@ async function setup(name: string, prompt: string, policy: RolePolicy = WORKTREE
   const logFile = join(dir, "fake log.jsonl");
   const adapter = createAdapter({ executable: process.execPath, prefixArgs: [FAKE], reconnectDelayMs: 100 });
   const req: StartRequest = {
-    profile: { id: "p1", alias: "oc", runner: "opencode", providerId: "p", credential: { kind: "api_key", secretRef: "s" }, defaultModel: "p/m", configDir, baseUrl: null },
+    profile: { id: "p1", alias: "oc", runner: "opencode", providerId: "p", credential: { kind: "api_key", secretRef: "s" }, defaultModel: "m", configDir, baseUrl: null },
     cwd,
     model: null,
     prompt,
@@ -253,16 +253,17 @@ describe("OpenCode adapter against a fake opencode serve", () => {
   it("switches the model for the next prompt and queues follow-up input", async () => {
     const { adapter, req, logFile } = await setup("model", "approve");
     const run = await adapter.start(req);
-    await expect(adapter.setModel?.(run, "gpt-5")).rejects.toThrow(/provider\/model/);
+    await expect(adapter.setModel?.(run, " ")).rejects.toThrow(/needs a provider and a model/);
     await collect(adapter, run, async (ev) => {
       if (ev.type === "request.approval") {
-        await adapter.setModel?.(run, "openai/gpt-5.5");
+        // A model id with a slash of its own stays whole: the provider comes from the profile.
+        await adapter.setModel?.(run, "x-ai/grok-4.3");
         await adapter.send(run, { kind: "text", text: "and then this" });
         await adapter.answer(run, ev.requestId, { kind: "approval", decision: "allow_once" });
       }
     });
     const prompts = (await readLog(logFile)).filter((l) => l.kind === "prompt") as Array<{ body: { model?: unknown } }>;
-    expect(prompts.map((p) => p.body.model)).toEqual([{ providerID: "p", modelID: "m" }, { providerID: "openai", modelID: "gpt-5.5" }]);
+    expect(prompts.map((p) => p.body.model)).toEqual([{ providerID: "p", modelID: "m" }, { providerID: "p", modelID: "x-ai/grok-4.3" }]);
   });
 
   it("resumes a session in a new server without replaying history", async () => {

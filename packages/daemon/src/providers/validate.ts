@@ -37,6 +37,22 @@ export function checkRunner(runner: string): ProfileRunner {
 }
 
 /**
+ * Profiles keep the catalog's model id (models.dev's), never a runner's own spelling of it; each
+ * adapter maps at its edge (OpenCode pairs it with the provider id). OpenCode users often type
+ * `provider/model`, so that form of a known model is taken back to the catalog id. A model id
+ * that has a slash of its own (`x-ai/grok-4.3` on OpenRouter) is known as it is and kept.
+ */
+export function canonicalModel(model: string | null, provider: Pick<CatalogProvider, "id" | "models"> | undefined, discovered: readonly string[] = []): string | null {
+  if (model === null || !provider) return model;
+  const trimmed = model.trim();
+  const known = (id: string) => provider.models.some((m) => m.id === id) || discovered.includes(id);
+  if (known(trimmed)) return trimmed;
+  const prefix = `${provider.id}/`;
+  if (trimmed.startsWith(prefix) && known(trimmed.slice(prefix.length))) return trimmed.slice(prefix.length);
+  return trimmed;
+}
+
+/**
  * A profile is valid when the catalog says its runner can use the provider without a converter
  * (native, direct or config), the credential belongs to that provider, and the model is listed.
  */

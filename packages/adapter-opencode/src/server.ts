@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
-import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, rename, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { ensureSystemEnv, killTree, start } from "@crewyard/proc";
 
 // One `opencode serve` per run, bound to 127.0.0.1 on a port the OS picks, with Basic auth and a
@@ -22,6 +22,8 @@ export interface ServerOptions {
   configDir: string;
   /** Run secrets (provider API keys); they reach the child only through its environment. */
   env: Record<string, string>;
+  /** Non-secret settings for this launch, such as an inline provider config (providerConfigEnv). */
+  extraEnv?: Record<string, string>;
   readyTimeoutMs: number;
 }
 
@@ -48,20 +50,62 @@ export function profileEnv(configDir: string): Record<string, string> {
   };
 }
 
-export function childEnv(configDir: string, secrets: Record<string, string>, password: string, inherited: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+export function childEnv(configDir: string, secrets: Record<string, string>, password: string, inherited: NodeJS.ProcessEnv = process.env, extra: Record<string, string> = {}): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   // Inherited OPENCODE_* settings (a config path, inline config, a server password) would point the
   // child at another account, so none of them pass through.
   for (const [k, v] of Object.entries(inherited)) if (!/^OPENCODE_/i.test(k)) env[k] = v;
-  return ensureSystemEnv({ ...env, ...secrets, ...profileEnv(configDir), OPENCODE_SERVER_PASSWORD: password }, inherited);
+  return ensureSystemEnv({ ...env, ...secrets, ...extra, ...profileEnv(configDir), OPENCODE_SERVER_PASSWORD: password }, inherited);
+}
+
+/** Variable names that carry a credential; the guard below hides them from the agent's commands. */
+const SECRET_NAME = /(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)/i;
+
+/** Where OpenCode finds the guard: its global config folder's `plugin/` (scanned as `{plugin,plugins}/*.{ts,js}`). */
+export function envGuardFile(configDir: string): string {
+  return join(configDir, "config", "opencode", "plugin", "crewyard-env-guard.js");
+}
+
+/**
+ * OpenCode's shell tool, `!` commands and terminal all run with the server's own environment plus
+ * whatever `shell.env` plugin hooks return (opencode 1.19.5, ShellTool.shellEnv). The server needs
+ * the provider key and our server password in its environment, and OpenCode has no setting to
+ * keep them from those children, so a plugin in the profile's config folder blanks them there.
+ * A hook can only add or override names, so they become empty rather than unset. The password is
+ * hidden too: with it an agent could answer its own permission requests through the server API.
+ */
+export function envGuardSource(names: readonly string[]): string {
+  const list = JSON.stringify([...new Set(names)].sort());
+  return [
+    "// Written by Crewyard for this profile before every run; changes are overwritten.",
+    "// Blanks the provider key and the server password in the agent's shell commands.",
+    `const HIDDEN = ${list};`,
+    "export const CrewyardEnvGuard = async () => ({",
+    '  "shell.env": async (_input, output) => {',
+    '    for (const name of HIDDEN) output.env[name] = "";',
+    "  },",
+    "});",
+    "",
+  ].join("\n");
+}
+
+export async function writeEnvGuard(configDir: string, secrets: Record<string, string>): Promise<void> {
+  const names = [...Object.keys(secrets).filter((k) => SECRET_NAME.test(k)), "OPENCODE_SERVER_PASSWORD"];
+  const file = envGuardFile(configDir);
+  await mkdir(dirname(file), { recursive: true });
+  const tmp = `${file}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
+  await writeFile(tmp, envGuardSource(names), "utf8");
+  await rename(tmp, file);
 }
 
 export async function launchServer(opts: ServerOptions): Promise<OpenCodeServer> {
   const password = randomBytes(24).toString("base64url");
   await Promise.all(["config", "data", "state", "cache"].map((d) => mkdir(join(opts.configDir, d), { recursive: true })));
+  // Before the server starts: OpenCode loads plugins once per project directory.
+  await writeEnvGuard(opts.configDir, opts.env);
   const child = start(opts.executable, [...opts.prefixArgs, "serve", "--hostname", "127.0.0.1", "--port", "0"], {
     cwd: opts.cwd,
-    env: childEnv(opts.configDir, opts.env, password),
+    env: childEnv(opts.configDir, opts.env, password, process.env, opts.extraEnv),
     stdio: ["ignore", "pipe", "pipe"],
   });
 
@@ -118,6 +162,18 @@ export async function launchServer(opts: ServerOptions): Promise<OpenCodeServer>
       await Promise.race([exited, new Promise((r) => setTimeout(r, 5_000))]);
     },
   };
+}
+
+/**
+ * A provider OpenCode does not ship (the catalog marks it "config", e.g. a local Ollama) needs a
+ * provider block: the OpenAI-compatible AI SDK package and the base URL, given inline through
+ * OPENCODE_CONFIG_CONTENT so nothing is written to the profile's own config file. It holds no key.
+ */
+export function providerConfigEnv(providerId: string, baseUrl: string | null, models: ReadonlyArray<string | null>): Record<string, string> {
+  if (!baseUrl) return {};
+  const ids = [...new Set(models.filter((m): m is string => Boolean(m)))];
+  const block = { npm: "@ai-sdk/openai-compatible", name: providerId, options: { baseURL: baseUrl }, models: Object.fromEntries(ids.map((id) => [id, { name: id }])) };
+  return { OPENCODE_CONFIG_CONTENT: JSON.stringify({ provider: { [providerId]: block } }) };
 }
 
 export function basicAuth(password: string): string {
