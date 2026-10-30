@@ -1,0 +1,6 @@
+# Every text file is stored with LF, whatever the editor on Windows writes, so diffs show real
+# changes only. Binary files are left alone.
+* text=auto eol=lf
+*.png binary
+*.ico binary
+*.db binary
