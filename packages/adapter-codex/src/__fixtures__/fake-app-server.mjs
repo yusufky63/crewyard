@@ -103,13 +103,18 @@ const handlers = {
   },
   "account/rateLimits/read": () => fixture("rate-limits-0.147.json"),
   "windowsSandbox/readiness": () => ({ status: config.sandbox ?? "ready" }),
+  "account/logout": () => ({}),
   "account/login/start": (params) => {
-    setTimeout(() => notify("account/login/completed", { loginId: "login-1", success: true, error: null, onboardingEntrypoint: null }), 20);
+    // "pending" waits for account/login/cancel, like a user who never finishes in the browser.
+    if (config.login !== "pending") setTimeout(() => notify("account/login/completed", { loginId: "login-1", success: true, error: null, onboardingEntrypoint: null }), 20);
     return params.type === "chatgptDeviceCode"
       ? { type: "chatgptDeviceCode", loginId: "login-1", verificationUrl: "https://auth.example.test/device", userCode: "ABCD-1234" }
       : { type: "chatgpt", loginId: "login-1", authUrl: "https://auth.example.test/authorize" };
   },
-  "account/login/cancel": () => ({ status: "canceled" }),
+  "account/login/cancel": () => {
+    setTimeout(() => notify("account/login/completed", { loginId: "login-1", success: false, error: "cancelled", onboardingEntrypoint: null }), 5);
+    return { status: "canceled" };
+  },
   "thread/start": () => ({ thread: { id: "thr-1" } }),
   "thread/resume": (params) => ({ thread: { id: params.threadId } }),
   "turn/start": () => {

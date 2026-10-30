@@ -96,6 +96,17 @@ export function setThresholds(db: DatabaseSync, warn: number, critical: number):
   return t;
 }
 
+/** Background plan-window reads between runs; on unless switched off on the Limits screen. */
+export function getIdleRefresh(db: DatabaseSync): boolean {
+  const row = db.prepare("select value from settings where key = 'limits.idleRefresh'").get() as { value: string } | undefined;
+  return row ? row.value !== "false" : true;
+}
+
+export function setIdleRefresh(db: DatabaseSync, enabled: boolean): boolean {
+  db.prepare("insert into settings (key, value) values ('limits.idleRefresh', ?) on conflict(key) do update set value = excluded.value").run(enabled ? "true" : "false");
+  return enabled;
+}
+
 // usage_samples is written by the orchestrator (PLAN.md §4.3, its migration in store.ts). If its
 // columns ever differ from what we read, plan windows are reported as Unknown rather than guessed.
 const SAMPLE_COLUMNS = ["id", "profile_id", "limit_window", "used_pct", "resets_at", "provenance", "observed_at"];

@@ -1,25 +1,103 @@
-import { PROVIDERS_CHANGED, type ProvidersIpc } from "@crewyard/core";
+import { PROVIDERS_CHANGED, type IdleRefreshView, type LimitSample, type ProvidersIpc, type SignInKind } from "@crewyard/core";
 import { defaultProtector } from "../providers/dpapi.ts";
-import { getThresholds, latestWindows, setThresholds, spendSummary, usageSamplesAvailable } from "../providers/ledger.ts";
-import { orchestratorFor } from "../orchestrator/index.ts";
-import { providersDirectory } from "../providers/directory.ts";
+import { IdleLimits } from "../providers/idle-limits.ts";
+import { getIdleRefresh, getThresholds, latestWindows, setIdleRefresh, setThresholds, spendSummary, usageSamplesAvailable } from "../providers/ledger.ts";
+import { orchestratorFor, type Orchestrator } from "../orchestrator/index.ts";
+import { profileFor, providersDirectory } from "../providers/directory.ts";
 import { ProvidersService } from "../providers/service.ts";
+import { SignInService, type SignInDriver } from "../providers/signin.ts";
 import type { HandlerContext, HandlerMap } from "./types.ts";
 
-// Handlers for catalog, profiles, credentials (DPAPI), balances and usage. Owned by the providers work.
-// `service` is injectable so tests can swap DPAPI and fetch for fakes.
-export function createProvidersHandlers(ctx: HandlerContext, service?: ProvidersService): HandlerMap<ProvidersIpc> {
+// Handlers for catalog, profiles, credentials (DPAPI), balances, usage and sign-in. Owned by the
+// providers work. `service` and `opts` are injectable so tests can swap DPAPI, fetch and the CLIs.
+
+export interface ProvidersHandlerOptions {
+  drivers?: Partial<Record<SignInKind, SignInDriver>>;
+  busy?: (profileId: string) => boolean;
+}
+
+const CLOSED = new Set(["done", "merged", "cancelled"]);
+/** What each idle read calls, shown next to the setting so nothing is polled behind the user's back. */
+const IDLE_ENDPOINT = "codex app-server: account/rateLimits/read";
+const DAY_MS = 24 * 60 * 60_000;
+
+/**
+ * Profiles a task still needs (chosen or standby in an open task's crew) or that ran in the last
+ * day. Only through the orchestrator's public reads; closed tasks older than a week are skipped.
+ */
+export function profilesInUse(orch: Pick<Orchestrator, "list" | "get">, now: Date): Set<string> {
+  const out = new Set<string>();
+  const since = now.getTime() - DAY_MS;
+  for (const t of orch.list()) {
+    const open = !CLOSED.has(t.status);
+    if (!open && Date.parse(t.createdAt) < now.getTime() - 7 * DAY_MS) continue;
+    const d = orch.get(t.id);
+    if (open) {
+      for (const m of d.crew?.members ?? []) {
+        if (m.chosen) out.add(m.chosen.profileId);
+        for (const c of m.standby) out.add(c.profileId);
+      }
+    }
+    for (const r of d.runs) if (!r.endedAt || Date.parse(r.endedAt) >= since) out.add(r.profileId);
+  }
+  return out;
+}
+
+export function createProvidersHandlers(ctx: HandlerContext, service?: ProvidersService, opts: ProvidersHandlerOptions = {}): HandlerMap<ProvidersIpc> {
   const svc = service ?? new ProvidersService({ db: ctx.store.db, dataDir: ctx.info.dataDir, protector: defaultProtector() });
   // The app's real profiles feed crew proposals and runs; tests that inject a service stay unwired.
-  if (!service) orchestratorFor(ctx).setDirectory(providersDirectory(svc));
+  const orch = service ? null : orchestratorFor(ctx);
+  orch?.setDirectory(providersDirectory(svc));
   const db = ctx.store.db;
   const changed = (what: string) => ctx.emit(PROVIDERS_CHANGED, { what });
-  // Background refresh starts with the first request, so creating handlers in tests stays inert.
+  const busy = opts.busy ?? ((id: string) => (orch?.db.activeCounts().byProfile.get(id) ?? 0) > 0);
+
+  const latest = (id: string): LimitSample[] => latestWindows(db).filter((w) => w.profileId === id && w.window !== "context");
+  const signIn: SignInService = new SignInService({
+    svc,
+    drivers: opts.drivers,
+    busy,
+    changed,
+    onSignedIn: (id) => void idle.refreshNow(id),
+    // Readings from the previous account must not stand for the new one: mark them Unknown.
+    accountChanged: (id, kind) => {
+      if (kind !== "chatgpt") return;
+      const at = new Date().toISOString();
+      for (const s of latest(id)) if (s.provenance !== "unknown") orch?.ingestSample({ profileId: id, window: s.window, usedPct: null, resetsAt: null, provenance: "unknown", observedAt: at });
+      changed("limits");
+    },
+  });
+  const idle: IdleLimits = new IdleLimits({
+    enabled: () => getIdleRefresh(db),
+    candidates: () =>
+      svc
+        .signInStatuses()
+        .filter((s) => s.kind === "chatgpt" && s.state === "signed_in")
+        .flatMap((s) => svc.listProfiles().filter((p) => p.id === s.profileId))
+        .map((p) => profileFor(svc, p)),
+    inUse: () => (orch ? profilesInUse(orch, new Date()) : new Set()),
+    reporting: busy,
+    held: (id) => signIn.pending(id),
+    latest,
+    fetch: (profile) => signIn.driver("chatgpt").limits?.(profile) ?? Promise.resolve([]),
+    // Through the orchestrator, so the same 80/95% rules and notices apply as during runs.
+    ingest: (sample) => orch?.ingestSample(sample),
+    changed: () => changed("limits"),
+    // An expired or removed sign-in shows at once instead of after the next app start.
+    failed: (id) => void signIn.probe(id).catch(() => undefined),
+  });
+  const idleView = (): IdleRefreshView => ({ enabled: getIdleRefresh(db), everyMinutes: idle.intervalMs / 60_000, endpoint: IDLE_ENDPOINT });
+
+  // Background work starts with the first request, so creating handlers in tests stays inert.
   let started = false;
   const touch = () => {
     if (started || service) return;
     started = true;
     svc.startBackground(() => changed("background"));
+    // One probe per sign-in profile when the app opens, so the screens show where each one stands.
+    const first = setTimeout(() => void signIn.probeAll().then(() => idle.tick()), 3_000);
+    first.unref?.();
+    idle.start();
   };
   const withTouch = <A extends unknown[], R>(fn: (...a: A) => R) => (...a: A): R => {
     touch();
@@ -56,11 +134,13 @@ export function createProvidersHandlers(ctx: HandlerContext, service?: Providers
       return p;
     }),
     "providers.profileUpdate": withTouch(({ id, ...patch }) => {
+      if (patch.alias !== undefined && (busy(id) || signIn.pending(id))) throw new Error("This profile is running a task or signing in; rename it once that has finished");
       const p = svc.updateProfile(id, patch);
       changed("profiles");
       return p;
     }),
-    "providers.profileDelete": withTouch(({ id }) => {
+    "providers.profileDelete": withTouch(async ({ id }) => {
+      await signIn.forget(id);
       svc.deleteProfile(id);
       changed("profiles");
     }),
@@ -76,12 +156,23 @@ export function createProvidersHandlers(ctx: HandlerContext, service?: Providers
       changed("caps");
       return c;
     }),
-    "providers.limits": withTouch(() => ({ samplesAvailable: usageSamplesAvailable(db), windows: latestWindows(db), thresholds: getThresholds(db) })),
+    "providers.limits": withTouch(() => ({ samplesAvailable: usageSamplesAvailable(db), windows: latestWindows(db), thresholds: getThresholds(db), idleRefresh: idleView() })),
+    "providers.idleRefreshSet": withTouch(({ enabled }) => {
+      setIdleRefresh(db, enabled);
+      changed("idle-refresh");
+      return idleView();
+    }),
     "providers.thresholdsSet": withTouch(({ warn, critical }) => {
       const t = setThresholds(db, warn, critical);
       changed("thresholds");
       return t;
     }),
     "providers.accounts": withTouch(() => svc.accounts()),
+    "providers.signInStatus": withTouch(() => signIn.statuses()),
+    "providers.signInProbe": withTouch(({ profileId }) => signIn.probe(profileId)),
+    "providers.signInStart": withTouch(({ profileId, mode }) => signIn.start(profileId, mode)),
+    "providers.signInCancel": withTouch(({ profileId }) => signIn.forget(profileId)),
+    "providers.signInSessions": withTouch(() => signIn.sessions()),
+    "providers.signOut": withTouch(({ profileId }) => signIn.signOut(profileId)),
   };
 }

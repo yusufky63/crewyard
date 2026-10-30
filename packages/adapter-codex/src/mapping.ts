@@ -38,21 +38,26 @@ export const CODEX_LIMIT_ID = "codex";
 
 // ---------------------------------------------------------------- limits
 
+/** Window lengths codex reports, in minutes; matched with one minute of tolerance. */
+const WINDOW_MINUTES: Array<[number, LimitWindow]> = [
+  [300, "5h"],
+  [1_440, "daily"],
+  [10_080, "weekly"],
+];
+
 /**
- * Labels a window by its length. Codex reports the 5-hour window as primary and the weekly one as
- * secondary, so position is the fallback when the length is missing or unfamiliar.
+ * Labels a window by its length only, never by whether codex sent it as primary or secondary:
+ * the order is not a contract, and a mislabelled window would raise the wrong 80/95% notice.
+ * A window of unknown or missing length is dropped rather than guessed.
  */
-export function windowOf(w: RateLimitWindow, position: "primary" | "secondary"): LimitWindow {
+export function windowOf(w: RateLimitWindow): LimitWindow | null {
   const mins = w.windowDurationMins;
-  if (mins !== null) {
-    if (mins >= 240 && mins <= 360) return "5h";
-    if (mins >= 1_380 && mins <= 1_500) return "daily";
-    if (mins >= 9_000 && mins <= 11_000) return "weekly";
-  }
-  return position === "primary" ? "5h" : "weekly";
+  if (mins === null) return null;
+  return WINDOW_MINUTES.find(([m]) => Math.abs(mins - m) <= 1)?.[1] ?? null;
 }
 
-const isoFromUnix = (secs: number | null): string | null => (secs === null ? null : new Date(secs * 1000).toISOString());
+/** codex sends Unix seconds; a value past 1e10 can only be milliseconds, so it is read as such. */
+export const isoFromUnix = (t: number | null): string | null => (t === null ? null : new Date(t > 1e10 ? t : t * 1000).toISOString());
 const clampPct = (n: number): number => Math.min(100, Math.max(0, n));
 
 /** True for snapshots of the default bucket. Updates for other buckets are ignored until LimitWindow can name them. */
@@ -62,8 +67,10 @@ export function isDefaultBucket(s: RateLimitSnapshot): boolean {
 
 function windows(s: RateLimitSnapshot): Array<{ window: LimitWindow; w: RateLimitWindow }> {
   const out: Array<{ window: LimitWindow; w: RateLimitWindow }> = [];
-  if (s.primary) out.push({ window: windowOf(s.primary, "primary"), w: s.primary });
-  if (s.secondary) out.push({ window: windowOf(s.secondary, "secondary"), w: s.secondary });
+  for (const w of [s.primary, s.secondary]) {
+    const window = w ? windowOf(w) : null;
+    if (w && window) out.push({ window, w });
+  }
   return out;
 }
 

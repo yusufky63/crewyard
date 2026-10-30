@@ -275,6 +275,21 @@ export const MIGRATIONS: Migration[] = [
      primary key (started_at, pid)
    );`,
   },
+  // Providers: last sign-in probe per profile that signs in on its own (PLAN.md §6). Only what the
+  // UI shows: state, plan label, CLI version, a problem line and the probe time. Never a token or email.
+  {
+    id: "profile-signin",
+    sql: `create table if not exists profile_signin (
+     profile_id text primary key references profiles(id) on delete cascade,
+     state text not null,
+     plan text,
+     cli_version text,
+     problem text,
+     update_min text,
+     update_command text,
+     probed_at text not null
+   );`,
+  },
 ];
 
 /** What the positional scheme applied: a database at `user_version` N has the first N of these. */

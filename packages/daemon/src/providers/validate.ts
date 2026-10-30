@@ -1,4 +1,4 @@
-import { CATALOG_RUNNER_KEY, PROFILE_RUNNERS, usableWith, type CatalogProvider, type CredentialSummary, type ProfileInput, type ProfileRunner } from "@crewyard/core";
+import { CATALOG_RUNNER_KEY, PROFILE_RUNNERS, signInKindFor, usableWith, type CatalogProvider, type CredentialSummary, type ProfileInput, type ProfileRunner } from "@crewyard/core";
 
 // Rules for profiles and aliases. Pure, so the handlers and the tests share one source of truth.
 
@@ -41,6 +41,8 @@ export function validateProfile(input: ProfileInput, provider: CatalogProvider |
   if (!credential && runner === "claude-code" && !local) throw new Error("Claude Code profiles need an API key credential");
   // A non-native route (direct or config) always goes through the provider's key.
   if (!credential && !local && support !== "native") throw new Error(`${runner} reaches ${provider.name} only with an API key`);
+  // Own sign-in only where we can start that runner's login for this provider (signInKindFor).
+  if (!credential && !local && !signInKindFor(runner, provider.id)) throw new Error(`${runner} has no sign-in of its own for ${provider.name}; add an API key`);
   if (input.defaultModel !== null && provider.models.length > 0 && !provider.models.some((m) => m.id === input.defaultModel)) {
     throw new Error(`${provider.name} has no model ${input.defaultModel}`);
   }

@@ -6,6 +6,7 @@ import {
   fileChangeApproval,
   fileDecision,
   limitEvents,
+  isoFromUnix,
   limitSamples,
   NotificationMapper,
   parseDiffStats,
@@ -52,10 +53,20 @@ describe("rate limits (payload recorded from codex-cli 0.147.0)", () => {
     expect(limitEvents({ ...res.rateLimits, limitId: "codex_bengalfox" })).toEqual([]);
   });
 
-  it("labels windows by length, falling back to position", () => {
-    expect(windowOf({ usedPercent: 0, windowDurationMins: 1440, resetsAt: null }, "primary")).toBe("daily");
-    expect(windowOf({ usedPercent: 0, windowDurationMins: null, resetsAt: null }, "secondary")).toBe("weekly");
-    expect(windowOf({ usedPercent: 0, windowDurationMins: 45, resetsAt: null }, "primary")).toBe("5h");
+  it("labels windows by length only and drops lengths it does not know", () => {
+    expect(windowOf({ usedPercent: 0, windowDurationMins: 1440, resetsAt: null })).toBe("daily");
+    expect(windowOf({ usedPercent: 0, windowDurationMins: 299, resetsAt: null })).toBe("5h");
+    expect(windowOf({ usedPercent: 0, windowDurationMins: 10_081, resetsAt: null })).toBe("weekly");
+    expect(windowOf({ usedPercent: 0, windowDurationMins: null, resetsAt: null })).toBeNull();
+    expect(windowOf({ usedPercent: 0, windowDurationMins: 45, resetsAt: null })).toBeNull();
+    // The weekly window sent first is still weekly.
+    const swapped: RateLimitSnapshot = { ...res.rateLimits, primary: { usedPercent: 43, windowDurationMins: 10080, resetsAt: 2 }, secondary: { usedPercent: 5, windowDurationMins: 300, resetsAt: 1 } };
+    expect(limitSamples("p1", swapped, "t").map((s) => [s.window, s.usedPct])).toEqual([["weekly", 43], ["5h", 5]]);
+  });
+
+  it("reads reset times in seconds, and in milliseconds when a value can only be that", () => {
+    expect(isoFromUnix(1793328910)).toBe("2026-10-30T02:55:10.000Z");
+    expect(isoFromUnix(1793328910000)).toBe("2026-10-30T02:55:10.000Z");
   });
 
   it("reports Unknown, never a percentage, when nothing was reported", () => {

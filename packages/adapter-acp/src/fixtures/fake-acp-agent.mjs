@@ -2,7 +2,7 @@
 // one. It behaves like a Gemini CLI that answers --version and --help, plays a scenario chosen by
 // keywords in the prompt, and appends what it receives to FAKE_ACP_LOG as JSON lines.
 
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Readable, Writable } from "node:stream";
 import * as acp from "@agentclientprotocol/sdk";
@@ -99,11 +99,24 @@ const app = acp
     return {
       protocolVersion: acp.PROTOCOL_VERSION,
       agentCapabilities: { loadSession: process.env.FAKE_ACP_LOAD !== "0" },
-      authMethods: [{ id: "gemini-api-key", name: "Use Gemini API key", description: null }],
+      authMethods: [
+        { id: "oauth-personal", name: "Log in with Google", description: null },
+        { id: "gemini-api-key", name: "Use Gemini API key", description: null },
+      ],
     };
   })
-  .onRequest(acp.methods.agent.authenticate, ({ params }) => {
+  .onRequest(acp.methods.agent.authenticate, async ({ params }) => {
     log({ kind: "authenticate", params });
+    if (params.methodId === "oauth-personal") {
+      // Like Gemini CLI: print the page, wait for the browser, then cache credentials in the home folder.
+      process.stderr.write("\n\nAttempting to open authentication page in your browser.\nOtherwise navigate to:\n\nhttps://accounts.google.com/o/oauth2/v2/auth?client_id=fake&state=x\n\n");
+      if (process.env.FAKE_ACP_LOGIN === "pending") await new Promise(() => undefined);
+      if (process.env.FAKE_ACP_LOGIN === "fail") throw new acp.RequestError(-32000, "Failed to authenticate");
+      await new Promise((r) => setTimeout(r, 20));
+      const dir = join(process.env.GEMINI_CLI_HOME ?? ".", ".gemini");
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "oauth_creds.json"), "{}");
+    }
     authed = true;
     return {};
   })

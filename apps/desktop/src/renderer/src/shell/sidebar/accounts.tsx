@@ -1,10 +1,10 @@
 import { useTranslation } from "react-i18next";
 import { BrandIcon, TickMeter } from "@crewyard/ui";
 import { DEFAULT_THRESHOLDS, type AccountRow, type Thresholds } from "@crewyard/core";
-import { useDaemon } from "../../ipc.ts";
+import { useProvidersQuery as useDaemon } from "../../screens/providers/data.ts";
 import { useNav } from "../../nav.ts";
 import type { SidebarBlockDef } from "../../registry.ts";
-import { providerColor, RUNNER_COLOR, useMoney, useProvidersLive } from "../../screens/providers/shared.tsx";
+import { providerColor, RUNNER_COLOR, useMoney, useProvidersLive, useWhen } from "../../screens/providers/shared.tsx";
 import "./accounts.css";
 
 // Pinned under the sidebar nav (DESIGN.md §4): one 28 px line per account, most urgent first,
@@ -14,6 +14,7 @@ function Row({ row, thresholds }: { row: AccountRow; thresholds: Thresholds }) {
   const { t } = useTranslation("limits");
   const go = useNav((s) => s.go);
   const money = useMoney();
+  const when = useWhen();
   const color = row.runner ? RUNNER_COLOR[row.runner] : providerColor(row.providerId);
   const prov = t(`provenance.${row.provenance}`);
   const pct = row.pct;
@@ -26,6 +27,10 @@ function Row({ row, thresholds }: { row: AccountRow; thresholds: Thresholds }) {
   } else if (row.value.kind === "usd") {
     value = money(row.value.usd);
     title = row.value.capUsd === null ? t("accounts.tipKeyNoCap", { name: label, spent: value, provenance: prov }) : t("accounts.tipKey", { name: label, spent: value, cap: money(row.value.capUsd), provenance: prov });
+  } else if (row.signIn && (row.signIn.state === "signed_out" || row.signIn.state === "blocked")) {
+    // Nothing to measure until the profile can sign in; say what is missing instead of a bare dash.
+    value = t(`accounts.${row.signIn.state === "blocked" ? "update" : "signIn"}`);
+    title = t(row.signIn.state === "blocked" ? "accounts.tipBlocked" : "accounts.tipSignedOut", { name: label });
   } else if (row.value.kind === "pct") {
     value = `${Math.round(row.value.pct)}%`;
     title = t("accounts.tipPlan", { name: label, window: t(`plans.window.${row.window ?? "5h"}`), pct: Math.round(row.value.pct), provenance: prov });
@@ -33,13 +38,15 @@ function Row({ row, thresholds }: { row: AccountRow; thresholds: Thresholds }) {
     value = "—";
     title = t("accounts.tipUnknown", { name: label, provenance: prov });
   }
-  const tone = pct === null ? "" : pct >= thresholds.critical ? " bad" : pct >= thresholds.warn ? " warn" : "";
+  const tone = pct === null ? (row.signIn?.state === "blocked" ? " bad" : row.signIn?.state === "signed_out" ? " warn" : "") : pct >= thresholds.critical ? " bad" : pct >= thresholds.warn ? " warn" : "";
+  if (row.signIn?.state === "signed_in" && row.signIn.plan) title = `${title} · ${t(`providers:signIn.plan.${row.signIn.plan}`, { defaultValue: row.signIn.plan })}`;
+  if (row.signIn?.probedAt) title = `${title} · ${t("accounts.tipChecked", { time: when.ago(row.signIn.probedAt) })}`;
   return (
-    <button className="acct" title={title} onClick={() => go(row.kind === "local" ? "providers" : "limits")}>
+    <button className="acct" title={title} onClick={() => go(row.kind === "local" || row.signIn?.state === "blocked" ? "providers" : "limits")}>
       <BrandIcon id={row.kind === "plan" && row.runner ? row.runner : row.providerId} size={14} />
       <span className="n">{label}</span>
       {row.kind === "local" ? <span /> : <TickMeter value={pct} ticks={8} size="xs" color={color} label={title} />}
-      <span className={`v${value === "—" || row.kind === "local" ? " muted" : ""}${tone}`}>{value}</span>
+      <span className={`v${(value === "—" || row.kind === "local") && !tone ? " muted" : ""}${tone}`}>{value}</span>
     </button>
   );
 }

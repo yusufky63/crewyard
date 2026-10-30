@@ -3,9 +3,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { BrandIcon, Button, Dot, Label, Panel, TickMeter } from "@crewyard/ui";
-import type { CatalogProvider, CredentialSummary, ProfileSummary, Thresholds, UsageWindowView } from "@crewyard/core";
-import { call, useDaemon } from "../../ipc.ts";
+import type { CatalogProvider, CredentialSummary, IdleRefreshView, ProfileSummary, SignInSession, SignInStatus, Thresholds, UsageWindowView } from "@crewyard/core";
+import { call } from "../../ipc.ts";
+import { useProvidersQuery as useDaemon } from "../providers/data.ts";
 import { providerColor, ProvBadge, RUNNER_COLOR, useMoney, useProvidersLive, useWhen } from "../providers/shared.tsx";
+import { SignInBadge, SignInControl, useSignIn } from "../providers/SignIn.tsx";
 import "../providers/providers.css";
 import "./limits.css";
 
@@ -19,7 +21,21 @@ function levelColor(pct: number | null, t: Thresholds): string | undefined {
   return undefined;
 }
 
-function PlanAccount({ profile, provider, windows, thresholds }: { profile: ProfileSummary; provider: CatalogProvider | undefined; windows: UsageWindowView[]; thresholds: Thresholds }) {
+function PlanAccount({
+  profile,
+  provider,
+  windows,
+  thresholds,
+  signIn,
+  session,
+}: {
+  profile: ProfileSummary;
+  provider: CatalogProvider | undefined;
+  windows: UsageWindowView[];
+  thresholds: Thresholds;
+  signIn: SignInStatus | undefined;
+  session: SignInSession | undefined;
+}) {
   const { t } = useTranslation("limits");
   const when = useWhen();
   const color = RUNNER_COLOR[profile.runner];
@@ -36,6 +52,13 @@ function PlanAccount({ profile, provider, windows, thresholds }: { profile: Prof
           <ProvBadge value={best} />
         </div>
       </div>
+      {signIn?.state === "signed_in" && (
+        <div className="lim-meta lim-signin">
+          <SignInBadge status={signIn} />
+          {signIn.probedAt && <span className="muted">{t("plans.signInChecked", { time: when.ago(signIn.probedAt) })}</span>}
+        </div>
+      )}
+      {signIn && signIn.state !== "signed_in" && <SignInControl profile={profile} status={signIn} session={session} compact />}
       {mine.length === 0 ? (
         <div className="mline">
           <span className="sec">{t("plans.quota")}</span>
@@ -63,6 +86,7 @@ function PlanAccount({ profile, provider, windows, thresholds }: { profile: Prof
 function PlanWindows({ profiles, providers }: { profiles: ProfileSummary[]; providers: CatalogProvider[] }) {
   const { t } = useTranslation("limits");
   const limits = useDaemon("providers.limits", undefined);
+  const signIn = useSignIn();
   const plan = profiles.filter((p) => p.credentialId === null && providers.find((x) => x.id === p.providerId)?.group !== "local");
   const thresholds = limits.data?.thresholds;
   return (
@@ -72,7 +96,18 @@ function PlanWindows({ profiles, providers }: { profiles: ProfileSummary[]; prov
         {thresholds && <span className="end lbl">{t("plans.notify", { warn: thresholds.warn, critical: thresholds.critical })}</span>}
       </div>
       {plan.length === 0 && <p className="lim-empty muted">{t("plans.none")}</p>}
-      {thresholds && plan.map((p) => <PlanAccount key={p.id} profile={p} provider={providers.find((x) => x.id === p.providerId)} windows={limits.data?.windows ?? []} thresholds={thresholds} />)}
+      {thresholds &&
+        plan.map((p) => (
+          <PlanAccount
+            key={p.id}
+            profile={p}
+            provider={providers.find((x) => x.id === p.providerId)}
+            windows={limits.data?.windows ?? []}
+            thresholds={thresholds}
+            signIn={signIn.status.find((s) => s.profileId === p.id)}
+            session={signIn.sessions.find((s) => s.profileId === p.id)}
+          />
+        ))}
       {limits.data && !limits.data.samplesAvailable && plan.length > 0 && <p className="unk-note lim-note">{t("plans.noSamples")}</p>}
       <p className="unk-note lim-note">{t("plans.claudeNote")}</p>
     </Panel>
@@ -282,7 +317,36 @@ function AlertsPanel() {
       </div>
       {/* Keyed by the saved values so the inputs start from them again after a save. */}
       {current && <AlertsForm key={`${current.warn}-${current.critical}`} current={current} />}
+      {limits.data && <IdleRefreshRow view={limits.data.idleRefresh} />}
     </Panel>
+  );
+}
+
+/** The background plan-window reads, switchable and with what they call spelled out (cc-switch #3519). */
+function IdleRefreshRow({ view }: { view: IdleRefreshView }) {
+  const { t } = useTranslation("limits");
+  const qc = useQueryClient();
+  const [busy, setBusy] = useState(false);
+  const toggle = async (enabled: boolean) => {
+    setBusy(true);
+    try {
+      await call("providers.idleRefreshSet", { enabled });
+      await qc.invalidateQueries({ queryKey: ["providers.limits"] });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="lim-idle">
+      <label className="lim-idle-head">
+        <input type="checkbox" checked={view.enabled} disabled={busy} onChange={(e) => void toggle(e.target.checked)} />
+        <span>{t("alerts.idle")}</span>
+      </label>
+      <p className="muted">{t("alerts.idleHint", { minutes: view.everyMinutes })}</p>
+      <p className="muted">
+        {t("alerts.idleCalls")} <code className="mono">{view.endpoint}</code>
+      </p>
+    </div>
   );
 }
 

@@ -20,6 +20,20 @@ export const CATALOG_RUNNER_KEY: Record<ProfileRunner, "claudeCode" | "codex" | 
 
 export const runnerSupport = (provider: CatalogProvider, runner: ProfileRunner): RunnerSupport => provider.runners[CATALOG_RUNNER_KEY[runner]];
 
+/**
+ * Subscription sign-ins we start, always through the runner's own login (PLAN.md §6):
+ * Codex with a ChatGPT account and Gemini CLI with a Google account. Claude Code never signs in to
+ * claude.ai. OpenCode 1.19.5 lists OAuth only for providers outside its official CLIs (ChatGPT,
+ * SuperGrok, Copilot...) and none for OpenCode Go or the coding plans, so those stay on keys.
+ */
+export type SignInKind = "chatgpt" | "google";
+
+export function signInKindFor(runner: ProfileRunner, providerId: string): SignInKind | null {
+  if (runner === "codex" && providerId === "openai") return "chatgpt";
+  if (runner === "gemini-cli" && providerId === "google") return "google";
+  return null;
+}
+
 export interface CatalogInfo {
   /** sha256 (16 hex) of the snapshot's provider data; the price-table version stored with spend. */
   hash: string;
@@ -134,11 +148,21 @@ export interface UsageWindowView {
   observedAt: string;
 }
 
+/** Background reads of plan windows between runs; listed on the Limits screen with what they call. */
+export interface IdleRefreshView {
+  enabled: boolean;
+  /** Base interval; each read is spread by about 10%, halved while a window is rising. */
+  everyMinutes: number;
+  /** The runner method each read calls, through the profile's own CLI. */
+  endpoint: string;
+}
+
 export interface LimitsOverview {
   /** False until the orchestrator creates usage_samples; every plan window is then Unknown. */
   samplesAvailable: boolean;
   windows: UsageWindowView[];
   thresholds: Thresholds;
+  idleRefresh: IdleRefreshView;
 }
 
 /** One line of the sidebar accounts block, already sorted most urgent first. */
@@ -155,6 +179,38 @@ export interface AccountRow {
   provenance: Provenance;
   window: LimitWindow | null;
   resetsAt: string | null;
+  /** Sign-in profiles only; null for keys and local providers. */
+  signIn: { state: SignInStatus["state"]; plan: string | null; probedAt: string | null } | null;
+}
+
+/** Last probe of a sign-in profile. Never carries an email, token or anything read from auth files. */
+export interface SignInStatus {
+  profileId: string;
+  kind: SignInKind;
+  /** "unknown" until the first probe; "blocked" when the CLI cannot keep the sign-in in the profile folder. */
+  state: "signed_in" | "signed_out" | "blocked" | "unknown";
+  /** Plan as the runner names it (Codex `planType`, e.g. "plus"); null when the runner does not say. */
+  plan: string | null;
+  cliVersion: string | null;
+  /** Set when the installed CLI is too old to sign in inside the profile folder. */
+  update: { current: string | null; min: string; command: string } | null;
+  problem: string | null;
+  probedAt: string | null;
+}
+
+/** A sign-in in progress. The CLI owns the browser flow and its callback listener; we only relay the URL. */
+export interface SignInSession {
+  profileId: string;
+  kind: SignInKind;
+  state: "starting" | "waiting" | "succeeded" | "failed" | "cancelled";
+  /** Page to open in the browser; null while starting or when the CLI opened it itself. */
+  url: string | null;
+  /** Device-code flow only. */
+  userCode: string | null;
+  /** True when the CLI opened the browser on its own (Gemini CLI does). */
+  browserOpened: boolean;
+  startedAt: string;
+  error: string | null;
 }
 
 export interface ProvidersIpc {
@@ -179,7 +235,18 @@ export interface ProvidersIpc {
   "providers.capsSet": { params: { credentialId: string } & CredentialCaps; result: CredentialSummary };
   "providers.limits": { params: void; result: LimitsOverview };
   "providers.thresholdsSet": { params: Pick<Thresholds, "warn" | "critical">; result: Thresholds };
+  "providers.idleRefreshSet": { params: { enabled: boolean }; result: IdleRefreshView };
   "providers.accounts": { params: void; result: AccountRow[] };
+  /** Stored probe results for every profile that signs in on its own. */
+  "providers.signInStatus": { params: void; result: SignInStatus[] };
+  /** Asks the runner now (Codex `account/read`, Gemini CLI version and its credentials file's presence). */
+  "providers.signInProbe": { params: { profileId: string }; result: SignInStatus };
+  /** Starts the runner's own login inside the profile folder. One session per profile. */
+  "providers.signInStart": { params: { profileId: string; mode?: "browser" | "deviceCode" }; result: SignInSession };
+  "providers.signInCancel": { params: { profileId: string }; result: void };
+  "providers.signInSessions": { params: void; result: SignInSession[] };
+  /** Signs out through the CLI where it can, then empties only this profile's folder. Refused while a run uses it. */
+  "providers.signOut": { params: { profileId: string }; result: SignInStatus };
 }
 
 /** Topic emitted after any change in this area; screens refetch on it. */

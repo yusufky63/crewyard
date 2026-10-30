@@ -6,7 +6,7 @@
 .accts-head button { font: 500 11px / 1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); padding: 2px 0; }
 .accts-head button:hover { color: var(--ink); }
 .accts-list { overflow-y: auto; max-height: min(34vh, var(--layout-accounts-max)); scrollbar-width: thin; scrollbar-color: var(--tick) transparent; display: grid; gap: 1px; padding-bottom: 6px; }
-.acct { display: grid; grid-template-columns: 14px minmax(0, 1fr) 26px 44px; align-items: center; gap: 6px; height: 28px; padding: 0 8px; font-size: 12px; color: var(--ink-2); text-align: left; width: 100%; }
+.acct { display: grid; grid-template-columns: 14px minmax(0, 1fr) 26px 52px; align-items: center; gap: 6px; height: 28px; padding: 0 8px; font-size: 12px; color: var(--ink-2); text-align: left; width: 100%; }
 .acct:hover { background: var(--raised); color: var(--ink); }
 .acct .n { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .acct .v { font: 500 11px / 1 var(--mono); text-align: right; color: var(--ink); white-space: nowrap; }

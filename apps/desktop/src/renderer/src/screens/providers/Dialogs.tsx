@@ -6,6 +6,7 @@ import { Button } from "@crewyard/ui";
 import {
   PROFILE_RUNNERS,
   runnerSupport,
+  signInKindFor,
   usableWith,
   type BalanceView,
   type CatalogProvider,
@@ -16,6 +17,7 @@ import {
 import { call } from "../../ipc.ts";
 import { Field, Modal } from "./Modal.tsx";
 import { newestModels, ProvBadge, useMoney, useWhen } from "./shared.tsx";
+import { SignInControl, useSignIn } from "./SignIn.tsx";
 
 const errorText = (err: unknown) => (err instanceof Error ? err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : String(err));
 
@@ -294,6 +296,9 @@ function ProfileLine({ profile, provider, credentials }: { profile: ProfileSumma
   const refresh = useRefresh();
   const [error, setError] = useState<string | null>(null);
   const cred = credentials.find((c) => c.id === profile.credentialId);
+  const signIn = useSignIn();
+  const status = signIn.status.find((s) => s.profileId === profile.id);
+  const session = signIn.sessions.find((s) => s.profileId === profile.id);
   const act = async (fn: () => Promise<unknown>) => {
     setError(null);
     try {
@@ -312,7 +317,7 @@ function ProfileLine({ profile, provider, credentials }: { profile: ProfileSumma
       <div className="pv-item-top">
         <span>{t(`runner.${profile.runner}`)}</span>
         <span className="mono">{profile.alias}</span>
-        <span className="muted">{cred ? t("manage.usesKey", { alias: cred.alias }) : t("manage.ownSignIn")}</span>
+        <span className="muted">{cred ? t("manage.usesKey", { alias: cred.alias }) : status ? t("manage.signsIn", { provider: t(`signIn.kind.${status.kind}`) }) : t("manage.ownSignIn")}</span>
         <div className="end">
           <Button size="sm" variant="danger" onClick={del}>
             <Trash2 size={14} strokeWidth={1.75} />
@@ -331,6 +336,7 @@ function ProfileLine({ profile, provider, credentials }: { profile: ProfileSumma
           {profile.configDir}
         </span>
       </div>
+      {status && <SignInControl profile={profile} status={status} session={session} />}
       {error && <p className="pv-error">{error}</p>}
     </div>
   );
@@ -343,8 +349,9 @@ function AddProfile({ provider, credentials, profiles }: { provider: CatalogProv
   const local = provider.group === "local";
   const [runner, setRunner] = useState<ProfileRunner | "">(usable[0] ?? "");
   const support = runner ? runnerSupport(provider, runner) : "none";
-  // Own sign-in only where the runner talks to this provider natively and is not Claude Code (PLAN.md §6).
-  const signInAllowed = runner !== "" && runner !== "claude-code" && support === "native" && !local;
+  // Own sign-in only where we can start that runner's own login: Codex with ChatGPT, Gemini CLI with
+  // Google (PLAN.md §6). Claude Code never; OpenCode plans stay on keys.
+  const signInAllowed = runner !== "" && support === "native" && !local && signInKindFor(runner, provider.id) !== null;
   const [credentialId, setCredentialId] = useState(credentials[0]?.id ?? "");
   const [alias, setAlias] = useState("");
   const [model, setModel] = useState("");
