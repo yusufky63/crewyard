@@ -71,6 +71,7 @@
     "context": "context window",
     "budget-day": "daily spend cap",
     "budget-task": "task budget",
+    "monthly": "monthly window",
     "unknown": "limit"
   },
   "reason": {

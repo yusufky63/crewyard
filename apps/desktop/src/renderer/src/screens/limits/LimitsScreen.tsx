@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { BrandIcon, Button, Dot, Label, Panel, TickMeter } from "@crewyard/ui";
-import type { CatalogProvider, CredentialSummary, IdleRefreshView, ProfileSummary, SignInSession, SignInStatus, Thresholds, UsageWindowView } from "@crewyard/core";
+import type { CatalogProvider, CredentialSummary, IdleRefreshView, PlanQuotaView, ProfileSummary, Provenance, SignInSession, SignInStatus, Thresholds, UsageWindowView } from "@crewyard/core";
 import { call } from "../../ipc.ts";
 import { useProvidersQuery as useDaemon } from "../providers/data.ts";
 import { providerColor, ProvBadge, RUNNER_COLOR, useMoney, useProvidersLive, useWhen } from "../providers/shared.tsx";
@@ -12,7 +12,8 @@ import "../providers/providers.css";
 import "./limits.css";
 
 const RANGES = [1, 7, 30] as const;
-const WINDOW_ORDER = ["5h", "weekly", "daily", "context"];
+// Plan windows, shortest first; context and budget windows belong to runs and tasks.
+const WINDOW_ORDER: string[] = ["5h", "daily", "weekly", "monthly"];
 
 function levelColor(pct: number | null, t: Thresholds): string | undefined {
   if (pct === null) return undefined;
@@ -39,9 +40,8 @@ function PlanAccount({
   const { t } = useTranslation("limits");
   const when = useWhen();
   const color = RUNNER_COLOR[profile.runner];
-  const mine = windows.filter((w) => w.profileId === profile.id).sort((a, b) => WINDOW_ORDER.indexOf(a.window) - WINDOW_ORDER.indexOf(b.window));
+  const mine = windows.filter((w) => w.profileId === profile.id);
   const name = `${t(`providers:runner.${profile.runner}`)} · ${profile.alias}`;
-  const best = mine.some((w) => w.provenance === "reported") ? "reported" : mine.some((w) => w.provenance === "estimated") ? "estimated" : "unknown";
   return (
     <div className="lim">
       <div className="lim-top">
@@ -49,7 +49,7 @@ function PlanAccount({
         <span className="name">{name}</span>
         <Label>{provider?.name ?? profile.providerId}</Label>
         <div className="end">
-          <ProvBadge value={best} />
+          <ProvBadge value={bestProvenance(mine)} />
         </div>
       </div>
       {signIn?.state === "signed_in" && (
@@ -59,26 +59,117 @@ function PlanAccount({
         </div>
       )}
       {signIn && signIn.state !== "signed_in" && <SignInControl profile={profile} status={signIn} session={session} compact />}
-      {mine.length === 0 ? (
-        <div className="mline">
-          <span className="sec">{t("plans.quota")}</span>
-          <TickMeter value={null} label={t("plans.unknownMeter", { name })} />
-          <span className="v muted">
-            —<small>{t("plans.noData")}</small>
-          </span>
-        </div>
-      ) : (
-        mine.map((w) => (
-          <div className="mline" key={w.window}>
-            <span className="sec">{t(`plans.window.${w.window}`)}</span>
-            <TickMeter value={w.usedPct} color={color} label={w.usedPct === null ? t("plans.unknownMeter", { name }) : t("plans.meter", { name, window: t(`plans.window.${w.window}`), pct: Math.round(w.usedPct) })} />
-            <span className="v" style={{ color: levelColor(w.usedPct, thresholds) }}>
-              {w.usedPct === null ? "—" : `${Math.round(w.usedPct)}%`}
-              <small>{w.resetsAt ? t("plans.resets", { time: when.at(w.resetsAt) }) : t("plans.seen", { time: when.ago(w.observedAt) })}</small>
-            </span>
+      <WindowLines windows={mine} name={name} color={color} thresholds={thresholds} />
+    </div>
+  );
+}
+
+const bestProvenance = (ws: UsageWindowView[]): Provenance => (ws.some((w) => w.provenance === "reported") ? "reported" : ws.some((w) => w.provenance === "estimated") ? "estimated" : "unknown");
+
+/** Latest reading per bucket and window over the profiles that share one key. */
+function newestPerWindow(ws: UsageWindowView[]): UsageWindowView[] {
+  const by = new Map<string, UsageWindowView>();
+  for (const w of ws) {
+    const k = `${w.bucket ?? ""}|${w.window}`;
+    const prev = by.get(k);
+    if (!prev || w.observedAt > prev.observedAt) by.set(k, w);
+  }
+  return [...by.values()];
+}
+
+/** One meter per window of every bucket: the account's main limit first, each other bucket under its own name. */
+function WindowLines({ windows, name, color, thresholds }: { windows: UsageWindowView[]; name: string; color: string; thresholds: Thresholds }) {
+  const { t } = useTranslation("limits");
+  const when = useWhen();
+  const plan = windows.filter((w) => WINDOW_ORDER.includes(w.window));
+  if (plan.length === 0)
+    return (
+      <div className="mline">
+        <span className="sec">{t("plans.quota")}</span>
+        <TickMeter value={null} label={t("plans.unknownMeter", { name })} />
+        <span className="v muted">
+          —<small>{t("plans.noData")}</small>
+        </span>
+      </div>
+    );
+  const buckets = [...new Set(plan.map((w) => w.bucket ?? ""))].sort((a, b) => Number(a !== "") - Number(b !== "") || a.localeCompare(b));
+  return (
+    <>
+      {buckets.map((b) => {
+        const lines = plan.filter((w) => (w.bucket ?? "") === b).sort((x, y) => WINDOW_ORDER.indexOf(x.window) - WINDOW_ORDER.indexOf(y.window));
+        const bucketName = b ? t(`plans.bucket.${b}`, { defaultValue: lines[0]?.bucketLabel ?? b }) : null;
+        return (
+          <div className="lim-bucket" key={b || "main"}>
+            {bucketName && <div className="lbl lim-bucket-name">{bucketName}</div>}
+            {lines.map((w) => {
+              const window = t(`plans.window.${w.window}`);
+              const label =
+                w.usedPct === null
+                  ? t("plans.unknownMeter", { name })
+                  : bucketName
+                    ? t("plans.meterBucket", { name, bucket: bucketName, window, pct: Math.round(w.usedPct) })
+                    : t("plans.meter", { name, window, pct: Math.round(w.usedPct) });
+              return (
+                <div className="mline" key={w.window}>
+                  <span className="sec">{window}</span>
+                  <TickMeter value={w.usedPct} color={color} label={label} />
+                  <span className="v" style={{ color: levelColor(w.usedPct, thresholds) }}>
+                    {w.usedPct === null ? "—" : `${Math.round(w.usedPct)}%`}
+                    {w.resetsAt && w.usedPct !== null && <small>{t("plans.resets", { time: when.at(w.resetsAt) })}</small>}
+                    <small>{t("plans.lineMeta", { provenance: t(`provenance.${w.provenance}`), time: when.ago(w.observedAt) })}</small>
+                  </span>
+                </div>
+              );
+            })}
           </div>
-        ))
-      )}
+        );
+      })}
+    </>
+  );
+}
+
+/** A coding-plan key (Kimi Code, Z.ai, MiniMax, OpenCode Go): its quota read with the key, as Reported. */
+function PlanKeyAccount({ quota, credential, provider, profiles, windows, thresholds }: { quota: PlanQuotaView; credential: CredentialSummary | undefined; provider: CatalogProvider | undefined; profiles: ProfileSummary[]; windows: UsageWindowView[]; thresholds: Thresholds }) {
+  const { t } = useTranslation("limits");
+  const when = useWhen();
+  const qc = useQueryClient();
+  const [busy, setBusy] = useState(false);
+  const ids = new Set(profiles.filter((p) => p.credentialId === quota.credentialId).map((p) => p.id));
+  const mine = quota.state === "no_plan" ? [] : newestPerWindow(windows.filter((w) => ids.has(w.profileId)));
+  const name = `${provider?.name ?? quota.providerId} · ${credential?.alias ?? ""}`;
+  const check = async () => {
+    setBusy(true);
+    try {
+      await call("providers.planQuotaRefresh", { credentialId: quota.credentialId });
+      await qc.invalidateQueries({ predicate: (q) => ["providers.limits", "providers.accounts"].includes(String(q.queryKey[0])) });
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="lim">
+      <div className="lim-top">
+        <BrandIcon id={quota.providerId} />
+        <span className="name">{name}</span>
+        <Label>{t("plans.codingPlan")}</Label>
+        <div className="end">
+          <ProvBadge value={quota.state === "ok" ? bestProvenance(mine) : "unknown"} />
+          <Button size="sm" variant="ghost" disabled={busy} onClick={() => void check()} aria-label={t("plans.checkNamed", { name })}>
+            <RefreshCw size={14} strokeWidth={1.75} />
+            {t("plans.check")}
+          </Button>
+        </div>
+      </div>
+      <div className={`lim-meta${quota.state === "error" ? " pv-error" : " muted"}`}>
+        {quota.state === "ok" && quota.checkedAt
+          ? t("plans.state.ok", { time: when.ago(quota.checkedAt) })
+          : quota.state === "error"
+            ? t("plans.state.error", { problem: quota.problem ?? "" })
+            : quota.state === "no_plan"
+              ? t("plans.state.no_plan")
+              : t("plans.state.unchecked")}
+      </div>
+      {quota.state !== "no_plan" && (ids.size === 0 ? <p className="lim-meta muted">{t("plans.noProfile")}</p> : <WindowLines windows={mine} name={name} color={providerColor(quota.providerId)} thresholds={thresholds} />)}
     </div>
   );
 }
@@ -86,8 +177,10 @@ function PlanAccount({
 function PlanWindows({ profiles, providers }: { profiles: ProfileSummary[]; providers: CatalogProvider[] }) {
   const { t } = useTranslation("limits");
   const limits = useDaemon("providers.limits", undefined);
+  const creds = useDaemon("providers.credentials", undefined);
   const signIn = useSignIn();
   const plan = profiles.filter((p) => p.credentialId === null && providers.find((x) => x.id === p.providerId)?.group !== "local");
+  const keys = limits.data?.plans ?? [];
   const thresholds = limits.data?.thresholds;
   return (
     <Panel>
@@ -95,7 +188,20 @@ function PlanWindows({ profiles, providers }: { profiles: ProfileSummary[]; prov
         <h2>{t("plans.title")}</h2>
         {thresholds && <span className="end lbl">{t("plans.notify", { warn: thresholds.warn, critical: thresholds.critical })}</span>}
       </div>
-      {plan.length === 0 && <p className="lim-empty muted">{t("plans.none")}</p>}
+      {plan.length === 0 && keys.length === 0 && limits.isSuccess && <p className="lim-empty muted">{t("plans.none")}</p>}
+      {/* Coding-plan keys first: their quota is read with the key, so it is there without a run. */}
+      {thresholds &&
+        keys.map((q) => (
+          <PlanKeyAccount
+            key={q.credentialId}
+            quota={q}
+            credential={creds.data?.find((c) => c.id === q.credentialId)}
+            provider={providers.find((x) => x.id === q.providerId)}
+            profiles={profiles}
+            windows={limits.data?.windows ?? []}
+            thresholds={thresholds}
+          />
+        ))}
       {thresholds &&
         plan.map((p) => (
           <PlanAccount
@@ -327,10 +433,10 @@ function IdleRefreshRow({ view }: { view: IdleRefreshView }) {
   const { t } = useTranslation("limits");
   const qc = useQueryClient();
   const [busy, setBusy] = useState(false);
-  const toggle = async (enabled: boolean) => {
+  const toggle = async (params: { enabled?: boolean; planQuota?: boolean }) => {
     setBusy(true);
     try {
-      await call("providers.idleRefreshSet", { enabled });
+      await call("providers.idleRefreshSet", params);
       await qc.invalidateQueries({ queryKey: ["providers.limits"] });
     } finally {
       setBusy(false);
@@ -339,13 +445,26 @@ function IdleRefreshRow({ view }: { view: IdleRefreshView }) {
   return (
     <div className="lim-idle">
       <label className="lim-idle-head">
-        <input type="checkbox" checked={view.enabled} disabled={busy} onChange={(e) => void toggle(e.target.checked)} />
+        <input type="checkbox" checked={view.enabled} disabled={busy} onChange={(e) => void toggle({ enabled: e.target.checked })} />
         <span>{t("alerts.idle")}</span>
       </label>
       <p className="muted">{t("alerts.idleHint", { minutes: view.everyMinutes })}</p>
       <p className="muted">
         {t("alerts.idleCalls")} <code className="mono">{view.endpoint}</code>
       </p>
+      <label className="lim-idle-head lim-idle-next">
+        <input type="checkbox" checked={view.planQuota.enabled} disabled={busy} onChange={(e) => void toggle({ planQuota: e.target.checked })} />
+        <span>{t("alerts.planQuota")}</span>
+      </label>
+      <p className="muted">{t("alerts.planQuotaHint")}</p>
+      <p className="muted">{t("alerts.planQuotaCalls")}</p>
+      <ul className="lim-endpoints">
+        {view.planQuota.endpoints.map((e) => (
+          <li key={e.providerId}>
+            <code className="mono">GET {e.url}</code> <span className="muted">· {t(`alerts.auth.${e.auth}`)}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

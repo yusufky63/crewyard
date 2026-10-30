@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { BrandIcon, TickMeter } from "@crewyard/ui";
-import { DEFAULT_THRESHOLDS, type AccountRow, type Thresholds } from "@crewyard/core";
+import { DEFAULT_THRESHOLDS, type AccountMeter, type AccountRow, type Thresholds } from "@crewyard/core";
 import { useProvidersQuery as useDaemon } from "../../screens/providers/data.ts";
 import { useNav } from "../../nav.ts";
 import type { SidebarBlockDef } from "../../registry.ts";
@@ -15,10 +15,17 @@ function Row({ row, thresholds }: { row: AccountRow; thresholds: Thresholds }) {
   const go = useNav((s) => s.go);
   const money = useMoney();
   const when = useWhen();
-  const color = row.runner ? RUNNER_COLOR[row.runner] : providerColor(row.providerId);
+  // A coding-plan key is a plan of its provider, not of the runner that happens to use it.
+  const codingPlan = row.plan !== undefined && row.plan !== null && row.kind === "plan";
+  const color = row.runner && !codingPlan ? RUNNER_COLOR[row.runner] : providerColor(row.providerId);
   const prov = t(`provenance.${row.provenance}`);
   const pct = row.pct;
-  const label = row.kind === "plan" && row.runner ? `${t(`providers:runner.${row.runner}`)} · ${row.label}` : row.label;
+  const label = row.kind === "plan" && row.runner && !codingPlan ? `${t(`providers:runner.${row.runner}`)} · ${row.label}` : row.label;
+  const meters = row.meters ?? [];
+  const meterText = (m: AccountMeter) => {
+    const window = `${m.bucket ? `${t(`plans.bucket.${m.bucket}`, { defaultValue: m.bucketLabel ?? m.bucket })} ` : ""}${t(`plans.window.${m.window}`)}`;
+    return m.pct === null ? t("accounts.tipMeterUnknown", { window }) : t("accounts.tipMeter", { window, pct: Math.round(m.pct) });
+  };
   let value: string;
   let title: string;
   if (row.kind === "local") {
@@ -31,6 +38,12 @@ function Row({ row, thresholds }: { row: AccountRow; thresholds: Thresholds }) {
     // Nothing to measure until the profile can sign in; say what is missing instead of a bare dash.
     value = t(`accounts.${row.signIn.state === "blocked" ? "update" : "signIn"}`);
     title = t(row.signIn.state === "blocked" ? "accounts.tipBlocked" : "accounts.tipSignedOut", { name: label });
+  } else if (row.value.kind === "pct" && meters.length > 1) {
+    // Every window of every bucket in the tooltip; the value is the fullest one.
+    value = `${Math.round(row.value.pct)}%`;
+    const parts = meters.map(meterText);
+    const newest = meters.reduce((a, m) => (m.observedAt > a ? m.observedAt : a), meters[0]!.observedAt);
+    title = t("accounts.tipMeters", { name: label, meters: parts.join(" · "), provenance: prov, time: when.ago(newest) });
   } else if (row.value.kind === "pct") {
     value = `${Math.round(row.value.pct)}%`;
     title = t("accounts.tipPlan", { name: label, window: t(`plans.window.${row.window ?? "5h"}`), pct: Math.round(row.value.pct), provenance: prov });
@@ -43,9 +56,20 @@ function Row({ row, thresholds }: { row: AccountRow; thresholds: Thresholds }) {
   if (row.signIn?.probedAt) title = `${title} · ${t("accounts.tipChecked", { time: when.ago(row.signIn.probedAt) })}`;
   return (
     <button className="acct" title={title} onClick={() => go(row.kind === "local" || row.signIn?.state === "blocked" ? "providers" : "limits")}>
-      <BrandIcon id={row.kind === "plan" && row.runner ? row.runner : row.providerId} size={14} />
+      <BrandIcon id={row.kind === "plan" && row.runner && !codingPlan ? row.runner : row.providerId} size={14} />
       <span className="n">{label}</span>
-      {row.kind === "local" ? <span /> : <TickMeter value={pct} ticks={8} size="xs" color={color} label={title} />}
+      {row.kind === "local" ? (
+        <span />
+      ) : meters.length > 1 ? (
+        // One 8-tick meter per window and bucket, stacked so the line stays 28 px.
+        <span className="mstack" aria-label={title} role="group">
+          {meters.slice(0, 3).map((m) => (
+            <TickMeter key={`${m.bucket ?? ""}|${m.window}`} value={m.pct} ticks={8} size="xs" color={color} label={`${label} · ${meterText(m)}`} />
+          ))}
+        </span>
+      ) : (
+        <TickMeter value={pct} ticks={8} size="xs" color={color} label={title} />
+      )}
       <span className={`v${(value === "—" || row.kind === "local") && !tone ? " muted" : ""}${tone}`}>{value}</span>
     </button>
   );

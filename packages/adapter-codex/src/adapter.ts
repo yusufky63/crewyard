@@ -9,6 +9,7 @@ import {
   fileDecision,
   NotificationMapper,
   limitSamples,
+  snapshotsOf,
   permissionsApproval,
   permissionsDecision,
   permissionsWrite,
@@ -156,8 +157,7 @@ export class CodexAdapter implements AgentAdapter {
         const account = await server.rpc.request<GetAccountResponse>("account/read", { refreshToken: false }, { timeoutMs: 30_000 });
         if (account.account?.type !== "chatgpt") return unknownSamples(profile.id, observedAt);
         const res = await server.rpc.request<GetAccountRateLimitsResponse>("account/rateLimits/read", undefined, { timeoutMs: 30_000 });
-        const snapshot = res.rateLimitsByLimitId?.codex ?? res.rateLimits;
-        const samples = limitSamples(profile.id, snapshot, observedAt);
+        const samples = snapshotsOf(res).flatMap((s) => limitSamples(profile.id, s, observedAt));
         return samples.length > 0 ? samples : unknownSamples(profile.id, observedAt);
       });
     } catch {

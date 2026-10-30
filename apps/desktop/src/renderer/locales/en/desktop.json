@@ -57,7 +57,8 @@
     "daily": "Daily window",
     "context": "Context window",
     "budget-day": "Daily spend cap",
-    "budget-task": "Task budget"
+    "budget-task": "Task budget",
+    "monthly": "Monthly window"
   },
   "dialog": {
     "exportTitle": "Export the Crewyard database",

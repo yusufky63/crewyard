@@ -333,6 +333,32 @@ export const MIGRATIONS: Migration[] = [
      route_feedback integer not null default 0
    );`,
   },
+  // Limit buckets (PLAN.md §7.2): an account can have several limits with the same window (Codex
+  // `rateLimitsByLimitId`, a coding plan's MCP quota). A side table rather than a new column, so
+  // the migration stays idempotent (SQLite has no "add column if not exists"); samples without a
+  // row are the account's main limit, bucket ''. Read through the view.
+  {
+    id: "limit-buckets",
+    sql: `create table if not exists usage_sample_buckets (
+     sample_id integer primary key references usage_samples(id) on delete cascade,
+     bucket text not null,
+     label text
+   );
+   create view if not exists usage_samples_bucketed as
+     select s.*, coalesce(b.bucket, '') as bucket, b.label as bucket_label
+       from usage_samples s left join usage_sample_buckets b on b.sample_id = s.id;`,
+  },
+  // Coding-plan quota (PLAN.md §6.1): the last answer per key, so "no coding plan" (pay as you go)
+  // and a failed or changed response show as such instead of as an empty meter.
+  {
+    id: "plan-quota",
+    sql: `create table if not exists plan_quota (
+     credential_id text primary key references credentials(id) on delete cascade,
+     state text not null,
+     problem text,
+     checked_at text not null
+   );`,
+  },
 ];
 
 /** What the positional scheme applied: a database at `user_version` N has the first N of these. */

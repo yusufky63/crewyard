@@ -330,6 +330,8 @@ export interface LimitNoticePayload {
   kind: LimitNoticeKind;
   profileId: string;
   window: LimitWindow;
+  /** The limit bucket the window belongs to; absent or null is the account's main limit. */
+  bucket?: string | null;
   usedPct: number | null;
   resetsAt: string | null;
   provenance: Provenance;

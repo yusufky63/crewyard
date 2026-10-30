@@ -71,6 +71,7 @@
     "context": "bağlam penceresi",
     "budget-day": "günlük harcama sınırı",
     "budget-task": "görev bütçesi",
+    "monthly": "aylık pencere",
     "unknown": "limit"
   },
   "reason": {

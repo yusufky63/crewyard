@@ -2,8 +2,23 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
-import { signInKindFor, type AccountRow, type BalanceView, type CredentialSummary, type LimitWindow, type Money, type ProfileInput, type ProfileRunner, type ProfileSummary, type SignInStatus } from "@crewyard/core";
+import {
+  signInKindFor,
+  type AccountMeter,
+  type AccountRow,
+  type BalanceView,
+  type CredentialSummary,
+  type LimitWindow,
+  type Money,
+  type PlanQuotaView,
+  type ProfileInput,
+  type ProfileRunner,
+  type ProfileSummary,
+  type SignInStatus,
+  type UsageWindowView,
+} from "@crewyard/core";
 import { balanceKind, fetchBalance } from "./balances.ts";
+import { fetchPlanQuota, planQuotaTarget, type PlanQuota } from "./plan-quota.ts";
 import { CatalogService } from "./catalog.ts";
 import type { Protector } from "./dpapi.ts";
 import { latestWindows, spentToday } from "./ledger.ts";
@@ -51,6 +66,13 @@ interface SignInRow {
   probed_at: string;
 }
 
+interface PlanQuotaRow {
+  credential_id: string;
+  state: "ok" | "no_plan" | "error";
+  problem: string | null;
+  checked_at: string;
+}
+
 interface BalanceRow {
   credential_id: string;
   provider_id: string;
@@ -73,8 +95,27 @@ const toProfile = (r: ProfileRow): ProfileSummary => ({
 
 const BALANCE_EVERY_MS = 15 * 60_000;
 
-// Plan windows that decide an account's urgency, most telling first.
-const WINDOW_ORDER: LimitWindow[] = ["5h", "weekly", "daily"];
+// Plan windows that decide an account's urgency, shortest first.
+const WINDOW_ORDER: LimitWindow[] = ["5h", "daily", "weekly", "monthly"];
+
+/** Every plan window of every bucket, main limit first, then shortest window first. */
+export function accountMeters(windows: UsageWindowView[]): AccountMeter[] {
+  return windows
+    .filter((w) => WINDOW_ORDER.includes(w.window))
+    .sort((a, b) => Number(a.bucket !== null) - Number(b.bucket !== null) || (a.bucket ?? "").localeCompare(b.bucket ?? "") || WINDOW_ORDER.indexOf(a.window) - WINDOW_ORDER.indexOf(b.window))
+    .map((w) => ({ window: w.window, bucket: w.bucket, bucketLabel: w.bucketLabel, pct: w.usedPct, resetsAt: w.resetsAt, provenance: w.provenance, observedAt: w.observedAt }));
+}
+
+/** Latest reading per bucket and window over several profiles that share one key. */
+export function newestPerWindow(windows: UsageWindowView[]): UsageWindowView[] {
+  const by = new Map<string, UsageWindowView>();
+  for (const w of windows) {
+    const k = `${w.bucket ?? ""}|${w.window}`;
+    const prev = by.get(k);
+    if (!prev || w.observedAt > prev.observedAt) by.set(k, w);
+  }
+  return [...by.values()];
+}
 
 export class ProvidersService {
   readonly catalog: CatalogService;
@@ -365,6 +406,49 @@ export class ProvidersService {
     return this.listBalances().filter((b) => touched.includes(b.credentialId));
   }
 
+  // ── coding-plan quota ──────────────────────────────────────
+
+  /** One entry per API key whose provider has a coding-plan quota endpoint (plan-quota.ts). */
+  listPlanQuota(): PlanQuotaView[] {
+    const rows = new Map((this.db.prepare("select * from plan_quota").all() as unknown as PlanQuotaRow[]).map((r) => [r.credential_id, r]));
+    return this.listCredentials().flatMap((c): PlanQuotaView[] => {
+      const target = c.kind === "api_key" ? planQuotaTarget(c.providerId) : null;
+      if (!target) return [];
+      const r = rows.get(c.id);
+      return [{ credentialId: c.id, providerId: c.providerId, endpoint: target.url, state: r?.state ?? "unchecked", problem: r?.problem ?? null, checkedAt: r?.checked_at ?? null }];
+    });
+  }
+
+  /** Profiles that run on this key: they share its plan, so each gets the same readings. */
+  profilesOfCredential(credentialId: string): ProfileSummary[] {
+    return this.listProfiles().filter((p) => p.credentialId === credentialId);
+  }
+
+  /**
+   * Asks the plan's quota endpoint with this key and records how it answered. Returns the quota,
+   * or null when the read failed; the failure is kept as the key's problem line.
+   */
+  async checkPlanQuota(credentialId: string): Promise<{ view: PlanQuotaView; quota: PlanQuota | null }> {
+    const c = this.credential(credentialId);
+    const target = planQuotaTarget(c.providerId);
+    if (!target || c.kind !== "api_key") throw new Error("This key's provider has no coding-plan quota endpoint");
+    let quota: PlanQuota | null = null;
+    let problem: string | null = null;
+    try {
+      const key = await this.secrets.get(c.id);
+      if (!key) throw new Error("No key stored");
+      quota = await fetchPlanQuota(target, key, this.fetchFn);
+    } catch (err) {
+      problem = err instanceof Error ? err.message : String(err);
+    }
+    this.db
+      .prepare(
+        "insert into plan_quota (credential_id, state, problem, checked_at) values (?, ?, ?, ?) on conflict(credential_id) do update set state = excluded.state, problem = excluded.problem, checked_at = excluded.checked_at",
+      )
+      .run(c.id, quota?.state ?? "error", problem, this.now().toISOString());
+    return { view: this.listPlanQuota().find((v) => v.credentialId === c.id)!, quota };
+  }
+
   // ── sidebar accounts ───────────────────────────────────────
 
   /** One row per plan profile and per API key, most urgent first; unknown and local sort last. */
@@ -375,8 +459,8 @@ export class ProvidersService {
     for (const p of this.listProfiles().filter((p) => p.credentialId === null)) {
       const local = this.catalog.provider(p.providerId)?.group === "local";
       const signIn = signIns.get(p.id);
-      const mine = windows.filter((w) => w.profileId === p.id && w.usedPct !== null && WINDOW_ORDER.includes(w.window));
-      const worst = mine.sort((a, b) => (b.usedPct ?? 0) - (a.usedPct ?? 0))[0];
+      const all = windows.filter((w) => w.profileId === p.id);
+      const worst = all.filter((w) => w.usedPct !== null && WINDOW_ORDER.includes(w.window)).sort((a, b) => (b.usedPct ?? 0) - (a.usedPct ?? 0))[0];
       rows.push({
         key: `profile:${p.id}`,
         // The screen prefixes the runner name in the user's language.
@@ -389,14 +473,41 @@ export class ProvidersService {
         provenance: local ? "unknown" : (worst?.provenance ?? "unknown"),
         window: worst?.window ?? null,
         resetsAt: worst?.resetsAt ?? null,
+        meters: local ? [] : accountMeters(all),
+        plan: null,
         signIn: signIn ? { state: signIn.state, plan: signIn.plan, probedAt: signIn.probedAt } : null,
       });
     }
     const now = this.now();
+    const plans = new Map(this.listPlanQuota().map((q) => [q.credentialId, q]));
     for (const c of this.listCredentials()) {
       const runner = (this.db.prepare("select runner from profiles where credential_id = ? order by created_at limit 1").get(c.id) as { runner: ProfileRunner } | undefined)?.runner ?? null;
       if (c.kind === "local") {
-        rows.push({ key: `credential:${c.id}`, label: c.alias, providerId: c.providerId, runner, kind: "local", pct: null, value: { kind: "none" }, provenance: "unknown", window: null, resetsAt: null, signIn: null });
+        rows.push({ key: `credential:${c.id}`, label: c.alias, providerId: c.providerId, runner, kind: "local", pct: null, value: { kind: "none" }, provenance: "unknown", window: null, resetsAt: null, meters: [], plan: null, signIn: null });
+        continue;
+      }
+      // A coding-plan key that has a plan: its windows decide urgency, not its token spend. Until
+      // the first read (or with no profile to hold readings) it is a plan of unknown standing.
+      const plan = plans.get(c.id);
+      if (plan && plan.state !== "no_plan") {
+        const ids = new Set(this.profilesOfCredential(c.id).map((p) => p.id));
+        const meters = accountMeters(newestPerWindow(windows.filter((w) => ids.has(w.profileId))));
+        const worst = meters.filter((m) => m.pct !== null).sort((a, b) => (b.pct ?? 0) - (a.pct ?? 0))[0];
+        rows.push({
+          key: `credential:${c.id}`,
+          label: c.alias,
+          providerId: c.providerId,
+          runner,
+          kind: "plan",
+          pct: worst?.pct ?? null,
+          value: worst?.pct != null ? { kind: "pct", pct: worst.pct } : { kind: "none" },
+          provenance: worst?.provenance ?? "unknown",
+          window: worst?.window ?? null,
+          resetsAt: worst?.resetsAt ?? null,
+          meters,
+          plan: plan.state,
+          signIn: null,
+        });
         continue;
       }
       const usd = spentToday(this.db, c.id, now);
@@ -412,6 +523,8 @@ export class ProvidersService {
         provenance: "estimated",
         window: "budget-day",
         resetsAt: null,
+        meters: [],
+        plan: plan?.state ?? null,
         signIn: null,
       });
     }

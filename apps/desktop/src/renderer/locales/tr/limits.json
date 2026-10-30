@@ -2,11 +2,16 @@
   "nav": "Limitler ve kullanım",
   "title": "Limitler ve kullanım",
   "sub": "Her sayı nereden geldiğini gösterir",
-  "range": { "label": "Aralık", "1": "Bugün", "7": "7 gün", "30": "30 gün" },
+  "range": {
+    "1": "Bugün",
+    "7": "7 gün",
+    "30": "30 gün",
+    "label": "Aralık"
+  },
   "plans": {
     "title": "Plan pencereleri",
     "notify": "Uyarı %{{warn}} · kritik %{{critical}}",
-    "none": "Henüz oturumla bağlanan hesap yok. ChatGPT ile oturum açan Codex ve Google ile oturum açan Gemini CLI hesaplarının pencereleri burada görünür.",
+    "none": "Henüz plan hesabı yok. ChatGPT ile oturum açan Codex, Google ile oturum açan Gemini CLI hesaplarının ve Kimi Code, Z.ai, MiniMax ya da OpenCode Go kodlama planı anahtarlarının pencereleri burada görünür.",
     "signInChecked": "oturum {{time}} denetlendi",
     "quota": "Plan kotası",
     "unknownMeter": "{{name}}: kota bilinmiyor",
@@ -16,7 +21,30 @@
     "seen": "{{time}} görüldü",
     "noSamples": "Henüz hiçbir ajan kullanım bildirmedi; bu yüzden pencereler uydurulmuş bir yüzde yerine Bilinmiyor olarak kalır.",
     "claudeNote": "Claude Code yalnızca API anahtarıyla çalışır, plan penceresi yoktur; harcaması sağdaki sınırlardan düşer.",
-    "window": { "5h": "5 saatlik pencere", "weekly": "Haftalık", "daily": "Günlük", "context": "Bağlam", "budget-day": "Günlük bütçe", "budget-task": "Görev bütçesi" }
+    "window": {
+      "5h": "5 saatlik pencere",
+      "weekly": "Haftalık",
+      "daily": "Günlük",
+      "context": "Bağlam",
+      "budget-day": "Günlük bütçe",
+      "budget-task": "Görev bütçesi",
+      "monthly": "Aylık"
+    },
+    "bucket": {
+      "mcp": "MCP araç çağrıları"
+    },
+    "lineMeta": "{{provenance}} · {{time}}",
+    "codingPlan": "Kodlama planı",
+    "check": "Denetle",
+    "checkNamed": "{{name}} kodlama planı kotasını denetle",
+    "state": {
+      "ok": "Kota {{time}} denetlendi",
+      "unchecked": "Kota henüz denetlenmedi",
+      "no_plan": "Bu anahtarda kodlama planı yok; kullandıkça ödenir.",
+      "error": "Son kota denetimi başarısız: {{problem}}. Bir denetim başarılı olana dek pencereler Bilinmiyor görünür."
+    },
+    "noProfile": "Okumalar profil başına saklanır; pencereleri görmek için bu anahtarı kullanan bir profil ekle.",
+    "meterBucket": "{{name}}: {{bucket}} {{window}} yüzde {{pct}} kullanıldı"
   },
   "spend": {
     "title": "API harcaması · {{range}}",
@@ -59,9 +87,20 @@
     "save": "Kaydet",
     "idle": "Plan pencerelerini çalıştırmalar arasında yenile",
     "idleHint": "Yaklaşık {{minutes}} dakikada bir, biraz kaydırılarak ve yalnızca bir görevin kullandığı, oturumu açık Codex profilleri için; bir pencere dolmaya devam ederken iki kat sık. Çalışan işler kendi pencerelerini zaten bildirir.",
-    "idleCalls": "Her yenilemede çağrılan:"
+    "idleCalls": "Her yenilemede çağrılan:",
+    "planQuota": "Kodlama planı kotasını çalıştırmalar arasında yenile",
+    "planQuotaHint": "Varsayılan olarak kapalı: sağlayıcılar bu uç noktaları belgelemiyor. Açıkken aynı aralık kuralları geçerli olur, yalnızca bir görevin kullandığı anahtarlar için. Tanımadığımız bir yanıt %0 değil, Bilinmiyor olarak görünür.",
+    "planQuotaCalls": "Her yenilemede şunlardan biri çağrılır:",
+    "auth": {
+      "bearer": "Bearer ile anahtar",
+      "raw": "Bearer'sız anahtar"
+    }
   },
-  "provenance": { "reported": "Bildirilen", "estimated": "Tahmini", "unknown": "Bilinmiyor" },
+  "provenance": {
+    "reported": "Bildirilen",
+    "estimated": "Tahmini",
+    "unknown": "Bilinmiyor"
+  },
   "accounts": {
     "label": "Hesap limitleri",
     "title": "Hesaplar · {{count}}",
@@ -78,6 +117,9 @@
     "update": "Güncelle",
     "tipSignedOut": "{{name}} için oturum açılmamış",
     "tipBlocked": "{{name}}: oturum açabilmesi için CLI'ın güncellenmesi gerekiyor",
-    "tipChecked": "{{time}} denetlendi"
+    "tipChecked": "{{time}} denetlendi",
+    "tipMeters": "{{name}}: {{meters}} ({{provenance}}, {{time}} görüldü)",
+    "tipMeter": "{{window}} %{{pct}}",
+    "tipMeterUnknown": "{{window}} bilinmiyor"
   }
 }

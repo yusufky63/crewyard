@@ -40,7 +40,10 @@ export const IDLE_MAX_BACKOFF_MS = 60 * 60_000;
 /** Spacing of start-up reads, so opening the app never fires every profile at once. */
 const STARTUP_SPREAD_MS = 20_000;
 const JITTER = 0.1;
-const PLAN_WINDOWS: LimitWindow[] = ["5h", "weekly", "daily"];
+const PLAN_WINDOWS: LimitWindow[] = ["5h", "weekly", "daily", "monthly"];
+
+/** One limit of an account: a window of a bucket. Two buckets can both have a weekly window. */
+export const windowKey = (s: Pick<LimitSample, "window" | "bucket">): string => `${s.bucket ?? ""}|${s.window}`;
 
 /**
  * A reading older than what we already hold for the same window: its reset is earlier, or the
@@ -153,11 +156,11 @@ export class IdleLimits {
       return false;
     }
     this.failures.delete(profile.id);
-    const last = new Map(this.deps.latest(profile.id).map((s) => [s.window, s]));
-    const fresh = samples.filter((s) => !isStale(s, last.get(s.window)));
+    const last = new Map(this.deps.latest(profile.id).map((s) => [windowKey(s), s]));
+    const fresh = samples.filter((s) => !isStale(s, last.get(windowKey(s))));
     // Rising since the last reading: look twice as often until it settles.
     const rising = fresh.some((s) => {
-      const prev = last.get(s.window);
+      const prev = last.get(windowKey(s));
       return PLAN_WINDOWS.includes(s.window) && prev?.usedPct != null && prev.resetsAt === s.resetsAt && (s.usedPct ?? 0) > prev.usedPct;
     });
     this.due.set(profile.id, now + this.jittered(rising ? this.everyMs / 2 : this.everyMs));

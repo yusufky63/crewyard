@@ -82,6 +82,14 @@ export interface LimitSample {
   resetsAt: string | null;
   provenance: Provenance;
   observedAt: string;
+  /**
+   * Which limit of the account this window belongs to, when it has more than one (Codex
+   * `rateLimitsByLimitId`, a coding plan's separate MCP quota). Absent or null is the account's
+   * main limit, so every runner that knows one limit only can leave it out.
+   */
+  bucket?: string | null;
+  /** The provider's own name for the bucket (Codex `limitName`), shown when we have no label of our own. */
+  bucketLabel?: string | null;
 }
 
 export interface AgentAdapter {

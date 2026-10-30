@@ -202,7 +202,7 @@ The first snapshot, `catalog/providers.json`, was built on 2026-10-29 from model
 - **Refresh:** on start and every 24 hours, with ETag. Each snapshot is versioned by hash, every spend record stores the catalog version its price came from, and you can pin a version. Prices that differ from LiteLLM's table by more than 10% show up in diagnostics.
 - **Balances and plan quota:**
   - Reported balance endpoints: DeepSeek, OpenRouter, Novita, StepFun, SiliconFlow.
-  - Coding-plan quota for Kimi, Z.ai/Zhipu, MiniMax and OpenCode Go uses the endpoints cc-switch calls. Their exact paths get confirmed in M2; until then the quota shows Unknown.
+  - Coding-plan quota for Kimi Code, Z.ai, MiniMax and OpenCode Go is read with the key from the endpoints cc-switch calls (checked against Z.ai's own plugin and Kimi's CLI on 2026-10-30; `packages/daemon/src/providers/plan-quota.ts`) and shows as Reported. None is documented by its provider, so a response we do not recognise or a failed read shows Unknown, never 0, and "no coding plan" shows as pay as you go. Background reads are opt-in on the Limits screen, with the endpoints listed next to the switch.
 - **Adding a provider:** pick it from the catalog, paste the key (stored with DPAPI), run the probe (a free model-list call where the provider has one), then choose which runners may use it.
 
 ## 7. Limits, usage and notifications
@@ -211,7 +211,7 @@ The first snapshot, `catalog/providers.json`, was built on 2026-10-29 from model
 
 | Label | Meaning | Examples |
 |---|---|---|
-| **Reported** | the agent or provider said it through an official channel | Codex `account/rateLimits/*`; balances from DeepSeek, OpenRouter, Novita, StepFun, SiliconFlow; coding-plan quota (Kimi, Z.ai, MiniMax, OpenCode Go) once confirmed; Anthropic's usage and cost reporting if you add an admin key (to be confirmed in M2) |
+| **Reported** | the agent or provider said it through an official channel | Codex `account/rateLimits/*`; balances from DeepSeek, OpenRouter, Novita, StepFun, SiliconFlow; coding-plan quota (Kimi Code, Z.ai, MiniMax, OpenCode Go); Anthropic's usage and cost reporting if you add an admin key (to be confirmed in M2) |
 | **Estimated** | computed by us | tokens × catalog price (versioned) for every API key, context fill from token counts and the catalog's context limit |
 | **Unknown** | no trustworthy source | Gemini CLI quota, Codex in API-key mode, absolute token caps behind percentages |
 

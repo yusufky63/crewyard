@@ -1,7 +1,8 @@
-import { PROVIDERS_CHANGED, type IdleRefreshView, type LimitSample, type ProvidersIpc, type SignInKind } from "@crewyard/core";
+import { PROVIDERS_CHANGED, type IdleRefreshView, type LimitSample, type PlanQuotaView, type ProvidersIpc, type SignInKind } from "@crewyard/core";
 import { defaultProtector } from "../providers/dpapi.ts";
 import { IdleLimits } from "../providers/idle-limits.ts";
-import { getIdleRefresh, getThresholds, latestWindows, setIdleRefresh, setThresholds, spendSummary, usageSamplesAvailable } from "../providers/ledger.ts";
+import { getIdleRefresh, getPlanQuotaRefresh, getThresholds, latestWindows, setIdleRefresh, setPlanQuotaRefresh, setThresholds, spendSummary, usageSamplesAvailable } from "../providers/ledger.ts";
+import { PLAN_QUOTA } from "../providers/plan-quota.ts";
 import { orchestratorFor, type Orchestrator } from "../orchestrator/index.ts";
 import { profileFor, providersDirectory } from "../providers/directory.ts";
 import { ProvidersService } from "../providers/service.ts";
@@ -86,7 +87,66 @@ export function createProvidersHandlers(ctx: HandlerContext, service?: Providers
     // An expired or removed sign-in shows at once instead of after the next app start.
     failed: (id) => void signIn.probe(id).catch(() => undefined),
   });
-  const idleView = (): IdleRefreshView => ({ enabled: getIdleRefresh(db), everyMinutes: idle.intervalMs / 60_000, endpoint: IDLE_ENDPOINT });
+
+  // Coding-plan quota (Kimi Code, Z.ai, MiniMax, OpenCode Go): one key, one plan, so one read per
+  // key, through the first profile on it, and every profile on the key gets the readings.
+  const markUnknown = (ids: string[]) => {
+    const at = new Date().toISOString();
+    for (const id of ids)
+      for (const s of latest(id)) if (s.provenance !== "unknown") orch?.ingestSample({ profileId: id, window: s.window, bucket: s.bucket, bucketLabel: s.bucketLabel, usedPct: null, resetsAt: null, provenance: "unknown", observedAt: at });
+  };
+  /** Reads one key's quota and stores what it says; a failure or "no plan" turns its readings Unknown, never 0. */
+  const readPlan = async (credentialId: string): Promise<{ view: PlanQuotaView; samples: LimitSample[] }> => {
+    const { view, quota } = await svc.checkPlanQuota(credentialId);
+    const ids = svc.profilesOfCredential(credentialId).map((p) => p.id);
+    if (quota?.state !== "ok") {
+      markUnknown(ids);
+      changed("limits");
+      return { view, samples: [] };
+    }
+    const observedAt = new Date().toISOString();
+    const samples = quota.windows.map((w): LimitSample => ({ profileId: ids[0] ?? "", window: w.window, ...(w.bucket ? { bucket: w.bucket } : {}), usedPct: w.usedPct, resetsAt: w.resetsAt, provenance: "reported", observedAt }));
+    return { view, samples };
+  };
+  const credentialOf = (profileId: string) => svc.listProfiles().find((p) => p.id === profileId)?.credentialId ?? null;
+  const planIdle: IdleLimits = new IdleLimits({
+    enabled: () => getPlanQuotaRefresh(db),
+    candidates: () =>
+      svc.listPlanQuota().flatMap((q) => {
+        const first = svc.profilesOfCredential(q.credentialId)[0];
+        return first && svc.credential(q.credentialId).isSet ? [profileFor(svc, first)] : [];
+      }),
+    // A key is in use when any profile on it is.
+    inUse: () => {
+      const used = orch ? profilesInUse(orch, new Date()) : new Set<string>();
+      const out = new Set<string>();
+      for (const q of svc.listPlanQuota()) {
+        const profiles = svc.profilesOfCredential(q.credentialId);
+        if (profiles[0] && profiles.some((p) => used.has(p.id))) out.add(profiles[0].id);
+      }
+      return out;
+    },
+    // No runner reports a coding plan's quota, and nothing else holds a key.
+    reporting: () => false,
+    held: () => false,
+    latest,
+    fetch: async (profile) => {
+      const credentialId = credentialOf(profile.id);
+      return credentialId ? (await readPlan(credentialId)).samples : [];
+    },
+    // Through the orchestrator for every profile on the key, so the 80/95% rules apply to each.
+    ingest: (sample) => {
+      const credentialId = credentialOf(sample.profileId);
+      for (const p of credentialId ? svc.profilesOfCredential(credentialId) : []) orch?.ingestSample({ ...sample, profileId: p.id });
+    },
+    changed: () => changed("limits"),
+  });
+  const idleView = (): IdleRefreshView => ({
+    enabled: getIdleRefresh(db),
+    everyMinutes: idle.intervalMs / 60_000,
+    endpoint: IDLE_ENDPOINT,
+    planQuota: { enabled: getPlanQuotaRefresh(db), endpoints: Object.values(PLAN_QUOTA).map(({ providerId, url, auth }) => ({ providerId, url, auth })) },
+  });
 
   // Background work starts with the first request, so creating handlers in tests stays inert.
   let started = false;
@@ -98,6 +158,7 @@ export function createProvidersHandlers(ctx: HandlerContext, service?: Providers
     const first = setTimeout(() => void signIn.probeAll().then(() => idle.tick()), 3_000);
     first.unref?.();
     idle.start();
+    planIdle.start();
   };
   const withTouch = <A extends unknown[], R>(fn: (...a: A) => R) => (...a: A): R => {
     touch();
@@ -156,11 +217,18 @@ export function createProvidersHandlers(ctx: HandlerContext, service?: Providers
       changed("caps");
       return c;
     }),
-    "providers.limits": withTouch(() => ({ samplesAvailable: usageSamplesAvailable(db), windows: latestWindows(db), thresholds: getThresholds(db), idleRefresh: idleView() })),
-    "providers.idleRefreshSet": withTouch(({ enabled }) => {
-      setIdleRefresh(db, enabled);
+    "providers.limits": withTouch(() => ({ samplesAvailable: usageSamplesAvailable(db), windows: latestWindows(db), thresholds: getThresholds(db), idleRefresh: idleView(), plans: svc.listPlanQuota() })),
+    "providers.idleRefreshSet": withTouch(({ enabled, planQuota }) => {
+      if (enabled !== undefined) setIdleRefresh(db, enabled);
+      if (planQuota !== undefined) setPlanQuotaRefresh(db, planQuota);
       changed("idle-refresh");
       return idleView();
+    }),
+    "providers.planQuotaRefresh": withTouch(async ({ credentialId }) => {
+      const { view, samples } = await readPlan(credentialId);
+      for (const s of samples) for (const p of svc.profilesOfCredential(credentialId)) orch?.ingestSample({ ...s, profileId: p.id });
+      changed("limits");
+      return view;
     }),
     "providers.thresholdsSet": withTouch(({ warn, critical }) => {
       const t = setThresholds(db, warn, critical);

@@ -16,7 +16,8 @@ const envelope = {
 export const RiskLevel = z.enum(["low", "medium", "high"]);
 export type RiskLevel = z.infer<typeof RiskLevel>;
 
-export const LimitWindow = z.enum(["5h", "weekly", "daily", "context", "budget-day", "budget-task"]);
+// "monthly" is a coding plan's 30-day window (OpenCode Go, Z.ai MCP calls).
+export const LimitWindow = z.enum(["5h", "weekly", "daily", "context", "budget-day", "budget-task", "monthly"]);
 export type LimitWindow = z.infer<typeof LimitWindow>;
 
 // Reported: the provider said it. Estimated: we computed it. Unknown: never shown as a percentage.
