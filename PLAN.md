@@ -421,7 +421,8 @@ The result is `.crewyard/project.json` in the repo: name, commands, allowed runn
   - `CREWYARD_SIGN=1` signs the exe, every dll, the installer and the uninstaller, with a PFX from environment variables or a certificate in the Windows store; the password never reaches a command line;
   - updates come from a generic HTTPS feed set at build time, are checked on your click (or by an opt-in automatic check), and install only on "Restart to install";
   - a signed build installs only updates that Windows verifies as signed by its publisher, and refuses when the check cannot run;
-  - the licences of every bundled npm package and NOTICE ship next to the exe.
+  - the licences of every bundled npm package and NOTICE ship next to the exe;
+  - a packaged build quits at startup when started with `--remote-debugging-port` or `--remote-debugging-pipe`, so no DevTools listener opens; only a local update-test build with a test root keeps them.
 - Windows toasts with an AppUserModelID; tray; start with Windows as an opt-in.
 - Keep the PC awake while runs are active, as an opt-in (Settings → Startup): Electron `powerSaveBlocker("prevent-app-suspension")` from the first active run to the last, released on battery at or below a threshold (default 30%) or with an unknown charge; its state shows in the status bar.
 - Detect and refuse WSL paths for Windows-native runs; WSL support is out of scope for v1.
