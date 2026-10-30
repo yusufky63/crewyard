@@ -358,3 +358,30 @@ describe("OpenCode child environment", () => {
     expect(unsupportedVersion("2.0.0")).toMatch(/not supported yet/);
   });
 });
+
+describe("OpenCode adapter: turn control", () => {
+  it("takes queued follow-ups at the turn boundary, names each turn by its user message, reverts the last one and exports the session", async () => {
+    const { adapter, req, logFile } = await setup("turns", "basic");
+    const queued = ["and the plain one", null];
+    const run = await adapter.start({ ...req, nextTurn: async () => queued.shift() ?? null });
+    const events = await collect(adapter, run);
+    const prompts = (await readLog(logFile)).filter((l) => l.kind === "prompt").map((l) => ((l.body as { parts: Array<{ text: string }> }).parts[0]!.text));
+    expect(prompts).toEqual(["basic", "and the plain one"]);
+    const turns = events.filter((e) => e.type === "turn.started") as Array<Extract<Ev, { type: "turn.started" }>>;
+    expect(turns).toHaveLength(2);
+    expect(last(events)).toMatchObject({ type: "run.ended", reason: "completed" });
+
+    const session = { runner: "opencode" as const, sessionId: run.nativeSession!.sessionId };
+    const result = await adapter.rewind!({ profile: req.profile, cwd: req.cwd, env: req.env, session, turnRef: turns[1]!.turnRef });
+    expect(result).toEqual({ files: true, history: true, detail: null });
+    const reverts = (await readLog(logFile)).filter((l) => l.kind === "revert");
+    expect(reverts).toEqual([{ kind: "revert", session: session.sessionId, body: { messageID: turns[1]!.turnRef } }]);
+    // The undo ran on a server of its own and left it closed: no model call, no prompt.
+    expect((await readLog(logFile)).filter((l) => l.kind === "prompt")).toHaveLength(2);
+
+    const exported = await adapter.transcript!({ profile: req.profile, cwd: req.cwd, env: req.env, session });
+    expect(exported?.kind).toBe("text");
+    expect(JSON.parse((exported as { text: string }).text).info.id).toBe(session.sessionId);
+    expect(await adapter.transcript!({ profile: req.profile, cwd: req.cwd, env: req.env, session: { ...session, sessionId: "ses_missing" } })).toBeNull();
+  });
+});

@@ -132,6 +132,8 @@ const handlers = {
     return { turn: turn("inProgress") };
   },
   "turn/steer": () => ({ turnId: "turn-1" }),
+  // History only, as in 0.147.0; "noRollback" plays a newer codex that dropped the method.
+  ...(config.noRollback ? {} : { "thread/rollback": (params) => ({ thread: { id: params.threadId, turns: [] } }) }),
   "turn/interrupt": () => {
     setTimeout(() => completed("interrupted"), 5);
     return {};

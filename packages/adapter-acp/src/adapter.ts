@@ -431,7 +431,7 @@ export class AcpAdapter implements AgentAdapter {
 
   /**
    * Prompts run one at a time; input sent during a turn waits for it. The run ends when the inbox
-   * is empty, after the result check when the request asked for one.
+   * is empty and nextTurn has nothing queued, after the result check when the request asked for one.
    */
   private async turns(run: Run): Promise<void> {
     run.busy = true;
@@ -452,6 +452,14 @@ export class AcpAdapter implements AgentAdapter {
         return;
       }
       if (stop === "cancelled" || run.interrupted) break;
+      // Turn boundary: the step's queued follow-ups become the next prompt in the same session.
+      if (run.inbox.length === 0 && stop === "end_turn" && run.req.nextTurn) {
+        const next = await run.req.nextTurn().catch(() => null);
+        if (next && !run.ended && !run.interrupted) {
+          run.inbox.push(next);
+          continue;
+        }
+      }
       const schema = run.req.outputSchema;
       if (run.inbox.length === 0 && stop === "end_turn" && schema) this.readOutput(run, schema);
     }

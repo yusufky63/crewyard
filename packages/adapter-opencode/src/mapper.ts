@@ -63,7 +63,10 @@ export class OpenCodeMapper {
 
   message(info: Message): EventBody[] {
     if (!this.owns(info.sessionID)) return [];
+    const first = !this.roles.has(info.id);
     this.roles.set(info.id, info.role);
+    // Our prompt's user message names the turn: session revert takes its id.
+    if (info.role === "user") return first && info.sessionID === this.rootSession ? [{ type: "turn.started", turnRef: info.id }] : [];
     if (info.role !== "assistant") return [];
     this.usage.set(info.id, { tokens: info.tokens, cost: info.cost, created: info.time.created });
     return this.usageEvent();

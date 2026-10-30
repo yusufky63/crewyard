@@ -20,5 +20,13 @@ export function createTasksHandlers(ctx: HandlerContext, overrides?: Partial<Orc
     "runs.retry": ({ runId }) => o.retry(runId),
     "requests.list": (params) => o.requests(params),
     "requests.answer": ({ requestId, answer, runId, sessionId }) => o.answer(requestId, answer, { runId, sessionId }),
+    "queue.edit": ({ runId, messageId, text }) => o.queueEdit(runId, messageId, text),
+    "queue.delete": ({ runId, messageId }) => o.queueDelete(runId, messageId),
+    "queue.move": ({ runId, messageId, index }) => o.queueMove(runId, messageId, index),
+    "queue.steer": ({ runId, messageId, sessionId }) => o.queueSteer(runId, messageId, { sessionId }),
+    "runs.undoPreview": ({ runId }) => o.undoPreview(runId),
+    "runs.undo": ({ runId, turnId }) => o.undo(runId, turnId),
+    "stalls.list": (params) => o.stalls.list(params),
+    "stalls.dismiss": ({ alertId }) => o.stalls.dismiss(alertId),
   };
 }

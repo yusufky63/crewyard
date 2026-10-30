@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { CandidateView, CrewMemberView, LimitNoticePayload, RequestView, RunView, TaskDetail } from "@crewyard/core";
+import { NO_RUN_CONTROLS, type CandidateView, type CrewMemberView, type LimitNoticePayload, type RequestView, type RunView, type TaskDetail } from "@crewyard/core";
 import { currentRun, diffTotals, elapsedMs, filterCounts, formatDuration, limitBanner, matchesFilter, resolveTarget, runnersOf, splitTaskText, statusLine, stepState } from "./model.ts";
 
 const cand = (profileId: string, runner: CandidateView["runner"] = "codex"): CandidateView => ({
@@ -38,6 +38,9 @@ const run = (id: string, memberId: string, over: Partial<RunView> = {}): RunView
   resumedFrom: null,
   nativeSessionId: null,
   queuedMessages: 0,
+  queue: [],
+  controls: NO_RUN_CONTROLS,
+  transcriptPath: null,
   tokensIn: 0,
   tokensOut: 0,
   cost: { usd: 0, provenance: "estimated" },

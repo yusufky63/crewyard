@@ -106,7 +106,16 @@ export type OrchestratorErrorCode =
   | "worktree.not_parked" // unpark on a worktree whose folder is there
   | "worktree.cleanup_needs_approval" // a cleanup step waits in the Inbox; the worktree stays
   | "worktree.cleanup_failed" // { command }: a cleanup step failed; the worktree stays
-  | "adapter.failed"; // { detail }
+  | "adapter.failed" // { detail }
+  // Follow-up queue, steer, undo and stall alerts (turn control)
+  | "queue.not_found" // { messageId }: no such queued message for this step
+  | "queue.delivered" // { messageId }: already handed to the agent; it can no longer change
+  | "queue.empty_text" // an edit to blank text; delete the message instead
+  | "run.not_steerable" // { reason }: a ControlReason
+  | "undo.unavailable" // { reason }: a ControlReason
+  | "undo.changed" // the step moved on since the preview (a new turn, run or undo); preview again
+  | "undo.partial" // { files }: some files could not be restored (open in another program); the rest were
+  | "stall.not_found";
 
 export interface CostEstimate {
   usd: number | null;
@@ -190,12 +199,73 @@ export interface RunView {
   nativeSessionId: string | null;
   /** Messages for this step that wait for a live run (see runs.message). */
   queuedMessages: number;
+  /** The same messages, oldest first, editable until delivered. */
+  queue: QueuedMessageView[];
+  controls: RunControls;
+  /** Our copy of the runner's transcript under the task folder (taken at handoff and at run end). */
+  transcriptPath: string | null;
   tokensIn: number;
   tokensOut: number;
   cost: CostEstimate & { provenance: Provenance };
   /** Latest plan the agent reported. */
   plan: Array<{ title: string; status: "pending" | "in_progress" | "completed" }> | null;
   diff: Array<{ path: string; added: number; removed: number }> | null;
+}
+
+/** A follow-up typed for a step while it was busy. Queued is never shown as sent. */
+export interface QueuedMessageView {
+  id: string;
+  text: string;
+  createdAt: string;
+  editedAt: string | null;
+}
+
+/**
+ * Why Steer now or Undo is not offered; each is an i18n key under `control.`. The button stays
+ * visible and disabled with this text (PLAN.md §5.1).
+ */
+export type ControlReason =
+  | "steer.unsupported" // the runner has no documented way to add to a running turn
+  | "steer.no_turn" // no turn is running; the message goes at the next turn start
+  | "steer.paused"
+  | "undo.unsupported" // the runner has no documented way to rewind a turn
+  | "undo.no_worktree" // the step works without a task worktree, so there is nothing of ours to restore
+  | "undo.turn_running" // never while a turn runs
+  | "undo.no_turn" // no turn with a checkpoint, or the last one was already undone
+  | "undo.other_run" // another run is working in the same worktree
+  | "undo.superseded" // a later run continues the step; undo that one
+  | "undo.cancelled";
+
+export interface ControlState {
+  ok: boolean;
+  reason: ControlReason | null;
+}
+
+export interface RunControls {
+  steer: ControlState;
+  /** `turnId` is the turn an undo would remove. */
+  undo: ControlState & { turnId: string | null };
+}
+
+/** A run nobody can steer or undo; what a view shows before the daemon says otherwise. */
+export const NO_RUN_CONTROLS: RunControls = {
+  steer: { ok: false, reason: "steer.unsupported" },
+  undo: { ok: false, reason: "undo.unsupported", turnId: null },
+};
+
+/** What "Undo last turn" would do, shown before you confirm. */
+export interface UndoPreview {
+  runId: string;
+  turnId: string;
+  turnStartedAt: string;
+  /** From the worktree as it is now to the checkpoint taken before the turn. */
+  files: Array<{ path: string; change: "restore" | "delete" | "recreate"; added: number; removed: number }>;
+  /** Commits the turn added to the branch; undo moves the branch back past them (they stay reachable). */
+  commits: number;
+  /** What the runner's own rewind covers; git covers the files in every case. */
+  native: { files: boolean; history: boolean };
+  /** When the conversation cannot forget the turn, the next message to the agent carries a note. */
+  noteQueued: boolean;
 }
 
 export interface WorktreeView {
@@ -380,6 +450,32 @@ export interface LimitNoticePayload {
   observedAt: string;
 }
 
+export type StallRule = "no_events" | "same_failure" | "request_unanswered";
+
+/** Pushed as `stall.notice` when a rule fires, in the shape of a limit notice (feature scan A7). */
+export interface StallNoticePayload {
+  alertId: string;
+  rule: StallRule;
+  projectId: string;
+  taskId: string;
+  runId: string | null;
+  requestId: string | null;
+  /** no_events and request_unanswered: how long it has been quiet. */
+  minutes: number | null;
+  /** same_failure: how many runs in a row ended with it. */
+  count: number | null;
+  /** same_failure: the failure class (FailureKind) and its HTTP status, if any. */
+  detail: string | null;
+  observedAt: string;
+}
+
+/** The Inbox item behind a stall notice. It closes on its own when the run moves again. */
+export interface StallAlertView extends StallNoticePayload {
+  dismissedAt: string | null;
+  /** Set by the daemon when the condition went away (events resumed, request answered, run ended). */
+  clearedAt: string | null;
+}
+
 export interface CrewEdit {
   memberId: string;
   profileId: string;
@@ -463,6 +559,31 @@ export interface TasksIpc {
   "requests.list": { params: { projectId?: string; taskId?: string; includeAnswered?: boolean }; result: RequestView[] };
   /** Resolves a request; the same record backs the Inbox, the inspector and toasts. */
   "requests.answer": { params: { requestId: string; answer: RequestAnswer; runId: string | null } & SessionSeen; result: RequestView };
+  /**
+   * Edits a queued follow-up of the run's step. Refused with `queue.delivered` once the agent has
+   * it; edits never reach the agent in part.
+   */
+  "queue.edit": { params: { runId: string; messageId: string; text: string }; result: RunView };
+  "queue.delete": { params: { runId: string; messageId: string }; result: RunView };
+  /** Moves a queued message to `index` (0 = sent first). */
+  "queue.move": { params: { runId: string; messageId: string; index: number }; result: RunView };
+  /**
+   * "Steer now": sends one queued message into the turn in flight, where the runner supports it
+   * (Codex `turn/steer`). Refused with `run.not_steerable` and a ControlReason otherwise; the
+   * message stays queued.
+   */
+  "queue.steer": { params: { runId: string; messageId: string } & SessionSeen; result: RunView };
+  /** What undo would change; nothing is touched. Fails with `undo.unavailable` and a ControlReason. */
+  "runs.undoPreview": { params: { runId: string }; result: UndoPreview };
+  /**
+   * Undoes the turn the preview named: the runner's own rewind where it has one, then the worktree
+   * back to the git checkpoint taken before the turn (the state before undo is kept under
+   * refs/crewyard/undo/). Never while a turn runs; `undo.changed` when the step moved on.
+   */
+  "runs.undo": { params: { runId: string; turnId: string }; result: RunView };
+  /** Open stall alerts by default, newest first. */
+  "stalls.list": { params: { projectId?: string; taskId?: string; includeClosed?: boolean }; result: StallAlertView[] };
+  "stalls.dismiss": { params: { alertId: string }; result: StallAlertView };
 }
 
 /** Live topics pushed through ctx.emit; the renderer re-reads with tasks.get when it needs more. */
@@ -471,6 +592,8 @@ export interface TasksTopics {
   "requests.changed": { requestId: string; taskId: string; projectId: string; open: boolean };
   "runs.event": { taskId: string; runId: string; event: AgentEvent };
   "limits.notice": LimitNoticePayload;
+  "stall.notice": StallNoticePayload;
+  "stalls.changed": { alertId: string; taskId: string; projectId: string; open: boolean };
 }
 
 export type TaskChangeCause =
@@ -487,6 +610,8 @@ export type TaskChangeCause =
   | "handoff_completed"
   | "handoff_failed"
   | "retried"
+  | "queue"
+  | "undone"
   | "admission"
   | "recovered"
   // The GitHub work: the task's pull request was opened, linked, merged or closed.

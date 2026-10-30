@@ -432,6 +432,57 @@ export const MIGRATIONS: Migration[] = [
      checked_at text not null
    );`,
   },
+  // Turn control (feature scan A7, A10, A13, A18). Side tables, as for limit buckets, so nothing
+  // alters an existing table. Outbox rows without a queue row sort first, by creation time.
+  {
+    id: "turn-control",
+    sql: `create table if not exists outbox_queue (
+     outbox_id text primary key references outbox(id) on delete cascade,
+     position real not null,
+     edited_at text,
+     steered_at text,
+     kind text not null default 'user'
+   );
+   create table if not exists turns (
+     id text primary key,
+     run_id text not null references runs(id),
+     task_id text not null references tasks(id),
+     member_id text not null references crew_members(id),
+     started_at text not null,
+     ended_at text,
+     worktree_path text,
+     checkpoint_sha text,
+     head_sha text,
+     turn_ref text,
+     undone_at text,
+     backup_sha text
+   );
+   create index if not exists turns_member on turns(member_id, started_at);
+   create table if not exists stall_alerts (
+     id text primary key,
+     rule text not null,
+     subject text not null,
+     project_id text not null,
+     task_id text not null references tasks(id),
+     run_id text,
+     request_id text,
+     minutes integer,
+     count integer,
+     detail text,
+     created_at text not null,
+     dismissed_at text,
+     cleared_at text
+   );
+   create index if not exists stall_alerts_subject on stall_alerts(rule, subject, created_at);
+   create table if not exists run_transcripts (
+     run_id text primary key references runs(id),
+     path text not null,
+     source_bytes integer not null,
+     copied_bytes integer not null,
+     truncated integer not null default 0,
+     copied_at text not null
+   );`,
+  },
 ];
 
 /** What the positional scheme applied: a database at `user_version` N has the first N of these. */

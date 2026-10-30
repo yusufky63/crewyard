@@ -272,7 +272,10 @@ export class NotificationMapper {
         this.turnId = p.turn.id;
         this.ended = null;
         this.lastAgentMessage = null;
-        return [{ type: "run.state", state: "running" }];
+        return [
+          { type: "turn.started", turnRef: p.turn.id },
+          { type: "run.state", state: "running" },
+        ];
       }
       case "turn/completed": {
         const p = params as TurnCompletedNotification;

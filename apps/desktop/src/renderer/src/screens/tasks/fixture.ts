@@ -1,5 +1,5 @@
 import { reviewFixture } from "./reviewFixture.ts";
-import type { CandidateView, CrewMemberView, IpcMethod, IpcParams, IpcResult, LimitNoticePayload, RequestView, RoleId, RunView, TaskDetail, TaskSummary } from "@crewyard/core";
+import { NO_RUN_CONTROLS, type CandidateView, type CrewMemberView, type IpcMethod, type IpcParams, type IpcResult, type LimitNoticePayload, type RequestView, type RoleId, type RunView, type TaskDetail, type TaskSummary } from "@crewyard/core";
 
 // Screenshot data. Used only when the page URL has `fixture`, which the main process sets only
 // in screenshot mode (CREWYARD_SHOT_QUERY); a normal run never reads anything from this file.
@@ -67,6 +67,9 @@ const run = (taskId: string, m: CrewMemberView, c: CandidateView, over: Partial<
   resumedFrom: null,
   nativeSessionId: "s1",
   queuedMessages: 0,
+  queue: [],
+  controls: NO_RUN_CONTROLS,
+  transcriptPath: null,
   tokensIn: 0,
   tokensOut: 0,
   cost: { usd: 0, provenance: "estimated" },

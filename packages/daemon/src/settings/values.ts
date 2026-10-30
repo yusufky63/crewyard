@@ -1,10 +1,11 @@
-import type { AppSettings, NotificationSettings, SettingsPatch } from "@crewyard/core";
+import { STALL_LIMITS, type AppSettings, type NotificationSettings, type SettingsPatch, type StallSettings } from "@crewyard/core";
 
 // App settings live in the `settings` table, one JSON value per key, so a damaged or older entry
 // only falls back for that key. Every write goes through `applyPatch`, which refuses anything a
 // correct renderer never sends instead of storing it.
 
 export const NOTIFICATIONS_KEY = "app.notifications";
+export const STALLS_KEY = "app.stalls";
 
 export const DEFAULT_SETTINGS: AppSettings = {
   notifications: {
@@ -14,6 +15,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
     approveFromToast: true,
     limitActions: true,
   },
+  // Long enough that a slow build or a model thinking hard is not a stall; short enough to catch a hang overnight.
+  stalls: { noEventsMinutes: 10, sameFailureCount: 3, requestMinutes: 30, cooldownMinutes: 60 },
 };
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -35,10 +38,52 @@ function projectIds(v: unknown): string[] {
 /** Merges a patch into the current value; throws `settings.invalid` on any malformed field. */
 export function applyPatch(current: AppSettings, patch: SettingsPatch): AppSettings {
   if (typeof patch !== "object" || patch === null) return invalid();
-  const n = patch.notifications;
-  if (n === undefined) return current;
+  let next = current;
+  if (patch.notifications !== undefined) next = { ...next, notifications: patchNotifications(next.notifications, patch.notifications) };
+  if (patch.stalls !== undefined) next = { ...next, stalls: patchStalls(next.stalls, patch.stalls) };
+  return next;
+}
+
+/** A whole number of minutes or runs inside the rule's bounds. */
+const bounded = (key: keyof StallSettings, v: unknown): number => {
+  const { min, max } = STALL_LIMITS[key];
+  return typeof v === "number" && Number.isInteger(v) && v >= min && v <= max ? v : invalid();
+};
+
+const STALL_KEYS = Object.keys(STALL_LIMITS) as Array<keyof StallSettings>;
+
+function patchStalls(cur: StallSettings, p: unknown): StallSettings {
+  if (typeof p !== "object" || p === null) return invalid();
+  const patch = p as Partial<Record<keyof StallSettings, unknown>>;
+  const next = { ...cur };
+  for (const key of STALL_KEYS) if (patch[key] !== undefined) next[key] = bounded(key, patch[key]);
+  return next;
+}
+
+/** Reads the stored stall rules leniently, like readNotifications. */
+export function readStalls(raw: string | undefined): StallSettings {
+  const base = DEFAULT_SETTINGS.stalls;
+  let parsed: unknown;
+  try {
+    parsed = raw === undefined ? {} : JSON.parse(raw);
+  } catch {
+    return base;
+  }
+  if (typeof parsed !== "object" || parsed === null) return base;
+  const p = parsed as Record<string, unknown>;
+  const out = { ...base };
+  for (const key of STALL_KEYS) {
+    try {
+      out[key] = bounded(key, p[key]);
+    } catch {
+      // Missing or out of bounds: the default stays.
+    }
+  }
+  return out;
+}
+
+function patchNotifications(cur: NotificationSettings, n: SettingsPatch["notifications"]): NotificationSettings {
   if (typeof n !== "object" || n === null) return invalid();
-  const cur = current.notifications;
   const q = n.quietHours;
   if (q !== undefined && (typeof q !== "object" || q === null)) return invalid();
   const next: NotificationSettings = {
@@ -52,7 +97,7 @@ export function applyPatch(current: AppSettings, patch: SettingsPatch): AppSetti
     approveFromToast: n.approveFromToast === undefined ? cur.approveFromToast : bool(n.approveFromToast),
     limitActions: n.limitActions === undefined ? cur.limitActions : bool(n.limitActions),
   };
-  return { ...current, notifications: next };
+  return next;
 }
 
 /** Reads a stored value leniently: every field that does not validate keeps its default. */

@@ -20,6 +20,7 @@ import {
   type HandoffTrigger,
   type LimitWindow,
   type NativeSessionRef,
+  type Profile,
   type Provenance,
   type Reason,
   type RequestAnswer,
@@ -58,6 +59,10 @@ import { LimitMonitor } from "./limits.ts";
 import { handoffPackage, rolePrompt } from "./prompts.ts";
 import { onlyDocPaths, ROLES } from "./roles.ts";
 import { capResetsAt, capWindow, credentialCaps, overCap, reachedCaps, recordRunSpend, reservedUsd, reserveSpend, settleReservation, spendCredential } from "./spend.ts";
+import { joinMessages } from "./queue.ts";
+import { StallMonitor } from "./stall.ts";
+import { snapshotTranscript, transcriptPath } from "./transcripts.ts";
+import { TurnControl } from "./turns.ts";
 
 // The deterministic scheduler (PLAN.md D7, D8, §8, §9): it runs the crew you approved as a DAG,
 // under admission control, and never lets an agent start another agent. All state lives in the
@@ -79,6 +84,8 @@ export interface OrchestratorOptions {
   isAlive?: (pid: number) => boolean;
   /** How long to wait for a run to reach a turn boundary before stopping it. */
   stopTimeoutMs?: number;
+  /** How often the stall rules run (feature scan A7). 0 disables the timer; tests call checkStalls(). */
+  stallCheckMs?: number;
 }
 
 interface Live {
@@ -86,6 +93,8 @@ interface Live {
   handle: RunHandle;
   candidate: Candidate;
   done: Promise<void>;
+  /** A turn is running: follow-ups wait in the step's queue for its boundary (StartRequest.nextTurn). */
+  inTurn: boolean;
 }
 
 type ProposeParams = TasksIpc["tasks.propose"]["params"];
@@ -126,6 +135,10 @@ export class Orchestrator {
   readonly limits: LimitMonitor;
   /** Worktree setup, cleanup, include list, port and park (packages/daemon/src/worktrees). */
   readonly bootstrap: Bootstrapper;
+  /** Turn checkpoints, the follow-up queue, Steer now and Undo (turns.ts, queue.ts). */
+  readonly turns: TurnControl;
+  readonly stalls: StallMonitor;
+  private stallTimer: NodeJS.Timeout | null = null;
   private directory: ProfileDirectory;
   private readonly adapters: AdapterRegistry;
   private readonly now: () => Date;
@@ -160,6 +173,22 @@ export class Orchestrator {
       audit: (taskId, runId, kind, payload) => this.audit(taskId, runId, kind, payload),
       config: (projectId) => this.config(this.db.project(projectId)).config,
     });
+    this.turns = new TurnControl({
+      store: opts.store,
+      db: this.db,
+      now: this.now,
+      gitBin: opts.gitBin,
+      live: (runId) => this.live.get(runId),
+      adapter: (runner) => this.adapters.get(runner) ?? undefined,
+      session: (run) => this.sessionFor(run),
+      audit: (taskId, runId, kind, payload) => this.audit(taskId, runId, kind, payload),
+    });
+    this.stalls = new StallMonitor({ store: opts.store, db: this.db, now: this.now, inTurn: (runId) => this.live.get(runId)?.inTurn ?? false, emit: (topic, payload) => this.emit(topic, payload) });
+    this.db.runExtras = (r) => ({
+      queue: this.turns.queue.pending(r.member_id).map(({ kind: _kind, ...m }) => m),
+      controls: this.turns.controls(r),
+      transcriptPath: transcriptPath(opts.store, r.id),
+    });
   }
 
   /** Recovers from the last session, then starts scheduling. */
@@ -167,7 +196,19 @@ export class Orchestrator {
     this.recover();
     const ms = this.opts.tickMs ?? 5_000;
     if (ms > 0) this.interval = setInterval(() => void this.tick(), ms).unref();
+    const stallMs = this.opts.stallCheckMs ?? 30_000;
+    if (stallMs > 0) this.stallTimer = setInterval(() => this.checkStalls(), stallMs).unref();
     void this.tick();
+  }
+
+  /** One pass of the stall rules; a failure (the store closing on exit) waits for the next one. */
+  checkStalls(): void {
+    if (this.closed) return;
+    try {
+      this.stalls.check();
+    } catch {
+      // Same as a failed scheduling pass: the next timer tick tries again.
+    }
   }
 
   /**
@@ -177,6 +218,7 @@ export class Orchestrator {
   shutdown(): void {
     this.closed = true;
     if (this.interval) clearInterval(this.interval);
+    if (this.stallTimer) clearInterval(this.stallTimer);
     this.timers.forEach((t) => clearTimeout(t));
     this.timers.clear();
     const live = [...this.live.values()];
@@ -465,16 +507,74 @@ export class Orchestrator {
     const run = this.db.run(runId);
     this.checkSeen(run, seen);
     if (run.end_reason === "completed" || this.db.task(run.task_id).cancelled_at) throw new OrchestratorError("run.ended");
+    // Every message joins the step's queue first (feature scan A13): it belongs to the step, not to
+    // this process, and stays queued and editable until a run takes it. A running turn takes it at
+    // its boundary, a paused run on resume, and whichever run continues the step otherwise.
+    this.turns.queue.add(run.task_id, run.member_id, text);
     const live = this.live.get(runId);
-    // A paused run keeps its message until resume; sending it now would start a new turn.
-    if (live && !run.paused_at) {
-      await live.adapter.send(live.handle, { kind: "text", text });
-      this.audit(run.task_id, runId, "run.message", { chars: text.length, queued: false });
-    } else {
-      // No process to talk to right now: the message belongs to the step, not to this process.
-      this.db.exec("insert into outbox (id, task_id, member_id, text, created_at) values (?, ?, ?, ?, ?)", randomUUID(), run.task_id, run.member_id, text, this.iso());
-      this.audit(run.task_id, runId, "run.message", { chars: text.length, queued: true });
-      await this.flushOutbox(run.task_id, run.member_id);
+    this.audit(run.task_id, runId, "run.message", { chars: text.length, queued: !live || Boolean(run.paused_at) || live.inTurn });
+    await this.flushOutbox(run.task_id, run.member_id);
+    this.emitTask(run.task_id, "queue");
+    return this.db.runView(this.db.run(runId));
+  }
+
+  // ---------------------------------------------------------------- follow-up queue and undo
+
+  queueEdit(runId: string, messageId: string, text: string): RunView {
+    const run = this.db.run(runId);
+    this.turns.queue.edit(run.member_id, messageId, text);
+    this.audit(run.task_id, runId, "queue.edited", { messageId, chars: text.length });
+    this.emitTask(run.task_id, "queue");
+    return this.db.runView(this.db.run(runId));
+  }
+
+  queueDelete(runId: string, messageId: string): RunView {
+    const run = this.db.run(runId);
+    this.turns.queue.remove(run.member_id, messageId);
+    this.audit(run.task_id, runId, "queue.deleted", { messageId });
+    this.emitTask(run.task_id, "queue");
+    return this.db.runView(this.db.run(runId));
+  }
+
+  queueMove(runId: string, messageId: string, index: number): RunView {
+    const run = this.db.run(runId);
+    this.turns.queue.move(run.member_id, messageId, index);
+    this.emitTask(run.task_id, "queue");
+    return this.db.runView(this.db.run(runId));
+  }
+
+  /** "Steer now": one queued message into the turn in flight, where the runner supports it. */
+  async queueSteer(runId: string, messageId: string, seen?: SessionSeen): Promise<RunView> {
+    const run = this.db.run(runId);
+    this.checkSeen(run, seen);
+    const message = this.turns.queue.get(run.member_id, messageId);
+    const state = this.turns.steerState(run);
+    if (!state.ok) throw new OrchestratorError("run.not_steerable", { reason: state.reason ?? "" });
+    const live = this.live.get(runId)!;
+    try {
+      await live.adapter.steer!(live.handle, { kind: "text", text: message.text });
+    } catch (err) {
+      // The turn ended between the check and the call; the message stays queued for the boundary.
+      throw new OrchestratorError("run.not_steerable", { reason: "steer.no_turn", detail: err instanceof Error ? err.message.slice(0, 200) : "" });
+    }
+    this.turns.queue.deliver(messageId, runId, true);
+    this.audit(run.task_id, runId, "queue.steered", { messageId, chars: message.text.length });
+    this.emitTask(run.task_id, "queue");
+    return this.db.runView(this.db.run(runId));
+  }
+
+  undoPreview(runId: string) {
+    return this.turns.preview(runId);
+  }
+
+  /** Undo last turn, after you confirmed the preview. Never while a turn runs (checked again here). */
+  async undo(runId: string, turnId: string): Promise<RunView> {
+    const run = this.db.run(runId);
+    try {
+      await this.turns.undo(runId, turnId);
+    } finally {
+      this.emitTask(run.task_id, "undone");
+      void this.tick();
     }
     return this.db.runView(this.db.run(runId));
   }
@@ -509,18 +609,90 @@ export class Orchestrator {
     return this.db.runView(this.db.run(id));
   }
 
-  /** Delivers a step's queued messages to its live run, if it has one now. */
+  /**
+   * Hands a step's queued messages to its live run as one new turn, when no turn is running there.
+   * A running turn takes them at its boundary instead (nextTurn), so they stay editable until then.
+   */
   private async flushOutbox(taskId: string, memberId: string): Promise<void> {
     const target = this.db.runs(taskId).find((r) => r.member_id === memberId && !r.ended_at && !r.paused_at && this.live.has(r.id));
     const live = target ? this.live.get(target.id) : undefined;
-    if (!target || !live) return;
-    for (const m of this.db.queued(memberId)) {
-      try {
-        await live.adapter.send(live.handle, { kind: "text", text: m.text });
-      } catch {
-        return; // stays queued for the next live run
-      }
-      this.db.exec("update outbox set delivered_at = ?, delivered_run_id = ? where id = ?", this.iso(), target.id, m.id);
+    if (!target || !live || live.inTurn) return;
+    const queued = this.turns.queue.pending(memberId);
+    if (queued.length === 0) return;
+    live.inTurn = true;
+    try {
+      await this.turns.begin(target.id);
+      await live.adapter.send(live.handle, { kind: "text", text: joinMessages(queued.map((m) => m.text)) });
+    } catch {
+      // The process is finishing; the messages stay queued for whichever run continues the step.
+      live.inTurn = false;
+      this.turns.end(target.id);
+      return;
+    }
+    for (const m of queued) this.turns.queue.deliver(m.id, target.id);
+  }
+
+  /**
+   * StartRequest.nextTurn: called by the adapter at a turn boundary. Returns the step's queued
+   * follow-ups as the next turn's text, or null to let the run finish (nothing queued, or the run
+   * was paused, stopped, limited or cancelled meanwhile).
+   */
+  private async nextTurn(runId: string): Promise<string | null> {
+    this.turns.end(runId);
+    const live = this.live.get(runId);
+    const run = this.db.run(runId);
+    const stop = !live || this.closed || run.ended_at !== null || run.paused_at !== null || run.limit_reached === 1 || this.stopping.has(runId) || this.db.task(run.task_id).cancelled_at !== null;
+    const queued = stop ? [] : this.turns.queue.pending(run.member_id);
+    if (!live || queued.length === 0) {
+      if (live) live.inTurn = false;
+      return null;
+    }
+    await this.turns.begin(runId);
+    for (const m of queued) this.turns.queue.deliver(m.id, runId);
+    this.audit(run.task_id, runId, "queue.flushed", { count: queued.length });
+    this.emitTask(run.task_id, "queue");
+    return joinMessages(queued.map((m) => m.text));
+  }
+
+  /**
+   * The prompt a run starts or resumes with, plus the step's queued messages. A note left by an
+   * undo only makes sense to the same conversation, so a new session drops it.
+   */
+  private withQueued(memberId: string, prompt: string, sameSession: boolean): { prompt: string; ids: string[] } {
+    const queued = this.turns.queue.pending(memberId);
+    const texts = queued.filter((m) => sameSession || m.kind !== "note").map((m) => m.text);
+    return { prompt: joinMessages([prompt, ...texts]), ids: queued.map((m) => m.id) };
+  }
+
+  /** Profile and secrets for talking to a runner about a run's session (undo, transcript). */
+  private async sessionFor(run: RunRow): Promise<{ profile: Profile; env: Record<string, string> } | null> {
+    const candidate = await this.candidateFor(run);
+    if (!candidate) return null;
+    return { profile: candidate.profile, env: await this.directory.envFor(run.profile_id) };
+  }
+
+  /** Copies the runner's own transcript into the task folder (feature scan A18); returns our copy's path. */
+  private async copyTranscript(runId: string): Promise<string | null> {
+    const run = this.db.run(runId);
+    const adapter = this.adapters.get(run.runner);
+    if (!adapter || !run.native_session_id) return null;
+    try {
+      const session = await this.sessionFor(run);
+      if (!session) return null;
+      const copy = await snapshotTranscript({
+        store: this.opts.store,
+        dataDir: this.opts.dataDir,
+        taskId: run.task_id,
+        runId,
+        adapter,
+        req: { ...session, cwd: run.cwd, session: { runner: run.runner, sessionId: run.native_session_id } },
+        now: this.now(),
+      });
+      if (copy) this.audit(run.task_id, runId, "transcript.copied", { bytes: copy.copiedBytes, sourceBytes: copy.sourceBytes, truncated: copy.truncated, kept: copy.kept });
+      return copy?.path ?? null;
+    } catch (err) {
+      this.audit(run.task_id, runId, "transcript.failed", { detail: (err instanceof Error ? err.message : String(err)).slice(0, 200) });
+      return null;
     }
   }
 
@@ -676,7 +848,8 @@ export class Orchestrator {
         profileActive: counts.byProfile.get(profileId) ?? 0,
         globalActive: counts.total,
         freeMb: (this.opts.freeMemoryMb ?? (() => freemem() / 1024 / 1024))(),
-        worktreeBusy: m.writes_code === 1 && owner !== null && owner.ended_at === null,
+        // An undo rewrites the worktree; nothing starts in it until that is done.
+        worktreeBusy: (m.writes_code === 1 && owner !== null && owner.ended_at === null) || this.turns.busy(task.id),
         profileId,
       },
       { ...DEFAULT_LIMITS, ...this.opts.limits, projectSlots },
@@ -756,16 +929,22 @@ export class Orchestrator {
       }
       this.held.delete(runId);
       if (candidate.profile.credential.kind === "api_key") reserveSpend(this.opts.store.db, { runId, taskId: task.id, credentialId: spendCredential(candidate), amountUsd: amount }, this.now());
+      // Messages typed for the step while it had no process go with the first prompt.
+      const base = spec.prompt ?? rolePrompt(member.role, task, { plan: this.latestPlan(task.id), branch: worktreeId ? (wt?.branch ?? null) : null });
+      const queued = this.withQueued(member.id, base, Boolean(spec.resumeRef));
       const req: StartRequest = {
         profile: candidate.profile,
         cwd,
         model: target.model,
-        prompt: spec.prompt ?? rolePrompt(member.role, task, { plan: this.latestPlan(task.id), branch: worktreeId ? (wt?.branch ?? null) : null }),
+        prompt: queued.prompt,
         policy: this.policyFor(member.role, config),
         env: { ...(await this.directory.envFor(target.profileId)), ...(boot?.status === "ready" ? boot.env : {}) },
         outputSchema: outputSchemaFor(member.role),
+        nextTurn: () => this.nextTurn(runId),
       };
+      await this.turns.begin(runId);
       const handle = spec.resumeRef ? await adapter.resume(spec.resumeRef, req) : await adapter.start(req);
+      for (const id of queued.ids) this.turns.queue.deliver(id, runId);
       this.db.exec("update runs set native_session_id = ?, pid = ? where id = ?", handle.nativeSession?.sessionId ?? null, handle.pid, runId);
       this.attach(runId, adapter, handle, candidate);
       this.audit(task.id, runId, "run.started", { role: member.role, profileId: target.profileId, runner: target.runner, resumed: Boolean(spec.resumeRef) });
@@ -808,11 +987,10 @@ export class Orchestrator {
 
   private attach(runId: string, adapter: AgentAdapter, handle: RunHandle, candidate: Candidate): void {
     let finish!: () => void;
-    const live: Live = { adapter, handle, candidate, done: new Promise<void>((r) => (finish = r)) };
+    // Every start and resume hands over a prompt, so a turn runs from here; its boundary takes what is queued.
+    const live: Live = { adapter, handle, candidate, done: new Promise<void>((r) => (finish = r)), inTurn: true };
     this.live.set(runId, live);
     this.track(this.pump(runId, live).finally(finish));
-    const run = this.db.run(runId);
-    this.track(this.flushOutbox(run.task_id, run.member_id));
   }
 
   private async pump(runId: string, live: Live): Promise<void> {
@@ -849,6 +1027,9 @@ export class Orchestrator {
     switch (ev.type) {
       case "run.state":
         this.db.exec("update runs set last_state = ? where id = ?", ev.state, runId);
+        break;
+      case "turn.started":
+        this.turns.ref(runId, ev.turnRef);
         break;
       case "plan.update":
         this.db.exec("update runs set plan = ? where id = ?", JSON.stringify(ev.steps), runId);
@@ -902,6 +1083,9 @@ export class Orchestrator {
     this.db.exec("update runs set ended_at = ?, end_reason = ?, end_detail = ? where id = ? and ended_at is null", this.iso(), reason, detail, runId);
     this.clearTimer(runId);
     this.held.delete(runId);
+    this.turns.end(runId);
+    // The runner may expire its own record; ours stays with the task (feature scan A18).
+    if (run.native_session_id) this.track(this.copyTranscript(runId));
     settleReservation(this.opts.store.db, runId, this.now());
     // A handoff target that ends before it confirmed leaves the source paused and asks you.
     const pendingHandoff = this.confirming.get(runId);
@@ -932,13 +1116,16 @@ export class Orchestrator {
   /** Native resume on the same run; used after a pause and at a limit reset. */
   private async continueRun(runId: string, text: string): Promise<void> {
     const live = this.live.get(runId);
+    const run = this.db.run(runId);
+    // What you queued while it was paused goes with the continue prompt, in the same turn.
+    const queued = this.withQueued(run.member_id, text, true);
     if (live) {
-      await live.adapter.send(live.handle, { kind: "text", text });
-      const r = this.db.run(runId);
-      await this.flushOutbox(r.task_id, r.member_id);
+      live.inTurn = true;
+      await this.turns.begin(runId);
+      await live.adapter.send(live.handle, { kind: "text", text: queued.prompt });
+      for (const id of queued.ids) this.turns.queue.deliver(id, runId);
       return;
     }
-    const run = this.db.run(runId);
     const adapter = this.adapters.get(run.runner);
     if (!adapter?.capabilities.resume || !run.native_session_id) throw new OrchestratorError("run.resume_unsupported", { runner: run.runner });
     const task = this.db.task(run.task_id);
@@ -949,12 +1136,15 @@ export class Orchestrator {
       profile: candidate.profile,
       cwd: run.cwd,
       model: run.model,
-      prompt: text,
+      prompt: queued.prompt,
       policy: this.policyFor(run.role, this.config(project).config),
       env: { ...(await this.directory.envFor(run.profile_id)), ...this.bootstrapEnv(run, project) },
       outputSchema: outputSchemaFor(run.role),
+      nextTurn: () => this.nextTurn(runId),
     };
+    await this.turns.begin(runId);
     const handle = await adapter.resume({ runner: run.runner, sessionId: run.native_session_id }, req);
+    for (const id of queued.ids) this.turns.queue.deliver(id, runId);
     this.db.exec("update runs set native_session_id = ?, pid = ? where id = ?", handle.nativeSession?.sessionId ?? run.native_session_id, handle.pid, runId);
     this.attach(runId, adapter, handle, candidate);
   }
@@ -1462,6 +1652,8 @@ export class Orchestrator {
         sha = (await checkpoint(wt.path, `wip: handoff from ${source.id}`, this.opts.gitBin)).sha;
         stat = await diffStat(wt.path, wt.base_sha, this.opts.gitBin);
       }
+      // The package cites our copy: the runner's own may expire before anyone reads it.
+      const transcript = await this.copyTranscript(source.id);
       const text = handoffPackage({
         task,
         source,
@@ -1473,7 +1665,7 @@ export class Orchestrator {
           .requests({ taskId: task.id })
           .filter((q) => q.kind === "question")
           .flatMap((q) => (JSON.parse(q.payload) as Extract<RequestPayload, { kind: "question" }>).questions.map((x) => x.prompt)),
-        transcript: `Event log of run ${source.id} in the Crewyard database.`,
+        transcript: transcript ? `${transcript} (copy of the ${source.runner} session record; the event log of run ${source.id} is in the Crewyard database)` : `Event log of run ${source.id} in the Crewyard database.`,
       });
       const packagePath = join(this.opts.dataDir, "tasks", task.id, `handoff-${handoffId}.md`);
       writeFileAtomic(packagePath, text);

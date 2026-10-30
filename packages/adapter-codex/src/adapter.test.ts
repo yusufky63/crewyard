@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -179,6 +179,55 @@ describe("CodexAdapter against a fake app-server", () => {
     await adapter.send(run, { kind: "text", text: "also update the docs" });
     await adapter.stop(run);
     expect(sentBy(received(dir), "turn/steer")[0]).toEqual({ threadId: "thr-1", input: [{ type: "text", text: "also update the docs", text_elements: [] }], expectedTurnId: "turn-1" });
+  });
+
+  it("steers only a turn in flight, and takes queued follow-ups at the turn boundary as the next turn", async () => {
+    const hung = home({ scenario: "hang" });
+    const adapter = new CodexAdapter(launcher);
+    const live = await adapter.start(request(hung));
+    await collect(adapter, live, async (e) => {
+      if (e.type === "run.state" && e.state === "running") {
+        await adapter.steer(live, { kind: "text", text: "use the shared helper" });
+        await adapter.stop(live);
+      }
+    });
+    expect(sentBy(received(hung), "turn/steer")[0]).toMatchObject({ input: [{ type: "text", text: "use the shared helper", text_elements: [] }], expectedTurnId: "turn-1" });
+
+    const dir = home({ scenario: "basic" });
+    const queued = ["also update the docs", null];
+    const run = await adapter.start(request(dir, { nextTurn: async () => queued.shift() ?? null }));
+    const events = await collect(adapter, run);
+    const starts = sentBy(received(dir), "turn/start");
+    expect(starts.map((p) => (p.input as Array<{ text: string }>)[0]!.text)).toEqual(["Fix the bug", "also update the docs"]);
+    expect(events.filter((e) => e.type === "turn.started")).toHaveLength(2);
+    expect(events.at(-1)).toMatchObject({ type: "run.ended", reason: "completed" });
+    await expect(adapter.steer(run, { kind: "text", text: "late" })).rejects.toThrow();
+  });
+
+  it("undoes a finished thread's last turn with thread/rollback and says when codex has none", async () => {
+    const dir = home({});
+    const adapter = new CodexAdapter(launcher);
+    const req = { profile: profile(dir), cwd: dir, env: {}, session: { runner: "codex" as const, sessionId: "thr-9" }, turnRef: "turn-1" };
+    expect(await adapter.rewind(req)).toEqual({ files: false, history: true, detail: null });
+    const log = received(dir);
+    expect(sentBy(log, "thread/resume")[0]).toMatchObject({ threadId: "thr-9", excludeTurns: true });
+    expect(sentBy(log, "thread/rollback")[0]).toEqual({ threadId: "thr-9", numTurns: 1 });
+    // A turn/start would cost a model call; an undo must never send one.
+    expect(sentBy(log, "turn/start")).toEqual([]);
+
+    const newer = home({ noRollback: true });
+    expect(await adapter.rewind({ ...req, profile: profile(newer), cwd: newer })).toMatchObject({ files: false, history: false, detail: expect.stringContaining("thread/rollback") });
+  });
+
+  it("finds the thread's rollout file under CODEX_HOME/sessions, newest day first", async () => {
+    const dir = home({});
+    const day = join(dir, "sessions", "2026", "10", "30");
+    mkdirSync(day, { recursive: true });
+    writeFileSync(join(day, "rollout-2026-10-30T01-02-03-thr-7.jsonl"), "{}\n");
+    const adapter = new CodexAdapter(launcher);
+    const req = { profile: profile(dir), cwd: dir, env: {}, session: { runner: "codex" as const, sessionId: "thr-7" } };
+    expect(await adapter.transcript(req)).toEqual({ kind: "file", path: join(day, "rollout-2026-10-30T01-02-03-thr-7.jsonl"), ext: "jsonl" });
+    expect(await adapter.transcript({ ...req, session: { runner: "codex", sessionId: "thr-8" } })).toBeNull();
   });
 
   it("stops a run, ends its stream and leaves no process behind", async () => {

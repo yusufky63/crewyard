@@ -68,7 +68,12 @@ export class ScriptedAdapter implements AgentAdapter {
     if (r) await r.fake.interrupt(r.inner);
   }
 
-  inspect(runId: string): { answers: Answer[]; inputs: UserInput[] } {
+  steer(h: RunHandle, input: UserInput): Promise<void> {
+    const r = this.get(h);
+    return r.fake.steer(r.inner, input);
+  }
+
+  inspect(runId: string): { answers: Answer[]; inputs: UserInput[]; steered: UserInput[] } {
     const r = this.runs.get(runId);
     if (!r) throw new Error(`unknown run ${runId}`);
     return r.fake.inspect(r.inner);

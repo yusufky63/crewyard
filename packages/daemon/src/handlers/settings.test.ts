@@ -73,6 +73,18 @@ describe("settings values", () => {
     expect(s.notifications.quietHours.start).toBe("22:00");
     expect(s.notifications.approveFromToast).toBe(true);
   });
+
+  it("stores stall rules apart from notifications, inside their bounds", async () => {
+    const { h, store } = setup();
+    const next = await h["settings.update"]({ stalls: { noEventsMinutes: 0, sameFailureCount: 5 } });
+    expect(next.stalls).toEqual({ ...DEFAULT_SETTINGS.stalls, noEventsMinutes: 0, sameFailureCount: 5 });
+    expect(next.notifications).toEqual(DEFAULT_SETTINGS.notifications);
+    expect(store.db.prepare("select count(*) as n from settings where key = 'app.notifications'").get()).toEqual({ n: 0 });
+    await expect(attempt(() => h["settings.update"]({ stalls: { cooldownMinutes: 0 } }))).rejects.toThrow("settings.invalid");
+    await expect(attempt(() => h["settings.update"]({ stalls: { requestMinutes: 2.5 } }))).rejects.toThrow("settings.invalid");
+    store.db.prepare("update settings set value = ? where key = 'app.stalls'").run(JSON.stringify({ noEventsMinutes: 999, sameFailureCount: 4 }));
+    expect((await h["settings.get"]()).stalls).toEqual({ ...DEFAULT_SETTINGS.stalls, sameFailureCount: 4 });
+  });
 });
 
 describe("toast policy", () => {

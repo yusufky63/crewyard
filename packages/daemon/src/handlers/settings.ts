@@ -4,7 +4,7 @@ import type { AppSettings, DataInfo, SettingsIpc, SettingsPatch } from "@crewyar
 import { orchestratorFor } from "../orchestrator/index.ts";
 import { readProjectConfig } from "../setup/config.ts";
 import { backupsDir, backupTo, commitStaged, exportTo, listBackups, stageRestore } from "../settings/data.ts";
-import { applyPatch, NOTIFICATIONS_KEY, readNotifications } from "../settings/values.ts";
+import { applyPatch, NOTIFICATIONS_KEY, readNotifications, readStalls, STALLS_KEY } from "../settings/values.ts";
 import { appliedMigrationIds, MIGRATIONS } from "../store.ts";
 import type { HandlerContext, HandlerMap } from "./types.ts";
 
@@ -30,10 +30,9 @@ export function createSettingsHandlers(ctx: HandlerContext, opts: SettingsOption
   const db = store.db;
   const restart = opts.restart ?? exitForRestart;
 
-  const read = (): AppSettings => {
-    const row = db.prepare("select value from settings where key = ?").get(NOTIFICATIONS_KEY) as { value: string } | undefined;
-    return { notifications: readNotifications(row?.value) };
-  };
+  const value = (key: string) => (db.prepare("select value from settings where key = ?").get(key) as { value: string } | undefined)?.value;
+  const read = (): AppSettings => ({ notifications: readNotifications(value(NOTIFICATIONS_KEY)), stalls: readStalls(value(STALLS_KEY)) });
+  const write = (key: string, v: unknown) => db.prepare("insert into settings (key, value) values (?, ?) on conflict(key) do update set value = excluded.value").run(key, JSON.stringify(v));
   // How many migrations the live database has; restore accepts only files whose ids this build knows.
   const schemaVersion = () => appliedMigrationIds(db).length;
   const knownIds = MIGRATIONS.map((m) => m.id);
@@ -43,7 +42,8 @@ export function createSettingsHandlers(ctx: HandlerContext, opts: SettingsOption
     "settings.get": () => read(),
     "settings.update": (patch: SettingsPatch) => {
       const next = applyPatch(read(), patch);
-      db.prepare("insert into settings (key, value) values (?, ?) on conflict(key) do update set value = excluded.value").run(NOTIFICATIONS_KEY, JSON.stringify(next.notifications));
+      if (patch.notifications !== undefined) write(NOTIFICATIONS_KEY, next.notifications);
+      if (patch.stalls !== undefined) write(STALLS_KEY, next.stalls);
       ctx.emit("settings.changed", next);
       return next;
     },

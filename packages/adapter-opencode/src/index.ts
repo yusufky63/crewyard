@@ -16,7 +16,11 @@ export const capabilities: AgentCapabilities = {
   setModel: true,
   usage: true,
   reportedLimits: false,
-  readOnlyMode: true
+  readOnlyMode: true,
+  // No documented way to add to a busy session's running turn; a prompt sent then waits as the next turn.
+  // Session revert to a turn's user message restores OpenCode's file snapshot and hides the turn from history.
+  undo: { files: true, history: true },
+  transcript: true,
 };
 
 export function createAdapter(opts: OpenCodeAdapterOptions = {}): AgentAdapter {

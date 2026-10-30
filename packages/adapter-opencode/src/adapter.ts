@@ -1,12 +1,32 @@
 import { randomUUID } from "node:crypto";
 import { checkOutput, outputInstruction, outputRetryPrompt, parseOutputText } from "@crewyard/core";
-import type { AgentAdapter, AgentCapabilities, AgentEvent, Answer, EndReason, NativeSessionRef, OutputSchema, Probe, Profile, RunHandle, RunOutput, RunState, StartRequest, UserInput } from "@crewyard/core";
+import { randomUUID as newPassword } from "node:crypto";
+import type {
+  AgentAdapter,
+  AgentCapabilities,
+  AgentEvent,
+  Answer,
+  EndReason,
+  NativeSessionRef,
+  OutputSchema,
+  Probe,
+  Profile,
+  RewindRequest,
+  RewindResult,
+  RunHandle,
+  RunOutput,
+  RunState,
+  StartRequest,
+  TranscriptRequest,
+  TranscriptSource,
+  UserInput,
+} from "@crewyard/core";
 import { isShutdownExit, parseVersion, resolveBin, run as runCommand } from "@crewyard/proc";
 import { createOpencodeClient, type Event as OpenCodeEvent, type Message, type OpencodeClient, type PermissionRequest, type SessionStatus } from "@opencode-ai/sdk/v2";
 import { OpenCodeMapper, type EventBody } from "./mapper.ts";
 import { mustReject, permissionRules } from "./policy.ts";
 import { EventQueue } from "./queue.ts";
-import { basicAuth, launchServer, type OpenCodeServer } from "./server.ts";
+import { basicAuth, childEnv, launchServer, type OpenCodeServer } from "./server.ts";
 
 /** The CLI version this adapter was checked against; others are flagged until the suite passes. */
 export const TESTED_VERSION = "1.19.5";
@@ -196,6 +216,35 @@ export class OpenCodeAdapter implements AgentAdapter {
   /** OpenCode takes the model per prompt, so the switch applies from the next turn on. */
   async setModel(handle: RunHandle, model: string): Promise<void> {
     this.live(handle).model = parseModel(model);
+  }
+
+  /**
+   * Reverts the session to the user message that started the turn, on a session with no live
+   * process: a server of its own, `POST /session/{id}/revert` with that message id, then close.
+   * OpenCode restores its file snapshot and hides the turn; the next prompt drops it for good.
+   */
+  async rewind(req: RewindRequest): Promise<RewindResult> {
+    if (!req.turnRef) return { files: false, history: false, detail: "OpenCode gave this turn no message id." };
+    const executable = await this.executable();
+    if (!executable) throw new Error("opencode was not found on PATH");
+    const server = await launchServer({ executable, prefixArgs: this.opts.prefixArgs, cwd: req.cwd, configDir: req.profile.configDir, env: req.env, readyTimeoutMs: this.opts.readyTimeoutMs });
+    try {
+      const client = createOpencodeClient({ baseUrl: server.url, directory: req.cwd, headers: { Authorization: basicAuth(server.password) }, throwOnError: true });
+      await client.session.revert({ sessionID: req.session.sessionId, messageID: req.turnRef });
+      return { files: true, history: true, detail: null };
+    } finally {
+      await server.close();
+    }
+  }
+
+  /** `opencode export <session>`: OpenCode keeps sessions in its database, so its own export is the transcript. */
+  async transcript(req: TranscriptRequest): Promise<TranscriptSource | null> {
+    const executable = await this.executable();
+    if (!executable) return null;
+    const res = await runCommand(executable, [...this.opts.prefixArgs, "export", req.session.sessionId], { cwd: req.cwd, timeoutMs: 60_000, env: childEnv(req.profile.configDir, req.env, newPassword()) });
+    const text = res.stdout.trim();
+    if (res.code !== 0 || !text.startsWith("{")) return null;
+    return { kind: "text", text, ext: "json" };
   }
 
   async stop(handle: RunHandle): Promise<void> {
@@ -433,9 +482,24 @@ export class OpenCodeAdapter implements AgentAdapter {
       else if (run.interrupted) this.end(run, "interrupted");
       else if (run.formatRejected && run.req.outputSchema) this.fallBackToPromptJson(run, run.req.outputSchema);
       else if (run.error) this.end(run, "failed", run.error);
-      else if (run.req.outputSchema) this.finishWithOutput(run, run.req.outputSchema);
-      else this.end(run, "completed");
+      else void this.turnDone(run);
     }
+  }
+
+  /** Turn boundary: the step's queued follow-ups start the next turn; otherwise the run finishes. */
+  private async turnDone(run: Run): Promise<void> {
+    const next = run.req.nextTurn ? await run.req.nextTurn().catch(() => null) : null;
+    if (run.ended || run.stopping || run.interrupted || run.awaiting) return;
+    if (next) {
+      try {
+        await this.prompt(run, next);
+        return;
+      } catch (err) {
+        return this.end(run, "failed", err instanceof Error ? err.message : String(err));
+      }
+    }
+    if (run.req.outputSchema) this.finishWithOutput(run, run.req.outputSchema);
+    else this.end(run, "completed");
   }
 
   /** SSE has no replay: after a reconnect, read the session and pending requests and emit the gap. */
