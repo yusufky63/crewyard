@@ -26,6 +26,17 @@ const task = (over: Partial<TaskFacts> = {}): TaskFacts => ({
 });
 
 describe("deriveTaskStatus", () => {
+  it("reads a started Best of N group from its variants", () => {
+    const planned = [run({ endedAt: "2026-10-29T10:05:00Z", endReason: "completed" })];
+    expect(deriveTaskStatus(task({ runs: planned, bestOf: "running" }))).toBe("running");
+    expect(deriveTaskStatus(task({ runs: planned, bestOf: "needs_input" }))).toBe("needs_input");
+    // Every variant is done and one finished: the choice is yours.
+    expect(deriveTaskStatus(task({ runs: planned, bestOf: "choosing" }))).toBe("needs_input");
+    expect(deriveTaskStatus(task({ runs: planned, bestOf: "failed" }))).toBe("failed");
+    // Before it starts the task is only queued.
+    expect(deriveTaskStatus(task({ runs: planned, bestOf: null }))).toBe("queued");
+  });
+
   it("is proposed until the crew is approved", () => {
     expect(deriveTaskStatus(task({ crewApprovedAt: null }))).toBe("proposed");
   });

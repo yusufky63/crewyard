@@ -202,6 +202,10 @@ export class OrchestratorDb {
     transcriptPath: null,
   });
 
+  /** Best of N, scheduled tasks and hibernation (set by the orchestrator, which owns those stores). */
+  taskExtras: (t: TaskRow) => Pick<TaskSummary, "scheduled" | "bestOf" | "variantOf"> & { fact: TaskFacts["bestOf"]; groupRuns: RunRow[] } = () => ({ scheduled: null, bestOf: null, variantOf: null, fact: null, groupRuns: [] });
+  hibernatedAt: (runId: string) => string | null = () => null;
+
   constructor(readonly db: DatabaseSync) {}
 
   private one<T>(sql: string, ...args: Array<string | number | null>): T | undefined {
@@ -292,10 +296,12 @@ export class OrchestratorDb {
     return Number(this.one<{ attempt: number }>("select attempt from run_retries where run_id = ?", runId)?.attempt ?? 0);
   }
 
-  /** Runs that hold a process slot: open and not paused. */
+  /** Runs that hold a process slot: open, not paused and not hibernated (their process is stopped). */
   activeCounts(): { byProject: Map<string, number>; byProfile: Map<string, number>; total: number } {
     const rows = this.all<{ project_id: string; profile_id: string }>(
-      "select t.project_id, r.profile_id from runs r join tasks t on t.id = r.task_id where r.ended_at is null and r.paused_at is null",
+      `select t.project_id, r.profile_id from runs r join tasks t on t.id = r.task_id
+        where r.ended_at is null and r.paused_at is null
+          and not exists (select 1 from run_hibernation h where h.run_id = r.id and h.woke_at is null)`,
     );
     const byProject = new Map<string, number>();
     const byProfile = new Map<string, number>();
@@ -513,7 +519,7 @@ export class OrchestratorDb {
 
   // ---- views ----
 
-  facts(task: TaskRow, runs = this.runs(task.id)): TaskFacts {
+  facts(task: TaskRow, runs = this.runs(task.id), extras = this.taskExtras(task)): TaskFacts {
     const crew = this.crew(task.id);
     const members = crew ? this.members(crew.id) : [];
     const open = new Set(this.all<{ run_id: string }>("select run_id from requests where task_id = ? and answered_at is null and run_id is not null", task.id).map((r) => r.run_id));
@@ -531,6 +537,7 @@ export class OrchestratorDb {
       implementationDone: writers.length > 0 && writers.every((m) => completed(m.id)),
       // PR facts are written by the GitHub work (table task_pulls); without one a finished code task reads "review".
       pullRequest: this.pullFact(task.id),
+      bestOf: extras.fact,
       runs: runs.map((r) => ({
         id: r.id,
         role: r.role,
@@ -560,7 +567,8 @@ export class OrchestratorDb {
 
   summary(task: TaskRow): TaskSummary {
     const runs = this.runs(task.id);
-    const status = deriveTaskStatus(this.facts(task, runs));
+    const extras = this.taskExtras(task);
+    const status = deriveTaskStatus(this.facts(task, runs, extras));
     const openRequests = Number(this.one<{ n: number }>("select count(*) as n from requests where task_id = ? and answered_at is null", task.id)?.n ?? 0);
     const abandoned = this.abandonedTargets(task.id);
     const superseded = (r: RunRow) => abandoned.has(r.id) || runs.some((o) => o.resumed_from === r.id && !abandoned.has(o.id));
@@ -573,12 +581,16 @@ export class OrchestratorDb {
       status,
       fallback: task.fallback,
       budgetUsd: task.budget_usd,
-      spend: this.spend(runs),
+      // A Best of N group's variants spend for this task too.
+      spend: this.spend([...runs, ...extras.groupRuns]),
       createdAt: task.created_at,
       cancelledAt: task.cancelled_at,
       openRequests,
       activeRuns: runs.filter(isActive).length,
       resumableRunIds: task.cancelled_at ? [] : runs.filter((r) => r.end_reason !== null && RESUMABLE.includes(r.end_reason) && !superseded(r)).map((r) => r.id),
+      scheduled: extras.scheduled,
+      bestOf: extras.bestOf,
+      variantOf: extras.variantOf,
     };
   }
 
@@ -618,6 +630,7 @@ export class OrchestratorDb {
     const extras = this.runExtras(r);
     const pending = this.openRequestsForRun(r.id)[0] ?? null;
     const openHandoff = this.one<{ id: string }>("select id from handoffs where from_run_id = ? and closed_at is null", r.id);
+    const hibernatedAt = r.ended_at ? null : this.hibernatedAt(r.id);
     let state: RunView["state"];
     if (r.ended_at) state = "ended";
     else if (pending?.kind === "question") state = "waiting_input";
@@ -625,6 +638,7 @@ export class OrchestratorDb {
     else if (openHandoff) state = "handing_off";
     else if (r.limit_reached) state = "rate_limited";
     else if (r.paused_at) state = "paused";
+    else if (hibernatedAt) state = "hibernated";
     else state = r.last_state ?? "starting";
     return {
       id: r.id,
@@ -657,6 +671,7 @@ export class OrchestratorDb {
       cost: { usd: r.cost_usd, provenance: r.cost_provenance },
       plan: json(r.plan),
       diff: json(r.diff),
+      hibernatedAt,
     };
   }
 

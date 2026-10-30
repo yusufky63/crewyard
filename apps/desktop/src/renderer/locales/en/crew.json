@@ -92,6 +92,7 @@
     "needs_approval": "Needs approval",
     "limited": "Limit reached",
     "paused": "Paused",
+    "hibernated": "Hibernated",
     "handing_off": "Handing off",
     "done": "Done",
     "failed": "Failed",

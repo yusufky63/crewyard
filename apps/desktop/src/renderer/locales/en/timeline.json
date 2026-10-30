@@ -22,6 +22,8 @@
     "open": ", still open"
   },
   "entry": {
+    "hibernated": "{{who}} hibernated: its process stopped while it waits",
+    "woke": "{{who}} woke with its own session ({{by}})",
     "started": "{{who}} started",
     "tools_one": "{{count}} tool call",
     "tools_other": "{{count}} tool calls",
@@ -101,5 +103,6 @@
     "stop_no_change": "Loop stopped: nothing changed since the last try",
     "stop_spend_cap": "Loop stopped: {{cap}} reached",
     "stop_no_resume": "Loop stopped: {{runner}} cannot resume the session that wrote the code"
-  }
+  },
+  "wokeBy": {"answer": "your answer", "message": "your message", "resume": "the step went on"}
 }

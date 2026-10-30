@@ -321,6 +321,11 @@ A run cannot create other runs. If an agent asks for more work, the request beco
 
 - **Report server:** every run gets Crewyard's own stdio MCP server with `report` (checkpoint, needs input, stuck, done) and `propose_followup`. Reports show in the timeline; needs input, stuck and follow-ups are Inbox items. A follow-up becomes a task only when you click, and then only as a draft whose crew waits for your approval. The agent's text is untrusted data, capped and shown as text.
 - **Your servers:** Settings → MCP servers holds stdio servers per project or for all projects, in Crewyard's database, never in the project folder. Secret env values go through DPAPI. Each run gets them through its runner's own config. Read-only roles get only the tools a server marks read-only, or what you chose for that server. Package runners with a floating tag (`npx pkg@latest`) or no exact version are flagged.
+### 9.4 Best of N ([ADR 0008](docs/adr/0008-best-of-schedules-hibernation.md))
+
+- A code task can run its implement step on 2 to 4 profiles at once (composer option). Each variant is a hidden task of its own with its own worktree, bootstrap and run-until-green loop; the proposal shows every variant's estimate and the group's total, and no variant may share a reviewer's model.
+- The group starts all at once or not at all: N free slots and memory, and every paid estimate reserved against the parent's caps in one step. The parent's budget and per-task caps count every variant.
+- When the variants finish, the Tasks screen and the inspector compare them side by side (files changed, tests in each worktree, loop verdict, spend). Keeping one, after a confirm, moves its worktree and session to the parent, where test, review and PR continue; the others are stopped and parked.
 
 ## 10. GitHub
 
@@ -348,6 +353,13 @@ A run cannot create other runs. If an agent asks for more work, the request beco
   - `Undo last turn` puts the worktree back to the git checkpoint taken before the turn, after the runner's own rewind where it has one (Claude file checkpoints, Codex thread rollback, OpenCode revert). It shows every file it changes first, asks to confirm, and never runs while a turn does.
   - Stall alerts: a running turn quiet for N minutes, the same failure N runs in a row, or a request unanswered for N minutes becomes an Inbox item and a notice, with a cooldown; defaults in Settings.
   - At handoff and at run end the runner's own transcript is copied into the task folder, and the handoff package cites the copy.
+
+- **Scheduled tasks** ([ADR 0008](docs/adr/0008-best-of-schedules-hibernation.md)): a task template proposes a task daily or weekly at a time in an IANA time zone, created disabled. An optional precheck command gates each run by its exit code; a skip costs nothing. A schedule never overlaps its own previous run, catches up at most 3 missed slots after sleep or a restart, and goes through crew approval unless its template says "auto-approve this crew" (audited). The timer lives in the daemon: nothing runs while the app is closed.
+- **Hibernation** (ADR 0008): a live run idle for N minutes (Settings, on by default, 30, with an off switch) has its process stopped. Idle means no turn running and nothing of ours at work, or a turn held only by your unanswered question or approval; at a turn boundary with nothing queued a run already ends, so the waiting run is the one that matters.
+  - Only runners whose resume by session id is proven (Claude Code, Codex, OpenCode); Gemini CLI and other ACP agents only when they reported `loadSession`. Otherwise the process stays up.
+  - `hibernated` is its own state: never failed or stopped, no admission slot, its spend reservation kept, kept across a daemon restart. The timeline marks where it slept and woke.
+  - Its Inbox item stays open and says the agent is hibernated and answering resumes it; an answer from a toast works the same. It wakes by session id on your answer, a message, or when its step continues, taking a slot again (it waits for one if none is free). A resume the runner refuses ends the run failed, and the usual retry or handoff follows.
+  - The runner's pending call died with the process, so your answer goes to the session as text. An "allow once" grants the woken session's repeat of exactly that call: the same command text byte for byte except its ends, the same folder, paths and network flag, once, for that run, until the resumed turn ends or 15 minutes pass. A deny or cancel grants nothing (the deny reason goes to the agent as text); "allow always" keeps the project allowlist path, which never matches shell syntax.
 
 ### 11.1 First run and project setup
 
@@ -395,7 +407,7 @@ The result is `.mission/project.json` in the repo: name, commands, allowed runne
 
 ## 13. Canonical states
 
-**Facts per run:** `started_at`, `ended_at`, `end_reason` (`completed` / `failed` / `stopped` / `limit` / `interrupted`), `last_activity_at`, `pending_request_id`, `limit_state`, `handoff_id`.
+**Facts per run:** `started_at`, `ended_at`, `end_reason` (`completed` / `failed` / `stopped` / `limit` / `interrupted`), `last_activity_at`, `pending_request_id`, `limit_state`, `handoff_id`. A hibernated run (`run_hibernation`) is open, not stopped, and holds no admission slot.
 
 **Derived task status** (first match wins):
 

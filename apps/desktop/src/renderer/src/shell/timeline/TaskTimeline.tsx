@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeftRight, ChevronDown, ChevronRight, CircleAlert, CircleCheck, CircleHelp, Flag, Lightbulb, MessageSquare, Milestone, Play, RotateCw, ShieldQuestion, Timer, Wrench } from "lucide-react";
+import { ArrowLeftRight, ChevronDown, ChevronRight, CircleAlert, CircleCheck, CircleHelp, Flag, Lightbulb, MessageSquare, Milestone, Moon, Play, RotateCw, ShieldQuestion, Timer, Wrench } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { buildTimeline, timeIn, visibleSegments, type CrewReportType, type Lane, type LaneState, type McpTopics, type TaskDetail, type TasksTopics, type TimelineEntry, type ToolStep } from "@crewyard/core";
 import { BrandIcon, Button, Label } from "@crewyard/ui";
@@ -183,6 +183,7 @@ const ENTRY_ICON: Record<TimelineEntry["kind"], typeof Play> = {
   handoff: ArrowLeftRight,
   message: MessageSquare,
   retry: RotateCw,
+  hibernation: Moon,
   // Drawn with the decision's own status icon instead (loopLook).
   loop: RotateCw,
   // Drawn with the report's own icon instead (REPORT_ICON).
@@ -253,6 +254,8 @@ function EntryText({ e, who, roleOf, now, locale, first }: { e: TimelineEntry; w
       return <span>{e.queued ? t("entry.messageQueued") : t("entry.message")}</span>;
     case "retry":
       return <span>{t("entry.retry", { who: who(e.runId) })}</span>;
+    case "hibernation":
+      return <span>{e.phase === "hibernated" ? t("entry.hibernated", { who: who(e.runId) }) : t("entry.woke", { who: who(e.runId), by: t(`wokeBy.${e.by ?? "resume"}`, { defaultValue: e.by ?? "" }) })}</span>;
     case "loop":
       return <LoopText e={e} role={roleOf(e.memberId, e.runId)} />;
     case "report":

@@ -70,16 +70,31 @@ export const STALL_LIMITS = {
   cooldownMinutes: { min: 1, max: 1440 },
 } as const satisfies Record<keyof StallSettings, { min: number; max: number }>;
 
+/**
+ * Hibernation (orca agents/hibernation.mdx, our own rules): a run whose process sits idle this
+ * many minutes, on a runner that can resume its session, has its process stopped to free memory
+ * and its admission slot. The run stays open and wakes by session id. Stored under
+ * `app.hibernation`, read by the orchestrator on each check.
+ */
+export interface HibernationSettings {
+  enabled: boolean;
+  idleMinutes: number;
+}
+
+export const HIBERNATION_LIMITS = { idleMinutes: { min: 1, max: 1440 } } as const;
+
 export interface AppSettings {
   notifications: NotificationSettings;
   keepAwake: KeepAwakeSettings;
   stalls: StallSettings;
+  hibernation: HibernationSettings;
 }
 
 export interface SettingsPatch {
   notifications?: Partial<Omit<NotificationSettings, "quietHours">> & { quietHours?: Partial<QuietHours> };
   keepAwake?: Partial<KeepAwakeSettings>;
   stalls?: Partial<StallSettings>;
+  hibernation?: Partial<HibernationSettings>;
 }
 
 export interface BackupEntry {

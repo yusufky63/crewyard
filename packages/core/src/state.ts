@@ -23,6 +23,12 @@ export interface TaskFacts {
   /** The task's pull request as GitHub last reported it; null until one is opened or linked. */
   pullRequest: { state: "open" | "merged" | "closed" } | null;
   runs: RunFacts[];
+  /**
+   * A Best of N group that started and has no kept variant yet, read from its variants' own
+   * statuses: one needs you, one works, none works and one finished (you choose), or none finished.
+   * Absent before the group starts and once a variant is kept.
+   */
+  bestOf?: "needs_input" | "running" | "choosing" | "failed" | null;
 }
 
 export type TaskStatus =
@@ -49,10 +55,11 @@ export function deriveTaskStatus(t: TaskFacts): TaskStatus {
   if (t.cancelledAt) return "cancelled";
   if (!t.crewApprovedAt) return "proposed";
   if (t.runs.some((r) => r.required && r.endReason === "failed" && !r.retryPending) && !t.openHandoffId) return "failed";
-  if (t.runs.some((r) => r.pendingRequestId !== null)) return "needs_input";
+  if (t.runs.some((r) => r.pendingRequestId !== null) || t.bestOf === "needs_input" || t.bestOf === "choosing") return "needs_input";
+  if (t.bestOf === "failed" && !t.runs.some(isActive)) return "failed";
   if (t.runs.some((r) => isActive(r) && r.limitReached) && !t.openHandoffId) return "limited";
   if (t.openHandoffId) return "handing_off";
-  if (t.runs.some(isActive)) return "running";
+  if (t.runs.some(isActive) || t.bestOf === "running") return "running";
   if (t.kind === "code" && t.pullRequest?.state === "merged") return "merged";
   if (t.kind === "code" && t.implementationDone) return "review";
   const allEnded = t.runs.length > 0 && t.runs.every((r) => r.endedAt !== null);

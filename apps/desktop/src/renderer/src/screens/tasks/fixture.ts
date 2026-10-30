@@ -1,5 +1,5 @@
 import { reviewFixture } from "./reviewFixture.ts";
-import { NO_RUN_CONTROLS, type CandidateView, type CrewMemberView, type IpcMethod, type IpcParams, type IpcResult, type LimitNoticePayload, type LoopDecisionView, type RequestView, type RoleId, type RunView, type StallAlertView, type TaskDetail, type TaskSummary, type UndoPreview } from "@crewyard/core";
+import { NO_RUN_CONTROLS, type CandidateView, type CrewMemberView, type IpcMethod, type IpcParams, type IpcResult, type LimitNoticePayload, type LoopDecisionView, type RequestView, type RoleId, type RunView, type StallAlertView, type TaskDetail, type TaskSummary, type UndoPreview, type BestOfVariantView, type ScheduleRunView, type ScheduleView } from "@crewyard/core";
 import { fixtureReports, fixtureServers, fixtureUsage } from "../../shell/mcpFixture.ts";
 
 // Screenshot data. Used only when the page URL has `fixture`, which the main process sets only
@@ -232,7 +232,86 @@ function build(projectId: string): { tasks: TaskDetail[]; requests: RequestView[
   });
   const noStart = detail(summary("t-nostart", "Add a retry hint to the 429 response", { size: "S", status: "failed", resumableRunIds: [startRun.id], createdAt: ago(4) }), s, [startRun]);
 
+  // 10. Best of N, choosing: three implementers ran in their own worktrees; two finished.
+  const bo = [member("implementer", 1, SOL, [OPUS, FLASH], [], true), member("reviewer", 2, GLM, [ARGON], ["implementer"])];
+  const wt = (position: number) => `C:\\Projeler\\.mc\\worktrees\\crewyard\\cache-layer-v${position}`;
+  const variant = (position: number, c: CandidateView, over: Partial<BestOfVariantView>): BestOfVariantView => ({
+    id: `v${position}`,
+    position,
+    candidate: c,
+    taskId: `t-bestof-v${position}`,
+    status: "review",
+    run: run(`t-bestof-v${position}`, { ...bo[0]!, id: `m-bo-v${position}` }, c, { state: "ended", startedAt: ago(40), endedAt: ago(12 + position), endReason: "completed", cwd: wt(position) }),
+    resumableRunIds: [],
+    spend: { usd: c.estimate.usd ?? 0, provenance: "estimated" },
+    diffStat: null,
+    test: null,
+    decisions: [],
+    branch: `crewyard/cache-layer-v${position}`,
+    worktreePath: wt(position),
+    outcome: null,
+    parkedAt: null,
+    parkError: null,
+    ...over,
+  });
+  const test = (runId: string, passed: boolean, durationMs: number) => ({ id: `t-${runId}`, runId, command: "pnpm vitest run", exitCode: passed ? 0 : 1, passed, tail: passed ? "" : "FAIL src/cache.test.ts > evicts the oldest entry\nexpected 3 entries, got 4", durationMs, headSha: null, at: ago(13) });
+  const variants: BestOfVariantView[] = [
+    variant(1, SOL, {
+      diffStat: { files: [{ path: "src/cache/lru.ts", added: 84, removed: 0 }, { path: "src/cache/index.ts", added: 12, removed: 3 }, { path: "src/cache.test.ts", added: 41, removed: 0 }], added: 137, removed: 3 },
+      test: test("r-v1", true, 18_400),
+      decisions: [decision(bo[0]!, "r-v1", "tests_passed", 0, { code: "loop.tests_passed", params: { command: "pnpm vitest run" } }, ago(13))],
+    }),
+    variant(2, OPUS, {
+      diffStat: { files: [{ path: "src/cache/store.ts", added: 120, removed: 18 }, { path: "src/cache.test.ts", added: 52, removed: 0 }, { path: "docs/cache.md", added: 20, removed: 0 }], added: 192, removed: 18 },
+      spend: { usd: 0.94, provenance: "estimated" },
+      test: test("r-v2", true, 21_100),
+      decisions: [
+        decision(bo[0]!, "r-v2", "tests_failed", 1, { code: "loop.tests_failed", params: { command: "pnpm vitest run", exitCode: 1 } }, ago(20)),
+        decision(bo[0]!, "r-v2", "tests_passed", 1, { code: "loop.tests_passed", params: { command: "pnpm vitest run" } }, ago(14)),
+      ],
+    }),
+    variant(3, FLASH, {
+      status: "failed",
+      run: run("t-bestof-v3", { ...bo[0]!, id: "m-bo-v3" }, FLASH, { state: "ended", startedAt: ago(40), endedAt: ago(16), endReason: "failed", endDetail: "loop.iteration_cap", cwd: wt(3) }),
+      resumableRunIds: ["r-m-bo-v3"],
+      spend: { usd: 0.31, provenance: "estimated" },
+      diffStat: { files: [{ path: "src/cache/lru.ts", added: 66, removed: 0 }], added: 66, removed: 0 },
+      test: test("r-v3", false, 9_800),
+      decisions: [decision(bo[0]!, "r-v3", "stop_iteration_cap", 3, { code: "loop.iteration_cap", params: { max: 3 } }, ago(16))],
+    }),
+  ];
+  const bestOf = detail(summary("t-bestof", "Add an LRU cache in front of the pricing lookups", { status: "needs_input", size: "S", bestOf: { n: 3, phase: "choosing" }, spend: { usd: 1.25, provenance: "estimated" }, createdAt: ago(42) }), bo, [], {
+    bestOfGroup: { id: "g1", memberId: bo[0]!.id, n: 3, phase: "choosing", estimate: { usd: 2.1, provenance: "estimated" }, variants, startedAt: ago(40), keptVariantId: null, keptAt: null },
+  });
+
+  // 10b. The same kind of task as a proposal: three variants with their estimates and the group's total.
+  const bp = [member("implementer", 1, SOL, [OPUS, FLASH], [], true), member("reviewer", 2, GLM, [ARGON], ["implementer"])];
+  const proposedVariants = [SOL, OPUS, FLASH].map((c, i) => variant(i + 1, c, { taskId: null, status: null, run: null, branch: null, worktreePath: null, spend: { usd: 0, provenance: "estimated" } }));
+  const bestOfProposed = detail(summary("t-bestof-proposed", "Rewrite the pricing cache with an LRU and a TTL", { status: "proposed", size: "S", bestOf: { n: 3, phase: "proposed" }, createdAt: ago(1) }), bp, [], {
+    crew: { id: "c-t-bestof-proposed", proposedAt: ago(1), approvedAt: null, estimate: { usd: 1.6, provenance: "estimated" }, members: bp },
+    bestOfGroup: { id: "g2", memberId: bp[0]!.id, n: 3, phase: "proposed", estimate: { usd: 1.6, provenance: "estimated" }, variants: proposedVariants, startedAt: null, keptVariantId: null, keptAt: null },
+  });
+
+  // 11. Hibernated: the process stopped while the run waits on a question; it wakes with the answer.
+  const h = [member("researcher", 1, ARGON, [OPUS])];
+  const asleepRun = run("t-asleep", h[0]!, ARGON, { state: "waiting_input", startedAt: ago(95), lastActivityAt: ago(80), pendingRequestId: "q-asleep", hibernatedAt: ago(50), worktreeId: null, cwd: "C:\\Projeler\\crewyard" });
+  const asleep = detail(summary("t-asleep", "Compare Redis and an in-process cache for the pricing service", { kind: "research", size: "S", status: "needs_input", openRequests: 1, activeRuns: 1, scheduled: { scheduleId: "s1", title: "Weekly cache review", autoApproved: false }, createdAt: ago(96) }), h, [asleepRun], { worktree: null });
+
   const requests: RequestView[] = [
+    {
+      id: "q-asleep",
+      taskId: "t-asleep",
+      projectId,
+      runId: asleepRun.id,
+      sessionId: asleepRun.nativeSessionId,
+      kind: "question",
+      risk: null,
+      payload: { kind: "question", questions: [{ prompt: "Should the comparison include memory use under load?", options: [{ label: "Yes" }, { label: "No" }], allowFreeText: true }] },
+      createdAt: ago(80),
+      answeredAt: null,
+      answer: null,
+      answeredBy: null,
+    },
     {
       id: "q-approval",
       taskId: "t-approval",
@@ -277,7 +356,8 @@ function build(projectId: string): { tasks: TaskDetail[]; requests: RequestView[
     },
   ];
   // The failed rows first, so a 1280 px shot of the list shows how their errors fit.
-  return { tasks: [noStart, credit, proposed, running, approval, capped, unpriced, review, done], requests };
+  // New kinds of rows go last, so earlier shots of the list keep their first rows.
+  return { tasks: [noStart, credit, proposed, running, approval, capped, unpriced, review, done, bestOf, asleep, bestOfProposed], requests };
 }
 
 let cache: { projectId: string; data: ReturnType<typeof build> } | null = null;
@@ -308,6 +388,10 @@ export function fixtureCall<M extends IpcMethod>(method: M, params: IpcParams<M>
       return fixtureServers(p.projectId) as IpcResult<M>;
     case "mcp.servers.usage":
       return fixtureUsage(p.projectId) as IpcResult<M>;
+    case "schedules.list":
+      return fixtureSchedules(p.projectId ?? anyProject()) as IpcResult<M>;
+    case "schedules.runs":
+      return fixtureScheduleRuns((params as { id: string }).id) as IpcResult<M>;
     case "runs.undoPreview":
       return fixtureUndo((params as { runId: string }).runId) as IpcResult<M>;
     case "github.repo":
@@ -324,6 +408,49 @@ export function fixtureCall<M extends IpcMethod>(method: M, params: IpcParams<M>
     default:
       return task(p.taskId) as IpcResult<M>;
   }
+}
+
+/** Two schedules: a weekly one with a precheck that skipped a slot, and a daily auto-approved one, off. */
+function fixtureSchedules(projectId: string): ScheduleView[] {
+  const base = { projectId, kind: "code" as const, size: "S" as const, fallback: "ask" as const, budgetUsd: 2, bestOf: null, timeZone: "Europe/Istanbul", precheckTimeoutSec: 60, createdAt: ago(9 * 1440), updatedAt: ago(2 * 1440), pending: 0 };
+  return [
+    {
+      ...base,
+      id: "s1",
+      title: "Weekly cache review",
+      description: "Read the pricing service's cache hit rates and suggest changes.",
+      kind: "research",
+      cadence: "weekly",
+      weekday: 1,
+      time: "09:00",
+      precheck: "gh pr list --label cache --limit 1",
+      autoApprove: false,
+      enabled: true,
+      nextAt: ahead(3 * 1440),
+      lastRun: fixtureScheduleRuns("s1")[0]!,
+    },
+    {
+      ...base,
+      id: "s2",
+      title: "Update outdated dev dependencies",
+      description: "Bump patch versions of dev dependencies and run the tests.",
+      bestOf: 2,
+      cadence: "daily",
+      weekday: null,
+      time: "07:30",
+      precheck: null,
+      autoApprove: true,
+      enabled: false,
+      nextAt: null,
+      lastRun: null,
+    },
+  ];
+}
+
+function fixtureScheduleRuns(id: string): ScheduleRunView[] {
+  if (id !== "s1") return [];
+  const r = (n: number, over: Partial<ScheduleRunView>): ScheduleRunView => ({ id: `sr${n}`, scheduleId: id, slotAt: ago(n * 7 * 1440), startedAt: ago(n * 7 * 1440), finishedAt: ago(n * 7 * 1440 - 1), outcome: "proposed", precheckExit: 0, precheckTail: null, taskId: null, count: 1, detail: null, manual: false, ...over });
+  return [r(0, { outcome: "proposed", taskId: "t-asleep", slotAt: ago(96), startedAt: ago(96) }), r(1, { outcome: "skipped_precheck", precheckExit: 1, precheckTail: "no pull requests match" }), r(2, { outcome: "skipped_missed", count: 2 })];
 }
 
 /** One quiet run and one step that keeps failing, as the stall rules would raise them. */

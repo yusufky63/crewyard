@@ -2,6 +2,12 @@
   "nav": "Tasks",
   "title": "Tasks",
   "composer": {
+    "bestOf": "Best of",
+    "bestOfTitle": "Run the implement step on several profiles at once, each in its own worktree, then keep one",
+    "bestOfOff": "off",
+    "bestOfN_one": "{{count}} profile",
+    "bestOfN_other": "{{count}} profiles",
+    "bestOfNote": "The implement step will run {{count}} times in parallel. The proposal shows the estimate for all of them; caps count the whole group.",
     "label": "New task",
     "placeholder": "Describe the task. The first line becomes its title.",
     "repoTitle": "Project the task runs in",
@@ -80,6 +86,8 @@
     "unavailable": "Your pin {{alias}} was not used: it is not ready, or it cannot take this role."
   },
   "reason": {
+    "admission_group_slots": "Waiting for {{variants}} free slots at once ({{free}} free)",
+    "admission_group_memory": "Waiting for memory for every variant: {{freeMb}} MB free, needs {{neededMb}} MB",
     "classify_keyword": "“{{keyword}}” reads as {{kind}}",
     "classify_explicit": "Kind and size set by you",
     "classify_length": "{{chars}} characters: size {{size}}",
@@ -126,6 +134,10 @@
     "loop_no_resume": "{{runner}} cannot resume"
   },
   "status": {
+    "bestOfRunning": "Running · {{count}} variants",
+    "bestOfChoose": "Compare the variants and keep one",
+    "bestOfNeedsYou": "A variant waits for you",
+    "bestOfFailed": "No variant finished",
     "proposed": "Waiting for approval",
     "queued": "Queued",
     "running": "Running",
@@ -167,6 +179,7 @@
     "interrupted": "Interrupted"
   },
   "step": {
+    "hibernated": "Hibernated",
     "waiting": "Waiting",
     "blocked": "Queued",
     "running": "Running",
@@ -199,6 +212,8 @@
     "pause": "Pause"
   },
   "row": {
+    "scheduled": "From schedule: {{title}}",
+    "scheduledAuto": "Its crew was approved by the schedule's auto-approve setting",
     "agents_one": "{{count}} agent",
     "agents_other": "{{count}} agents",
     "files_one": "{{count}} file",
@@ -428,6 +443,18 @@
     "sent_other": "Sent {{count}} comments to {{who}}."
   },
   "errors": {
+    "best_of_bad_count": "Best of runs 2 to 4 profiles.",
+    "best_of_too_few": "Not enough profiles can take the implement step for this many variants. A reviewer's model does not count.",
+    "best_of_not_found": "This task has no Best of group, or no step that writes code.",
+    "best_of_kept": "A variant was kept already.",
+    "best_of_not_finished": "Only a variant whose implement run finished can be kept.",
+    "best_of_not_started": "The variants have not started yet.",
+    "best_of_over_budget": "The estimate for every variant is more than the task budget. Raise the budget or use fewer profiles.",
+    "best_of_slots": "The project or this machine has fewer slots than variants, so they could never start together.",
+    "schedule_not_found": "That schedule no longer exists.",
+    "schedule_invalid": "A field of the schedule is not valid.",
+    "schedule_busy": "The schedule's previous run is still active.",
+    "run_hibernated": "The run is hibernated; send a message or answer its request to wake it.",
     "crew_read_only_profile": "That account is marked read-only, so it cannot take a role that changes files. Pick another account, or turn off read-only for it in Providers.",
     "handoff_over_budget": "This task is past its budget. Approve going past it in the Inbox first.",
     "load": "Tasks could not be loaded from the background service.",
@@ -510,5 +537,85 @@
   "handoffRecord": {
     "out": "Handed off to {{target}}",
     "in": "Took over from {{source}}"
+  },
+  "view": {
+    "label": "View",
+    "tasks": "Tasks",
+    "schedules": "Schedules"
+  },
+  "bestOf": {
+    "title_one": "Best of {{count}}",
+    "title_other": "Best of {{count}}",
+    "aria": "Best of variants for {{title}}",
+    "variantAria": "Variant {{index}}, {{alias}}",
+    "chip": "Best of {{count}}",
+    "compare": "Compare",
+    "phase": {
+      "proposed": "Proposed",
+      "waiting": "Waiting to start",
+      "running": "Variants working",
+      "choosing": "Pick one",
+      "kept": "One kept",
+      "failed": "None finished"
+    },
+    "runningNote": "Each variant works in its own worktree. When they finish, compare their changes, tests and verdicts, then keep one.",
+    "chooseNote_one": "{{count}} variant finished. Keep one: it continues the crew (test, review, PR); the others are stopped and their worktrees parked.",
+    "chooseNote_other": "{{count}} variants finished. Keep one: it continues the crew (test, review, PR); the others are stopped and their worktrees parked.",
+    "keptNote": "The kept variant continues the crew in its worktree. The others were stopped and parked: work in progress committed, folder removed, branch kept.",
+    "groupEstimate": "{{usd}} for every variant",
+    "proposalTitle_one": "Best of {{count}} · implement step",
+    "proposalTitle_other": "Best of {{count}} · implement step",
+    "proposalNote_one": "The implement step runs on {{count}} profile at once, each in its own worktree. The estimate below counts every variant, and so do the caps.",
+    "proposalNote_other": "The implement step runs on {{count}} profiles at once, each in its own worktree. The estimate below counts every variant, and so do the caps.",
+    "variantProfile": "Profile for variant {{index}}",
+    "variantOf": "Variant {{index}} of {{count}} · open the task",
+    "status": {
+      "waiting": "Waiting to start",
+      "proposed": "Waiting for approval",
+      "queued": "Queued",
+      "running": "Working",
+      "needs_input": "Waits for you",
+      "limited": "Limit reached",
+      "handing_off": "Handing off",
+      "review": "Finished",
+      "merged": "Merged",
+      "done": "Finished",
+      "failed": "Failed",
+      "cancelled": "Stopped"
+    },
+    "kept": "Kept",
+    "discarded": "Discarded",
+    "discardedParked": "Discarded · parked",
+    "discardedNotParked": "Discarded · not parked",
+    "spend": "Spend",
+    "estimate": "estimate {{usd}}",
+    "changes": "Changes",
+    "noChanges": "No changes",
+    "noChangesYet": "No changes yet",
+    "moreFiles_one": "{{count}} more file",
+    "moreFiles_other": "{{count}} more files",
+    "tests": "Tests in its worktree",
+    "testsPassed": "Passed",
+    "testsFailed": "Failed · exit {{code}}",
+    "output": "Output",
+    "noTests": "Not run",
+    "verdict": "Verdict",
+    "noVerdict": "None yet",
+    "branch": "Branch",
+    "parkFailed": "Parking failed",
+    "keep": "Keep this one",
+    "keepConfirm_one": "Keep it? {{count}} other variant is stopped ({{running}} still running) and its worktree parked.",
+    "keepConfirm_other": "Keep it? {{count}} other variants are stopped ({{running}} still running) and their worktrees parked.",
+    "parkNow": "Park now",
+    "keepYes": "Keep it",
+    "keepConfirmAlone": "Keep it? It continues the crew.",
+    "stop": "Stop",
+    "stopConfirm": "Stop this variant? Its worktree stays until you keep another one.",
+    "inspect": "Details"
+  },
+  "hibernation": {
+    "title": "Hibernated",
+    "waitingOnYou": "Its process was stopped {{time}} to free memory and a slot. It wakes with its own session when you answer.",
+    "idle": "Its process was stopped {{time}} to free memory and a slot. It wakes with its own session on your next message."
   }
 }

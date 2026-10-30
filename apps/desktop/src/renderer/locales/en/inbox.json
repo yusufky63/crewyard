@@ -63,6 +63,7 @@
     "high": "High risk"
   },
   "detail": {
+    "hibernated": "The agent is hibernated: its process was stopped to free memory while it waits. Answering resumes it with its own session.",
     "askedIn": "Asked in",
     "step": "step {{step}} of {{total}}, {{role}}",
     "cwd": "Working directory",
@@ -102,6 +103,7 @@
   },
   "policy": {
     "notAllowlisted": "Not on this project's allowlist yet.",
+    "policy_approved_while_hibernated": "Allowed once: you approved this exact call while the agent was hibernated.",
     "policy_allowlisted": "On the allowlist.",
     "policy_role_read_only": "Denied: this role is read-only.",
     "policy_role_docs_only": "Denied: this role may only change docs.",

@@ -76,6 +76,8 @@ export type TimelineEvent = {
   | { kind: "handoff"; phase: "opened" | "completed" | "failed"; handoffId: string | null; trigger: string | null }
   | { kind: "limit"; window: string | null }
   | { kind: "retry"; detail: string | null }
+  /** Hibernation: the run's process was stopped while it waited, or it woke (`by`: answer, message, resume). */
+  | { kind: "hibernation"; phase: "hibernated" | "woke"; by: string | null }
   /**
    * A run-until-green or review loop decision; `iteration` is the step's fix attempts so far.
    * `memberId` is the step the loop works on (the implementer), also for a reviewer's verdict.

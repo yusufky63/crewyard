@@ -247,5 +247,11 @@
     "usageTitle": "Son çalıştırmalar ve aldıkları sunucular",
     "usageEmpty": "Henüz MCP sunucusuyla başlamış bir çalıştırma yok.",
     "skipped": "Dışarıda bırakılanlar: {{list}}"
+  },
+  "hibernation": {
+    "label": "Boşta bekleyen ajanları uyut",
+    "hint": "Bir ajan hiçbir şey çalıştırmadan yanıtınızı beklerken, aşağıdaki süre dolunca süreci durdurulur. Çalışma açık kalır; siz yanıtlayınca ya da mesaj gönderince kendi oturumuyla uyanır. Yalnızca oturumu sürdürebilen çalıştırıcılarda.",
+    "after": "Şu kadar sonra uyut",
+    "afterHint": "Süreç durmadan önceki boşta dakika, {{min}} ile {{max}} arası."
   }
 }

@@ -12,6 +12,7 @@ export function createTasksHandlers(ctx: HandlerContext, overrides?: Partial<Orc
     "tasks.propose": (params) => o.propose(params),
     "tasks.approve": (params) => o.approve(params),
     "tasks.cancel": ({ taskId }) => o.cancel(taskId),
+    "tasks.keepVariant": ({ taskId, variantId }) => o.keepVariant(taskId, variantId),
     "runs.pause": ({ runId, sessionId }) => o.pause(runId, { sessionId }),
     "runs.resume": ({ runId }) => o.resume(runId),
     "runs.stop": ({ runId, sessionId }) => o.stop(runId, { sessionId }),
@@ -28,5 +29,11 @@ export function createTasksHandlers(ctx: HandlerContext, overrides?: Partial<Orc
     "runs.undo": ({ runId, turnId }) => o.undo(runId, turnId),
     "stalls.list": (params) => o.stalls.list(params),
     "stalls.dismiss": ({ alertId }) => o.stalls.dismiss(alertId),
+    "schedules.list": ({ projectId }) => o.schedules.list(projectId),
+    "schedules.save": (params) => o.schedules.save(params),
+    "schedules.setEnabled": ({ id, enabled }) => o.schedules.setEnabled(id, enabled),
+    "schedules.delete": ({ id }) => o.schedules.delete(id),
+    "schedules.runs": ({ id, limit }) => o.schedules.runs(id, limit),
+    "schedules.runNow": ({ id }) => o.schedules.runNow(id),
   };
 }

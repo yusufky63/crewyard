@@ -95,7 +95,7 @@
 .tk-step .t { font: 400 12px / 1 var(--mono); color: var(--ink-3); text-align: right; }
 .tk-step-dot { width: 7px; height: 7px; border-radius: var(--radius-dot); background: var(--ink-3); justify-self: center; }
 .tk-step-dot.s-running { background: var(--accent); }
-.tk-step-dot.s-needs_you, .tk-step-dot.s-paused, .tk-step-dot.s-handing_off, .tk-step-dot.s-blocked { background: var(--warn); }
+.tk-step-dot.s-needs_you, .tk-step-dot.s-paused, .tk-step-dot.s-hibernated, .tk-step-dot.s-handing_off, .tk-step-dot.s-blocked { background: var(--warn); }
 .tk-step-dot.s-limited, .tk-step-dot.s-failed { background: var(--bad); }
 .tk-step-dot.s-done { background: var(--ok); }
 /* Placeholder for a row not mounted yet (LazyRow): the height of a collapsed row, so the scrollbar is right. */
@@ -108,3 +108,51 @@
 .ho-stop-row:has(input:checked) { border-color: var(--accent); }
 .ho-stop-row input { margin: 2px 0 0; accent-color: var(--accent); }
 .ho-stop-hint { display: block; font-size: 12px; line-height: 1.35; }
+
+/* Best of N compare view: one spec tile per variant, side by side; stacked in the inspector. */
+.bo-note { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); margin: 0 0 12px; line-height: 1.4; }
+.bo-grid { display: grid; gap: 12px; overflow-x: auto; padding-bottom: 2px; }
+.bo-stack { display: grid; gap: 10px; }
+.bo-variant { padding: 14px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+.bo-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.bo-who { font-size: 13px; min-width: 0; }
+.bo-model { font-size: 12px; color: var(--ink-3); overflow-wrap: anywhere; }
+.bo-facts { display: grid; gap: 4px; margin: 4px 0 0; }
+.bo-facts dt { margin-top: 6px; }
+.bo-facts dd { margin: 0; font-size: 13px; min-width: 0; }
+.bo-small { font-size: 12px; }
+.bo-wrap { white-space: normal; }
+.bo-facts .st { white-space: normal; align-items: flex-start; }
+.bo-facts .st svg { flex: none; margin-top: 2px; }
+.bo-files { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 2px; font-size: 12px; }
+.bo-files li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; }
+.bo-files li > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bo-files .add { color: var(--ok); }
+.bo-files .del { color: var(--bad); }
+.bo-tail summary { cursor: pointer; color: var(--ink-2); margin-top: 4px; }
+.bo-tail pre { margin: 6px 0 0; padding: 8px; max-height: 180px; overflow: auto; background: var(--sunken); border: 1px solid var(--line); font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.bo-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 6px; padding-top: 10px; border-top: 1px dashed var(--tick); }
+.bo-variants { display: grid; gap: 8px; margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--tick); }
+.bo-variants-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; }
+.bo-variant-pick { display: grid; gap: 4px; padding: 10px; }
+.bo-variant-pick .row { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.tk-sched { display: inline-flex; align-items: center; gap: 5px; }
+
+/* Schedules (the Tasks screen's second view) */
+.sc-only-open { margin-bottom: 12px; color: var(--ink-2); background: var(--surface); flex-wrap: nowrap; align-items: flex-start; }
+.sc-only-open svg { flex: none; margin-top: 2px; }
+.sc-only-open span { flex: 1; min-width: 0; line-height: 1.4; }
+.sc-head { display: flex; justify-content: flex-end; margin-bottom: 12px; }
+.sc-form { margin-top: 0; margin-bottom: 16px; }
+.sc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px 16px; margin-top: 12px; }
+.sc-field { display: grid; gap: 6px; align-content: start; min-width: 0; }
+.sc-field textarea.pv-input { height: auto; padding: 8px 10px; line-height: 1.4; resize: vertical; }
+.sc-field select.pv-input { padding-right: 4px; }
+.sc-field [aria-invalid] { border-color: var(--bad); }
+.sc-wide { grid-column: 1 / -1; }
+.sc-hint { font-size: 12px; line-height: 1.4; }
+.sc-check { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.sc-check input { accent-color: var(--accent); }
+.sc-runs { list-style: none; margin: 14px 0 2px; padding: 12px 0 0; border-top: 1px dashed var(--tick); display: grid; gap: 4px; }
+.sc-run { display: grid; grid-template-columns: 150px auto minmax(0, 1fr) auto; gap: 12px; align-items: center; font-size: 13px; }
+.sc-small { font-size: 12px; }

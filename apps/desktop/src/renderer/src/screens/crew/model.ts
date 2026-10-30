@@ -24,6 +24,7 @@ export type MemberStatus =
   | "needs_approval"
   | "limited"
   | "paused"
+  | "hibernated"
   | "handing_off"
   | "done"
   | "failed"
@@ -100,6 +101,8 @@ export function latestRun(runs: RunView[], memberId: string): RunView | null {
 
 export function memberStatus(run: RunView | null, approved: boolean, cancelled: boolean): MemberStatus {
   if (!run) return cancelled ? "cancelled" : approved ? "queued" : "proposed";
+  // Hibernated: the process is stopped while the run waits; the run still holds its step.
+  if (run.hibernatedAt && !run.endedAt && run.state !== "paused") return "hibernated";
   switch (run.state) {
     case "starting":
     case "running":
@@ -112,6 +115,8 @@ export function memberStatus(run: RunView | null, approved: boolean, cancelled: 
       return "limited";
     case "paused":
       return "paused";
+    case "hibernated":
+      return "hibernated";
     case "handing_off":
       return "handing_off";
     case "ended":

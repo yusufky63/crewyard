@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { ArrowLeftRight, Check, CircleDashed, CircleHelp, Clock, Gauge, GitPullRequest, Pause, RotateCcw, Square, SquareTerminal, Users, X, type LucideIcon } from "lucide-react";
+import { ArrowLeftRight, Check, CircleDashed, CircleHelp, Clock, Gauge, GitPullRequest, Moon, Pause, RotateCcw, Square, SquareTerminal, Users, X, type LucideIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { RunnerId, TaskStatus } from "@crewyard/core";
 import { useFormat } from "../tasks/parts.tsx";
@@ -17,6 +17,7 @@ const MEMBER: Record<MemberStatus, { tone: Tone; icon: LucideIcon | "spin" }> = 
   needs_approval: { tone: "wait", icon: SquareTerminal },
   limited: { tone: "bad", icon: Gauge },
   paused: { tone: "muted", icon: Pause },
+  hibernated: { tone: "muted", icon: Moon },
   handing_off: { tone: "wait", icon: ArrowLeftRight },
   done: { tone: "ok", icon: Check },
   failed: { tone: "bad", icon: X },

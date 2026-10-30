@@ -18,6 +18,7 @@ import { canChooseHandoffStop, formatDuration, handoffsOf, latestRunOf, limitBan
 import { ConfirmButton, ErrorLine, HandoffStopChoice, LimitBanner, useFormat, useNow } from "../screens/tasks/parts.tsx";
 import { DiffStat } from "../screens/tasks/TaskRow.tsx";
 import { DiffReview } from "../screens/tasks/DiffReview.tsx";
+import { BestOfCompare } from "../screens/tasks/BestOfCompare.tsx";
 import { TaskTimeline } from "./timeline/TaskTimeline.tsx";
 import "../screens/tasks/tasks.css";
 import "./inspector.css";
@@ -240,12 +241,18 @@ function Body({ detail, target }: { detail: TaskDetail; target: InspectorTarget 
           type="button"
           className="ins-task"
           onClick={() => {
-            selectTask(detail.id);
+            const home = detail.variantOf?.taskId ?? detail.id;
+            selectTask(home);
             go("tasks");
           }}
         >
           {detail.title}
         </button>
+        {detail.variantOf && (
+          <button type="button" className="ins-task muted" onClick={() => inspect({ taskId: detail.variantOf!.taskId })}>
+            {f.t("bestOf.variantOf", { index: detail.variantOf.position, count: detail.variantOf.n })}
+          </button>
+        )}
       </div>
       <div className="ins-tabs" role="tablist">
         {(["details", "changes", "usage"] as const).map((x) => (
@@ -270,6 +277,13 @@ function Body({ detail, target }: { detail: TaskDetail; target: InspectorTarget 
       {tab === "details" && (
         <>
           {detail.kind === "code" && (detail.status === "review" || detail.status === "merged") && <TaskPullSection taskId={detail.id} className="ins-sec" />}
+          {run?.hibernatedAt && !run.endedAt && (
+            <div className="ins-sec">
+              <Label>{f.t("hibernation.title")}</Label>
+              <p className="ins-small">{f.t(run.pendingRequestId ? "hibernation.waitingOnYou" : "hibernation.idle", { time: f.when.ago(run.hibernatedAt) })}</p>
+            </div>
+          )}
+          {detail.bestOfGroup && detail.bestOfGroup.phase !== "proposed" && (!member || member.id === detail.bestOfGroup.memberId) && <BestOfCompare detail={detail} stacked />}
           {activity?.now && run && !run.endedAt && (
             <div className="ins-sec">
               <Label>{f.t("inspector.now")}</Label>

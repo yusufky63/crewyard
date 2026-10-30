@@ -92,6 +92,7 @@
     "needs_approval": "Onay bekliyor",
     "limited": "Limit doldu",
     "paused": "Duraklatıldı",
+    "hibernated": "Uykuda",
     "handing_off": "Devrediliyor",
     "done": "Bitti",
     "failed": "Başarısız",
