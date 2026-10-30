@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { IpcMessage } from "@crewyard/core";
+import { createHandlersForEnv } from "./e2e/index.ts";
 import { acquireDataDirLock, cleanOrphans, DataDirLockedError, recordDaemonStart, type DataDirLock } from "./recovery/index.ts";
 import { createHandlers, handleMessage, type Handlers } from "./server.ts";
 import { applyStagedRestore } from "./settings/data.ts";
@@ -50,7 +51,7 @@ const ready: Promise<Handlers> = (async () => {
   const orphans = await cleanOrphans(s);
   if (orphans.checked) emit("daemon.recovered", orphans);
   recordDaemonStart(s, { pid: process.pid, startedAt });
-  return createHandlers({ store: s, info: { startedAt, dbPath, dataDir }, emit });
+  return createHandlersForEnv({ store: s, info: { startedAt, dbPath, dataDir }, emit }, process.env, createHandlers);
 })();
 
 parentPort.on("message", async ({ data }) => {
