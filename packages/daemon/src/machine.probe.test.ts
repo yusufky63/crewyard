@@ -1,9 +1,10 @@
+import type * as Proc from "@crewyard/proc";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Counts every process the machine check starts, while still starting the real ones.
 const calls = vi.hoisted(() => ({ run: [] as string[] }));
 vi.mock("@crewyard/proc", async (importOriginal) => {
-  const real = await importOriginal<typeof import("@crewyard/proc")>();
+  const real = await importOriginal<typeof Proc>();
   return {
     ...real,
     run: (command: string, args: string[], opts?: Parameters<typeof real.run>[2]) => {

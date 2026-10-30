@@ -1,3 +1,4 @@
+import type * as Proc from "@crewyard/proc";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 // Records every process the daemon starts, while still starting the real ones.
 const spawned = vi.hoisted(() => [] as string[]);
 vi.mock("@crewyard/proc", async (importOriginal) => {
-  const real = await importOriginal<typeof import("@crewyard/proc")>();
+  const real = await importOriginal<typeof Proc>();
   return {
     ...real,
     run: (command: string, args: string[], opts?: Parameters<typeof real.run>[2]) => {
@@ -54,7 +55,7 @@ async function boot(n: number) {
   const t0 = performance.now();
   await cleanOrphans(store);
   const handlers = createHandlers({ store, info: { startedAt: "now", dbPath: join(dir, "crewyard.db"), dataDir: dir }, emit: () => {} });
-  const res = await handleMessage(handlers, { kind: "request", id: "1", method: "tasks.list", params: {} });
+  const res = await handleMessage(handlers, { kind: "request", id: 1, method: "tasks.list", params: {} });
   const ms = performance.now() - t0;
   const orchestrator = orchestratorFor({ store, info: { startedAt: "now", dbPath: "", dataDir: dir }, emit: () => {} });
   await orchestrator.settle();

@@ -73,8 +73,9 @@ const inside = (child: string, dir: string) => resolve(child).toLowerCase().star
  */
 export function isValidBranchName(name: string): boolean {
   if (!name || name === "@" || name.startsWith("-") || name.endsWith("/") || name.endsWith(".")) return false;
-  // Control characters, space, ~ ^ : ? * [ \, "..", "@{" and "//" are never allowed.
-  if (/[\x00-\x20\x7f~^:?*[\\]|\.\.|@\{|\/\//.test(name)) return false;
+  // Control characters and space, then ~ ^ : ? * [ \, "..", "@{" and "//" are never allowed.
+  if ([...name].some((ch) => ch <= " " || ch === "\x7f")) return false;
+  if (/[~^:?*[\\]|\.\.|@\{|\/\//.test(name)) return false;
   return !name.split("/").some((part) => part === "" || part.startsWith(".") || part.endsWith(".lock"));
 }
 
