@@ -8,6 +8,7 @@ import {
   limitEvents,
   isoFromUnix,
   limitSamples,
+  snapshotsOf,
   NotificationMapper,
   parseDiffStats,
   permissionsDecision,
@@ -33,6 +34,20 @@ describe("rate limits (payload recorded from codex-cli 0.147.0)", () => {
       { profileId: "p1", window: "5h", usedPct: 0, resetsAt: new Date(1793328910 * 1000).toISOString(), provenance: "reported", observedAt: "2026-10-30T10:00:00.000Z" },
       { profileId: "p1", window: "weekly", usedPct: 43, resetsAt: new Date(1793807916 * 1000).toISOString(), provenance: "reported", observedAt: "2026-10-30T10:00:00.000Z" },
     ]);
+  });
+
+  it("reads every bucket of rateLimitsByLimitId, marking the ones besides codex's own", () => {
+    // A second bucket shaped like the recorded one; its id is the one the sparse-update test uses.
+    const other: RateLimitSnapshot = { ...res.rateLimits, limitId: "codex_bengalfox" };
+    const snapshots = snapshotsOf({ ...res, rateLimitsByLimitId: { ...res.rateLimitsByLimitId, codex_bengalfox: other } });
+    const samples = snapshots.flatMap((s) => limitSamples("p1", s, "t"));
+    expect(samples.map((s) => [s.bucket ?? null, s.window])).toEqual([
+      [null, "5h"],
+      [null, "weekly"],
+      ["codex_bengalfox", "5h"],
+      ["codex_bengalfox", "weekly"],
+    ]);
+    expect(snapshotsOf({ ...res, rateLimitsByLimitId: null })).toEqual([res.rateLimits]);
   });
 
   it("emits limit.update only for windows present in a sparse update", () => {

@@ -161,6 +161,28 @@ const isActive = (r: RunRow) => r.ended_at === null;
 /** Ended runs a user can pick up again; completed and handed-off runs are not. */
 const RESUMABLE: EndReason[] = ["interrupted", "stopped", "failed"];
 
+interface SampleRow {
+  id: number;
+  profile_id: string;
+  limit_window: LimitWindow;
+  used_pct: number | null;
+  resets_at: string | null;
+  provenance: Provenance;
+  observed_at: string;
+  bucket: string;
+  bucket_label: string | null;
+}
+
+const toSample = (r: SampleRow): LimitSample => ({
+  profileId: r.profile_id,
+  window: r.limit_window,
+  usedPct: r.used_pct,
+  resetsAt: r.resets_at,
+  provenance: r.provenance,
+  observedAt: r.observed_at,
+  ...(r.bucket ? { bucket: r.bucket, bucketLabel: r.bucket_label } : {}),
+});
+
 export class OrchestratorDb {
   constructor(readonly db: DatabaseSync) {}
 
@@ -366,44 +388,40 @@ export class OrchestratorDb {
   }
 
   insertSample(s: LimitSample, runId: string | null): void {
-    this.exec(
-      "insert into usage_samples (profile_id, limit_window, used_pct, resets_at, provenance, observed_at, run_id) values (?, ?, ?, ?, ?, ?, ?)",
-      s.profileId,
-      s.window,
-      s.usedPct,
-      s.resetsAt,
-      s.provenance,
-      s.observedAt,
-      runId,
-    );
+    const res = this.db
+      .prepare("insert into usage_samples (profile_id, limit_window, used_pct, resets_at, provenance, observed_at, run_id) values (?, ?, ?, ?, ?, ?, ?)")
+      .run(s.profileId, s.window, s.usedPct, s.resetsAt, s.provenance, s.observedAt, runId);
+    // The main limit has no bucket row (usage_samples_bucketed reads it as '').
+    if (s.bucket) this.exec("insert into usage_sample_buckets (sample_id, bucket, label) values (?, ?, ?)", Number(res.lastInsertRowid), s.bucket, s.bucketLabel ?? null);
   }
 
-  /** Samples of one window, oldest first; with `resetsAt`, only the current window instance. */
-  samples(profileId: string, window: LimitWindow, resetsAt: string | null, limit = 50): LimitSample[] {
-    const rows = this.all<{ profile_id: string; limit_window: LimitWindow; used_pct: number | null; resets_at: string | null; provenance: Provenance; observed_at: string }>(
-      `select * from (select * from usage_samples where profile_id = ? and limit_window = ? and (? is null or resets_at = ?) order by observed_at desc, id desc limit ?) order by observed_at`,
+  /** Samples of one window of one bucket, oldest first; with `resetsAt`, only the current window instance. */
+  samples(profileId: string, window: LimitWindow, resetsAt: string | null, limit = 50, bucket: string | null = null): LimitSample[] {
+    const rows = this.all<SampleRow>(
+      `select * from (select * from usage_samples_bucketed where profile_id = ? and limit_window = ? and bucket = ? and (? is null or resets_at = ?) order by observed_at desc, id desc limit ?) order by observed_at`,
       profileId,
       window,
+      bucket ?? "",
       resetsAt,
       resetsAt,
       limit,
     );
-    return rows.map((r) => ({ profileId: r.profile_id, window: r.limit_window, usedPct: r.used_pct, resetsAt: r.resets_at, provenance: r.provenance, observedAt: r.observed_at }));
+    return rows.map(toSample);
   }
 
-  /**
-   * Tightest plan window for a profile from its latest sample per window, skipping windows that
-   * already reset. Context and budget windows belong to runs and tasks, not to the account.
-   */
-  headroom(profileId: string, now: Date): Headroom {
-    const rows = this.all<{ limit_window: LimitWindow; used_pct: number | null; resets_at: string | null; provenance: Provenance }>(
-      `select s.limit_window, s.used_pct, s.resets_at, s.provenance from usage_samples s
-        where s.profile_id = ? and s.limit_window in ('5h', 'weekly', 'daily')
-          and s.id = (select id from usage_samples x where x.profile_id = s.profile_id and x.limit_window = s.limit_window order by x.observed_at desc, x.id desc limit 1)`,
+  /** Latest sample per plan window and bucket of a profile; context and budget windows belong to runs and tasks. */
+  private latestPlanWindows(profileId: string): SampleRow[] {
+    return this.all<SampleRow>(
+      `select * from (select s.*, row_number() over (partition by s.limit_window, s.bucket order by s.observed_at desc, s.id desc) as n
+         from usage_samples_bucketed s where s.profile_id = ? and s.limit_window in ('5h', 'weekly', 'daily', 'monthly')) where n = 1`,
       profileId,
     );
+  }
+
+  /** Tightest plan window for a profile over every bucket, skipping windows that already reset. */
+  headroom(profileId: string, now: Date): Headroom {
     let best: Headroom = { pct: null, window: null, provenance: "unknown" };
-    for (const r of rows) {
+    for (const r of this.latestPlanWindows(profileId)) {
       if (r.used_pct === null || r.provenance === "unknown") continue;
       if (r.resets_at && Date.parse(r.resets_at) <= now.getTime()) continue;
       const pct = Math.max(0, 100 - r.used_pct);
@@ -413,17 +431,11 @@ export class OrchestratorDb {
   }
 
   /**
-   * A plan window this profile has used up and that has not reset yet, by its latest sample. A
-   * window without a known reset time is not reported: only trying again can tell.
+   * A plan window this profile has used up and that has not reset yet, by its latest sample, in any
+   * bucket. A window without a known reset time is not reported: only trying again can tell.
    */
   reachedWindow(profileId: string, now: Date): { window: LimitWindow; resetsAt: string } | null {
-    const rows = this.all<{ limit_window: LimitWindow; used_pct: number | null; resets_at: string | null; provenance: Provenance }>(
-      `select s.limit_window, s.used_pct, s.resets_at, s.provenance from usage_samples s
-        where s.profile_id = ? and s.limit_window in ('5h', 'weekly', 'daily')
-          and s.id = (select id from usage_samples x where x.profile_id = s.profile_id and x.limit_window = s.limit_window order by x.observed_at desc, x.id desc limit 1)`,
-      profileId,
-    );
-    const hit = rows
+    const hit = this.latestPlanWindows(profileId)
       .filter((r) => r.provenance !== "unknown" && (r.used_pct ?? 0) >= 100 && r.resets_at !== null && Date.parse(r.resets_at) > now.getTime())
       .sort((a, b) => b.resets_at!.localeCompare(a.resets_at!))[0];
     return hit ? { window: hit.limit_window, resetsAt: hit.resets_at! } : null;

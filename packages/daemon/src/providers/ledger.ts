@@ -107,30 +107,48 @@ export function setIdleRefresh(db: DatabaseSync, enabled: boolean): boolean {
   return enabled;
 }
 
-// usage_samples is written by the orchestrator (PLAN.md §4.3, its migration in store.ts). If its
-// columns ever differ from what we read, plan windows are reported as Unknown rather than guessed.
-const SAMPLE_COLUMNS = ["id", "profile_id", "limit_window", "used_pct", "resets_at", "provenance", "observed_at"];
+/**
+ * Background coding-plan quota reads. Off until switched on: the endpoints are undocumented, and
+ * polling a subscription's quota is something users switch off when they worry about the
+ * provider's risk controls (cc-switch made it opt-in).
+ */
+export function getPlanQuotaRefresh(db: DatabaseSync): boolean {
+  const row = db.prepare("select value from settings where key = 'limits.planQuotaRefresh'").get() as { value: string } | undefined;
+  return row?.value === "true";
+}
+
+export function setPlanQuotaRefresh(db: DatabaseSync, enabled: boolean): boolean {
+  db.prepare("insert into settings (key, value) values ('limits.planQuotaRefresh', ?) on conflict(key) do update set value = excluded.value").run(enabled ? "true" : "false");
+  return enabled;
+}
+
+// usage_samples is written by the orchestrator (PLAN.md §4.3, its migration in store.ts) and read
+// here through usage_samples_bucketed, which adds each sample's limit bucket. If its columns ever
+// differ from what we read, plan windows are reported as Unknown rather than guessed.
+const SAMPLE_COLUMNS = ["id", "profile_id", "limit_window", "used_pct", "resets_at", "provenance", "observed_at", "bucket", "bucket_label"];
 
 export function usageSamplesAvailable(db: DatabaseSync): boolean {
-  const cols = (db.prepare("select name from pragma_table_info('usage_samples')").all() as Array<{ name: string }>).map((c) => c.name);
+  const cols = (db.prepare("select name from pragma_table_info('usage_samples_bucketed')").all() as Array<{ name: string }>).map((c) => c.name);
   return SAMPLE_COLUMNS.every((c) => cols.includes(c));
 }
 
-/** Latest sample per profile and window; same tie-break as the orchestrator (observed_at, then id). */
+/** Latest sample per profile, bucket and window; same tie-break as the orchestrator (observed_at, then id). */
 export function latestWindows(db: DatabaseSync): UsageWindowView[] {
   if (!usageSamplesAvailable(db)) return [];
   const rows = db
     .prepare(
-      `select s.profile_id, s.limit_window, s.used_pct, s.resets_at, s.provenance, s.observed_at from usage_samples s
-       where s.id = (select x.id from usage_samples x where x.profile_id = s.profile_id and x.limit_window = s.limit_window
-                     order by x.observed_at desc, x.id desc limit 1)`,
+      `select * from (select s.profile_id, s.limit_window, s.bucket, s.bucket_label, s.used_pct, s.resets_at, s.provenance, s.observed_at,
+              row_number() over (partition by s.profile_id, s.limit_window, s.bucket order by s.observed_at desc, s.id desc) as n
+         from usage_samples_bucketed s) where n = 1`,
     )
-    .all() as Array<{ profile_id: string; limit_window: string; used_pct: number | null; resets_at: string | null; provenance: string; observed_at: string }>;
+    .all() as Array<{ profile_id: string; limit_window: string; bucket: string; bucket_label: string | null; used_pct: number | null; resets_at: string | null; provenance: string; observed_at: string }>;
   return rows.map((r) => {
     const provenance: Provenance = r.provenance === "reported" || r.provenance === "estimated" ? r.provenance : "unknown";
     return {
       profileId: r.profile_id,
       window: r.limit_window as LimitWindow,
+      bucket: r.bucket || null,
+      bucketLabel: r.bucket ? r.bucket_label : null,
       usedPct: provenance === "unknown" ? null : r.used_pct,
       resetsAt: r.resets_at,
       provenance,

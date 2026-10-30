@@ -2,11 +2,16 @@
   "nav": "Limits & usage",
   "title": "Limits & usage",
   "sub": "Every number shows where it came from",
-  "range": { "label": "Range", "1": "Today", "7": "7 days", "30": "30 days" },
+  "range": {
+    "1": "Today",
+    "7": "7 days",
+    "30": "30 days",
+    "label": "Range"
+  },
   "plans": {
     "title": "Plan windows",
     "notify": "Notify {{warn}}% · critical {{critical}}%",
-    "none": "No sign-in accounts yet. Codex accounts that sign in with ChatGPT and Gemini CLI accounts that sign in with Google show their windows here.",
+    "none": "No plan accounts yet. Codex accounts that sign in with ChatGPT, Gemini CLI accounts that sign in with Google, and coding-plan keys for Kimi Code, Z.ai, MiniMax and OpenCode Go show their windows here.",
     "signInChecked": "sign-in checked {{time}}",
     "quota": "Plan quota",
     "unknownMeter": "{{name}}: quota unknown",
@@ -16,7 +21,30 @@
     "seen": "seen {{time}}",
     "noSamples": "No runner has reported usage yet, so every window stays Unknown instead of a guessed percentage.",
     "claudeNote": "Claude Code runs on API keys only, so it has no plan window; its spend counts against the caps on the right.",
-    "window": { "5h": "5-hour window", "weekly": "Weekly", "daily": "Daily", "context": "Context", "budget-day": "Daily budget", "budget-task": "Task budget" }
+    "window": {
+      "5h": "5-hour window",
+      "weekly": "Weekly",
+      "daily": "Daily",
+      "context": "Context",
+      "budget-day": "Daily budget",
+      "budget-task": "Task budget",
+      "monthly": "Monthly"
+    },
+    "bucket": {
+      "mcp": "MCP tool calls"
+    },
+    "lineMeta": "{{provenance}} · {{time}}",
+    "codingPlan": "Coding plan",
+    "check": "Check",
+    "checkNamed": "Check the coding-plan quota of {{name}}",
+    "state": {
+      "ok": "Quota checked {{time}}",
+      "unchecked": "Quota not checked yet",
+      "no_plan": "No coding plan on this key: it is billed pay as you go.",
+      "error": "Last quota check failed: {{problem}}. Its windows show Unknown until a check succeeds."
+    },
+    "noProfile": "Readings are kept per profile; add a profile that uses this key to see its windows.",
+    "meterBucket": "{{name}}: {{bucket}} {{window}} {{pct}} percent used"
   },
   "spend": {
     "title": "API spend · {{range}}",
@@ -59,15 +87,25 @@
     "save": "Save",
     "idle": "Refresh plan windows between runs",
     "idleHint": "About every {{minutes}} minutes, spread a little, and only for signed-in Codex profiles a task uses; twice as often while a window is rising. Runs report their own windows.",
-    "idleCalls": "Each refresh calls"
+    "idleCalls": "Each refresh calls",
+    "planQuota": "Refresh coding-plan quota between runs",
+    "planQuotaHint": "Off by default: the providers do not document these endpoints. When on, the same pacing applies, only for keys a task uses. A response we do not recognise shows Unknown, never 0%.",
+    "planQuotaCalls": "Each refresh calls one of",
+    "auth": {
+      "bearer": "Bearer key",
+      "raw": "key without Bearer"
+    }
   },
-  "provenance": { "reported": "Reported", "estimated": "Estimated", "unknown": "Unknown" },
+  "provenance": {
+    "reported": "Reported",
+    "estimated": "Estimated",
+    "unknown": "Unknown"
+  },
   "accounts": {
     "label": "Account limits",
     "title": "Accounts · {{count}}",
     "all": "All limits",
     "list": "Accounts, most urgent first",
-    "empty": "No accounts yet. Add a provider.",
     "local": "local",
     "tipLocal": "{{name}} on this machine: no limit",
     "tipKey": "{{name}}: {{spent}} today of the {{cap}} daily cap ({{provenance}})",
@@ -78,6 +116,22 @@
     "update": "Update",
     "tipSignedOut": "{{name}} is not signed in",
     "tipBlocked": "{{name}}: its CLI needs an update before it can sign in",
-    "tipChecked": "checked {{time}}"
+    "tipChecked": "checked {{time}}",
+    "tipMeters": "{{name}}: {{meters}} ({{provenance}}, seen {{time}})",
+    "tipMeter": "{{window}} {{pct}}%",
+    "tipMeterUnknown": "{{window}} unknown",
+    "short": {
+      "5h": "5 h",
+      "daily": "daily",
+      "weekly": "weekly",
+      "monthly": "monthly",
+      "quota": "quota",
+      "cap": "cap"
+    },
+    "bucketShort": {
+      "mcp": "MCP"
+    },
+    "meta": "{{provenance}} · resets {{time}}",
+    "capMeta": "{{provenance}} · cap {{cap}}"
   }
 }

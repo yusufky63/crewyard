@@ -60,7 +60,7 @@ export function windowOf(w: RateLimitWindow): LimitWindow | null {
 export const isoFromUnix = (t: number | null): string | null => (t === null ? null : new Date(t > 1e10 ? t : t * 1000).toISOString());
 const clampPct = (n: number): number => Math.min(100, Math.max(0, n));
 
-/** True for snapshots of the default bucket. Updates for other buckets are ignored until LimitWindow can name them. */
+/** True for snapshots of the default bucket. Live updates of other buckets are skipped (limit.update has no bucket); account/rateLimits/read reads them all. */
 export function isDefaultBucket(s: RateLimitSnapshot): boolean {
   return s.limitId === null || s.limitId === CODEX_LIMIT_ID;
 }
@@ -93,8 +93,16 @@ export function limitEvents(s: RateLimitSnapshot): EventBody[] {
   }));
 }
 
+/** Samples of one snapshot; a bucket other than the default one carries its id and codex's name for it. */
 export function limitSamples(profileId: string, s: RateLimitSnapshot, observedAt: string): LimitSample[] {
-  return windows(s).map(({ window, w }) => ({ profileId, window, usedPct: clampPct(w.usedPercent), resetsAt: isoFromUnix(w.resetsAt), provenance: "reported", observedAt }));
+  const bucket = isDefaultBucket(s) ? {} : { bucket: s.limitId, bucketLabel: s.limitName };
+  return windows(s).map(({ window, w }) => ({ profileId, window, ...bucket, usedPct: clampPct(w.usedPercent), resetsAt: isoFromUnix(w.resetsAt), provenance: "reported", observedAt }));
+}
+
+/** Every bucket `account/rateLimits/read` lists, or the single snapshot when it lists none. */
+export function snapshotsOf(res: { rateLimits: RateLimitSnapshot; rateLimitsByLimitId: { [key in string]?: RateLimitSnapshot } | null }): RateLimitSnapshot[] {
+  const buckets = Object.values(res.rateLimitsByLimitId ?? {}).filter((s): s is RateLimitSnapshot => s !== undefined);
+  return buckets.length > 0 ? buckets : [res.rateLimits];
 }
 
 /** API-key accounts and failed reads: the windows exist but nobody reported them (PLAN.md §7.1). */

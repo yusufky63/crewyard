@@ -11,7 +11,7 @@
 .limits .lim-meta { font-size: 12px; margin-top: -6px; }
 .limits .lim-signin { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .limits .lim-signin .st { font-size: 12px; }
-.limits .mline { display: grid; grid-template-columns: 120px minmax(0, 1fr) 120px; gap: 14px; align-items: center; font-size: 12px; }
+.limits .mline { display: grid; grid-template-columns: 120px minmax(0, 1fr) 170px; gap: 14px; align-items: center; font-size: 12px; }
 .limits .mline .v { text-align: right; font: 500 12px / 1.3 var(--mono); }
 .limits .mline .v small { display: block; font-weight: 400; color: var(--ink-3); }
 .limits .lim-foot { display: flex; align-items: center; gap: 8px; font-size: 12px; flex-wrap: wrap; }
@@ -43,3 +43,10 @@
 @media (max-width: 1180px) {
   .limits .grid2 { grid-template-columns: 1fr; }
 }
+
+/* Limit buckets: each bucket's windows sit together; a bucket besides the main one is named above them. */
+.limits .lim-bucket { display: grid; gap: 12px; }
+.limits .lim-bucket + .lim-bucket { padding-top: 12px; border-top: 1px solid var(--line); }
+.limits .lim-bucket-name { color: var(--ink-3); }
+.limits .lim-idle-next { margin-top: 8px; }
+.limits .lim-endpoints { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }

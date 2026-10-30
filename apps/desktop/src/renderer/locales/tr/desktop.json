@@ -57,7 +57,8 @@
     "daily": "Günlük pencere",
     "context": "Bağlam penceresi",
     "budget-day": "Günlük harcama sınırı",
-    "budget-task": "Görev bütçesi"
+    "budget-task": "Görev bütçesi",
+    "monthly": "Aylık pencere"
   },
   "dialog": {
     "exportTitle": "Crewyard veritabanını dışa aktar",

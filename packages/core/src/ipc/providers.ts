@@ -142,6 +142,10 @@ export interface SpendSummary {
 export interface UsageWindowView {
   profileId: string;
   window: LimitWindow;
+  /** The limit this window belongs to when the account has several; null is the main limit. */
+  bucket: string | null;
+  /** The provider's own name for the bucket, when it gives one. */
+  bucketLabel: string | null;
   usedPct: number | null;
   resetsAt: string | null;
   provenance: Provenance;
@@ -155,6 +159,30 @@ export interface IdleRefreshView {
   everyMinutes: number;
   /** The runner method each read calls, through the profile's own CLI. */
   endpoint: string;
+  /** Coding-plan quota reads for keys of Kimi Code, Z.ai, MiniMax and OpenCode Go; off until you switch them on. */
+  planQuota: { enabled: boolean; endpoints: PlanQuotaEndpoint[] };
+}
+
+/** One coding-plan quota endpoint, shown next to the setting with how it authenticates. */
+export interface PlanQuotaEndpoint {
+  providerId: string;
+  url: string;
+  /** "bearer" sends `Authorization: Bearer <key>`; "raw" sends the key alone (Z.ai). */
+  auth: "bearer" | "raw";
+}
+
+/**
+ * Last coding-plan quota answer for one key. "no_plan" means the key works but has no coding plan
+ * (pay as you go), not a failure; "error" covers rejected keys, HTTP errors and a response shape
+ * we no longer recognise, and its windows then show Unknown.
+ */
+export interface PlanQuotaView {
+  credentialId: string;
+  providerId: string;
+  endpoint: string;
+  state: "ok" | "no_plan" | "error" | "unchecked";
+  problem: string | null;
+  checkedAt: string | null;
 }
 
 export interface LimitsOverview {
@@ -163,6 +191,19 @@ export interface LimitsOverview {
   windows: UsageWindowView[];
   thresholds: Thresholds;
   idleRefresh: IdleRefreshView;
+  /** One entry per key whose provider has a coding-plan quota endpoint. */
+  plans: PlanQuotaView[];
+}
+
+/** One plan window of one bucket, for the sidebar line's stacked meters. */
+export interface AccountMeter {
+  window: LimitWindow;
+  bucket: string | null;
+  bucketLabel: string | null;
+  pct: number | null;
+  resetsAt: string | null;
+  provenance: Provenance;
+  observedAt: string;
 }
 
 /** One line of the sidebar accounts block, already sorted most urgent first. */
@@ -179,6 +220,10 @@ export interface AccountRow {
   provenance: Provenance;
   window: LimitWindow | null;
   resetsAt: string | null;
+  /** Plan accounts: every window of every bucket, main limit first, shortest window first. */
+  meters?: AccountMeter[];
+  /** Coding-plan keys only: the last quota answer; null for everything else. */
+  plan?: PlanQuotaView["state"] | null;
   /** Sign-in profiles only; null for keys and local providers. */
   signIn: { state: SignInStatus["state"]; plan: string | null; probedAt: string | null } | null;
 }
@@ -235,7 +280,10 @@ export interface ProvidersIpc {
   "providers.capsSet": { params: { credentialId: string } & CredentialCaps; result: CredentialSummary };
   "providers.limits": { params: void; result: LimitsOverview };
   "providers.thresholdsSet": { params: Pick<Thresholds, "warn" | "critical">; result: Thresholds };
-  "providers.idleRefreshSet": { params: { enabled: boolean }; result: IdleRefreshView };
+  /** `enabled` is the Codex read between runs; `planQuota` the coding-plan quota reads. Each is optional. */
+  "providers.idleRefreshSet": { params: { enabled?: boolean; planQuota?: boolean }; result: IdleRefreshView };
+  /** Reads one key's coding-plan quota now: your own click, so it does not wait for the background setting. */
+  "providers.planQuotaRefresh": { params: { credentialId: string }; result: PlanQuotaView };
   "providers.accounts": { params: void; result: AccountRow[] };
   /** Stored probe results for every profile that signs in on its own. */
   "providers.signInStatus": { params: void; result: SignInStatus[] };
