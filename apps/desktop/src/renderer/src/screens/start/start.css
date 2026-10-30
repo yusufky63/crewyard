@@ -23,7 +23,7 @@
 /* The 32 px hero is used only on the Start screen (DESIGN.md §6). */
 .start .hero { font-size: 32px; line-height: 1.12; font-weight: 500; letter-spacing: -0.02em; margin: 14px 0 10px; }
 .start .hero .dim { color: var(--ink-3); }
-.start .lead { max-width: 560px; font-size: 15px; margin-bottom: 0; }
+.start .lead { max-width: var(--layout-measure); font-size: 15px; margin-bottom: 0; }
 .start .launch-actions { display: flex; gap: 12px; flex-wrap: wrap; padding: 4px 0; }
 .start .launch-head { display: flex; align-items: center; margin-bottom: 12px; min-height: 28px; }
 .start .lbl.strong { color: var(--ink); }
@@ -84,7 +84,7 @@
 .start .machine-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .start .machine:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .start .sysnote { display: grid; gap: 8px; padding: 0 16px 12px 44px; font-size: 13px; color: var(--ink-2); }
-.start .sysnote p { margin: 0; max-width: 60ch; }
+.start .sysnote p { margin: 0; }
 .start .sysfolders, .start .syssteps { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
 .start .sysfolders { list-style: none; padding-left: 0; }
 .start .sysfolders li { font-size: 12px; color: var(--ink); overflow-wrap: anywhere; }
@@ -117,4 +117,18 @@
 .start .launch-grid:has(> .launch-checklist:empty):has(> .launch-others:empty) { grid-template-areas: "intro intro" "recent recent" "import import" "machine machine"; }
 @media (max-width: 1180px) {
   .start .launch-grid:has(> .launch-checklist:empty):has(> .launch-others:empty) { grid-template-areas: "intro" "recent" "import" "machine"; }
+}
+
+/* Fluid main view (DESIGN.md §4). The three ways in stay beside the lead (its measure plus the gap)
+   instead of drifting to the far edge of a wide window; the machine strip goes to one row of eight
+   tiles once each tile keeps about 220 px (the Start screen has no sidebar). */
+.start .launch-intro { grid-template-columns: minmax(0, var(--layout-measure)) auto; justify-content: start; }
+/* The import list spans the Recently used and Getting started rows; when it is the taller side, its extra
+   height goes to the Getting started row (the flexible one), so nothing opens a gap above that block. */
+.start .launch-grid { grid-template-rows: auto auto auto 1fr auto; }
+@media (min-width: 1880px) {
+  .start .mtiles { grid-template-columns: repeat(8, minmax(0, 1fr)); }
+}
+@media (max-width: 1180px) {
+  .start .launch-intro { grid-template-columns: minmax(0, 1fr); }
 }

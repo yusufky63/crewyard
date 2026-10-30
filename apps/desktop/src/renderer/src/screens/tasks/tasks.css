@@ -2,7 +2,7 @@
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 /* A long project path is cut to the column, so the list never scrolls sideways (the full path is the title). */
 .tk-head-main { min-width: 0; max-width: 100%; }
-.tk-context { margin-top: 6px; max-width: 760px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tk-context { margin-top: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tk-small { font-size: 12px; }
 .tk-error { margin-top: 10px; font-size: 13px; color: var(--bad); }
 
@@ -33,7 +33,7 @@
 .tk-crew-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .tk-crew-head .end { margin-left: auto; }
 .tk-crew-task { font-size: 15px; font-weight: 500; margin: 10px 0 14px; }
-.tk-crew-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.tk-crew-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
 .tk-role { padding: 14px; display: grid; gap: 10px; align-content: start; }
 .tk-role-top { display: flex; align-items: flex-start; justify-content: space-between; }
 .tk-role-art { color: var(--ink-2); }
@@ -53,7 +53,7 @@
 .tk-chain-item { display: inline-flex; align-items: center; gap: 6px; }
 .tk-crew-actions { display: flex; align-items: center; gap: 12px; margin-top: 14px; flex-wrap: wrap; }
 .tk-crew-actions .end { margin-left: auto; display: flex; gap: 12px; align-items: center; }
-.tk-est { font-size: 12px; color: var(--ink-3); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; max-width: 640px; }
+.tk-est { font-size: 12px; color: var(--ink-3); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; max-width: none; }
 
 /* Task list */
 .tk-list-head { display: flex; align-items: center; gap: 12px; margin: 28px 0 12px; flex-wrap: wrap; }
@@ -133,7 +133,7 @@
 .bo-tail pre { margin: 6px 0 0; padding: 8px; max-height: 180px; overflow: auto; background: var(--sunken); border: 1px solid var(--line); font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .bo-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 6px; padding-top: 10px; border-top: 1px dashed var(--tick); }
 .bo-variants { display: grid; gap: 8px; margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--tick); }
-.bo-variants-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; }
+.bo-variants-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
 .bo-variant-pick { display: grid; gap: 4px; padding: 10px; }
 .bo-variant-pick .row { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
 .tk-sched { display: inline-flex; align-items: center; gap: 5px; }
@@ -144,7 +144,7 @@
 .sc-only-open span { flex: 1; min-width: 0; line-height: 1.4; }
 .sc-head { display: flex; justify-content: flex-end; margin-bottom: 12px; }
 .sc-form { margin-top: 0; margin-bottom: 16px; }
-.sc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px 16px; margin-top: 12px; }
+.sc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px 16px; margin-top: 12px; }
 .sc-field { display: grid; gap: 6px; align-content: start; min-width: 0; }
 .sc-field textarea.pv-input { height: auto; padding: 8px 10px; line-height: 1.4; resize: vertical; }
 .sc-field select.pv-input { padding-right: 4px; }

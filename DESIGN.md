@@ -89,7 +89,7 @@ Icons inside buttons are 14 px.
 
 ```
 ┌ Title bar 40 ─ brand · project · search (Ctrl K) ········· notifications · ─ □ ✕ ────────────┐
-├ Sidebar 224 ──┬ Main (max 1120, centered) ─────────────────────────┬ Inspector 380 (closed) ┤
+├ Sidebar 224 ──┬ Main (fills the rest, 28 px gutters) ──────────────┬ Inspector 380 (closed) ┤
 │ ┌ Tasks      ┐│  Page head: title 21 + mono context line            │ opens on selection,     │
 │ │ Inbox (n)  ││  View content                                       │ Esc or ✕ closes it      │
 │ │ Crew graph ││                                                     │ "Closing this panel     │
@@ -115,6 +115,11 @@ Icons inside buttons are 14 px.
   - **Sidebar:** expanded at 224 px by default, resized by dragging its right edge between 184 and 360 px, or collapsed to the 56 px icon rail with the toggle at its foot or `Ctrl B` (tooltip says so). Dragging the edge under 136 px collapses it; dragging the rail's edge out expands it to the last width. In the rail each nav item is an icon with its name as tooltip and screen-reader text, Inbox keeps its count as a small badge, and the accounts block hides (the status bar keeps the near-limit count).
   - **Inspector:** 380 px by default, resized by dragging its left edge between 320 and 720 px, never so wide that the main view drops under 600 px. A toggle collapses it to a 44 px strip that keeps the selection (task title written vertically, expand and close buttons); ✕ still closes it. In Crew graph full screen it overlays the graph under the caption buttons.
   - **Inbox:** the request list is 360 px by default, 280–560 px, and the detail pane never gets narrower than 320 px.
+- **Main view** grows with the window: it fills everything between the sidebar and the inspector, with a 28 px side gutter (`layout.gutter`) and no maximum width (owner, 2026-10-31: "iç kısımda her şey genişleyebilsin", then "grow with the window"; it used to stop at 1120 px, centered). Inside it:
+  - Paths, titles, branch names, task context lines and table columns take the room there is and cut with an ellipsis, the full text in the tooltip; no fixed px caps.
+  - Grids of tiles add columns rather than stretching one control: crew role and Best-of variant tiles keep about 220 px (`auto-fill`), the Start machine strip goes to one row of eight from 1880 px, Limits plan accounts flow into columns of at least 560 px, GitHub task pull requests into columns of at least 600 px, and Settings sections into two columns from 1880 px.
+  - Running prose (hints, notes, descriptions, the Start lead) keeps a readable measure of 72ch (`layout.measure`, principle 5); one-line fact and key-hint lines are not prose and take the full width.
+  - A single-line text field stops at 960 px (`layout.field-max`); buttons and short inputs keep their size.
 - **Breakpoints:** below 1280 px the inspector overlays the main view (still resizable, up to the window minus 120 px); below 1180 px the sidebar is always the 56 px icon rail and its toggle and handle hide; below 1280 px the Inbox list and detail stack. 960 px is the minimum supported width.
 
 ## 5. Components
@@ -168,7 +173,7 @@ Icons inside buttons are 14 px.
 
 | Screen | First view | Second level |
 |---|---|---|
-| **Start** (no project open) | hero line across the full width, `New project` / `Open folder` / `Clone from GitHub` beside the lead; the last project as one wide tile across the full width; then Recently used (the other projects, newest first, one line each) and Getting started beside `Import from C:\Projeler` (the repo git touched last first); the This machine strip last, across the full width (owner, 2026-10-31: "Bu bilgisayar kısmını alt kısma al") | all projects, install guides, the full machine panel; the sidebar hides, and the 32 px hero is used only here |
+| **Start** (no project open) | hero line across the full width, `New project` / `Open folder` / `Clone from GitHub` right beside the lead (not at the far edge of a wide window); the last project as one wide tile across the full width; then Recently used (the other projects, newest first, one line each) and Getting started beside `Import from C:\Projeler` (the repo git touched last first); the This machine strip last, across the full width (owner, 2026-10-31: "Bu bilgisayar kısmını alt kısma al") | all projects, install guides, the full machine panel; the sidebar hides, and the 32 px hero is used only here |
 | **New project** | five numbered step tiles (Folder, Agents, Accounts & budget, Rules, GitHub), one step pane, Back / Next | edit detected commands, create a private repo, CI template; nothing is written until `Create project` |
 | **Tasks** (project home) | composer, crew proposal when drafting, filters `All / Running / Needs you / Ready for review / Merged / Done`, task rows | steps, limit banner, diff, PR link, inspector |
 | **Inbox** | items that need an answer first, then limits, automatic account switches (each fact with its provenance badge, `Off for this task`, `Dismiss`) and GitHub notices | detail pane: approve once / allow in project / deny; question options + note |
@@ -176,7 +181,7 @@ Icons inside buttons are 14 px.
 | **Providers** | catalog providers with newest models and prices, which runners each works with, credential and limits, connected first | add provider, refresh catalog, filters (connected, first-party, coding plans, aggregators, local) |
 | **Limits & usage** | subscription windows per account with provenance, API spend (7 days) with segmented bar, balances and caps | alert thresholds, on-limit policy, Windows notifications; the `Usage ledger` tab: tokens in, out and cache reads by day, model, provider or task, dollars only for per-token keys (plans and local models show `Plan`), a segmented bar with legend, CSV and JSON export through a save dialog |
 | **GitHub** | Actions minutes this month, branches waiting to push, worktrees, PR table with merge gate | checks and logs, review comments sent back to the agent, worktree cleanup |
-| **Settings** | accounts and API keys (aliases only), roles, policies, theme, density | per-project allowlist, price table version, diagnostics |
+| **Settings** | accounts and API keys (aliases only), roles, policies, theme, density; the sections flow into two columns from 1880 px | per-project allowlist, price table version, diagnostics |
 
 ## 7. Interaction rules
 
@@ -195,7 +200,7 @@ Icons inside buttons are 14 px.
 
 ## 9. QA matrix
 
-Dark and light × compact and comfortable × 960 / 1280 / 1440 / 1920 px × 100 / 150 / 200% Windows scaling. States to capture per screen: empty, running, needs input, near limit, limit reached, review, merged, offline daemon, expired sign-in, unknown quota. Screenshot regression runs in CI on Linux against fixed fixtures; Windows-only behaviour (title bar, toasts, tray) is checked by hand before each release.
+Dark and light × compact and comfortable × 960 / 1280 / 1440 / 1920 / 2560 px × 100 / 150 / 200% Windows scaling. States to capture per screen: empty, running, needs input, near limit, limit reached, review, merged, offline daemon, expired sign-in, unknown quota. Screenshot regression runs in CI on Linux against fixed fixtures; Windows-only behaviour (title bar, toasts, tray) is checked by hand before each release.
 
 ## Deviations from house style
 

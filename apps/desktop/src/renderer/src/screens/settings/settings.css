@@ -1,5 +1,5 @@
 /* Settings (DESIGN.md §6): a framed section index on the left, one panel per section on the right. */
-.settings .st-context { margin-top: 6px; font-size: var(--font-size-meta); max-width: 720px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings .st-context { margin-top: 6px; font-size: var(--font-size-meta); max-width: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .settings .st-layout { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 16px; align-items: start; }
 .settings .st-index { position: sticky; top: 0; display: grid; gap: 2px; padding: 6px; }
 .settings .st-index-item { display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 10px; color: var(--ink-2); font-size: 14px; text-align: left; border: 1px solid transparent; }
@@ -15,12 +15,12 @@
 .settings .st-body > .st-row:first-child { border-top: 0; }
 .settings .st-text { flex: 1; min-width: 0; display: grid; gap: 3px; }
 .settings .st-label { font-size: var(--density-body); font-weight: 500; }
-.settings .st-hint { font-size: var(--font-size-meta); color: var(--ink-3); line-height: 1.45; max-width: 560px; }
+.settings .st-hint { font-size: var(--font-size-meta); color: var(--ink-3); line-height: 1.45; max-width: var(--layout-measure); }
 .settings .st-ctl { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 .settings .st-note { font-size: var(--font-size-meta); color: var(--ink-3); padding: 8px 0 0; }
 .settings .st-warn { color: var(--warn); }
 .settings .st-ok { color: var(--ok); }
-.settings .st-path { font-size: var(--font-size-meta); color: var(--ink-2); max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings .st-path { font-size: var(--font-size-meta); color: var(--ink-2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .settings .st-break { overflow-wrap: anywhere; font-size: var(--font-size-meta); }
 
 .settings .st-time { display: inline-flex; align-items: center; gap: 6px; }
@@ -97,3 +97,11 @@
 .settings .up-bar { height: 6px; background: var(--sunken); border: 1px solid var(--line); overflow: hidden; }
 .settings .up-bar > span { display: block; height: 100%; background: var(--accent); }
 .settings .up-meta { font-size: var(--font-size-meta); color: var(--ink-2); }
+
+/* Fluid main view (DESIGN.md §4). A path beside its button takes up to half the row and shrinks with an
+   ellipsis; wide windows flow the sections into two columns so a label never sits 1,700 px from its control. */
+.settings .st-ctl:has(> .st-path) { flex-wrap: nowrap; min-width: 0; max-width: 50%; }
+@media (min-width: 1880px) {
+  .settings .st-sections { display: block; columns: 2; column-gap: 16px; }
+  .settings .st-section { break-inside: avoid; margin-bottom: 16px; }
+}

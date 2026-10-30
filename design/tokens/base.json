@@ -245,9 +245,20 @@
       "$type": "dimension",
       "$value": "280px"
     },
-    "content-max": {
+    "gutter": {
       "$type": "dimension",
-      "$value": "1120px"
+      "$value": "28px",
+      "$description": "Side padding of the main view, which fills the space between sidebar and inspector (no max width)"
+    },
+    "measure": {
+      "$type": "dimension",
+      "$value": "72ch",
+      "$description": "Readable line length for running prose (hints, notes, descriptions) only"
+    },
+    "field-max": {
+      "$type": "dimension",
+      "$value": "960px",
+      "$description": "Widest a single-line text field grows in the fluid main view (a long Windows path still fits)"
     },
     "statusbar": {
       "$type": "dimension",

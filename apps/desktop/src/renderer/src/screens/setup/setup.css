@@ -76,3 +76,6 @@
   .setup .repo-desc { display: none; }
   .setup .chips { max-width: 70%; }
 }
+
+/* Fluid main view (DESIGN.md §4): a path field stops at the field measure instead of spanning a 2560 px window. */
+.setup .row-input, .setup .clone > .input { max-width: var(--layout-field-max); }

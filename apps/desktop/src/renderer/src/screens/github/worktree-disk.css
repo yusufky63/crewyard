@@ -1,7 +1,7 @@
 /* Disk meter rows in the worktrees panel (worktree bootstrap). */
 .gh .wt-disk { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 10px; }
 .gh .wt-disk-row { display: grid; gap: 4px; }
-.gh .wt-disk-name { display: inline-flex; flex-wrap: wrap; gap: 4px 10px; min-width: 0; color: var(--ink-2); }
-.gh .wt-disk-name > span:first-child { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+.gh .wt-disk-name { display: inline-flex; flex-wrap: wrap; gap: 4px 10px; min-width: 0; flex: 1 1 auto; color: var(--ink-2); }
+.gh .wt-disk-name > span:first-child { color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .gh .wt-disk-fail summary { cursor: pointer; }
 .gh .wt-disk-fail pre { margin-top: 6px; padding: 8px; border: 1px solid var(--line); background: var(--canvas); color: var(--ink-2); font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 200px; overflow: auto; }

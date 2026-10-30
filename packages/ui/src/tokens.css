@@ -42,7 +42,9 @@
   --layout-sidebar-rail: 56px;
   --layout-inspector: 380px;
   --layout-drawer: 280px;
-  --layout-content-max: 1120px;
+  --layout-gutter: 28px;
+  --layout-measure: 72ch;
+  --layout-field-max: 960px;
   --layout-statusbar: 28px;
   --layout-accounts-max: 236px;
   --motion-fast: 120ms;
