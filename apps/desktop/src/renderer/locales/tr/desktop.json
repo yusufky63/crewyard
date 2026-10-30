@@ -63,6 +63,9 @@
   "dialog": {
     "exportTitle": "Crewyard veritabanını dışa aktar",
     "restoreTitle": "Geri yüklenecek veritabanını seçin",
-    "dbFilter": "SQLite veritabanı"
+    "dbFilter": "SQLite veritabanı",
+    "usageTitle": "Kullanımı dışa aktar",
+    "csvFilter": "CSV (virgülle ayrılmış)",
+    "jsonFilter": "JSON"
   }
 }

@@ -63,6 +63,9 @@
   "dialog": {
     "exportTitle": "Export the Crewyard database",
     "restoreTitle": "Choose a database to restore",
-    "dbFilter": "SQLite database"
+    "dbFilter": "SQLite database",
+    "usageTitle": "Export usage",
+    "csvFilter": "CSV (comma separated)",
+    "jsonFilter": "JSON"
   }
 }

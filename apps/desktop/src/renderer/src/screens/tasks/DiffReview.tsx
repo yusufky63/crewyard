@@ -8,6 +8,7 @@ import { FIXTURE } from "./fixture.ts";
 import { ErrorLine, useFormat } from "./parts.tsx";
 import { buildRows, displayText, firstAdded, fileStart, fileStep, first, hunkExcerpt, offsets, ROW_HEIGHT, scrollFor, step, totals, visibleRange, type CommentTarget, type Row } from "./review.ts";
 import "./review.css";
+import { matches, type ShortcutId } from "../../keys.ts";
 
 // Diff review with line comments (A2). Opened from the inspector's Changes tab. Comments are
 // drafts in the daemon until the owning run accepted the batch; the batch goes through
@@ -29,6 +30,30 @@ function useDrafts(taskId: string) {
   const q = useWork("github.reviewDrafts", { taskId }, { retry: false });
   const set = (list: ReviewComment[]) => qc.setQueryData(["github.reviewDrafts", { taskId }], list);
   return { drafts: q.data ?? [], set, refetch: () => q.refetch() };
+}
+
+/** Files Windows kept from git, usually because an editor or a running process holds them open. */
+function Unreadable({ paths }: { paths: string[] }) {
+  const f = useFormat();
+  const [open, setOpen] = useState(paths.length <= 3);
+  return (
+    <div className="rv-banner rv-unreadable" role="status">
+      <p>{f.t("review.unreadable", { count: paths.length })}</p>
+      {open ? (
+        <ul>
+          {paths.map((p) => (
+            <li key={p} className="mono as-typed">
+              {p}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <button type="button" className="rv-link" onClick={() => setOpen(true)}>
+          {f.t("review.unreadableShow", { count: paths.length })}
+        </button>
+      )}
+    </div>
+  );
 }
 
 /** Mounted once in the inspector's Changes tab. */
@@ -185,30 +210,26 @@ function ReviewDialog({ detail, run, scope, onScope, onClose }: { detail: TaskDe
     if (e.target !== e.currentTarget) return;
     const page = Math.max(1, Math.floor(height / ROW_HEIGHT.line) - 2);
     const row = rows[active];
-    const moves: Record<string, () => number> = {
-      ArrowDown: () => step(rows, active, 1),
-      j: () => step(rows, active, 1),
-      ArrowUp: () => step(rows, active, -1),
-      k: () => step(rows, active, -1),
-      PageDown: () => step(rows, active, page),
-      PageUp: () => step(rows, active, -page),
-      Home: () => first(rows),
-      End: () => step(rows, rows.length, -1),
-      n: () => fileStep(rows, active, 1),
-      "]": () => fileStep(rows, active, 1),
-      p: () => fileStep(rows, active, -1),
-      "[": () => fileStep(rows, active, -1),
-    };
-    const move = moves[e.key];
-    if (move && !e.ctrlKey && !e.altKey && !e.metaKey) {
+    const moves: Array<[ShortcutId, () => number]> = [
+      ["review.next", () => step(rows, active, 1)],
+      ["review.prev", () => step(rows, active, -1)],
+      ["review.pageDown", () => step(rows, active, page)],
+      ["review.pageUp", () => step(rows, active, -page)],
+      ["review.first", () => first(rows)],
+      ["review.last", () => step(rows, rows.length, -1)],
+      ["review.nextFile", () => fileStep(rows, active, 1)],
+      ["review.prevFile", () => fileStep(rows, active, -1)],
+    ];
+    const move = moves.find(([id]) => matches(e, id))?.[1];
+    if (move) {
       e.preventDefault();
       go(move());
       return;
     }
-    if ((e.key === "Enter" || e.key === "c") && row?.kind === "line") {
+    if (matches(e, "review.comment") && row?.kind === "line") {
       e.preventDefault();
       startComment(row.target);
-    } else if ((e.key === "Delete" || e.key === "Backspace") && row?.kind === "comment") {
+    } else if (matches(e, "review.remove") && row?.kind === "comment") {
       e.preventDefault();
       void remove(row.comment.id);
     }
@@ -292,6 +313,7 @@ function ReviewDialog({ detail, run, scope, onScope, onClose }: { detail: TaskDe
 
         <div className="rv-diff">
           {diff.data?.cut && <p className="rv-banner">{f.t("review.cut")}</p>}
+          {diff.data?.unreadable && diff.data.unreadable.length > 0 && <Unreadable paths={diff.data.unreadable} />}
           {diff.data?.problem && <p className="rv-banner">{f.t(`review.problem.${diff.data.problem}`)}</p>}
           {diff.isError && <p className="rv-banner">{errorText(diff.error)}</p>}
           {diff.isLoading && <p className="muted rv-pad">{f.t("review.loading")}</p>}
@@ -470,11 +492,11 @@ function RowView({
             onChange={(e) => onText(e.target.value)}
             placeholder={f.t("review.placeholder")}
             onKeyDown={(e) => {
-              if (e.key === "Escape") {
+              if (matches(e, "close")) {
                 e.preventDefault();
                 e.stopPropagation();
                 onCancel();
-              } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+              } else if (matches(e, "submit")) {
                 e.preventDefault();
                 onSave();
               }

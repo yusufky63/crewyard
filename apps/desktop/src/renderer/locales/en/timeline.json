@@ -1,0 +1,83 @@
+{
+  "title": "Timeline",
+  "span": "{{time}} from first start",
+  "now": "now",
+  "task": "Task",
+  "legend": "Lane colors",
+  "loadFailed": "The event log could not be read.",
+  "omitted": "{{count}} older events are not shown; the newest are.",
+  "earlier": "Show {{count}} earlier",
+  "more": "Show {{count}} more",
+  "state": {
+    "work": "Working",
+    "input": "Waiting for your answer",
+    "approval": "Waiting for approval",
+    "limited": "Limited",
+    "paused": "Paused",
+    "handoff": "Handing off"
+  },
+  "lane": {
+    "aria": "{{who}}: {{parts}}{{open}}",
+    "part": "{{state}} {{time}}",
+    "open": ", still open"
+  },
+  "entry": {
+    "started": "{{who}} started",
+    "tools_one": "{{count}} tool call",
+    "tools_other": "{{count}} tool calls",
+    "cut_one": "{{count}} output truncated",
+    "cut_other": "{{count}} outputs truncated",
+    "wait": {
+      "limited": "{{who}} hit a limit",
+      "paused": "{{who}} paused",
+      "handoff": "{{who}} handing off"
+    },
+    "request": {
+      "question": "{{who}} asked a question",
+      "approval": "{{who}} asked for approval"
+    },
+    "answered": "answered after {{time}}",
+    "waiting": "waiting {{time}}",
+    "handoff": {
+      "opened": "Handoff from {{who}} started {{trigger}}",
+      "completed": "{{who}} took over",
+      "failed": "Handoff from {{who}} failed"
+    },
+    "message": "You sent a message",
+    "messageQueued": "You sent a message; it waits for the next run",
+    "retry": "{{who}} checked again",
+    "ended": "{{who}} ended · {{reason}}"
+  },
+  "trigger": {
+    "limit": "after a limit",
+    "budget": "after a spend cap",
+    "crashed": "after a crash",
+    "manual": "by you"
+  },
+  "reason": {
+    "completed": "completed",
+    "failed": "failed",
+    "stopped": "stopped by you",
+    "limit": "limit reached",
+    "interrupted": "interrupted"
+  },
+  "tool": {
+    "read": "Read",
+    "edit": "Edit",
+    "execute": "Run",
+    "search": "Search",
+    "fetch": "Fetch",
+    "other": "Tool"
+  },
+  "step": {
+    "running": "running",
+    "truncated": "Truncated, {{size}}",
+    "binary": "Binary output, {{size}}",
+    "showFull": "Show full output in Explorer",
+    "headOnly": "Only the head was kept",
+    "showOutput": "Show output",
+    "hideOutput": "Hide output",
+    "outputOf": "Output of {{title}}",
+    "failed": "Failed"
+  }
+}

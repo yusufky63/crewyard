@@ -6,6 +6,7 @@ import { ProvBadge } from "../providers/shared.tsx";
 import { act, useErrorText } from "./data.ts";
 import { IssueNote } from "./IssuePicker.tsx";
 import { ErrorLine, useFormat, Who } from "./parts.tsx";
+import { matches } from "../../keys.ts";
 
 const ROLE_ICON: Record<RoleId, typeof Code> = {
   planner: ClipboardList,
@@ -135,7 +136,7 @@ export function CrewProposal({ task, onClose }: { task: TaskDetail; onClose: () 
     }
   };
   const onKey = (e: KeyboardEvent) => {
-    if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !busy) {
+    if (matches(e, "submit") && !busy) {
       e.preventDefault();
       void approve();
     }

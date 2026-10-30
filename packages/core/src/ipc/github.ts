@@ -386,6 +386,11 @@ export interface TaskDiff {
   files: DiffFile[];
   /** git's output passed the read limit, so later files may be missing. */
   cut: boolean;
+  /**
+   * Files git or we could not read, usually because another program holds them open on Windows.
+   * They are left out of `files`; absent from daemons older than the field.
+   */
+  unreadable?: string[];
   problem: "no_worktree" | "missing" | "git" | null;
 }
 

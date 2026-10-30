@@ -307,6 +307,9 @@
     "notInView": "This line is not in the current view.",
     "remove": "Remove the comment on {{where}}",
     "cut": "The diff is very large, so later files are left out. Narrow it with Last turn or review the branch elsewhere.",
+    "unreadable_one": "{{count}} file could not be read and is not shown. Another program may have it open; close it and open the review again.",
+    "unreadable_other": "{{count}} files could not be read and are not shown. Another program may have them open; close it and open the review again.",
+    "unreadableShow": "Show the {{count}} files",
     "problem": {
       "no_worktree": "This task has no worktree, so there is no diff to review.",
       "missing": "The worktree folder is gone.",

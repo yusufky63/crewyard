@@ -9,6 +9,7 @@ import { issueDraft } from "./issue.ts";
 import { ImportButton, IssueChip, IssuePicker } from "./IssuePicker.tsx";
 import { splitTaskText } from "./model.ts";
 import { ErrorLine } from "./parts.tsx";
+import { matches } from "../../keys.ts";
 
 const KINDS: Array<TaskKind | "auto"> = ["auto", "code", "research", "review", "docs"];
 const FALLBACKS: Array<FallbackMode | "default"> = ["default", "manual", "ask", "auto", "wait_for_reset"];
@@ -66,7 +67,7 @@ export function Composer({ projectId, projectName }: { projectId: string; projec
   };
 
   const onKey = (e: KeyboardEvent) => {
-    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+    if (matches(e, "submit")) {
       e.preventDefault();
       void submit();
     }

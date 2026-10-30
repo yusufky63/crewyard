@@ -139,6 +139,7 @@ export class ReviewDesk {
     const res = await git.worktreeDiff(wt.path, wt.baseSha);
     if (!res.ok) return { ...empty, baseSha: wt.baseSha, problem: "git" };
     let files: DiffFile[] = parseUnifiedDiff(res.text);
+    const unreadable = [...res.unreadable];
     let used = keptLines(files);
     const untracked = await git.untrackedFiles(wt.path);
     for (const path of untracked.slice(0, UNTRACKED_MAX)) {
@@ -150,12 +151,13 @@ export class ReviewDesk {
         used += keptLines([f]);
         files.push(f);
       } catch {
-        // gone or locked since git listed it
+        // Gone or locked since git listed it; a file that still exists is named as unreadable.
+        if (existsSync(abs)) unreadable.push(path);
       }
     }
     files.sort((a, b) => a.path.localeCompare(b.path));
     if (scope === "turn") files = run?.diff ? onlyReported(files, run.diff.map((d) => d.path), wt.path) : [];
-    return { ...empty, baseSha: wt.baseSha, files, cut: res.cut || untracked.length > UNTRACKED_MAX };
+    return { ...empty, baseSha: wt.baseSha, files, cut: res.cut || untracked.length > UNTRACKED_MAX, unreadable: [...new Set(unreadable)].sort() };
   }
 
   // ---- drafts

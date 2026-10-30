@@ -134,6 +134,16 @@ function Detection({ det }: { det: FolderDetection }) {
     <div className="check-list">
       {det.existingConfig && <Row state="ok" label={t("folder.existing")}>{t("folder.existingText")}</Row>}
       {det.alreadyAdded && <Row state="wait" label={t("folder.added")}>{t("folder.addedText")}</Row>}
+      {det.caseTwins && det.caseTwins.length > 0 && (
+        <Row state="bad" label={t("folder.caseTwins")}>
+          {t("folder.caseTwinsText", { count: det.caseTwins.length })}
+          {det.caseTwins.map((p) => (
+            <span key={p} className="mono small block as-typed">
+              {p}
+            </span>
+          ))}
+        </Row>
+      )}
       {d.source === "empty" && !det.empty && <Row state="wait" label={t("folder.folder")}>{t("folder.notEmpty")}</Row>}
       {gitRow}
       <Row state={d.name.trim() ? "ok" : "bad"} label={t("folder.name")}>

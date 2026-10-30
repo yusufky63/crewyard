@@ -14,10 +14,12 @@ import { initI18n, pickLanguage } from "./i18n.ts";
 import { useNav } from "./nav.ts";
 import { usePrefs } from "./prefs.ts";
 
-// ?theme= and ?lang= are only set by the main process in screenshot mode.
+// ?theme=, ?density= and ?lang= are only set by the main process in screenshot mode.
 const query = new URLSearchParams(location.search);
 const forcedTheme = query.get("theme");
 if (forcedTheme === "dark" || forcedTheme === "light") usePrefs.setState({ theme: forcedTheme });
+const forcedDensity = query.get("density");
+if (forcedDensity === "compact" || forcedDensity === "comfortable") usePrefs.setState({ density: forcedDensity });
 const forcedLang = query.get("lang");
 if (forcedLang === "en" || forcedLang === "tr") usePrefs.setState({ language: forcedLang });
 const forcedScreen = query.get("screen");

@@ -130,7 +130,7 @@ export function seedFromDetection(draft: Draft, det: FolderDetection): Draft {
 
 const num = (s: string) => (s.trim() === "" ? Number.NaN : Number(s));
 
-export type DraftProblem = "folder" | "name" | "git" | "budget" | "slots" | "bootstrap" | "warnPct";
+export type DraftProblem = "folder" | "name" | "git" | "caseTwins" | "budget" | "slots" | "bootstrap" | "warnPct";
 
 /** Why one typed command or timeout would be refused, or null when it is fine. */
 export function stepProblem(s: DraftStep): "command" | "timeout" | null {
@@ -161,6 +161,8 @@ export function draftProblems(d: Draft, det: FolderDetection | undefined): Array
   if (!d.name.trim()) out.push({ step: 1, problem: "name" });
   // Agents work in git worktrees, so the project must be a repository (or become one now).
   if (det && !det.git.isRepo && !d.gitInit) out.push({ step: 1, problem: "git" });
+  // setup.create refuses these, so the wizard says so before Create rather than after.
+  if (det?.caseTwins?.length) out.push({ step: 1, problem: "caseTwins" });
   const daily = num(d.dailyUsd);
   const perTask = num(d.perTaskUsd);
   if (!(daily >= 0) || !(perTask >= 0)) out.push({ step: 3, problem: "budget" });

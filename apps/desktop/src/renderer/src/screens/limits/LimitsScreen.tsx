@@ -9,9 +9,15 @@ import { useProvidersQuery as useDaemon } from "../providers/data.ts";
 import { providerColor, ProvBadge, RUNNER_COLOR, useMoney, useProvidersLive, useWhen } from "../providers/shared.tsx";
 import { SignInBadge, SignInControl, useSignIn } from "../providers/SignIn.tsx";
 import "../providers/providers.css";
+import { FIXTURE } from "./fixture.ts";
+import { UsagePanel } from "./Usage.tsx";
 import "./limits.css";
 
 const RANGES = [1, 7, 30] as const;
+// Limits first (what needs you), the usage ledger one click away (DESIGN.md §6, second level).
+const VIEWS = ["limits", "usage"] as const;
+/** Screenshot mode only (`fixture&view=usage`). */
+const SHOT_VIEW = FIXTURE ? new URLSearchParams(location.search).get("view") : null;
 // Plan windows, shortest first; context and budget windows belong to runs and tasks.
 const WINDOW_ORDER: string[] = ["5h", "daily", "weekly", "monthly"];
 
@@ -521,6 +527,7 @@ export function LimitsScreen() {
   const { t } = useTranslation("limits");
   useProvidersLive();
   const [days, setDays] = useState<(typeof RANGES)[number]>(7);
+  const [view, setView] = useState<(typeof VIEWS)[number]>(SHOT_VIEW === "usage" ? "usage" : "limits");
   const catalog = useDaemon("providers.catalog", undefined, { staleTime: Infinity });
   const profiles = useDaemon("providers.profiles", undefined);
   const providers = catalog.data?.providers ?? [];
@@ -541,13 +548,26 @@ export function LimitsScreen() {
           </div>
         </div>
       </div>
-      <div className="grid2">
-        <PlanWindows profiles={profiles.data ?? []} providers={providers} />
-        <div className="stack">
-          <SpendPanel days={days} providers={providers} />
-          <CapsPanel providers={providers} />
-          <AlertsPanel />
-        </div>
+      <div className="tabs lim-view" role="tablist" aria-label={t("view.label")}>
+        {VIEWS.map((v) => (
+          <button key={v} type="button" role="tab" id={`lim-tab-${v}`} aria-selected={view === v} aria-controls="lim-view-panel" onClick={() => setView(v)}>
+            {t(`view.${v}`)}
+          </button>
+        ))}
+      </div>
+      <div id="lim-view-panel" role="tabpanel" aria-labelledby={`lim-tab-${view}`}>
+        {view === "limits" ? (
+          <div className="grid2">
+            <PlanWindows profiles={profiles.data ?? []} providers={providers} />
+            <div className="stack">
+              <SpendPanel days={days} providers={providers} />
+              <CapsPanel providers={providers} />
+              <AlertsPanel />
+            </div>
+          </div>
+        ) : (
+          <UsagePanel days={days} providers={providers} />
+        )}
       </div>
     </section>
   );

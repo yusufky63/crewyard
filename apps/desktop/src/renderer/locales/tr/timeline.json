@@ -1,0 +1,83 @@
+{
+  "title": "Zaman çizelgesi",
+  "span": "ilk başlangıçtan beri {{time}}",
+  "now": "şimdi",
+  "task": "Görev",
+  "legend": "Şerit renkleri",
+  "loadFailed": "Olay kaydı okunamadı.",
+  "omitted": "Daha eski {{count}} olay gösterilmiyor; en yeniler gösteriliyor.",
+  "earlier": "Önceki {{count}} kaydı göster",
+  "more": "{{count}} tane daha göster",
+  "state": {
+    "work": "Çalışıyor",
+    "input": "Yanıtını bekliyor",
+    "approval": "Onay bekliyor",
+    "limited": "Sınıra takıldı",
+    "paused": "Duraklatıldı",
+    "handoff": "Devrediliyor"
+  },
+  "lane": {
+    "aria": "{{who}}: {{parts}}{{open}}",
+    "part": "{{state}} {{time}}",
+    "open": ", hâlâ sürüyor"
+  },
+  "entry": {
+    "started": "{{who}} başladı",
+    "tools_one": "{{count}} araç çağrısı",
+    "tools_other": "{{count}} araç çağrısı",
+    "cut_one": "{{count}} çıktı kesildi",
+    "cut_other": "{{count}} çıktı kesildi",
+    "wait": {
+      "limited": "{{who}} sınıra takıldı",
+      "paused": "{{who}} duraklatıldı",
+      "handoff": "{{who}} devrediliyor"
+    },
+    "request": {
+      "question": "{{who}} bir soru sordu",
+      "approval": "{{who}} onay istedi"
+    },
+    "answered": "{{time}} sonra yanıtlandı",
+    "waiting": "{{time}} bekliyor",
+    "handoff": {
+      "opened": "{{who}} için devir başladı {{trigger}}",
+      "completed": "{{who}} işi devraldı",
+      "failed": "{{who}} için devir başarısız oldu"
+    },
+    "message": "Bir mesaj gönderdin",
+    "messageQueued": "Bir mesaj gönderdin; sonraki çalışmayı bekliyor",
+    "retry": "{{who}} yeniden denetlendi",
+    "ended": "{{who}} bitti · {{reason}}"
+  },
+  "trigger": {
+    "limit": "(sınır nedeniyle)",
+    "budget": "(harcama sınırı nedeniyle)",
+    "crashed": "(çökme nedeniyle)",
+    "manual": "(senin isteğinle)"
+  },
+  "reason": {
+    "completed": "tamamlandı",
+    "failed": "başarısız",
+    "stopped": "senin tarafından durduruldu",
+    "limit": "sınıra ulaştı",
+    "interrupted": "yarıda kesildi"
+  },
+  "tool": {
+    "read": "Okuma",
+    "edit": "Düzenleme",
+    "execute": "Çalıştırma",
+    "search": "Arama",
+    "fetch": "İndirme",
+    "other": "Araç"
+  },
+  "step": {
+    "running": "sürüyor",
+    "truncated": "Kesildi, {{size}}",
+    "binary": "İkili çıktı, {{size}}",
+    "showFull": "Tam çıktıyı Gezgin'de göster",
+    "headOnly": "Yalnızca baş kısmı saklandı",
+    "showOutput": "Çıktıyı göster",
+    "hideOutput": "Çıktıyı gizle",
+    "outputOf": "{{title}} çıktısı",
+    "failed": "Başarısız"
+  }
+}

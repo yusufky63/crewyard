@@ -5,6 +5,7 @@ import { usePrefs } from "../../prefs.ts";
 import type { SidebarBlockDef } from "../../registry.ts";
 import { SIDEBAR_ID } from "../layout.ts";
 import { useNarrow } from "../useMedia.ts";
+import { ariaKeys, keyText, matches } from "../../keys.ts";
 
 // Collapse to the icon rail and back (DESIGN.md §4), last in the sidebar. Ctrl B does the same
 // from anywhere in a project; below 1180 px the rail is forced, so both step aside.
@@ -18,7 +19,7 @@ function CollapseToggle() {
   useEffect(() => {
     if (narrow) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey && e.key.toLowerCase() === "b" && !e.defaultPrevented) {
+      if (matches(e, "sidebar") && !e.defaultPrevented) {
         e.preventDefault();
         usePrefs.getState().toggleSidebar();
       }
@@ -28,13 +29,13 @@ function CollapseToggle() {
   }, [narrow]);
 
   if (narrow) return null;
-  const title = `${collapsed ? t("layout.sidebar.expandTitle") : t("layout.sidebar.collapseTitle")} (Ctrl B)`;
+  const title = `${collapsed ? t("layout.sidebar.expandTitle") : t("layout.sidebar.collapseTitle")} (${keyText("sidebar")})`;
   const Icon = collapsed ? PanelLeftOpen : PanelLeftClose;
   return (
-    <button type="button" className="nav nav-collapse" onClick={toggle} title={title} aria-label={title} aria-expanded={!collapsed} aria-controls={SIDEBAR_ID} aria-keyshortcuts="Control+B">
+    <button type="button" className="nav nav-collapse" onClick={toggle} title={title} aria-label={title} aria-expanded={!collapsed} aria-controls={SIDEBAR_ID} aria-keyshortcuts={ariaKeys("sidebar")}>
       <Icon size={16} strokeWidth={1.75} aria-hidden="true" />
       <span className="t">{t("layout.sidebar.collapse")}</span>
-      <span className="kbd">Ctrl B</span>
+      <span className="kbd">{keyText("sidebar")}</span>
     </button>
   );
 }
