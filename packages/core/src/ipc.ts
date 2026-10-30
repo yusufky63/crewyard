@@ -97,7 +97,8 @@ export interface ProjectSummary {
 
 export interface ScanResult {
   root: string;
-  repos: Array<{ name: string; path: string; known: boolean }>;
+  /** Most recently used first; `usedAt` is when git last touched the repo (its index), null when unknown. */
+  repos: Array<{ name: string; path: string; known: boolean; usedAt: string | null }>;
 }
 
 /** Base methods live here; each area adds its own in src/ipc/<area>.ts so parallel work never edits this list. */

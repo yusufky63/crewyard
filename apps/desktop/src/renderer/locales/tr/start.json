@@ -97,7 +97,10 @@
     "longNever": "Crewyard bu ayarı yalnızca okur, asla değiştirmez."
   },
   "recent": {
-    "title": "Son projeler",
+    "lastTitle": "Son proje",
+    "othersTitle": "Son kullanılanlar",
+    "othersCount_one": "{{count}} proje",
+    "othersCount_other": "{{count}} proje",
     "empty": "Henüz proje yok. Bir klasör açın ya da {{root}} içindeki bir depoyu ekleyin.",
     "opened": "{{time}} açıldı",
     "never": "Henüz açılmadı"
@@ -110,6 +113,7 @@
     "missing": "{{root}} yok ya da içinde git deposu yok.",
     "add": "Ekle",
     "adding": "Ekleniyor…",
+    "used": "{{time}} kullanıldı",
     "filter": "Ada göre süz",
     "showAll": "Tümünü göster ({{count}})",
     "showFewer": "Daha az göster"

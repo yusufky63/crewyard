@@ -168,7 +168,7 @@ Icons inside buttons are 14 px.
 
 | Screen | First view | Second level |
 |---|---|---|
-| **Start** (no project open) | hero line, `New project` / `Open folder` / `Clone from GitHub` beside recent project tiles; the This machine strip across the full width under them, visible without scrolling at 1280 × 800; then Getting started and `Import from C:\Projeler` | all projects, install guides, the full machine panel; the sidebar hides, and the 32 px hero is used only here |
+| **Start** (no project open) | hero line across the full width, `New project` / `Open folder` / `Clone from GitHub` beside the lead; the last project as one wide tile and the This machine strip under it, each across the full width and visible without scrolling at 1280 × 800; then Recently used (the other projects, newest first, one line each) and Getting started beside `Import from C:\Projeler` (the repo git touched last first) | all projects, install guides, the full machine panel; the sidebar hides, and the 32 px hero is used only here |
 | **New project** | five numbered step tiles (Folder, Agents, Accounts & budget, Rules, GitHub), one step pane, Back / Next | edit detected commands, create a private repo, CI template; nothing is written until `Create project` |
 | **Tasks** (project home) | composer, crew proposal when drafting, filters `All / Running / Needs you / Ready for review / Merged / Done`, task rows | steps, limit banner, diff, PR link, inspector |
 | **Inbox** | items that need an answer first, then limits, automatic account switches (each fact with its provenance badge, `Off for this task`, `Dismiss`) and GitHub notices | detail pane: approve once / allow in project / deny; question options + note |

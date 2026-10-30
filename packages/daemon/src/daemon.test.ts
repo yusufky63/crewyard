@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -67,7 +67,23 @@ describe("projects", () => {
     mkdirSync(join(root, "beta", ".git"), { recursive: true });
     mkdirSync(join(root, "not-a-repo"));
     const res = scanForRepos(root, new Set([join(root, "beta").toLowerCase()]));
-    expect(res.repos.map((r) => [r.name, r.known])).toEqual([["alpha", false], ["beta", true]]);
+    expect(res.repos.map((r) => [r.name, r.known]).sort()).toEqual([["alpha", false], ["beta", true]]);
+  });
+
+  it("lists the repo git touched last first, by its index, and a repo without one by .git itself", () => {
+    const root = tempDir();
+    for (const name of ["old one", "recent one", "no index"]) mkdirSync(join(root, name, ".git"), { recursive: true });
+    writeFileSync(join(root, "old one", ".git", "index"), "");
+    writeFileSync(join(root, "recent one", ".git", "index"), "");
+    utimesSync(join(root, "old one", ".git", "index"), new Date("2026-01-01T00:00:00Z"), new Date("2026-01-01T00:00:00Z"));
+    utimesSync(join(root, "recent one", ".git", "index"), new Date("2026-10-30T12:00:00Z"), new Date("2026-10-30T12:00:00Z"));
+    utimesSync(join(root, "no index", ".git"), new Date("2026-06-01T00:00:00Z"), new Date("2026-06-01T00:00:00Z"));
+    const res = scanForRepos(root, new Set());
+    expect(res.repos.map((r) => [r.name, r.usedAt])).toEqual([
+      ["recent one", "2026-10-30T12:00:00.000Z"],
+      ["no index", "2026-06-01T00:00:00.000Z"],
+      ["old one", "2026-01-01T00:00:00.000Z"],
+    ]);
   });
 });
 

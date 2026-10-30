@@ -97,7 +97,10 @@
     "longNever": "Crewyard only reads this setting and never changes it."
   },
   "recent": {
-    "title": "Recent projects",
+    "lastTitle": "Last project",
+    "othersTitle": "Recently used",
+    "othersCount_one": "{{count}} project",
+    "othersCount_other": "{{count}} projects",
     "empty": "No projects yet. Open a folder or add one found in {{root}}.",
     "opened": "Opened {{time}}",
     "never": "Not opened yet"
@@ -110,6 +113,7 @@
     "missing": "{{root}} does not exist or has no git repositories.",
     "add": "Add",
     "adding": "Adding…",
+    "used": "used {{time}}",
     "filter": "Filter by name",
     "showAll": "Show all {{count}}",
     "showFewer": "Show fewer"

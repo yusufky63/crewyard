@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { FolderOpen, FolderSearch, GitBranch, GitPullRequest, Plus } from "lucide-react";
+import { Folder, FolderOpen, FolderSearch, GitBranch, GitPullRequest, History, Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button, Label, Panel } from "@crewyard/ui";
 import type { ProjectSummary } from "@crewyard/core";
@@ -15,6 +15,8 @@ import { branchParts, projectActivity } from "./tile.ts";
 import "./start.css";
 
 const IMPORT_PREVIEW = 8;
+/** Projects listed under Recently used, after the last one. */
+const RECENT_MORE = 8;
 const REPO_STALE = 5 * 60_000;
 
 function useRelativeTime() {
@@ -65,31 +67,41 @@ function TileState({ projectId }: { projectId: string }) {
   );
 }
 
-function ProjectTile({ project, index }: { project: ProjectSummary; index: number }) {
-  const { t } = useTranslation("start");
-  const rel = useRelativeTime();
+/** Opening a project marks it opened, so it moves to the top of Last project and Recently used. */
+function useOpenProject() {
   const openProject = useNav((s) => s.openProject);
   const qc = useQueryClient();
-  const open = async () => {
-    await call("projects.open", { projectId: project.id });
+  return async (projectId: string) => {
+    await call("projects.open", { projectId });
     void qc.invalidateQueries({ queryKey: ["projects.list"] });
-    openProject(project.id);
+    openProject(projectId);
   };
+}
+
+function ProjectTile({ project }: { project: ProjectSummary }) {
+  const { t } = useTranslation("start");
+  const rel = useRelativeTime();
+  const openProject = useOpenProject();
+  const open = () => openProject(project.id);
+  // The last project only, wide and short: the folder mark on the left, three lines beside it.
   const body = (
     <>
-      <div className="tile-top">
-        <Label>{String(index + 1).padStart(2, "0")}</Label>
+      <div className="tile-side">
         <svg className="tile-art" viewBox="0 0 34 34" aria-hidden="true">
           <path d="M5 9h9l2 3h13v14H5z" />
           <path d="M5 15h24" />
         </svg>
       </div>
-      <div className="p-name">{project.name}</div>
-      <div className="p-path" title={project.path}>
-        {project.path}
+      <div className="tile-main">
+        <div className="tile-head">
+          <span className="p-name">{project.name}</span>
+          <Label>{project.lastOpenedAt ? t("recent.opened", { time: rel(project.lastOpenedAt) }) : t("recent.never")}</Label>
+        </div>
+        <div className="p-path" title={project.path}>
+          {project.path}
+        </div>
+        <TileState projectId={project.id} />
       </div>
-      <TileState projectId={project.id} />
-      <Label>{project.lastOpenedAt ? t("recent.opened", { time: rel(project.lastOpenedAt) }) : t("recent.never")}</Label>
     </>
   );
   // Tiles become buttons once a project home screen exists to open into.
@@ -102,8 +114,48 @@ function ProjectTile({ project, index }: { project: ProjectSummary; index: numbe
   );
 }
 
+/** The projects opened before the last one, newest first, one line each; empty with none. */
+function RecentList({ projects }: { projects: ProjectSummary[] }) {
+  const { t } = useTranslation("start");
+  const rel = useRelativeTime();
+  const openProject = useOpenProject();
+  if (projects.length === 0) return null;
+  return (
+    <Panel className="recent-list">
+      <div className="ph">
+        <History size={16} strokeWidth={1.75} />
+        <h2>{t("recent.othersTitle")}</h2>
+        <span className="end lbl">{t("recent.othersCount", { count: projects.length })}</span>
+      </div>
+      <div style={{ height: 8 }} />
+      {projects.map((p) => {
+        const when = p.lastOpenedAt ? t("recent.opened", { time: rel(p.lastOpenedAt) }) : t("recent.never");
+        const text = (
+          <>
+            <Folder size={14} strokeWidth={1.75} aria-hidden="true" />
+            <span className="recent-name">
+              {p.name} <span className="muted mono path-inline">{p.path}</span>
+            </span>
+            <Label>{when}</Label>
+          </>
+        );
+        return canOpenProjects ? (
+          <button type="button" className="sysrow recent-row" key={p.id} title={p.path} onClick={() => void openProject(p.id)}>
+            {text}
+          </button>
+        ) : (
+          <div className="sysrow recent-row" key={p.id} title={p.path}>
+            {text}
+          </div>
+        );
+      })}
+    </Panel>
+  );
+}
+
 function ImportPanel() {
   const { t } = useTranslation("start");
+  const rel = useRelativeTime();
   const root = usePrefs((s) => s.scanRoot);
   const qc = useQueryClient();
   const scan = useDaemon("projects.scan", { root });
@@ -159,6 +211,7 @@ function ImportPanel() {
           <span />
           <span>
             {r.name} <span className="muted mono path-inline">{r.path}</span>
+            {r.usedAt && <span className="muted used-inline">{t("scan.used", { time: rel(r.usedAt) })}</span>}
           </span>
           <Button size="sm" onClick={() => void add(r.path)} disabled={busy !== null}>
             {busy === r.path ? t("scan.adding") : t("scan.add")}
@@ -197,17 +250,18 @@ export function StartScreen() {
   const list = projects.data ?? [];
   return (
     <section className="screen start" aria-label={t("title")}>
-      {/* Areas: intro and recent projects first, then This machine across the full width so its
-          state shows without scrolling at 1280 × 800, then Getting started and the import list. */}
+      {/* Areas: the intro, the last project and This machine across the full width, so the machine's
+          state shows without scrolling at 1280 × 800; then Recently used and Getting started on the
+          left and the import list on the right. */}
       <div className="launch-grid">
         <div className="launch-intro">
-          <Label>{t("version", { version: version ?? "" })}</Label>
-          <h1 className="hero">
-            {t("hero1")}
-            <br />
-            <span className="dim">{t("hero2")}</span>
-          </h1>
-          <p className="sec lead">{t("lead")}</p>
+          <div className="launch-copy">
+            <Label>{t("version", { version: version ?? "" })}</Label>
+            <h1 className="hero">
+              {t("hero1")} <span className="dim">{t("hero2")}</span>
+            </h1>
+            <p className="sec lead">{t("lead")}</p>
+          </div>
           <div className="launch-actions">
             <Button variant="primary" onClick={() => openSetup("local")}>
               <Plus size={14} strokeWidth={1.75} />
@@ -225,20 +279,19 @@ export function StartScreen() {
         </div>
         <div className="launch-recent">
           <div className="launch-head">
-            <span className="lbl strong">{t("recent.title")}</span>
+            <span className="lbl strong">{t("recent.lastTitle")}</span>
           </div>
-          {list.length > 0 ? (
-            <div className="recent-grid">
-              {list.slice(0, 6).map((p, i) => (
-                <ProjectTile key={p.id} project={p} index={i} />
-              ))}
-            </div>
+          {list[0] ? (
+            <ProjectTile project={list[0]} />
           ) : (
             <p className="muted empty">{projects.isSuccess ? t("recent.empty", { root }) : ""}</p>
           )}
         </div>
         <div className="launch-machine">
           <MachineCheck />
+        </div>
+        <div className="launch-others">
+          <RecentList projects={list.slice(1, 1 + RECENT_MORE)} />
         </div>
         <div className="launch-checklist">
           <Checklist />

@@ -39,7 +39,7 @@ describe("repos that differ only by letter case", () => {
     try {
       const a = store.addProject(join(root, "My Repo"), "My Repo");
       expect(store.addProject(join(root.toUpperCase(), "MY REPO"), "MY REPO").id).toBe(a.id);
-      expect(scanForRepos(root, store.knownPaths()).repos).toEqual([{ name: "My Repo", path: join(root, "My Repo"), known: true }]);
+      expect(scanForRepos(root, store.knownPaths()).repos).toEqual([{ name: "My Repo", path: join(root, "My Repo"), known: true, usedAt: expect.any(String) }]);
     } finally {
       store.close();
     }

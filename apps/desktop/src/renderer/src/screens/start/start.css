@@ -1,36 +1,55 @@
-/* Intro and recent projects, then This machine across the full width, then Getting started and the import list. */
+/* The intro, the last project and This machine each across the full width, then Recently used and
+   Getting started on the left and the import list on the right. Six project tiles once sat beside
+   the intro and towered over it (owner, 2026-10-30: "son projeler cardı çok büyük ve dengesiz
+   görünüyor", then "sadece son projeyi göster ve alt kısımdaki projelerde ise son kullanılanları göster"). */
 .start .launch-grid {
   display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.3fr); gap: 24px 40px; align-items: start; margin-top: 8px;
-  grid-template-areas: "intro recent" "machine machine" "checklist import";
+  grid-template-areas: "intro intro" "recent recent" "machine machine" "others import" "checklist import";
 }
-.start .launch-intro { grid-area: intro; }
+/* The label and the hero across the full width; the lead on the left and the three ways in on its
+   right. With the hero in the same column as the buttons it broke after "from one" in English. */
+.start .launch-intro { grid-area: intro; display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 40px; align-items: end; }
+.start .launch-copy { display: contents; }
+.start .launch-copy > :first-child, .start .launch-intro .hero { grid-column: 1 / -1; }
 .start .launch-recent { grid-area: recent; }
 .start .launch-machine { grid-area: machine; }
+.start .launch-others { grid-area: others; }
 .start .launch-checklist { grid-area: checklist; }
+/* An empty block takes no row and no gap. */
+.start .launch-others:empty, .start .launch-checklist:empty { display: none; }
 .start .launch-import { grid-area: import; }
 /* The 32 px hero is used only on the Start screen (DESIGN.md §6). */
-.start .hero { font-size: 32px; line-height: 1.12; font-weight: 500; letter-spacing: -0.02em; margin: 14px 0 12px; }
+.start .hero { font-size: 32px; line-height: 1.12; font-weight: 500; letter-spacing: -0.02em; margin: 14px 0 10px; }
 .start .hero .dim { color: var(--ink-3); }
-.start .lead { max-width: 440px; font-size: 15px; margin-bottom: 22px; }
+.start .lead { max-width: 560px; font-size: 15px; margin-bottom: 0; }
 .start .launch-actions { display: flex; gap: 12px; flex-wrap: wrap; padding: 4px 0; }
 .start .launch-head { display: flex; align-items: center; margin-bottom: 12px; min-height: 28px; }
 .start .lbl.strong { color: var(--ink); }
 .start .sysrow { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 10px; align-items: center; min-height: 40px; padding: 0 16px; border-top: 1px solid var(--line); font-size: 13px; }
 .start .panel-foot { display: flex; justify-content: flex-end; padding: 8px 12px; border-top: 1px solid var(--line); }
-.start .recent-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
-.start .ptile { padding: 14px; display: grid; gap: 7px; align-content: start; text-align: left; min-height: 140px; width: 100%; }
-.start .tile-top { display: flex; align-items: flex-start; justify-content: space-between; }
+.start .ptile { padding: 12px 14px; display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 0 14px; align-items: start; text-align: left; width: 100%; }
+.start .tile-side { display: grid; justify-items: center; gap: 6px; }
+.start .tile-main { display: grid; gap: 5px; min-width: 0; }
+.start .tile-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; min-width: 0; }
+.start .tile-head .p-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.start .tile-head .lbl { flex: none; }
 .start .tile-art { width: 34px; height: 34px; stroke: var(--ink-2); fill: none; stroke-width: 1; }
 .start .p-name { font-size: 15px; font-weight: 500; }
 .start .p-path { font: 400 11px / 1.3 var(--mono); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .start .path-inline { font-size: 11px; margin-left: 6px; }
 .start .empty { margin-bottom: 0; }
-.start .launch-recent .recent-grid { margin-bottom: 0; }
+.start .launch-recent .ptile .p-name { font-size: 16px; }
+.start .recent-row { width: 100%; text-align: left; color: inherit; font: inherit; background: none; border: 0; border-top: 1px solid var(--line); cursor: pointer; }
+.start .recent-row:hover { background: var(--raised); }
+.start .recent-row svg { color: var(--ink-2); }
+.start .recent-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.start .used-inline { font-size: 11px; margin-left: 8px; }
 .start .import .ph svg { color: var(--ink-2); }
 
 @media (max-width: 1180px) {
-  .start .launch-grid { grid-template-columns: 1fr; grid-template-areas: "intro" "machine" "recent" "checklist" "import"; }
-  .start .recent-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .start .launch-intro { grid-template-columns: minmax(0, 1fr); }
+  .start .launch-actions { margin-top: 16px; }
+  .start .launch-grid { grid-template-columns: 1fr; grid-template-areas: "intro" "machine" "recent" "others" "checklist" "import"; }
   .start .mtiles { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
 }
 .start .import-filter { padding: 8px 16px; border-top: 1px solid var(--line); }
@@ -80,18 +99,20 @@
 .start .sr-only-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 /* Recent project tiles: branch, running agents, open questions. */
-.start .tile-state { display: grid; gap: 4px; font: 400 11px / 1.35 var(--mono); color: var(--ink-2); min-width: 0; }
-.start .tile-branch { display: flex; align-items: flex-start; gap: 6px; min-width: 0; }
+.start .tile-state { display: flex; align-items: flex-start; gap: 4px 14px; font: 400 11px / 1.35 var(--mono); color: var(--ink-2); min-width: 0; }
+.start .tile-branch { display: flex; align-items: flex-start; gap: 6px; min-width: 0; flex: 1 1 auto; }
 .start .tile-branch svg { flex: none; color: var(--ink-3); margin-top: 1px; }
-.start .tile-branch-t { min-width: 0; overflow: hidden; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.start .tile-activity { display: flex; flex-wrap: wrap; gap: 2px 12px; color: var(--ink-3); }
+/* One line: the full branch state is in the tooltip. */
+.start .tile-branch-t { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.start .tile-activity { display: flex; flex: none; gap: 2px 12px; color: var(--ink-3); }
 .start .tile-activity > span { white-space: nowrap; }
 .start .sysdetails[open] { padding-bottom: 4px; }
 .start .sysdetails > * + * { margin-top: 8px; }
 .start .sysdetails summary { width: max-content; cursor: pointer; font: 500 11px / 1.2 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); padding: 4px 0; }
 .start .sysdetails summary:hover { color: var(--ink); }
 /* Once Getting started is done its area is empty; the import list takes the full width. */
-.start .launch-grid:has(> .launch-checklist:empty) { grid-template-areas: "intro recent" "machine machine" "import import"; }
+/* With neither Recently used nor Getting started, the import list takes the full width. */
+.start .launch-grid:has(> .launch-checklist:empty):has(> .launch-others:empty) { grid-template-areas: "intro intro" "recent recent" "machine machine" "import import"; }
 @media (max-width: 1180px) {
-  .start .launch-grid:has(> .launch-checklist:empty) { grid-template-areas: "intro" "machine" "recent" "import"; }
+  .start .launch-grid:has(> .launch-checklist:empty):has(> .launch-others:empty) { grid-template-areas: "intro" "machine" "recent" "import"; }
 }
