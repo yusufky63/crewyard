@@ -17,6 +17,7 @@ import { formatDuration, latestRunOf, limitBanner, profileNames, resolveTarget, 
 import { ConfirmButton, ErrorLine, LimitBanner, useFormat, useNow } from "../screens/tasks/parts.tsx";
 import { DiffStat } from "../screens/tasks/TaskRow.tsx";
 import { DiffReview } from "../screens/tasks/DiffReview.tsx";
+import { TaskTimeline } from "./timeline/TaskTimeline.tsx";
 import "../screens/tasks/tasks.css";
 import "./inspector.css";
 
@@ -258,6 +259,7 @@ function Body({ detail, target }: { detail: TaskDetail; target: InspectorTarget 
               })}
             </ol>
           </div>
+          <TaskTimeline detail={detail} />
           {lineage.length > 1 && (
             <div className="ins-sec">
               <Label>{f.t("inspector.runs")}</Label>

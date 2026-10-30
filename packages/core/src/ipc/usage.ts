@@ -75,6 +75,9 @@ export type TimelineEvent = {
   | { kind: "retry"; detail: string | null }
 );
 
+/** A timeline event without its envelope, per kind. */
+export type TimelineEventBody = TimelineEvent extends infer E ? (E extends unknown ? Omit<E, "seq" | "at" | "runId"> : never) : never;
+
 export interface TaskTimelineData {
   taskId: string;
   events: TimelineEvent[];

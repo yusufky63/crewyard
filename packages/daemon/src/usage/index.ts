@@ -1,5 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
-import { TIMELINE_MAX_EVENTS, TIMELINE_PREVIEW, utf8Length, type Provenance, type RunnerId, type TaskTimelineData, type TimelineEvent, type UsageRecord, type UsageReport } from "@crewyard/core";
+import { TIMELINE_MAX_EVENTS, TIMELINE_PREVIEW, utf8Length, type Provenance, type RunnerId, type TaskTimelineData, type TimelineEvent, type TimelineEventBody, type UsageRecord, type UsageReport } from "@crewyard/core";
 import { startOfLocalDay } from "../providers/ledger.ts";
 
 // Reads behind the usage view and the task timeline (PLAN.md M5). Read-only: the spend ledger and
@@ -229,9 +229,7 @@ export function readOutput(output: string | undefined): { preview: string | null
 type Payload = Record<string, unknown>;
 const str = (v: unknown): string | null => (typeof v === "string" ? v : null);
 
-type Body<E> = E extends unknown ? Omit<E, "seq" | "at" | "runId"> : never;
-
-function project(kind: string, p: Payload): Body<TimelineEvent> | null {
+function project(kind: string, p: Payload): TimelineEventBody | null {
   // A payload past the store's ceiling keeps only { truncated, bytes }.
   const whole = p.truncated === true && typeof p.bytes === "number" ? p.bytes : null;
   switch (kind) {

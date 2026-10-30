@@ -1,0 +1,48 @@
+/* Task timeline (PLAN.md M5) in the inspector: lanes to scale, then entries newest first. Colors are
+   state only: the runner's series for working, amber for waiting on you, red for a limit. */
+.tl { gap: 8px; }
+.tl-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.tl-head .num { font-size: 12px; }
+.tl-lanes { list-style: none; display: grid; gap: 6px; margin: 2px 0 0; padding: 0; }
+.tl-lane { display: grid; grid-template-columns: minmax(0, 38%) minmax(0, 1fr); gap: 10px; align-items: center; min-height: 20px; }
+.tl-who { display: flex; align-items: center; gap: 6px; min-width: 0; font: 500 11px / 1.2 var(--mono); color: var(--ink-2); }
+.tl-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.tl-track { position: relative; height: 10px; background: var(--sunken); box-shadow: inset 0 0 0 1px var(--line); }
+.tl-seg { position: absolute; top: 0; bottom: 0; }
+/* 1 px gaps between stretches keep two waits next to each other apart. */
+.tl-seg + .tl-seg { border-left: 1px solid var(--surface); }
+.tl-work, .tl-key.tl-work { background: var(--c, var(--accent)); }
+.tl-input, .tl-approval { background: var(--warn); }
+.tl-limited { background: var(--bad); }
+.tl-paused { background: var(--ink-3); }
+/* Half height: a handoff is a pause between two runs, told apart from waiting on you by shape. */
+.tl-handoff { background: var(--warn); }
+.tl-seg.tl-handoff { top: 3px; bottom: 3px; }
+.tl-axis { display: flex; justify-content: space-between; font-size: 11px; padding-left: calc(38% + 10px); }
+.tl-legend { list-style: none; display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 0; padding: 0; font-size: 11.5px; color: var(--ink-2); }
+.tl-legend li { display: inline-flex; align-items: center; gap: 6px; }
+.tl-key { display: inline-block; width: 10px; height: 10px; }
+.tl-entries { list-style: none; display: grid; margin: 4px 0 0; padding: 0; border-top: 1px solid var(--line); }
+.tl-entry { display: grid; grid-template-columns: 44px 14px minmax(0, 1fr) auto; gap: 8px; align-items: start; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 13px; color: var(--ink-2); }
+.tl-entry > time, .tl-entry > .tl-dur { font-size: 11.5px; line-height: 18px; }
+.tl-entry > svg { margin-top: 2px; color: var(--ink-3); }
+.tl-text { min-width: 0; overflow-wrap: anywhere; line-height: 18px; }
+.tl-e-request > svg, .tl-w-paused > svg, .tl-e-handoff > svg { color: var(--warn); }
+.tl-w-limited > svg { color: var(--bad); }
+.tl-e-ended > svg { color: var(--ink-2); }
+.tl-expand { display: flex; gap: 4px; align-items: flex-start; text-align: left; color: var(--ink); min-height: 18px; }
+.tl-expand > svg { margin-top: 2px; flex: none; }
+.tl-kinds { font-size: 12px; }
+.tl-steps { list-style: none; display: grid; gap: 2px; margin: 6px 0 0; padding: 0 0 0 18px; }
+.tl-step { display: grid; gap: 4px; padding: 4px 0; border-top: 1px dashed var(--line); }
+.tl-step-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: baseline; font-size: 12px; }
+.tl-kind { font: 500 10.5px / 1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); }
+.tl-step.failed .tl-kind, .tl-failed { color: var(--bad); }
+.tl-cut { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 12px; }
+/* The daemon's "truncated, N bytes" marker, made hard to miss. */
+.tl-chip { font: 500 10.5px / 1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; padding: 4px 6px; background: var(--warn-soft); color: var(--warn); white-space: nowrap; }
+.tl-chip-inline { margin-left: 6px; }
+.tl-link { justify-self: start; min-height: 24px; font-size: 12px; color: var(--accent); text-decoration: underline; text-underline-offset: 3px; text-align: left; }
+.tl-out { max-height: 240px; overflow: auto; margin: 0; padding: 8px 10px; background: var(--sunken); border: 1px solid var(--line); font: 400 11.5px / 1.45 var(--mono); color: var(--ink-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+.tl-small { font-size: 12px; }
+.tl-more { justify-self: start; }
