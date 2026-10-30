@@ -1,1 +1,2 @@
 export { cleanOrphans, listWindowsProcesses, recordDaemonStart, verifyOrphan, RUNNER_IMAGES, type CleanupDeps, type DaemonSession, type OpenRunProcess, type OrphanReport, type ProcessInfo, type ProcessLister, type Verdict } from "./orphans.ts";
+export { acquireDataDirLock, DataDirLockedError, LOCK_FILE, type DataDirLock } from "./datadir-lock.ts";
