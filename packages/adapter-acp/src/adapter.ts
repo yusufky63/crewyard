@@ -4,8 +4,9 @@ import { mkdir } from "node:fs/promises";
 import { Readable, Writable } from "node:stream";
 import type { ChildProcess } from "node:child_process";
 import * as acp from "@agentclientprotocol/sdk";
-import type { AgentAdapter, AgentCapabilities, AgentEvent, Answer, EndReason, NativeSessionRef, Probe, Profile, RunHandle, RunState, StartRequest, UserInput } from "@crewyard/core";
-import { exitCodeWithin, isShutdownExit, killTree, parseVersion, run as runCommand, start, which } from "@crewyard/proc";
+import { checkOutput, outputInstruction, outputRetryPrompt, parseOutputText } from "@crewyard/core";
+import type { AgentAdapter, AgentCapabilities, AgentEvent, Answer, EndReason, NativeSessionRef, OutputSchema, Probe, Profile, RunHandle, RunOutput, RunState, StartRequest, UserInput } from "@crewyard/core";
+import { ensureSystemEnv, exitCodeWithin, isShutdownExit, killTree, parseVersion, run as runCommand, start, which } from "@crewyard/proc";
 import { AGENTS, type AgentSpec } from "./agents.ts";
 import { AcpMapper, chooseOutcome, mustReject, type EventBody } from "./mapper.ts";
 import { EventQueue } from "./queue.ts";
@@ -42,6 +43,7 @@ export interface AcpLoginSession {
 interface CliInfo {
   version: string | null;
   acpArgs: string[] | null;
+  readOnlyArgs: string[] | null;
 }
 
 interface PendingPermission {
@@ -72,6 +74,10 @@ interface Run {
   pending: Map<string, PendingPermission>;
   permissionCount: number;
   stderr: string;
+  /** Agent text of the turn in flight; with an outputSchema the last turn's text is the result. */
+  turnText: string;
+  outputRetried: boolean;
+  output: RunOutput | null;
 }
 
 const STDERR_TAIL = 4_000;
@@ -101,7 +107,7 @@ export class AcpAdapter implements AgentAdapter {
     // Resume depends on the agent: ask it (initialize only, no session, no model call).
     if (problems.length === 0) {
       try {
-        const opened = await this.spawn(spec, executable, cli, { profile, cwd: process.cwd(), env: {}, model: null });
+        const opened = await this.spawn(spec, executable, cli, { profile, cwd: process.cwd(), env: {}, model: null, readOnly: false });
         const init = await opened.init;
         capabilities = { ...capabilities, resume: init.agentCapabilities?.loadSession === true };
         opened.conn.close();
@@ -149,7 +155,7 @@ export class AcpAdapter implements AgentAdapter {
     if (state.state === "blocked") throw new Error(state.problem ?? `${spec.label} cannot sign in here`);
     const executable = (await this.executable(spec))!;
     const cli = await this.cliInfo(spec, executable, profile);
-    const opened = await this.spawn(spec, executable, cli, { profile, cwd: profile.configDir, env: {}, model: null });
+    const opened = await this.spawn(spec, executable, cli, { profile, cwd: profile.configDir, env: {}, model: null, readOnly: false });
     const pattern = spec.signIn.urlPattern;
     let url: string | null = null;
     let tail = "";
@@ -197,7 +203,7 @@ export class AcpAdapter implements AgentAdapter {
     try {
       run.sessionId = await this.newSession(run);
       run.handle.nativeSession = { runner: "acp", sessionId: run.sessionId };
-      this.enqueue(run, req.prompt);
+      this.enqueue(run, withOutputInstruction(req.prompt, req.outputSchema));
       return run.handle;
     } catch (err) {
       await this.discard(run);
@@ -214,7 +220,7 @@ export class AcpAdapter implements AgentAdapter {
       run.loading = false;
       run.sessionId = ref.sessionId;
       run.handle.nativeSession = { runner: "acp", sessionId: ref.sessionId };
-      if (req.prompt.trim()) this.enqueue(run, req.prompt);
+      if (req.prompt.trim()) this.enqueue(run, withOutputInstruction(req.prompt, req.outputSchema));
       else this.setState(run, "waiting_input");
       return run.handle;
     } catch (err) {
@@ -284,13 +290,14 @@ export class AcpAdapter implements AgentAdapter {
     const cached = this.info.get(executable);
     if (cached) return cached;
     // Old Gemini versions read ~/.gemini even for --version; a home override keeps them out of it.
-    const env = { ...process.env, ...spec.env(profile), HOME: profile.configDir, USERPROFILE: profile.configDir };
+    const env = ensureSystemEnv({ ...process.env, ...spec.env(profile), HOME: profile.configDir, USERPROFILE: profile.configDir });
     await mkdir(profile.configDir, { recursive: true });
     const [version, help] = await Promise.all([
       runCommand(executable, [...this.opts.prefixArgs, "--version"], { env, timeoutMs: 30_000 }),
       runCommand(executable, [...this.opts.prefixArgs, "--help"], { env, timeoutMs: 30_000 }),
     ]);
-    const info: CliInfo = { version: parseVersion(version.stdout), acpArgs: spec.acpArgs(`${help.stdout}\n${help.stderr}`) };
+    const helpText = `${help.stdout}\n${help.stderr}`;
+    const info: CliInfo = { version: parseVersion(version.stdout), acpArgs: spec.acpArgs(helpText), readOnlyArgs: spec.readOnlyArgs(helpText) };
     this.info.set(executable, info);
     return info;
   }
@@ -303,14 +310,17 @@ export class AcpAdapter implements AgentAdapter {
     const isolation = spec.isolationProblem(cli.version);
     if (isolation) throw new Error(isolation);
     if (!cli.acpArgs) throw new Error(`${spec.label} ${cli.version ?? ""} has no ACP mode`);
+    const prepared = await spec.prepare(req.profile);
+    const readOnly = req.policy.writes === "none";
 
     const runId = `acp-${randomUUID()}`;
     // Handlers are registered before the run exists; they see it once the handshake starts.
     const box: { run?: Run } = {};
-    const opened = await this.spawn(spec, executable, cli, { profile: req.profile, cwd: req.cwd, env: req.env, model: req.model ?? req.profile.defaultModel }, {
+    const opened = await this.spawn(spec, executable, cli, { profile: req.profile, cwd: req.cwd, env: req.env, model: req.model ?? req.profile.defaultModel, readOnly }, {
       update: (n) => {
         const run = box.run;
         if (!run || run.ended || run.loading || n.sessionId !== run.sessionId) return;
+        if (n.update.sessionUpdate === "agent_message_chunk" && n.update.content.type === "text") run.turnText += n.update.content.text;
         this.emit(run, run.mapper.update(n.update));
       },
       permission: (params, signal) => (box.run ? this.onPermission(box.run, params, signal) : Promise.resolve({ outcome: { outcome: "cancelled" } })),
@@ -336,8 +346,14 @@ export class AcpAdapter implements AgentAdapter {
       pending: new Map(),
       permissionCount: 0,
       stderr: "",
+      turnText: "",
+      outputRetried: false,
+      output: null,
     };
     box.run = current;
+    // Traces of what the agent's own engine could not take on; our checks still apply.
+    for (const problem of prepared.problems) this.push(current, { type: "run.state", state: "starting", detail: problem });
+    if (readOnly && !cli.readOnlyArgs) this.push(current, { type: "run.state", state: "starting", detail: `${spec.label} ${cli.version ?? ""} has no read-only mode; Crewyard refuses its writes itself.`.replace("  ", " ") });
     this.runs.set(runId, current);
     opened.child.stderr?.on("data", (d: string) => {
       current.stderr = (current.stderr + d).slice(-STDERR_TAIL);
@@ -358,15 +374,15 @@ export class AcpAdapter implements AgentAdapter {
     spec: AgentSpec,
     executable: string,
     cli: CliInfo,
-    target: { profile: Profile; cwd: string; env: Record<string, string>; model: string | null },
+    target: { profile: Profile; cwd: string; env: Record<string, string>; model: string | null; readOnly: boolean },
     handlers?: {
       update: (n: acp.SessionNotification) => void;
       permission: (p: acp.RequestPermissionRequest, signal: AbortSignal) => Promise<acp.RequestPermissionResponse>;
     },
   ): Promise<{ child: ChildProcess; conn: acp.ClientConnection; init: Promise<acp.InitializeResponse>; kill: () => Promise<void> }> {
     await mkdir(target.profile.configDir, { recursive: true });
-    const args = [...this.opts.prefixArgs, ...(cli.acpArgs ?? []), ...(target.model ? spec.modelArgs(target.model) : [])];
-    const child = start(executable, args, { cwd: target.cwd, env: { ...process.env, ...target.env, ...spec.env(target.profile) }, stdio: ["pipe", "pipe", "pipe"] });
+    const args = [...this.opts.prefixArgs, ...(cli.acpArgs ?? []), ...(target.model ? spec.modelArgs(target.model) : []), ...(target.readOnly ? (cli.readOnlyArgs ?? []) : [])];
+    const child = start(executable, args, { cwd: target.cwd, env: agentEnv(spec, target.profile, target.env), stdio: ["pipe", "pipe", "pipe"] });
     child.stderr?.setEncoding("utf8");
     const spawnError = new Promise<never>((_, reject) => child.once("error", (err) => reject(err)));
     spawnError.catch(() => undefined);
@@ -410,13 +426,17 @@ export class AcpAdapter implements AgentAdapter {
     if (!run.busy) void this.turns(run);
   }
 
-  /** Prompts run one at a time; input sent during a turn waits for it. The run ends when the inbox is empty. */
+  /**
+   * Prompts run one at a time; input sent during a turn waits for it. The run ends when the inbox
+   * is empty, after the result check when the request asked for one.
+   */
   private async turns(run: Run): Promise<void> {
     run.busy = true;
     let stop: acp.StopReason = "end_turn";
     while (run.inbox.length > 0 && !run.ended) {
       const text = run.inbox.shift() as string;
       this.setState(run, "running");
+      run.turnText = "";
       try {
         const res = await run.conn.agent.request(acp.methods.agent.session.prompt, { sessionId: run.sessionId, prompt: [{ type: "text", text }] });
         stop = res.stopReason;
@@ -429,11 +449,26 @@ export class AcpAdapter implements AgentAdapter {
         return;
       }
       if (stop === "cancelled" || run.interrupted) break;
+      const schema = run.req.outputSchema;
+      if (run.inbox.length === 0 && stop === "end_turn" && schema) this.readOutput(run, schema);
     }
     run.busy = false;
     if (run.interrupted || stop === "cancelled") this.end(run, "interrupted");
-    else if (stop === "end_turn") this.end(run, "completed");
+    else if (stop === "end_turn") this.end(run, "completed", undefined, run.output ?? undefined);
     else this.end(run, "failed", `stopped: ${stop}`);
+  }
+
+  /**
+   * ACP has no structured output, so the schema went into the prompt and the last turn's text is
+   * parsed and checked here. A result that does not fit queues one more prompt in the session.
+   */
+  private readOutput(run: Run, schema: OutputSchema): void {
+    const parsed = parseOutputText(run.turnText);
+    const output = parsed.ok ? checkOutput(schema, parsed.value) : parsed;
+    run.output = output;
+    if (output.ok || run.outputRetried) return;
+    run.outputRetried = true;
+    run.inbox.push(outputRetryPrompt(schema, output.error));
   }
 
   private onPermission(run: Run, params: acp.RequestPermissionRequest, signal: AbortSignal): Promise<acp.RequestPermissionResponse> {
@@ -476,9 +511,9 @@ export class AcpAdapter implements AgentAdapter {
     run.queue.push({ ...body, runId: run.handle.runId, seq: run.seq++, at: new Date().toISOString(), source: { adapter: "acp", cliVersion: run.cliVersion } } as AgentEvent);
   }
 
-  private end(run: Run, reason: EndReason, detail?: string): void {
+  private end(run: Run, reason: EndReason, detail?: string, output?: RunOutput): void {
     if (run.ended) return;
-    this.push(run, detail === undefined ? { type: "run.ended", reason } : { type: "run.ended", reason, detail: detail.slice(0, 500) });
+    this.push(run, { type: "run.ended", reason, ...(detail === undefined ? {} : { detail: detail.slice(0, 500) }), ...(output ? { output } : {}) });
     run.ended = true;
     run.queue.close();
     this.cancelPending(run);
@@ -511,6 +546,15 @@ export class AcpAdapter implements AgentAdapter {
     if (run.ended) throw new Error(`Run ${handle.runId} has ended; resume its session to continue`);
     return run;
   }
+}
+
+/** The agent's environment: ours, the run's secrets, then the spec's profile variables, which win. */
+export function agentEnv(spec: AgentSpec, profile: Profile, secrets: Record<string, string>, inherited: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  return ensureSystemEnv({ ...inherited, ...secrets, ...spec.env(profile) }, inherited);
+}
+
+function withOutputInstruction(prompt: string, schema: OutputSchema | undefined): string {
+  return schema ? `${prompt}\n\n${outputInstruction(schema)}` : prompt;
 }
 
 /** Kills the agent and everything it started (cmd.exe shim, node, its tool processes). */

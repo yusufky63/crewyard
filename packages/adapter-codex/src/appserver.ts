@@ -1,5 +1,5 @@
 import { mkdir } from "node:fs/promises";
-import { killTree, parseVersion, start, which } from "@crewyard/proc";
+import { ensureSystemEnv, killTree, parseVersion, start, which } from "@crewyard/proc";
 import type { ChildProcess } from "node:child_process";
 import type { InitializeParams, InitializeResponse } from "./protocol/index.ts";
 import { JsonRpcConnection } from "./rpc.ts";
@@ -18,8 +18,12 @@ export interface Launcher {
  * With plugins on, codex 0.147 starts a background `git fetch` of github.com/openai/plugins into
  * CODEX_HOME/.tmp that outlives the app-server: an orphan we cannot kill as part of the tree and
  * that keeps the folder locked. Crewyard profiles do not use codex plugins. Checked 2026-10-30.
+ *
+ * multi_agent (stable and on in 0.147, `codex features list`) gives the model spawn_agent and
+ * close_agent. Agents it spawns would bypass the crew's DAG, approvals and spend caps, so the
+ * feature is off for every run; threads also get `agents.enabled = false`, the documented key.
  */
-export const DEFAULT_ARGS = ["app-server", "--disable", "plugins"];
+export const DEFAULT_ARGS = ["app-server", "--disable", "plugins", "--disable", "multi_agent"];
 
 export interface LaunchOptions {
   codexHome: string;
@@ -61,10 +65,7 @@ export class AppServer {
     const command = launcher.command ?? (await which("codex"));
     if (!command) throw new Error("codex is not installed or not on PATH");
     await mkdir(opts.codexHome, { recursive: true });
-    const env: NodeJS.ProcessEnv = { ...process.env };
-    for (const key of INHERITED_BLOCKLIST) delete env[key];
-    Object.assign(env, opts.env ?? {}, { CODEX_HOME: opts.codexHome });
-    const child = start(command, launcher.args ?? DEFAULT_ARGS, { cwd: opts.cwd, env, stdio: ["pipe", "pipe", "pipe"] });
+    const child = start(command, launcher.args ?? DEFAULT_ARGS, { cwd: opts.cwd, env: childEnv(opts), stdio: ["pipe", "pipe", "pipe"] });
     const failedToSpawn = new Promise<never>((_, reject) => child.once("error", (err) => reject(new Error(`could not start codex: ${err.message}`))));
     failedToSpawn.catch(() => undefined);
     if (!child.stdout || !child.stdin) throw new Error("codex started without stdio pipes");
@@ -107,6 +108,16 @@ export class AppServer {
     this.rpc.close("stopped");
     if (!this.exited && this.child.pid) await killTree(this.child.pid);
   }
+}
+
+/** The app-server's environment: ours minus other accounts' variables, plus the profile and run secrets. */
+export function childEnv(opts: LaunchOptions, inherited: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  const blocked = new Set(INHERITED_BLOCKLIST.map((k) => k.toUpperCase()));
+  // Windows names compare without case, so "Codex_Home" is blocked too.
+  for (const [k, v] of Object.entries(inherited)) if (!blocked.has(k.toUpperCase())) env[k] = v;
+  Object.assign(env, opts.env ?? {}, { CODEX_HOME: opts.codexHome });
+  return ensureSystemEnv(env, inherited);
 }
 
 /** Starts an app-server, runs fn against it, and always shuts it down. */

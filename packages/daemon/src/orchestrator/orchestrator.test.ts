@@ -664,3 +664,37 @@ describe("ipc handlers", () => {
     expect(await call(5, "tasks.get", { taskId: "missing" })).toMatchObject({ ok: false, error: "task.not_found" });
   });
 });
+
+describe("schema-checked results", () => {
+  it("asks planner and reviewer for JSON, hands the checked plan on and records the verdict", async () => {
+    const plan = { summary: "Rate limit logins.", steps: [{ title: "Add a token bucket", detail: "five per minute" }], acceptanceCriteria: ["429 after five tries"], risks: [] };
+    const verdict = { verdict: "changes", summary: "Missing test.", comments: [{ file: "src/login.ts", line: 12, severity: "major", body: "No test for the reset." }] };
+    const pick: Picker = (role) =>
+      role === "planner"
+        ? [running, { emit: { type: "plan.update", steps: [{ title: "scratch todo", status: "in_progress" }] } }, { emit: { type: "run.ended", reason: "completed", output: { ok: true, value: plan } } }]
+        : role === "reviewer"
+          ? [running, { emit: { type: "run.ended", reason: "completed", output: { ok: true, value: verdict } } }]
+          : role === "tester"
+            ? [running, { emit: { type: "run.ended", reason: "completed", output: { ok: false, error: "never asked" } } }]
+            : quick(role, {} as StartRequest, false);
+    const { o, project, adapter, store } = await setup({ pick });
+    const proposed = await o.propose({ projectId: project.id, ...CODE_M });
+    await o.approve({ taskId: proposed.id });
+    await waitFor(() => o.get(proposed.id).status === "review");
+
+    const req = (role: string) => adapter.started.find((s) => s.role === role)!.req;
+    expect(req("planner").outputSchema?.name).toBe("planner_plan");
+    expect(req("reviewer").outputSchema?.name).toBe("review_verdict");
+    expect(req("implementer").outputSchema).toBeUndefined();
+    expect(req("tester").outputSchema).toBeUndefined();
+    // The checked plan, not the planner's scratch todo list, is what the implementer works from.
+    expect(req("implementer").prompt).toContain("1. Add a token bucket: five per minute");
+    expect(req("implementer").prompt).not.toContain("scratch todo");
+
+    const events = store.eventsSince(0, 5_000);
+    expect(events.find((e) => e.kind === "review.verdict")?.payload).toEqual({ verdict: "changes", summary: "Missing test.", comments: verdict.comments });
+    expect(events.find((e) => e.kind === "plan.result")?.payload).toEqual({ plan });
+    // A role that asked for no result gets nothing recorded, whatever its adapter sent.
+    expect(events.some((e) => e.kind === "result.invalid")).toBe(false);
+  });
+});

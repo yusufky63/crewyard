@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { exitCodeWithin, isShutdownExit, start, WINDOWS_SHUTDOWN_EXIT } from "./index.ts";
+import { ensureSystemEnv, exitCodeWithin, isShutdownExit, start, WINDOWS_SHUTDOWN_EXIT, WINDOWS_SYSTEM_VARS } from "./index.ts";
 
 describe("shutdown exit", () => {
   it("recognises the status Windows gives processes it ends at shutdown, as Node reports it", async () => {
@@ -18,5 +18,28 @@ describe("shutdown exit", () => {
     // Already exited: answers at once from exitCode.
     await new Promise((r) => child.once("exit", r));
     expect(await exitCodeWithin(child, 0)).toBe(child.exitCode);
+  });
+});
+
+describe("ensureSystemEnv", () => {
+  // Spelled the way a copied Windows process.env spells them.
+  const source = { Path: "C:\\Windows;C:\\Program Files\\nodejs", SystemRoot: "C:\\Windows", SystemDrive: "C:", ProgramData: "C:\\ProgramData", windir: "C:\\Windows", TEMP: "C:\\Users\\a b\\Temp", TMP: "C:\\Users\\a b\\Temp", USERPROFILE: "C:\\Users\\a b", APPDATA: "C:\\Users\\a b\\AppData\\Roaming", LOCALAPPDATA: "C:\\Users\\a b\\AppData\\Local", PATHEXT: ".COM;.EXE;.CMD", ComSpec: "C:\\Windows\\system32\\cmd.exe", OTHER: "x" };
+
+  it("adds every missing system variable once, under the source's own spelling", () => {
+    const env = ensureSystemEnv<Record<string, string>>({ OPENCODE_SERVER_PASSWORD: "p" }, source);
+    for (const name of WINDOWS_SYSTEM_VARS) {
+      const keys = Object.keys(env).filter((k) => k.toUpperCase() === name.toUpperCase());
+      expect(keys, name).toHaveLength(1);
+    }
+    expect(env.Path).toBe(source.Path);
+    expect(env.ComSpec).toBe(source.ComSpec);
+    expect("OTHER" in env).toBe(false);
+  });
+
+  it("never duplicates a name that differs only in case, and keeps an adapter's own value", () => {
+    const env = ensureSystemEnv({ PATH: "C:\\only", USERPROFILE: "D:\\profile dir" }, source);
+    expect(Object.keys(env).filter((k) => k.toUpperCase() === "PATH")).toEqual(["PATH"]);
+    expect(env.PATH).toBe("C:\\only");
+    expect(env.USERPROFILE).toBe("D:\\profile dir");
   });
 });

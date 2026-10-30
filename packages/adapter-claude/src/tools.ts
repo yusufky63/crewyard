@@ -12,6 +12,14 @@ export const WRITE_TOOLS = ["Edit", "MultiEdit", "Write", "NotebookEdit"];
 const SHELL_TOOLS = ["Bash", "PowerShell"];
 const NETWORK_TOOLS = ["WebFetch", "WebSearch"];
 
+/**
+ * Tools that start the CLI's own subagents or workflows. Their work would bypass the crew's DAG,
+ * spend and approvals, so every role runs without them. Tool denial is used rather than
+ * CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH: depth 1 was reported not to stop nesting (claude-code
+ * #84974) and the variable does not cap the first level at all.
+ */
+export const SUBAGENT_TOOLS = ["Agent", "Workflow"];
+
 const KINDS: Record<string, ToolKind> = {
   Read: "read",
   NotebookRead: "read",
@@ -61,6 +69,9 @@ export function approvalScope(name: string, input: unknown, blockedPath: string 
  * by disallowedTools, never by the prompt. Returns null when the user has to decide.
  */
 export function policyDecision(name: string, policy: RolePolicy): PermissionResult | null {
+  if (SUBAGENT_TOOLS.includes(name)) {
+    return { behavior: "deny", message: `${name} is not allowed: Crewyard runs every agent of the crew itself.` };
+  }
   if (policy.writes === "none" && WRITE_TOOLS.includes(name)) {
     return { behavior: "deny", message: `${name} is not allowed: this role is read-only.` };
   }
@@ -78,9 +89,31 @@ export function policyDecision(name: string, policy: RolePolicy): PermissionResu
  */
 export const PLAN_TOOLS = ["TodoWrite", "TaskCreate", "TaskGet", "TaskList", "TaskUpdate"];
 
-/** Tools the CLI should never offer to the model for this policy. */
+/**
+ * Tools the CLI should never offer to the model for this policy. Read-only roles run in
+ * "dontAsk" mode, where AskUserQuestion is always denied, so it is not offered either.
+ */
 export function disallowedFor(policy: RolePolicy): string[] {
-  return [...(policy.writes === "none" ? WRITE_TOOLS : []), ...(policy.network === "denied" ? NETWORK_TOOLS : [])];
+  return [
+    ...SUBAGENT_TOOLS,
+    ...(policy.writes === "none" ? [...WRITE_TOOLS, "AskUserQuestion"] : []),
+    ...(policy.network === "denied" ? NETWORK_TOOLS : []),
+  ];
+}
+
+/**
+ * Read-only roles run in the CLI's "dontAsk" permission mode: the engine itself denies every call
+ * that would need an approval, and only reads, the CLI's own read-only commands and these rules
+ * run. They pre-approve the role's allowlisted commands (the project's test and build commands),
+ * which in "default" mode the daemon would have approved through the Inbox.
+ */
+export function readOnlyAllowRules(policy: RolePolicy): string[] {
+  return policy.allowCommands.flatMap((cmd) => SHELL_TOOLS.flatMap((tool) => [`${tool}(${cmd})`, `${tool}(${cmd} *)`]));
+}
+
+export function permissionModeFor(policy: RolePolicy): "dontAsk" | "default" {
+  // "default", not unset: the CLI may otherwise start in "auto" and approve tools without asking us.
+  return policy.writes === "none" ? "dontAsk" : "default";
 }
 
 /**

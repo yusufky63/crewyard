@@ -14,7 +14,8 @@ if (argv.includes("--version")) {
 }
 if (argv.includes("--help")) {
   const flag = process.env.FAKE_ACP_HELP === "experimental" ? "--experimental-acp" : process.env.FAKE_ACP_HELP === "none" ? "--yolo" : "--acp";
-  process.stdout.write(`Usage: gemini [options]\n\nOptions:\n  -m, --model  Model\n      ${flag}  Starts the agent in ACP mode\n`);
+  const modes = process.env.FAKE_ACP_PLAN === "0" ? "default, auto_edit, yolo" : "default, auto_edit, yolo, plan";
+  process.stdout.write(`Usage: gemini [options]\n\nOptions:\n  -m, --model  Model\n      ${flag}  Starts the agent in ACP mode\n      --approval-mode  Set the approval mode [choices: ${modes}]\n`);
   process.exit(0);
 }
 
@@ -48,6 +49,21 @@ const OPTIONS = [
 ];
 
 async function play(client, sessionId, text) {
+  if (text.includes("verdict") || text.includes("did not match")) {
+    // "verdict ok" answers in a code fence, "verdict fix" only after the retry, "verdict stubborn" never.
+    const s = sessions.get(sessionId);
+    const retry = text.includes("did not match");
+    if (!retry) s.scenario = text;
+    const good = JSON.stringify({ verdict: "changes", summary: "One bug.", comments: [{ file: "src/a.ts", line: 4, severity: "minor", body: "Typo." }] });
+    if (s.scenario.includes("stubborn")) await chunk(client, sessionId, '{"verdict": "maybe"}');
+    else if (s.scenario.includes("fix") && !retry) await chunk(client, sessionId, "The change looks fine to me.");
+    else {
+      await chunk(client, sessionId, "```json\n");
+      await chunk(client, sessionId, good);
+      await chunk(client, sessionId, "\n```");
+    }
+    return "end_turn";
+  }
   if (text.includes("basic")) {
     await say(client, sessionId, { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "thinking" } });
     await chunk(client, sessionId, "Hel");

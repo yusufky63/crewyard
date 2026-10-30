@@ -29,6 +29,13 @@ export type RunState = z.infer<typeof RunState>;
 export const EndReason = z.enum(["completed", "failed", "stopped", "limit", "interrupted"]);
 export type EndReason = z.infer<typeof EndReason>;
 
+/**
+ * The schema-checked result a run was asked for (StartRequest.outputSchema), set on run.ended.
+ * `ok: false` means the runner's answer still failed our check after one retry in the session.
+ */
+export const RunOutput = z.union([z.object({ ok: z.literal(true), value: z.unknown() }), z.object({ ok: z.literal(false), error: z.string() })]);
+export type RunOutput = z.infer<typeof RunOutput>;
+
 export const AgentEvent = z.discriminatedUnion("type", [
   z.object({ ...envelope, type: z.literal("message.delta"), text: z.string() }),
   z.object({ ...envelope, type: z.literal("thought.delta"), text: z.string() }),
@@ -104,7 +111,7 @@ export const AgentEvent = z.discriminatedUnion("type", [
     reached: z.boolean(),
   }),
   z.object({ ...envelope, type: z.literal("run.state"), state: RunState, detail: z.string().optional() }),
-  z.object({ ...envelope, type: z.literal("run.ended"), reason: EndReason, detail: z.string().optional() }),
+  z.object({ ...envelope, type: z.literal("run.ended"), reason: EndReason, detail: z.string().optional(), output: RunOutput.optional() }),
 ]);
 export type AgentEvent = z.infer<typeof AgentEvent>;
 export type AgentEventType = AgentEvent["type"];

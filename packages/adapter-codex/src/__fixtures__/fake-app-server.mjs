@@ -35,6 +35,7 @@ const turn = (status, error = null) => ({ id: "turn-1", items: [], itemsView: "n
 const started = () => notify("turn/started", { threadId: "thr-1", turn: turn("inProgress") });
 const completed = (status, error = null) => notify("turn/completed", { threadId: "thr-1", turn: turn(status, error) });
 const tick = () => new Promise((r) => setTimeout(r, 5));
+let turns = 0;
 
 async function runTurn() {
   await tick();
@@ -87,6 +88,14 @@ async function runTurn() {
       await tick();
       process.exit(0x40010004);
       return;
+    case "structured": {
+      // One final message per turn from config.answers, as codex sends it under outputSchema.
+      started();
+      const text = (config.answers ?? [])[turns - 1] ?? "";
+      notify("item/completed", { threadId: "thr-1", turnId: "turn-1", completedAtMs: 1, item: { type: "agentMessage", id: `msg-${turns}`, text, phase: null, memoryCitation: null } });
+      completed("completed");
+      return;
+    }
     case "hang":
       // Stays in the turn until turn/interrupt or the process is killed.
       started();
@@ -118,6 +127,7 @@ const handlers = {
   "thread/start": () => ({ thread: { id: "thr-1" } }),
   "thread/resume": (params) => ({ thread: { id: params.threadId } }),
   "turn/start": () => {
+    turns++;
     void runTurn();
     return { turn: turn("inProgress") };
   },

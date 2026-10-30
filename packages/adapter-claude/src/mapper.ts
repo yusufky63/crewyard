@@ -11,6 +11,9 @@ type PlanStep = Extract<AgentEvent, { type: "plan.update" }>["steps"][number];
 
 const MAX_OUTPUT = 8_000;
 
+/** Tool the CLI adds for outputFormat; documented as an implementation detail to keep out of the UI. */
+export const STRUCTURED_OUTPUT_TOOL = "StructuredOutput";
+
 export interface TurnOutcome {
   reason: EndReason;
   detail?: string;
@@ -28,6 +31,8 @@ export class EventMapper {
   private readonly pendingTaskCreates = new Map<string, string>();
   private lastContext: number | null = null;
   private lastError: string | null = null;
+  /** StructuredOutput calls, kept out of the transcript together with their results. */
+  private readonly hidden = new Set<string>();
 
   map(msg: SDKMessage): EventBody[] {
     switch (msg.type) {
@@ -109,6 +114,11 @@ export class EventMapper {
       if (block.type === "text" && !alreadyStreamed && msg.parent_tool_use_id === null && block.text) out.push({ type: "message.delta", text: block.text });
       else if (block.type === "thinking" && !alreadyStreamed && msg.parent_tool_use_id === null && block.thinking) out.push({ type: "thought.delta", text: block.thinking });
       else if (block.type === "tool_use") {
+        // The CLI's own carrier for outputFormat; the result arrives on the result message instead.
+        if (block.name === STRUCTURED_OUTPUT_TOOL) {
+          this.hidden.add(block.id);
+          continue;
+        }
         out.push({ type: "tool.call", toolCallId: block.id, title: toolTitle(block.name, block.input), kind: toolKind(block.name), input: block.input });
         const plan = this.planFromToolUse(block.id, block.name, block.input);
         if (plan) out.push(plan);
@@ -123,7 +133,7 @@ export class EventMapper {
     if (typeof content === "string") return [];
     const out: EventBody[] = [];
     for (const block of content) {
-      if (block.type !== "tool_result") continue;
+      if (block.type !== "tool_result" || this.hidden.has(block.tool_use_id)) continue;
       const text = typeof block.content === "string" ? block.content : (block.content ?? []).map((c) => (c.type === "text" ? c.text : `[${c.type}]`)).join("\n");
       out.push({
         type: "tool.update",

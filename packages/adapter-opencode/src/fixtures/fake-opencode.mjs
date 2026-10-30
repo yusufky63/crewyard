@@ -8,7 +8,7 @@ import { createServer } from "node:http";
 
 const argv = process.argv.slice(2);
 if (argv.includes("--version")) {
-  process.stdout.write("1.19.5\n");
+  process.stdout.write(`${process.env.FAKE_OPENCODE_VERSION ?? "1.19.5"}\n`);
   process.exit(0);
 }
 
@@ -178,6 +178,24 @@ async function play(session, prompt, userID) {
     text(session, a.id, "working");
     await new Promise((resolve) => (session.onAbort = resolve));
     message(session, { ...a, time: { created: a.time.created, completed: now() }, error: { name: "MessageAbortedError", data: { message: "aborted" } } });
+  } else if (prompt.includes("refused")) {
+    // A provider that rejects the forced tool choice behind `format`, as DeepSeek thinking models do.
+    const done = { ...a, time: { created: a.time.created, completed: now() } };
+    if (session.lastFormat) message(session, { ...done, error: { name: "APIError", data: { message: "Thinking mode does not support this tool_choice", isRetryable: false } } });
+    else {
+      text(session, a.id, `Here is my review:\n\`\`\`json\n${JSON.stringify({ verdict: "pass", summary: "Fine.", comments: [] })}\n\`\`\``);
+      message(session, done);
+    }
+  } else if (prompt.includes("structured") || prompt.includes("did not match")) {
+    // "structured ok" answers at once, "structured fix" only after the retry, "structured stubborn"
+    // ends both turns with OpenCode's own StructuredOutputError.
+    const retry = prompt.includes("did not match");
+    if (!retry) session.scenario = prompt;
+    const sc = session.scenario ?? "";
+    const good = { verdict: "pass", summary: "Fine.", comments: [] };
+    const done = { ...a, time: { created: a.time.created, completed: now() } };
+    if (sc.includes("stubborn")) message(session, { ...done, error: { name: "StructuredOutputError", data: { message: "Model did not produce structured output", retries: 2 } } });
+    else message(session, { ...done, structured: sc.includes("fix") && !retry ? { verdict: "maybe" } : good });
   } else if (prompt.includes("fail")) {
     broadcast("session.error", { sessionID: sid, error: { name: "APIError", data: { message: "invalid key", isRetryable: false } } });
   } else if (prompt.includes("crash")) {
@@ -237,6 +255,7 @@ const server = createServer(async (req, res) => {
     if (req.method === "POST" && parts[2] === "prompt_async") {
       const b = await body(req);
       log({ kind: "prompt", session: s.id, body: b });
+      s.lastFormat = b.format?.type === "json_schema" ? b.format : null;
       const user = message(s, { id: id("msg"), sessionID: s.id, role: "user", time: { created: now() }, agent: "build", model: b.model ?? { providerID: "p", modelID: "m" } });
       const prompt = b.parts?.map((p) => p.text).join("\n") ?? "";
       part(s, { id: id("prt"), sessionID: s.id, messageID: user.id, type: "text", text: prompt });

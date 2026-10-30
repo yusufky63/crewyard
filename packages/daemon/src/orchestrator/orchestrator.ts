@@ -46,6 +46,7 @@ import { OrchestratorDb, type MemberRow, type ProjectRow, type RequestRow, type 
 import { EMPTY_DIRECTORY, type Candidate, type ProfileDirectory } from "./directory.ts";
 import { errorCode, OrchestratorError } from "./errors.ts";
 import { checkpoint, defaultWorktreeRoot, diffStat, ensureWorktree, headSha, taskSlug, writeFileAtomic } from "./git.ts";
+import { applyResult, outputSchemaFor } from "./results.ts";
 import { LimitMonitor } from "./limits.ts";
 import { handoffPackage, rolePrompt } from "./prompts.ts";
 import { onlyDocPaths, ROLES } from "./roles.ts";
@@ -681,6 +682,7 @@ export class Orchestrator {
         prompt: spec.prompt ?? rolePrompt(member.role, task, { plan: this.latestPlan(task.id), branch: worktreeId ? (wt?.branch ?? null) : null }),
         policy: this.policyFor(member.role, config),
         env: await this.directory.envFor(target.profileId),
+        outputSchema: outputSchemaFor(member.role),
       };
       const handle = spec.resumeRef ? await adapter.resume(spec.resumeRef, req) : await adapter.start(req);
       this.db.exec("update runs set native_session_id = ?, pid = ? where id = ?", handle.nativeSession?.sessionId ?? null, handle.pid, runId);
@@ -740,6 +742,7 @@ export class Orchestrator {
         if (this.confirming.has(runId)) await this.confirmHandoff(runId);
         if (ev.type === "run.ended") {
           this.record(runId, ev);
+          applyResult(this.db, runId, ev, (kind, payload) => this.audit(this.db.run(runId).task_id, runId, kind, payload));
           ended = { reason: ev.reason, detail: ev.detail ?? null };
           break;
         }
@@ -867,6 +870,7 @@ export class Orchestrator {
       prompt: text,
       policy: this.policyFor(run.role, this.config(project).config),
       env: await this.directory.envFor(run.profile_id),
+      outputSchema: outputSchemaFor(run.role),
     };
     const handle = await adapter.resume({ runner: run.runner, sessionId: run.native_session_id }, req);
     this.db.exec("update runs set native_session_id = ?, pid = ? where id = ?", handle.nativeSession?.sessionId ?? run.native_session_id, handle.pid, runId);

@@ -254,6 +254,8 @@ export class NotificationMapper {
   turnId: string | null = null;
   /** Set when the turn ends; the adapter turns it into run.ended. */
   ended: { reason: EndReason; detail?: string } | null = null;
+  /** Full text of the turn's last agent message; with turn/start outputSchema it is the JSON result. */
+  lastAgentMessage: string | null = null;
 
   map(method: string, params: unknown): EventBody[] {
     switch (method) {
@@ -261,6 +263,7 @@ export class NotificationMapper {
         const p = params as TurnStartedNotification;
         this.turnId = p.turn.id;
         this.ended = null;
+        this.lastAgentMessage = null;
         return [{ type: "run.state", state: "running" }];
       }
       case "turn/completed": {
@@ -278,6 +281,7 @@ export class NotificationMapper {
       case "item/completed": {
         const { item } = params as ItemCompletedNotification;
         this.items.set(item.id, item);
+        if (item.type === "agentMessage") this.lastAgentMessage = item.text;
         if (item.type === "agentMessage") return this.streamed.has(item.id) || !item.text ? [] : [{ type: "message.delta", text: item.text }];
         if (item.type === "reasoning") {
           const text = item.summary.join("\n\n");

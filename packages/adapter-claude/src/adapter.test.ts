@@ -1,12 +1,12 @@
 import { EventEmitter } from "node:events";
 import { readFileSync } from "node:fs";
 import type { ChildProcess } from "node:child_process";
-import { AgentEvent, type Profile, type RolePolicy, type StartRequest } from "@crewyard/core";
+import { AgentEvent, REVIEW_VERDICT_OUTPUT, type Profile, type RolePolicy, type StartRequest } from "@crewyard/core";
 import type { HookCallback } from "@anthropic-ai/claude-agent-sdk";
 import { describe, expect, it, vi } from "vitest";
 import { SDK_CLI_VERSION, compareVersions, type ClaudeAdapterDeps } from "./adapter.ts";
 import { fakeQuery, type Step } from "./fake-query.ts";
-import { SESSION, assistant, init, progress, result, stream, textDelta, thinkingDelta, toolResult, toolUse } from "./fixtures.ts";
+import { SESSION, assistant, errorResult, init, progress, result, stream, textDelta, thinkingDelta, toolResult, toolUse } from "./fixtures.ts";
 import { capabilities, createAdapter } from "./index.ts";
 
 const KEY = "sk-ant-api03-test-0000000000000000";
@@ -168,27 +168,76 @@ describe("Claude adapter: approvals and questions", () => {
     });
   });
 
-  it("enforces read-only roles without asking: write and network tools are denied, commands always ask", async () => {
+  it("enforces read-only roles without asking: the engine runs in dontAsk, write, network and subagent tools are denied", async () => {
     const { adapter, rec } = setup([[init(), { ask: { tool: "Edit", input: { file_path: "a.ts", old_string: "a", new_string: "b" }, id: "e1" } }, { ask: { tool: "WebFetch", input: { url: "https://example.com" }, id: "w1" } }, result()]]);
-    const run = await adapter.start(req({ policy: reviewer }));
+    const run = await adapter.start(req({ policy: { ...reviewer, allowCommands: ["pnpm test"] } }));
     const events = await collect(adapter.events(run));
     expect(events.some((e) => e.type === "request.approval")).toBe(false);
     expect(rec.decisions.map((d) => d.result.behavior)).toEqual(["deny", "deny"]);
-    expect(rec.options?.disallowedTools).toEqual(expect.arrayContaining(["Edit", "Write", "MultiEdit", "NotebookEdit", "WebFetch", "WebSearch"]));
+    expect(rec.options?.permissionMode).toBe("dontAsk");
+    expect(rec.options?.disallowedTools).toEqual(expect.arrayContaining(["Edit", "Write", "MultiEdit", "NotebookEdit", "WebFetch", "WebSearch", "Agent", "Workflow", "AskUserQuestion"]));
+    // The test command is pre-approved, since dontAsk would deny it and no approval can reach us.
+    expect(rec.options?.allowedTools).toEqual(expect.arrayContaining(["Bash(pnpm test)", "Bash(pnpm test *)", "PowerShell(pnpm test)", "PowerShell(pnpm test *)"]));
 
     const hook = rec.options?.hooks?.PreToolUse?.[0]?.hooks[0] as HookCallback;
     const base = { session_id: SESSION, transcript_path: "t", cwd: "c", hook_event_name: "PreToolUse" as const, tool_use_id: "x" };
     const signal = new AbortController().signal;
     await expect(hook({ ...base, tool_name: "Write", tool_input: {} }, "x", { signal })).resolves.toMatchObject({ hookSpecificOutput: { permissionDecision: "deny" } });
-    await expect(hook({ ...base, tool_name: "Bash", tool_input: { command: "rm -rf src" } }, "x", { signal })).resolves.toMatchObject({ hookSpecificOutput: { permissionDecision: "ask" } });
+    await expect(hook({ ...base, tool_name: "Agent", tool_input: {} }, "x", { signal })).resolves.toMatchObject({ hookSpecificOutput: { permissionDecision: "deny" } });
+    // Commands are the engine's call in dontAsk: read-only ones and the allowlist run, others are denied.
+    await expect(hook({ ...base, tool_name: "Bash", tool_input: { command: "git diff" } }, "x", { signal })).resolves.toEqual({});
     await expect(hook({ ...base, tool_name: "Read", tool_input: {} }, "x", { signal })).resolves.toEqual({});
   });
 
-  it("adds no hooks or tool bans for a writer role", async () => {
-    const { adapter, rec } = setup([[init(), result()]]);
+  it("gives a writer role manual approvals and only the subagent ban", async () => {
+    const { adapter, rec } = setup([[init(), { ask: { tool: "Agent", input: { prompt: "explore" }, id: "a1" } }, result()]]);
     await collect(adapter.events(await adapter.start(req())));
-    expect(rec.options?.hooks).toBeUndefined();
-    expect(rec.options?.disallowedTools).toEqual([]);
+    expect(rec.options?.permissionMode).toBe("default");
+    expect(rec.options?.disallowedTools).toEqual(["Agent", "Workflow"]);
+    expect(rec.decisions.map((d) => d.result.behavior)).toEqual(["deny"]);
+    const hook = rec.options?.hooks?.PreToolUse?.[0]?.hooks[0] as HookCallback;
+    const base = { session_id: SESSION, transcript_path: "t", cwd: "c", hook_event_name: "PreToolUse" as const, tool_use_id: "x" };
+    const signal = new AbortController().signal;
+    await expect(hook({ ...base, tool_name: "Workflow", tool_input: {} }, "x", { signal })).resolves.toMatchObject({ hookSpecificOutput: { permissionDecision: "deny" } });
+    await expect(hook({ ...base, tool_name: "Edit", tool_input: {} }, "x", { signal })).resolves.toEqual({});
+  });
+});
+
+describe("Claude adapter: schema-checked results", () => {
+  const good = { verdict: "pass", summary: "Looks right.", comments: [] };
+  const ended = (events: AgentEvent[]) => events.find((e) => e.type === "run.ended") as Extract<AgentEvent, { type: "run.ended" }>;
+
+  it("asks the CLI for json_schema output, hides its carrier tool and puts the checked value on run.ended", async () => {
+    const carrier = assistant("msg_so", [toolUse("toolu_so", "StructuredOutput", good)]);
+    const { adapter, rec } = setup([[init(), carrier, toolResult("toolu_so", "Structured output provided successfully"), result({ structured_output: good })]]);
+    const events = await collect(adapter.events(await adapter.start(req({ policy: reviewer, outputSchema: REVIEW_VERDICT_OUTPUT }))));
+    expect(rec.options?.outputFormat).toEqual({ type: "json_schema", schema: REVIEW_VERDICT_OUTPUT.jsonSchema });
+    expect(events.some((e) => (e.type === "tool.call" || e.type === "tool.update") && e.toolCallId === "toolu_so")).toBe(false);
+    expect(ended(events)).toMatchObject({ reason: "completed", output: { ok: true, value: good } });
+    expect(rec.prompts).toHaveLength(1);
+  });
+
+  it("retries once in the same session when the value does not fit, then accepts the fix", async () => {
+    const { adapter, rec } = setup([[init(), result({ structured_output: { verdict: "maybe" } })], [result({ structured_output: good })]]);
+    const events = await collect(adapter.events(await adapter.start(req({ policy: reviewer, outputSchema: REVIEW_VERDICT_OUTPUT }))));
+    expect(rec.prompts).toHaveLength(2);
+    expect(String(rec.prompts[1]?.message.content)).toContain("did not match the required review_verdict JSON format: verdict:");
+    expect(ended(events)).toMatchObject({ reason: "completed", output: { ok: true, value: good } });
+  });
+
+  it("completes with the problem when the retry fails too, and never retries twice", async () => {
+    const { adapter, rec } = setup([[init(), result()], [errorResult("error_max_structured_output_retries", { errors: ["schema mismatch"] })], [result({ structured_output: good })]]);
+    const events = await collect(adapter.events(await adapter.start(req({ policy: reviewer, outputSchema: REVIEW_VERDICT_OUTPUT }))));
+    expect(rec.prompts).toHaveLength(2);
+    expect(String(rec.prompts[1]?.message.content)).toContain("no JSON result was returned");
+    expect(ended(events)).toMatchObject({ reason: "completed", output: { ok: false, error: expect.stringContaining("schema mismatch") } });
+  });
+
+  it("puts no output on a run that failed for another reason", async () => {
+    const { adapter } = setup([[init(), errorResult("error_during_execution")]]);
+    const events = await collect(adapter.events(await adapter.start(req({ outputSchema: REVIEW_VERDICT_OUTPUT }))));
+    expect(ended(events).reason).toBe("failed");
+    expect(ended(events).output).toBeUndefined();
   });
 });
 

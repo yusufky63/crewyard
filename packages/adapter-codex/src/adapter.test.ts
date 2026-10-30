@@ -2,9 +2,11 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { AgentEvent, type Profile, type RolePolicy, type StartRequest } from "@crewyard/core";
+import { AgentEvent, REVIEW_VERDICT_OUTPUT, type Profile, type RolePolicy, type StartRequest } from "@crewyard/core";
+import { WINDOWS_SYSTEM_VARS } from "@crewyard/proc";
 import { afterEach, describe, expect, it } from "vitest";
 import { CodexAdapter, compareVersions, type CodexStartRequest } from "./adapter.ts";
+import { DEFAULT_ARGS, childEnv } from "./appserver.ts";
 import { startLogin } from "./login.ts";
 
 // Drives the real adapter end to end against src/__fixtures__/fake-app-server.mjs, spawned through
@@ -73,7 +75,7 @@ describe("CodexAdapter against a fake app-server", () => {
     expect(log[0]).toMatchObject({ env: { CODEX_HOME: dir, CREWYARD_TEST_SECRET: "s3cret", OPENAI_API_KEY: null }, cwd: dir });
     expect(sentBy(log, "initialize")[0]).toMatchObject({ clientInfo: { name: "crewyard" }, capabilities: { experimentalApi: true } });
     expect(log.some((e) => (e.in as { method?: string } | undefined)?.method === "initialized")).toBe(true);
-    expect(sentBy(log, "thread/start")[0]).toEqual({ cwd: dir, approvalPolicy: "on-request", sandbox: "workspace-write", model: "gpt-5.5-codex" });
+    expect(sentBy(log, "thread/start")[0]).toEqual({ cwd: dir, approvalPolicy: "on-request", sandbox: "workspace-write", model: "gpt-5.5-codex", config: { "agents.enabled": false } });
     expect(sentBy(log, "turn/start")[0]).toEqual({ threadId: "thr-1", input: [{ type: "text", text: "Fix the bug", text_elements: [] }], model: "gpt-5.5-codex", effort: "high" });
   });
 
@@ -272,3 +274,63 @@ it("compares versions numerically", () => {
 // Keeps the StartRequest shape honest: CodexStartRequest must stay assignable to it.
 const _assignable: StartRequest = request("x");
 void _assignable;
+
+describe("CodexAdapter: schema-checked results", () => {
+  const good = { verdict: "changes", summary: "One bug.", comments: [{ file: "src/a.ts", line: 3, severity: "major", body: "Off by one." }] };
+  const ended = (events: AgentEvent[]) => events.find((e) => e.type === "run.ended") as Extract<AgentEvent, { type: "run.ended" }>;
+  const reviewer: RolePolicy = { writes: "none", allowCommands: [], network: "denied" };
+
+  it("sends outputSchema with the turn and reads the final message as the result", async () => {
+    const dir = home({ scenario: "structured", answers: [JSON.stringify(good)] });
+    const adapter = new CodexAdapter(launcher);
+    const events = await collect(adapter, await adapter.start(request(dir, { policy: reviewer, outputSchema: REVIEW_VERDICT_OUTPUT })));
+    expect(ended(events)).toMatchObject({ reason: "completed", output: { ok: true, value: good } });
+    const turns = sentBy(received(dir), "turn/start");
+    expect(turns).toHaveLength(1);
+    expect(turns[0]?.outputSchema).toEqual(REVIEW_VERDICT_OUTPUT.jsonSchema);
+    expect(sentBy(received(dir), "thread/start")[0]).toMatchObject({ sandbox: "read-only", config: { "agents.enabled": false } });
+  });
+
+  it("retries once in the same thread with the problem, then takes the fixed answer", async () => {
+    const dir = home({ scenario: "structured", answers: ["The code looks fine.", JSON.stringify(good)] });
+    const adapter = new CodexAdapter(launcher);
+    const events = await collect(adapter, await adapter.start(request(dir, { outputSchema: REVIEW_VERDICT_OUTPUT })));
+    const turns = sentBy(received(dir), "turn/start");
+    expect(turns).toHaveLength(2);
+    expect(turns[1]).toMatchObject({ threadId: "thr-1", outputSchema: REVIEW_VERDICT_OUTPUT.jsonSchema });
+    expect(JSON.stringify(turns[1]?.input)).toContain("contained no JSON object");
+    expect(events.filter((e) => e.type === "run.ended")).toHaveLength(1);
+    expect(ended(events)).toMatchObject({ reason: "completed", output: { ok: true, value: good } });
+  });
+
+  it("completes with the problem after one failed retry", async () => {
+    const dir = home({ scenario: "structured", answers: ["{\"verdict\": \"maybe\"}", "{\"verdict\": \"maybe\"}", JSON.stringify(good)] });
+    const adapter = new CodexAdapter(launcher);
+    const events = await collect(adapter, await adapter.start(request(dir, { outputSchema: REVIEW_VERDICT_OUTPUT })));
+    expect(sentBy(received(dir), "turn/start")).toHaveLength(2);
+    expect(ended(events)).toMatchObject({ reason: "completed", output: { ok: false, error: expect.stringMatching(/^verdict: /) } });
+  });
+
+  it("leaves output off a run that asked for none", async () => {
+    const dir = home({ scenario: "structured", answers: ["plain text"] });
+    const adapter = new CodexAdapter(launcher);
+    const events = await collect(adapter, await adapter.start(request(dir)));
+    expect(ended(events)).toEqual(expect.not.objectContaining({ output: expect.anything() }));
+    expect(sentBy(received(dir), "turn/start")[0]).not.toHaveProperty("outputSchema");
+  });
+});
+
+describe("app-server launch", () => {
+  it("turns codex's own subagents off", () => {
+    expect(DEFAULT_ARGS).toEqual(["app-server", "--disable", "plugins", "--disable", "multi_agent"]);
+  });
+
+  it("passes every Windows system variable once and blocks other accounts' variables in any case", () => {
+    const parent = { Path: "C:\\Windows", SystemRoot: "C:\\Windows", SystemDrive: "C:", ProgramData: "C:\\ProgramData", windir: "C:\\Windows", TEMP: "C:\\T", TMP: "C:\\T", USERPROFILE: "C:\\Users\\a b", APPDATA: "C:\\A", LOCALAPPDATA: "C:\\L", PATHEXT: ".EXE", ComSpec: "C:\\Windows\\system32\\cmd.exe", Openai_Api_Key: "parent-key", CODEX_HOME: "C:\\other" };
+    const env = childEnv({ codexHome: "C:\\profiles\\work dir", env: { DEEPSEEK_API_KEY: "k" } }, parent);
+    for (const name of WINDOWS_SYSTEM_VARS) expect(Object.keys(env).filter((k) => k.toUpperCase() === name.toUpperCase()), name).toHaveLength(1);
+    expect(env.Openai_Api_Key).toBeUndefined();
+    expect(env.CODEX_HOME).toBe("C:\\profiles\\work dir");
+    expect(env.DEEPSEEK_API_KEY).toBe("k");
+  });
+});

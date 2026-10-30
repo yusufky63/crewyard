@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import type { AgentAdapter, AgentCapabilities, AgentEvent, Answer, EndReason, NativeSessionRef, Probe, Profile, RunHandle, RunState, StartRequest, UserInput } from "@crewyard/core";
+import { checkOutput, outputInstruction, outputRetryPrompt, parseOutputText } from "@crewyard/core";
+import type { AgentAdapter, AgentCapabilities, AgentEvent, Answer, EndReason, NativeSessionRef, OutputSchema, Probe, Profile, RunHandle, RunOutput, RunState, StartRequest, UserInput } from "@crewyard/core";
 import { isShutdownExit, parseVersion, run as runCommand, which } from "@crewyard/proc";
-import { createOpencodeClient, type Event as OpenCodeEvent, type OpencodeClient, type PermissionRequest, type SessionStatus } from "@opencode-ai/sdk/v2";
+import { createOpencodeClient, type Event as OpenCodeEvent, type Message, type OpencodeClient, type PermissionRequest, type SessionStatus } from "@opencode-ai/sdk/v2";
 import { OpenCodeMapper, type EventBody } from "./mapper.ts";
 import { mustReject, permissionRules } from "./policy.ts";
 import { EventQueue } from "./queue.ts";
@@ -9,6 +10,19 @@ import { basicAuth, launchServer, type OpenCodeServer } from "./server.ts";
 
 /** The CLI version this adapter was checked against; others are flagged until the suite passes. */
 export const TESTED_VERSION = "1.19.5";
+
+/**
+ * OpenCode 2.x (GitHub release v2.2.2, 2026-10-29; npm opencode-ai is still 1.19.5) redesigned the
+ * server API: new routes and clients, OPENCODE_PASSWORD, and an ordered `permissions` list in which
+ * `bash` became `shell` and `task` became `subagent` (opencode.ai/v2/docs/migrate-v1). Driving it
+ * with the 1.x client would fail in ways that look like model errors, or worse, run without our
+ * permission rules, so 2.x is refused with the reason until it passes its own conformance run.
+ */
+export function unsupportedVersion(version: string | null): string | null {
+  const major = version ? Number(version.split(".")[0]) : NaN;
+  if (!Number.isFinite(major) || major < 2) return null;
+  return `OpenCode ${version} is not supported yet: version 2 changed the server API and its permission format, and Crewyard drives the 1.x API until 2.x passes its own conformance run. Install opencode-ai ${TESTED_VERSION} ("npm install -g opencode-ai@${TESTED_VERSION}") to keep using OpenCode.`;
+}
 
 export interface OpenCodeAdapterOptions {
   /** Defaults to `opencode` resolved on PATH. */
@@ -43,6 +57,21 @@ interface Run {
   /** stop() was called; the idle that follows its abort must not read as a completed turn. */
   stopping: boolean;
   error: string | null;
+  /** The root session's last structured result this turn (StartRequest.outputSchema). */
+  structured: unknown;
+  /** OpenCode's own StructuredOutputError for this turn, after its internal retries. */
+  structuredError: string | null;
+  /** The one in-session retry for a result that did not fit has been sent. */
+  outputRetried: boolean;
+  /** The provider refused the forced tool choice that `format` needs, this turn. */
+  formatRejected: boolean;
+  /** The refused assistant message has been written; OpenCode's loop for that turn is over. */
+  refusalSettled: boolean;
+  /** Fallback after such a refusal: the schema goes into the prompt and the final text is parsed. */
+  promptJson: boolean;
+  /** Agent text since the turn's last tool call; the result in promptJson mode. */
+  turnText: string;
+  lastPrompt: string;
   ended: boolean;
   connections: number;
   connected: () => void;
@@ -79,10 +108,13 @@ export class OpenCodeAdapter implements AgentAdapter {
     const version = parseVersion(res.stdout);
     if (version) this.version = version;
     const problems: string[] = [];
+    const unsupported = unsupportedVersion(version);
     if (res.code !== 0 || !version) problems.push(`opencode --version failed: ${res.stderr.trim().slice(0, 200)}`);
+    else if (unsupported) problems.push(unsupported);
     else if (version !== TESTED_VERSION) problems.push(`OpenCode ${version} has not passed the conformance suite yet (checked: ${TESTED_VERSION})`);
     // Sign-in state lives in the profile's auth.json, which we never read; provider keys may also come from env.
-    return { installed: true, executable, version, signedIn: null, capabilities: this.capabilities, problems };
+    const capabilities = unsupported ? { ...this.capabilities, launch: false } : this.capabilities;
+    return { installed: true, executable, version, signedIn: null, capabilities, problems };
   }
 
   async start(req: StartRequest): Promise<RunHandle> {
@@ -189,6 +221,8 @@ export class OpenCodeAdapter implements AgentAdapter {
     if (!executable) throw new Error("opencode was not found on PATH");
     // Every event carries the CLI version (PLAN.md §5.3); read it once per adapter.
     if (this.version === null) this.version = parseVersion((await runCommand(executable, [...this.opts.prefixArgs, "--version"], { timeoutMs: 15_000 })).stdout);
+    const unsupported = unsupportedVersion(this.version);
+    if (unsupported) throw new Error(unsupported);
     const server = await launchServer({ executable, prefixArgs: this.opts.prefixArgs, cwd: req.cwd, configDir: req.profile.configDir, env: req.env, readyTimeoutMs: this.opts.readyTimeoutMs });
     const client = createOpencodeClient({ baseUrl: server.url, directory: req.cwd, headers: { Authorization: basicAuth(server.password) }, throwOnError: true });
     const runId = `opencode-${randomUUID()}`;
@@ -210,6 +244,14 @@ export class OpenCodeAdapter implements AgentAdapter {
       interrupted: false,
       stopping: false,
       error: null,
+      structured: undefined,
+      structuredError: null,
+      outputRetried: false,
+      formatRejected: false,
+      refusalSettled: false,
+      promptJson: false,
+      turnText: "",
+      lastPrompt: "",
       ended: false,
       connections: 0,
       connected: () => undefined,
@@ -263,12 +305,10 @@ export class OpenCodeAdapter implements AgentAdapter {
       case "session.updated":
         m.sessionSeen(ev.properties.info);
         return;
-      case "message.updated": {
-        const info = ev.properties.info;
-        this.emit(run, m.message(info));
-        if (info.role === "assistant" && m.owns(info.sessionID) && info.error && info.error.name !== "MessageAbortedError") run.error ??= errorText(info.error);
+      case "message.updated":
+        this.emit(run, m.message(ev.properties.info));
+        this.noteAssistant(run, ev.properties.info);
         return;
-      }
       case "message.part.updated":
         this.emit(run, m.part(ev.properties.part));
         return;
@@ -299,11 +339,63 @@ export class OpenCodeAdapter implements AgentAdapter {
         if (ev.properties.sessionID === m.rootSession) this.onStatus(run, { type: "idle" });
         return;
       case "session.error":
-        if (m.owns(ev.properties.sessionID) && ev.properties.error && ev.properties.error.name !== "MessageAbortedError") run.error ??= errorText(ev.properties.error);
+        if (!m.owns(ev.properties.sessionID) || !ev.properties.error) return;
+        this.noteError(run, ev.properties.error);
         return;
       default:
         return;
     }
+  }
+
+  /** Run errors and, for schema runs, the root session's structured result. */
+  private noteAssistant(run: Run, info: Message): void {
+    if (info.role !== "assistant" || !run.mapper.owns(info.sessionID)) return;
+    if (info.error) this.noteError(run, info.error);
+    if (run.formatRejected && info.error?.name === "APIError" && info.sessionID === run.mapper.rootSession) run.refusalSettled = true;
+    if (info.sessionID !== run.mapper.rootSession) return;
+    if (info.structured !== undefined) run.structured = info.structured;
+    if (info.error?.name === "StructuredOutputError") run.structuredError = errorText(info.error);
+  }
+
+  /**
+   * OpenCode validates `format` itself and retries inside the turn; this is our own check on top,
+   * with one more prompt in the session when the answer still does not fit. Either way the run
+   * completes: it did its work, and the output says whether the result is usable.
+   */
+  private finishWithOutput(run: Run, schema: OutputSchema): void {
+    const parsed = run.promptJson ? parseOutputText(run.turnText) : null;
+    const output: RunOutput = parsed
+      ? parsed.ok
+        ? checkOutput(schema, parsed.value)
+        : parsed
+      : run.structured !== undefined
+        ? checkOutput(schema, run.structured)
+        : { ok: false, error: run.structuredError ?? "no JSON result was returned" };
+    if (output.ok || run.outputRetried) return this.end(run, "completed", undefined, output);
+    run.outputRetried = true;
+    this.prompt(run, outputRetryPrompt(schema, output.error)).catch((err: unknown) => this.end(run, "completed", undefined, { ok: false, error: `the retry could not start: ${err instanceof Error ? err.message : String(err)}` }));
+  }
+
+  /**
+   * `format` makes OpenCode force a tool choice, which some providers refuse: DeepSeek's thinking
+   * models answer "Thinking mode does not support this tool_choice" (seen live on 2026-10-30 with
+   * deepseek-flash). That is no failure of the run, only of the native structured output.
+   */
+  private noteError(run: Run, error: { name: string; data?: unknown }): void {
+    const refused = Boolean(run.req.outputSchema) && error.name === "APIError" && /tool[_ ]choice/i.test(errorText(error));
+    // OpenCode reports the refusal more than once (message and session error), and the copies can
+    // arrive after the fallback turn has started; that turn forces no tool choice, so they are echoes.
+    if (refused) run.formatRejected ||= !run.promptJson;
+    else if (!NOT_A_FAILURE.has(error.name)) run.error ??= errorText(error);
+  }
+
+  /** Same session, same prompt, with the schema in the text instead of `format`. */
+  private fallBackToPromptJson(run: Run, schema: OutputSchema): void {
+    if (run.promptJson || run.ended) return;
+    run.promptJson = true;
+    run.formatRejected = false;
+    this.setState(run, "running", "The provider refused structured output; asking for the JSON in the prompt instead.");
+    this.prompt(run, `${run.lastPrompt}\n\n${outputInstruction(schema)}`).catch((err: unknown) => this.end(run, "failed", err instanceof Error ? err.message : String(err)));
   }
 
   private onPermission(run: Run, req: PermissionRequest): void {
@@ -323,11 +415,25 @@ export class OpenCodeAdapter implements AgentAdapter {
     } else if (status.type === "retry") {
       run.sawBusy = true;
       this.setState(run, /rate|limit|429|quota|overloaded/i.test(status.message) ? "rate_limited" : "running", status.message.slice(0, 300));
-    } else if (run.awaiting && (run.sawBusy || run.error !== null)) {
+    } else if (run.awaiting && (run.sawBusy || run.error !== null || run.formatRejected)) {
+      // After a refusal OpenCode reports idle before it writes the failed message, and a prompt
+      // sent in between is never picked up (seen live on 1.19.5). The idle after that message is
+      // the one to act on; the timer covers a server that never writes it.
+      if (run.formatRejected && !run.refusalSettled && !run.stopping && !run.interrupted) {
+        setTimeout(() => {
+          if (!run.ended && run.awaiting && run.formatRejected && run.req.outputSchema) {
+            run.awaiting = false;
+            this.fallBackToPromptJson(run, run.req.outputSchema);
+          }
+        }, 5_000).unref();
+        return;
+      }
       run.awaiting = false;
       if (run.stopping) this.end(run, "stopped");
       else if (run.interrupted) this.end(run, "interrupted");
+      else if (run.formatRejected && run.req.outputSchema) this.fallBackToPromptJson(run, run.req.outputSchema);
       else if (run.error) this.end(run, "failed", run.error);
+      else if (run.req.outputSchema) this.finishWithOutput(run, run.req.outputSchema);
       else this.end(run, "completed");
     }
   }
@@ -347,6 +453,7 @@ export class OpenCodeAdapter implements AgentAdapter {
       let finishedAfterPrompt = false;
       for (const msg of msgs) {
         this.emit(run, run.mapper.message(msg.info));
+        if (msg.info.time.created >= run.promptAt - 5_000) this.noteAssistant(run, msg.info);
         for (const part of msg.parts) this.emit(run, run.mapper.part(part));
         if (msg.info.role === "assistant" && msg.info.time.completed && msg.info.time.created >= run.promptAt - 5_000) finishedAfterPrompt = true;
       }
@@ -366,18 +473,29 @@ export class OpenCodeAdapter implements AgentAdapter {
     if (!run.awaiting) {
       run.promptAt = Date.now();
       run.sawBusy = false;
+      run.structured = undefined;
+      run.structuredError = null;
+      run.turnText = "";
     }
+    run.lastPrompt = text;
     run.awaiting = true;
     this.setState(run, "running");
+    const schema = run.req.outputSchema;
+    // After a refusal the format is set back to text explicitly: OpenCode keeps a session's last
+    // format for prompts that name none (seen live on 1.19.5).
+    const format = !schema ? undefined : run.promptJson ? ({ type: "text" } as const) : ({ type: "json_schema", schema: schema.jsonSchema } as const);
     await run.client.session.promptAsync({
       sessionID: run.mapper.rootSession,
       parts: [{ type: "text", text }],
       ...(run.model ? { model: run.model } : {}),
+      ...(format ? { format } : {}),
     });
   }
 
   private emit(run: Run, bodies: EventBody[]): void {
     for (const body of bodies) {
+      if (body.type === "message.delta") run.turnText += body.text;
+      else if (body.type === "tool.call") run.turnText = "";
       this.push(run, body);
       if (body.type === "request.approval") this.setState(run, "waiting_approval");
       else if (body.type === "request.question") this.setState(run, "waiting_input");
@@ -395,9 +513,9 @@ export class OpenCodeAdapter implements AgentAdapter {
     run.queue.push({ ...body, runId: run.handle.runId, seq: run.seq++, at: new Date().toISOString(), source: { adapter: "opencode", cliVersion: run.cliVersion } } as AgentEvent);
   }
 
-  private end(run: Run, reason: EndReason, detail?: string): void {
+  private end(run: Run, reason: EndReason, detail?: string, output?: RunOutput): void {
     if (run.ended) return;
-    this.push(run, detail === undefined ? { type: "run.ended", reason } : { type: "run.ended", reason, detail: detail.slice(0, 500) });
+    this.push(run, { type: "run.ended", reason, ...(detail === undefined ? {} : { detail: detail.slice(0, 500) }), ...(output ? { output } : {}) });
     run.ended = true;
     run.queue.close();
     run.sse.abort();
@@ -425,6 +543,12 @@ export class OpenCodeAdapter implements AgentAdapter {
     return run;
   }
 }
+
+/**
+ * Errors that do not fail a run: an abort is ours, and a StructuredOutputError is reported on the
+ * run's output instead (the work itself was done).
+ */
+const NOT_A_FAILURE = new Set(["MessageAbortedError", "StructuredOutputError"]);
 
 /** The client throws on HTTP errors (throwOnError), but its result types still allow a missing body. */
 function need<T>(res: { data?: T }): T {
