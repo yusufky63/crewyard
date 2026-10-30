@@ -256,7 +256,7 @@
     "loading": "Yükleniyor…",
     "eyebrow": "Çalışma · {{index}} {{role}}",
     "task": "Görev",
-    "tab": { "details": "Ayrıntılar", "changes": "Değişiklikler", "usage": "Kullanım" },
+    "tab": { "details": "Ayrıntılar", "changes": "Değişiklikler", "usage": "Kullanım", "files": "Dosyalar" },
     "now": "Şu an",
     "plan": "Plan",
     "planStatus": { "pending": "yapılacak", "in_progress": "sürüyor", "completed": "bitti" },

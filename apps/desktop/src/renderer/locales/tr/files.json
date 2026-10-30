@@ -1,0 +1,39 @@
+{
+  "mentioned": "Ajanın andığı dosyalar",
+  "noMentions": "Bu çalışmada henüz worktree'deki bir dosyanın adı geçmedi.",
+  "mentionCount_one": "{{count}}×",
+  "mentionCount_other": "{{count}}×",
+  "mentionTitle_one": "Bir kez anıldı, en son {{time}}",
+  "mentionTitle_other": "{{count}} kez anıldı, en son {{time}}",
+  "tree": "Worktree",
+  "empty": "Bu worktree boş.",
+  "loading": "Yükleniyor…",
+  "noWorktree": "Bu görevin kendine ait bir worktree'si yok; gösterilecek dosya bulunmuyor.",
+  "ignored": "yok sayılıyor",
+  "ignoredNote": "Git tarafından yok sayılıyor. Siz açana kadar kapalı kalır.",
+  "link": "bağlantı",
+  "linkNote": "Sembolik bağlantı ya da junction. Gösterilir ama içine girilmez.",
+  "more_one": "Listelenmeyen {{count}} öğe daha var",
+  "more_other": "Listelenmeyen {{count}} öğe daha var",
+  "previewOf": "{{path}} önizlemesi",
+  "contentOf": "{{path}} içeriği",
+  "closePreview": "Önizlemeyi kapat",
+  "wrap": "Satır kaydır",
+  "source": "Kaynak",
+  "truncated": "Kesildi, {{size}}",
+  "binary": "İkili dosya, {{size}}. Gösterilmiyor.",
+  "imageTooLarge": "Görsel önizleme için fazla büyük, {{size}}.",
+  "imageRef": "Görsel: {{alt}}",
+  "error": {
+    "files": {
+      "bad_path": "Bu yol okunamıyor.",
+      "outside": "Bu yol worktree'nin dışına çıkıyor, bu yüzden gösterilmiyor.",
+      "not_found": "Bu dosya artık yok.",
+      "not_folder": "Bu bir klasör değil.",
+      "not_file": "Bu bir dosya değil.",
+      "missing": "Worktree klasörü yok. Park edilmiş olabilir; dosyalarını görmek için devam ettirin.",
+      "no_worktree": "Bu görevin kendine ait bir worktree'si yok."
+    },
+    "other": "Worktree okunamadı."
+  }
+}

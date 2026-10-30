@@ -426,6 +426,7 @@ The result is `.crewyard/project.json` in the repo: name, commands, allowed runn
 - Windows toasts with an AppUserModelID; tray; start with Windows as an opt-in.
 - Keep the PC awake while runs are active, as an opt-in (Settings → Startup): Electron `powerSaveBlocker("prevent-app-suspension")` from the first active run to the last, released on battery at or below a threshold (default 30%) or with an unknown charge; its state shows in the status bar.
 - Detect and refuse WSL paths for Windows-native runs; WSL support is out of scope for v1.
+- The inspector's Files tab reads a task worktree only through the daemon, confined to its root: a path with `..`, a drive, a UNC prefix, a `:` stream or a device name is refused by its text, and again after `realpath` when a junction or symlink leads outside (compared case-insensitively). Listings stop at 1,000 entries, text at 256 KB, images at 5 MB; it never writes.
 - Known risks to test: antivirus scanning slowing worktrees, Smart App Control blocking unsigned helpers, `node-pty` native build matching Electron.
 
 ### 12.1 Linux and macOS (prepared, not shipped)

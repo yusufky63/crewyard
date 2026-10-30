@@ -1,5 +1,6 @@
 import { basename } from "node:path";
 import { expect, test } from "@playwright/test";
+import type { FakeStep } from "@crewyard/adapter-fake";
 import { approval, daemon, hold, launch, limitReached, question, running, say, usage, type E2eProfile, type Harness } from "./harness.ts";
 
 // One app instance walks through the flows in order, the way a person would: open a project,
@@ -246,6 +247,55 @@ test("Best of: runs two implementers, compares them and keeps one, which the rev
   await first.getByRole("button", { name: "Keep it" }).click();
   await expect.poll(phase, { timeout: 20_000 }).toBe("kept");
   await expect.poll(async () => (await taskByTitle(title))?.status, { timeout: 30_000 }).toBe("review");
+});
+
+test("Files: lists what the agent named, walks the worktree by keyboard and previews read-only", async () => {
+  const { page } = h;
+  const readme: FakeStep = { emit: { type: "tool.call", toolCallId: "t1", title: "Read README.md", kind: "read", input: { file_path: "README.md" } } };
+  h.setScripts({ implementer: [[running, readme, say("Checked README.md and docs/none.md."), { wait: 100 }]], reviewer: [[running, say("Reviewed."), { wait: 100 }]] });
+  await page.locator("#app-sidebar").getByRole("button", { name: "Tasks", exact: true }).click();
+  await page.getByLabel("New task").fill("Document the limiter in the README");
+  await page.getByLabel("Kind").selectOption("code");
+  // The composer keeps Best of from the flow before; one implementer gives the task its own worktree.
+  await page.getByLabel("Best of").selectOption({ index: 0 });
+  await page.getByRole("button", { name: "Propose crew" }).click();
+  await page.getByRole("region", { name: /Suggested crew for/ }).getByRole("button", { name: "Approve and start" }).click();
+  const title = "Document the limiter in the README";
+  // The implementer's run is enough: its worktree exists and its events are logged.
+  const mentions = async () => {
+    const task = await taskByTitle(title);
+    return task ? (await daemon<Array<{ path: string }>>(page, "worktrees.mentions", { taskId: task.id }).catch(() => [])).map((m) => m.path) : [];
+  };
+  await expect.poll(mentions, { timeout: 30_000 }).toEqual(["README.md"]);
+
+  await page.locator("button.tk-top-main", { hasText: title }).click();
+  const inspector = page.locator("#app-inspector");
+  await inspector.getByRole("tab", { name: "Files" }).click();
+  // Only files that exist in the worktree are listed; docs/none.md is not there.
+  const mentioned = inspector.locator(".fl-mentions");
+  await expect(mentioned.getByRole("button", { name: /README\.md/ })).toBeVisible();
+  await expect(mentioned.getByRole("button")).toHaveCount(1);
+
+  const tree = inspector.getByRole("tree", { name: "Worktree" });
+  const readmeItem = tree.getByRole("treeitem", { name: /README\.md/ });
+  await expect(readmeItem).toBeVisible();
+  await tree.getByRole("treeitem").first().focus();
+  await page.keyboard.press("End");
+  const last = tree.getByRole("treeitem").last();
+  await expect(last).toBeFocused();
+  await page.keyboard.press("Home");
+  await expect(tree.getByRole("treeitem").first()).toBeFocused();
+  await readmeItem.focus();
+  await page.keyboard.press("Enter");
+  const preview = inspector.getByRole("region", { name: "Preview of README.md" });
+  await expect(preview.getByRole("heading", { name: "demo" })).toBeVisible();
+  await expect(readmeItem).toHaveAttribute("aria-selected", "true");
+  await preview.getByRole("button", { name: "Source" }).click();
+  await expect(preview.getByRole("region", { name: "Contents of README.md" })).toContainText("# demo");
+
+  // The daemon refuses anything outside the worktree, whatever the window asks for.
+  const taskId = (await taskByTitle(title))!.id;
+  await expect(daemon(page, "worktrees.readFile", { taskId, path: "../README.md" })).rejects.toThrow(/files\.outside/);
 });
 
 test("Schedules: creates one switched off, switches it on and runs it now", async () => {
