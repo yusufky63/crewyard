@@ -74,5 +74,8 @@
     "detail": "Crewyard closes, installs the update and opens again. These stop now:\n{{list}}\n\nEach run is marked interrupted and can be resumed from its task. Worktrees and commits stay where they are.",
     "confirm": "Stop agents and install",
     "cancel": "Not now"
+  },
+  "taskbar": {
+    "badge": "Requests waiting for you: {{count}}"
   }
 }

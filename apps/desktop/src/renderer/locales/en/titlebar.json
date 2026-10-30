@@ -45,5 +45,8 @@
       "ahead_of_pace": "{{who}} fills its {{window}} in about {{minutes}} min at this pace",
       "reached": "{{who}} reached its {{window}}"
     }
+  },
+  "drop": {
+    "hint": "Drop a folder here to open it"
   }
 }

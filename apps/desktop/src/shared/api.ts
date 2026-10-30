@@ -38,6 +38,18 @@ export interface NavigateTarget {
   requestId: string | null;
 }
 
+/** Why a folder from the command line, Explorer or a drop cannot be opened (PLAN.md §12). */
+export type FolderProblem = "missing" | "notFolder" | "wsl" | "unc" | "invalid";
+
+/**
+ * A folder to open, checked by the main process and pushed as `app.openFolder`. With no problem the
+ * renderer opens the project it belongs to, or the New project wizard at step 1 for a new folder.
+ */
+export interface OpenFolderRequest {
+  path: string;
+  problem: FolderProblem | null;
+}
+
 /** What the keep-awake guard decided (feature scan A15), for the status bar; pushed as `keepAwake.changed`. */
 export interface KeepAwakeState {
   /** "off": setting off; "idle": on, no run active; "active": holding the machine awake; "battery": runs active, released on low battery. */
@@ -126,4 +138,8 @@ export interface CrewyardApi {
   setUpdateAutoCheck(on: boolean): Promise<UpdateState>;
   /** Opens the third-party licence list that shipped with this build; false when there is none. */
   openLicenses(): Promise<boolean>;
+  /** The disk path of a dropped file or folder; empty for anything that is not on disk. */
+  pathForFile(file: File): string;
+  /** Asks the main process to check a dropped folder; the answer comes back as `app.openFolder`. */
+  openFolder(path: string): void;
 }

@@ -173,5 +173,18 @@
     "running_other": "{{count}} ajan çalışıyor",
     "questions_one": "{{count}} açık soru",
     "questions_other": "{{count}} açık soru"
+  },
+  "drop": {
+    "title": "Açmak için bir klasör bırakın",
+    "body": "Kayıtlı bir projeyse doğrudan açılır. Yeni bir klasörse Yeni proje başlar; Projeyi oluştur'a basana kadar hiçbir şey yazılmaz.",
+    "refusedTitle": "Bu klasör açılamıyor",
+    "problem": {
+      "missing": "{{path}} bulunamadı.",
+      "notFolder": "{{path}} bir dosya, klasör değil.",
+      "wsl": "{{path}} WSL içinde. Crewyard ajanları doğrudan Windows'ta çalıştırır; bir Windows sürücüsündeki klasörü açın.",
+      "unc": "{{path}} bir ağ yolu. Yerel bir sürücüdeki klasörü açın.",
+      "invalid": "{{path}} Crewyard'ın açabileceği bir klasör yolu değil."
+    },
+    "dismiss": "Kapat"
   }
 }

@@ -118,3 +118,20 @@
 @media (max-width: 1180px) {
   .start .launch-grid:has(> .launch-checklist:empty):has(> .launch-others:empty) { grid-template-areas: "intro" "recent" "import" "machine"; }
 }
+
+/* Folder drop (PLAN.md §12). The zone covers the view between the title bar and the status bar while
+   files are dragged over the window: a solid canvas and one accent frame with ticks, no blur or tint. */
+.start .drop-zone {
+  position: fixed; inset: var(--layout-titlebar) 0 var(--layout-statusbar) 0; z-index: var(--z-popover);
+  display: grid; padding: 24px; background: var(--canvas); pointer-events: none;
+}
+.start .drop-frame {
+  display: grid; place-content: center; justify-items: center; gap: 12px; text-align: center;
+  border-color: var(--accent); --tk: var(--accent); background: var(--surface); padding: 32px;
+}
+.start .drop-frame svg { color: var(--accent); }
+.start .drop-title { font-size: 21px; font-weight: 600; letter-spacing: -0.015em; color: var(--ink); }
+.start .drop-body { max-width: 460px; font-size: 14px; }
+.start .start-refused { margin-bottom: 16px; justify-content: space-between; }
+.start .refused-text { min-width: 0; overflow-wrap: anywhere; }
+.start .refused-text strong { font-weight: 600; margin-right: 4px; }

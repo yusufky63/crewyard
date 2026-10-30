@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { folderDropProps, useFolderOpen } from "./openFolder.ts";
 import { CommandSearch } from "./titlebar/CommandSearch.tsx";
 import { Notifications } from "./titlebar/Notifications.tsx";
 import { ProjectSwitcher } from "./titlebar/ProjectSwitcher.tsx";
@@ -20,6 +21,7 @@ type Layer = "search" | "notifications" | null;
 export function TitleBar() {
   const { t } = useTranslation();
   const [layer, setLayer] = useState<Layer>(SHOT_LAYER === "search" || SHOT_LAYER === "notifications" ? SHOT_LAYER : null);
+  const dragging = useFolderOpen((s) => s.dragging);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -33,7 +35,8 @@ export function TitleBar() {
   }, []);
 
   return (
-    <header className="titlebar">
+    // A folder dropped anywhere on the bar opens it, on every screen (PLAN.md §12).
+    <header className={`titlebar${dragging ? " tb-dropping" : ""}`} {...folderDropProps}>
       <div className="brand">
         <span className="mark" aria-hidden="true" />
         {t("app.name")}
@@ -43,6 +46,11 @@ export function TitleBar() {
       <CommandSearch open={layer === "search"} initialQuery={SHOT_LAYER === "search" ? (shot.get("tbq") ?? "") : ""} onOpen={() => setLayer("search")} onClose={() => setLayer(null)} />
       <div className="tb-drag" />
       <Notifications open={layer === "notifications"} onOpen={() => setLayer("notifications")} onClose={() => setLayer(null)} />
+      {dragging && (
+        <div className="tb-drop" aria-hidden="true">
+          {t("titlebar:drop.hint")}
+        </div>
+      )}
     </header>
   );
 }

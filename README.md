@@ -22,6 +22,7 @@ Status: pre-release. It is built and tested on Windows 11. Linux and macOS are p
   - The project's tests run at every turn boundary, and failures go back to the same session.
   - Reviews are pinned to the exact commit, and the merge gate takes only a pass verdict.
 - **GitHub under your control.** A push queue, pull requests, merge gates and cleanup; every outward step waits for your click.
+- **Windows shell.** The taskbar button shows how many requests wait for you and flashes when a new one arrives while the window is in the background; "Open in Crewyard" in Explorer, `Crewyard.exe <folder>` and a folder dropped on the window open a project or start a new one.
 - **More:**
   - turn control (queue, steer, undo);
   - Best of N;
@@ -136,8 +137,11 @@ This builds the app and writes `apps/desktop/dist/Crewyard-Setup-<version>-x64.e
 
 - installs per user to `%LOCALAPPDATA%\Programs\crewyard`, without asking for admin;
 - adds Start-menu and desktop shortcuts;
+- adds "Open in Crewyard" to Explorer's right-click menu on folders and on the background of an open folder (`HKCU\Software\Classes\Directory\shell\Crewyard` and `Directory\Background\shell\Crewyard`, per user, removed on uninstall and kept across updates). On Windows 11 it sits under "Show more options";
 - keeps your data in `%APPDATA%\Crewyard` when you uninstall;
 - puts `THIRD-PARTY-LICENSES.txt` (every bundled npm package and its licence) and `NOTICE.txt` next to the exe. Settings → About opens the list.
+
+`Crewyard.exe <folder>` opens a folder the same way from a terminal or a shortcut, also while Crewyard is already running, and so does dropping a folder on the Start screen or the title bar. A known project opens; a new folder opens New project at step 1, and nothing is written until Create project. WSL and network paths are refused.
 
 Install silently with `Crewyard-Setup-<version>-x64.exe /S`. Uninstall from Windows Settings, or silently with `"%LOCALAPPDATA%\Programs\crewyard\Uninstall Crewyard.exe" /S /currentuser`.
 

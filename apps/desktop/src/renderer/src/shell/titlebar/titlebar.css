@@ -76,3 +76,14 @@
 
 /* focusMain() parks focus on <main> after a jump; it is a starting point for Tab, not a control. */
 main[tabindex="-1"]:focus { outline: none; }
+
+/* Folder drop (PLAN.md §12): while files are dragged over the window the bar stops being a drag region,
+   so the drop reaches it, and says what a drop does in an accent hairline frame. The frame stops short
+   of the native caption buttons. */
+.titlebar.tb-dropping { position: relative; -webkit-app-region: no-drag; }
+.tb-drop {
+  position: absolute; inset: 3px 3px 3px 3px; display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--accent); background: var(--canvas); color: var(--ink);
+  font: 500 11px / 1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; pointer-events: none;
+}
+.app[data-platform="win32"] .tb-drop { right: 150px; }

@@ -74,5 +74,8 @@
     "detail": "Crewyard kapanır, güncellemeyi kurar ve yeniden açılır. Şunlar şimdi durur:\n{{list}}\n\nHer çalışma yarıda kalmış olarak işaretlenir ve görevinden devam ettirilebilir. Çalışma ağaçları ve commit'ler yerinde kalır.",
     "confirm": "Ajanları durdur ve kur",
     "cancel": "Şimdi değil"
+  },
+  "taskbar": {
+    "badge": "Sizi bekleyen istek: {{count}}"
   }
 }

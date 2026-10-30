@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Folder, FolderOpen, FolderSearch, GitBranch, GitPullRequest, History, Plus } from "lucide-react";
+import { Folder, FolderInput, FolderOpen, FolderSearch, GitBranch, GitPullRequest, History, Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button, Label, Panel } from "@crewyard/ui";
 import type { ProjectSummary } from "@crewyard/core";
 import { call, useDaemon } from "../../ipc.ts";
 import { canOpenProjects, useNav } from "../../nav.ts";
 import { usePrefs } from "../../prefs.ts";
+import { folderDropProps, useFolderOpen } from "../../shell/openFolder.ts";
 import { openSetup } from "../setup/draft.ts";
 import { useWork } from "../tasks/data.ts";
 import { Checklist } from "./Checklist.tsx";
@@ -229,6 +230,40 @@ function ImportPanel() {
   );
 }
 
+/** Why the last folder from Explorer, the command line or a drop could not be opened. */
+function RefusedFolder() {
+  const { t } = useTranslation("start");
+  const refused = useFolderOpen((s) => s.refused);
+  const dismiss = useFolderOpen((s) => s.dismiss);
+  if (!refused?.problem) return null;
+  return (
+    <div className="banner banner-warn start-refused" role="alert">
+      <span className="refused-text">
+        <strong>{t("drop.refusedTitle")}</strong> {t(`drop.problem.${refused.problem}`, { path: refused.path })}
+      </span>
+      <Button size="sm" variant="ghost" onClick={dismiss}>
+        {t("drop.dismiss")}
+      </Button>
+    </div>
+  );
+}
+
+/** Shown while files are dragged over the window; the whole screen takes the drop. */
+function DropZone() {
+  const { t } = useTranslation("start");
+  const dragging = useFolderOpen((s) => s.dragging);
+  if (!dragging) return null;
+  return (
+    <div className="drop-zone" aria-hidden="true">
+      <div className="spec drop-frame">
+        <FolderInput size={28} strokeWidth={1.5} />
+        <span className="drop-title">{t("drop.title")}</span>
+        <span className="sec drop-body">{t("drop.body")}</span>
+      </div>
+    </div>
+  );
+}
+
 export function StartScreen() {
   const { t } = useTranslation("start");
   const qc = useQueryClient();
@@ -249,7 +284,10 @@ export function StartScreen() {
 
   const list = projects.data ?? [];
   return (
-    <section className="screen start" aria-label={t("title")}>
+    // A folder dropped anywhere on the screen opens it (PLAN.md §12); main checks the path first.
+    <section className="screen start" aria-label={t("title")} {...folderDropProps}>
+      <DropZone />
+      <RefusedFolder />
       {/* Areas: the intro and the last project across the full width; then Recently used and Getting
           started on the left and the import list on the right; This machine last, across the full
           width. The blocks are in that order here too, so Tab follows what you see. */}

@@ -20,6 +20,11 @@ export interface DesktopFeatures {
   toastActivator: boolean;
   /** Clicking the Dock icon shows the hidden window again (macOS `activate`). */
   dockReopen: boolean;
+  /**
+   * Requests waiting for you on the app's own icon: "overlay" is the taskbar overlay with a flash for a
+   * new one (Windows), "dock" the Dock badge (macOS, `app.dock.setBadge`), null none (Linux).
+   */
+  badge: "overlay" | "dock" | null;
 }
 
 /**
@@ -27,10 +32,10 @@ export interface DesktopFeatures {
  * close-to-tray, so they cannot hang on something nobody is there to click.
  */
 export function desktopFeatures(platform: NodeJS.Platform, interactive: boolean): DesktopFeatures {
-  const none: DesktopFeatures = { tray: false, notifications: null, closeToTray: false, openAtLogin: false, titleBarOverlay: platform === "win32" || platform === "linux", toastActivator: false, dockReopen: false };
+  const none: DesktopFeatures = { tray: false, notifications: null, closeToTray: false, openAtLogin: false, titleBarOverlay: platform === "win32" || platform === "linux", toastActivator: false, dockReopen: false, badge: null };
   if (!interactive) return none;
-  if (platform === "win32") return { ...none, tray: true, notifications: "toast", closeToTray: true, openAtLogin: true, toastActivator: true };
-  if (platform === "darwin") return { ...none, tray: true, notifications: "basic", closeToTray: true, openAtLogin: true, dockReopen: true };
+  if (platform === "win32") return { ...none, tray: true, notifications: "toast", closeToTray: true, openAtLogin: true, toastActivator: true, badge: "overlay" };
+  if (platform === "darwin") return { ...none, tray: true, notifications: "basic", closeToTray: true, openAtLogin: true, dockReopen: true, badge: "dock" };
   // Linux: GNOME shows no tray icons without an extension and Electron cannot tell, so there is
   // no tray and therefore no close-to-tray; autostart would need an XDG .desktop entry of our own.
   if (platform === "linux") return { ...none, notifications: "basic" };
