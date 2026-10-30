@@ -6,13 +6,29 @@ import { usePrefs } from "./prefs.ts";
 import { screens } from "./registry.ts";
 import { useWorkLive } from "./screens/tasks/live.ts";
 import { Inspector } from "./shell/Inspector.tsx";
+import { layoutVars, sanitizeLayout } from "./shell/layout.ts";
 import { Sidebar } from "./shell/Sidebar.tsx";
 import { StatusBar } from "./shell/StatusBar.tsx";
 import { TitleBar } from "./shell/TitleBar.tsx";
 
+// Pane sizes go to <html> as custom properties outside React: set once before the first render (so
+// nothing shifts at start) and on every change (so dragging a splitter never re-renders a screen).
+function applyLayout(): void {
+  const s = usePrefs.getState();
+  const root = document.documentElement;
+  for (const [k, v] of Object.entries(layoutVars(sanitizeLayout(s)))) root.style.setProperty(k, v);
+  root.dataset.sidebar = s.sidebarCollapsed ? "rail" : "full";
+  root.dataset.inspector = s.inspectorCollapsed ? "collapsed" : "open";
+}
+applyLayout();
+usePrefs.subscribe(applyLayout);
+
 /** Applies theme, density and language to <html>, and keeps the native caption buttons in step. */
 function usePresentation(systemLanguage: string): void {
-  const { theme, density, language } = usePrefs();
+  // Picked one by one, so pane sizes changing while a splitter moves do not re-render the app.
+  const theme = usePrefs((s) => s.theme);
+  const density = usePrefs((s) => s.density);
+  const language = usePrefs((s) => s.language);
   const { i18n } = useTranslation();
 
   useEffect(() => {

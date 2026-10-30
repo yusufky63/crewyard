@@ -1,9 +1,13 @@
 import { useEffect, useState } from "react";
-import { ArrowLeftRight, Pause, Play, RotateCw, Send, X } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import { ArrowLeftRight, PanelRightClose, PanelRightOpen, Pause, Play, RotateCw, Send, X } from "lucide-react";
 import type { CandidateView, RequestAnswer, RunView, TaskDetail } from "@crewyard/core";
-import { BrandIcon, Button, Label, TickMeter } from "@crewyard/ui";
+import { BrandIcon, Button, Label, Splitter, TickMeter } from "@crewyard/ui";
 import { useInspector, type InspectorTarget } from "../inspector.ts";
 import { useNav } from "../nav.ts";
+import { usePrefs } from "../prefs.ts";
+import { INSPECTOR, inspectorBounds, sidebarColumn } from "./layout.ts";
+import { useViewportWidth } from "./useMedia.ts";
 import { TaskPullSection } from "../screens/github/TaskPull.tsx";
 import { ProvBadge } from "../screens/providers/shared.tsx";
 import { ApprovalActions } from "../screens/inbox/ApprovalActions.tsx";
@@ -16,8 +20,11 @@ import { DiffReview } from "../screens/tasks/DiffReview.tsx";
 import "../screens/tasks/tasks.css";
 import "./inspector.css";
 
-// The right-hand inspector (DESIGN.md §4, `Inspector`): 380 px, overlays below 1280 px. Closing
-// it only hides the panel; it never stops an agent, and the panel says so.
+// The right-hand inspector (DESIGN.md §4, `Inspector`): 380 px by default, resizable by its left
+// edge, collapsible to a 44 px strip, and an overlay below 1280 px. Closing or collapsing it only
+// hides the panel; it never stops an agent, and the panel says so.
+
+const INSPECTOR_ID = "app-inspector";
 
 type Tab = "details" | "changes" | "usage";
 
@@ -359,10 +366,37 @@ function Body({ detail, target }: { detail: TaskDetail; target: InspectorTarget 
   );
 }
 
+/** The handle on the inspector's left edge; limits follow the window so the main view keeps room. */
+function InspectorSplitter() {
+  const { t } = useTranslation();
+  const width = usePrefs((s) => s.inspectorWidth);
+  const setWidth = usePrefs((s) => s.setInspectorWidth);
+  const sidebarWidth = usePrefs((s) => s.sidebarWidth);
+  const sidebarCollapsed = usePrefs((s) => s.sidebarCollapsed);
+  const viewport = useViewportWidth();
+  const bounds = inspectorBounds(viewport, sidebarColumn(viewport, { sidebarWidth, sidebarCollapsed }));
+  return (
+    <Splitter
+      value={width}
+      min={bounds.min}
+      max={bounds.max}
+      defaultValue={INSPECTOR.default}
+      edge="start"
+      label={t("layout.inspector.resize")}
+      title={t("layout.resetHint")}
+      controls={INSPECTOR_ID}
+      onChange={setWidth}
+    />
+  );
+}
+
 /** Rendered by the shell next to the main view while a target is set. */
 export function Inspector() {
+  const { t } = useTranslation();
   const target = useInspector((s) => s.target);
   const close = useInspector((s) => s.close);
+  const collapsed = usePrefs((s) => s.inspectorCollapsed);
+  const setCollapsed = usePrefs((s) => s.setInspectorCollapsed);
   const f = useFormat();
   const detail = useWork("tasks.get", { taskId: target?.taskId ?? "" }, { enabled: Boolean(target) });
 
@@ -377,13 +411,37 @@ export function Inspector() {
   }, [target, close]);
 
   if (!target) return null;
+  const closeButton = (
+    <button type="button" className="ins-close" onClick={close} aria-label={f.t("inspector.close")} title={f.t("inspector.close")}>
+      <X size={16} strokeWidth={1.75} />
+    </button>
+  );
+  if (collapsed) {
+    return (
+      <div className="ins-col collapsed">
+        <aside id={INSPECTOR_ID} className="inspector ins-strip" aria-label={f.t("inspector.label")}>
+          <button type="button" className="ins-collapse" onClick={() => setCollapsed(false)} aria-label={t("layout.inspector.expand")} title={t("layout.inspector.expand")} aria-expanded="false" aria-controls={INSPECTOR_ID}>
+            <PanelRightOpen size={16} strokeWidth={1.75} />
+          </button>
+          {closeButton}
+          {detail.data && detail.data.id === target.taskId && <span className="ins-strip-title">{detail.data.title}</span>}
+        </aside>
+      </div>
+    );
+  }
   return (
-    <aside className="inspector" aria-label={f.t("inspector.label")}>
-      <button type="button" className="ins-close" onClick={close} aria-label={f.t("inspector.close")} title={f.t("inspector.close")}>
-        <X size={16} strokeWidth={1.75} />
-      </button>
-      {detail.data && detail.data.id === target.taskId ? <Body detail={detail.data} target={target} /> : <p className="muted ins-pad">{detail.isError ? f.t("errors.load") : f.t("inspector.loading")}</p>}
-      <p className="ins-note">{f.t("inspector.closeNote")}</p>
-    </aside>
+    <div className="ins-col">
+      <InspectorSplitter />
+      <aside id={INSPECTOR_ID} className="inspector" aria-label={f.t("inspector.label")}>
+        <div className="ins-tools">
+          <button type="button" className="ins-collapse" onClick={() => setCollapsed(true)} aria-label={t("layout.inspector.collapse")} title={t("layout.inspector.collapse")} aria-expanded="true" aria-controls={INSPECTOR_ID}>
+            <PanelRightClose size={16} strokeWidth={1.75} />
+          </button>
+          {closeButton}
+        </div>
+        {detail.data && detail.data.id === target.taskId ? <Body detail={detail.data} target={target} /> : <p className="muted ins-pad">{detail.isError ? f.t("errors.load") : f.t("inspector.loading")}</p>}
+        <p className="ins-note">{f.t("inspector.closeNote")}</p>
+      </aside>
+    </div>
   );
 }

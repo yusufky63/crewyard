@@ -16,11 +16,15 @@
 .tb-chip:hover { background: var(--raised); color: var(--ink); }
 .tb-drag { flex: 1; }
 
-.body { display: grid; grid-template-columns: 224px minmax(0, 1fr); min-height: 0; }
+/* Column widths come from <html> custom properties the shell writes from prefs (shell/layout.ts):
+   the user's sidebar width, or the 56 px rail when collapsed or below 1180 px (DESIGN.md §4). */
+.body { --sb-col: var(--sidebar-w, 224px); display: grid; grid-template-columns: var(--sb-col) minmax(0, 1fr); min-height: 0; }
+:root[data-sidebar="rail"] .body { --sb-col: 56px; }
 .launch .body { grid-template-columns: minmax(0, 1fr); }
 .main { overflow: auto; min-width: 0; }
 
-.sidebar { border-right: 1px solid var(--line); display: flex; flex-direction: column; padding: 12px 10px; gap: 10px; overflow: auto; min-height: 0; }
+.sidebar-col { position: relative; min-height: 0; min-width: 0; display: flex; }
+.sidebar { flex: 1; min-width: 0; border-right: 1px solid var(--line); display: flex; flex-direction: column; padding: 12px 10px; gap: 10px; overflow: hidden auto; min-height: 0; }
 .nav-list { position: relative; display: grid; gap: 2px; border: 1px solid var(--line); padding: 6px; }
 .nav-list::before { content: ""; position: absolute; inset: -1px; pointer-events: none; background: var(--ink-3); -webkit-mask: var(--tick-mask); mask: var(--tick-mask); }
 .nav { display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 10px; border: 1px solid transparent; color: var(--ink-2); font-size: 14px; width: 100%; text-align: left; position: relative; }
@@ -45,10 +49,21 @@ button.sb:hover { background: var(--raised); color: var(--ink); }
 .ph h2 { font-size: 15px; font-weight: 500; }
 .ph .end { margin-left: auto; }
 
+.nav .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-collapse { color: var(--ink-3); }
+.nav-collapse .kbd { margin-left: auto; color: var(--ink-3); }
+
+/* Icon rail: icons centred, names kept for screen readers and shown as tooltips, the Inbox count
+   as a small badge on the icon, and the accounts block hidden (the status bar keeps near-limit). */
 @media (max-width: 1180px) {
-  .body { grid-template-columns: 56px minmax(0, 1fr); }
-  .nav .t, .nav .count { display: none; }
-  .nav { justify-content: center; padding: 0; }
+  .body { --sb-col: 56px; }
 }
+.sidebar.rail { padding: 12px 6px; }
+.sidebar.rail .nav-list { padding: 4px; }
+.sidebar.rail .nav { justify-content: center; padding: 0; }
+.sidebar.rail .nav .t { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.sidebar.rail .nav .kbd { display: none; }
+.sidebar.rail .nav .count { position: absolute; top: 2px; right: 2px; margin: 0; padding: 2px 3px; font-size: 10px; min-width: 14px; text-align: center; }
+.sidebar.rail .accts { display: none; }
 .main, .sidebar { scrollbar-width: thin; scrollbar-color: var(--tick) transparent; }
 .sidebar-blocks { margin-top: auto; display: flex; flex-direction: column; gap: 10px; min-height: 0; }
