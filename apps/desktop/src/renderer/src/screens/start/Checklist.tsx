@@ -7,15 +7,13 @@ import { useNav } from "../../nav.ts";
 import { goInProject, startNewTask } from "../../shell/titlebar/actions.ts";
 import { openSetup } from "../setup/draft.ts";
 import { AGENT_TOOLS, checklist, showChecklist, type ChecklistItemId } from "./checklist.ts";
+import { MACHINE_PANEL_ID } from "./Machine.tsx";
 
 const MACHINE_STALE = 5 * 60_000;
 
-/** The This machine panel on the same screen: where missing agent CLIs and gh sign-in show up. */
-export const MACHINE_PANEL_ID = "start-machine";
-
 function focusMachine(): void {
   const el = document.getElementById(MACHINE_PANEL_ID);
-  el?.scrollIntoView({ block: "start", behavior: "smooth" });
+  el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   el?.focus({ preventScroll: true });
 }
 

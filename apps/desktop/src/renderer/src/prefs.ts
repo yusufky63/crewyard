@@ -1,13 +1,14 @@
 import { create } from "zustand";
 import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
 import type { Language } from "./i18n.ts";
+import { DEFAULT_LAYOUT, sanitizeLayout, type LayoutPrefs } from "./shell/layout.ts";
 
 // Per-viewer UI preferences only. Anything that must survive a reinstall or be shared lives in the daemon.
 
 export type ThemePref = "system" | "dark" | "light";
 export type Density = "comfortable" | "compact";
 
-interface Prefs {
+interface Prefs extends LayoutPrefs {
   theme: ThemePref;
   density: Density;
   /** null follows the Windows display language. */
@@ -17,6 +18,12 @@ interface Prefs {
   setDensity(density: Density): void;
   setLanguage(language: Language | null): void;
   setScanRoot(scanRoot: string): void;
+  setSidebarWidth(px: number): void;
+  setSidebarCollapsed(collapsed: boolean): void;
+  toggleSidebar(): void;
+  setInspectorWidth(px: number): void;
+  setInspectorCollapsed(collapsed: boolean): void;
+  setInboxListWidth(px: number): void;
 }
 
 // localStorage can be missing or throw (private profiles, blocked storage); fall back to memory.
@@ -56,8 +63,22 @@ export const usePrefs = create<Prefs>()(
       setDensity: (density) => set({ density }),
       setLanguage: (language) => set({ language }),
       setScanRoot: (scanRoot) => set({ scanRoot }),
+      // Pane sizes (DESIGN.md §5 `Splitter`): per window, so they stay here and not in the daemon.
+      ...DEFAULT_LAYOUT,
+      setSidebarWidth: (sidebarWidth) => set({ sidebarWidth }),
+      setSidebarCollapsed: (sidebarCollapsed) => set({ sidebarCollapsed }),
+      toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
+      setInspectorWidth: (inspectorWidth) => set({ inspectorWidth }),
+      setInspectorCollapsed: (inspectorCollapsed) => set({ inspectorCollapsed }),
+      setInboxListWidth: (inboxListWidth) => set({ inboxListWidth }),
     }),
-    { name: "crewyard:prefs", storage: createJSONStorage(() => safeStorage), version: 1 },
+    {
+      name: "crewyard:prefs",
+      storage: createJSONStorage(() => safeStorage),
+      version: 1,
+      // Stored sizes are clamped on load, so a hand-edited or out-of-range value never breaks the layout.
+      merge: (persisted, current) => ({ ...current, ...(persisted as Partial<Prefs>), ...sanitizeLayout(persisted) }),
+    },
   ),
 );
 

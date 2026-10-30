@@ -2,6 +2,21 @@
   "app": { "name": "Crewyard" },
   "titlebar": { "noProject": "No project open", "allProjects": "All projects" },
   "nav": { "label": "Main" },
+  "layout": {
+    "resetHint": "Drag to resize. Double-click to reset.",
+    "sidebar": {
+      "resize": "Resize sidebar",
+      "collapse": "Collapse",
+      "collapseTitle": "Collapse sidebar to icons",
+      "expandTitle": "Expand sidebar"
+    },
+    "inspector": {
+      "resize": "Resize run details",
+      "collapse": "Collapse panel",
+      "expand": "Expand panel"
+    },
+    "inbox": { "resize": "Resize request list" }
+  },
   "status": {
     "label": "Status",
     "daemon": { "running": "Daemon running", "starting": "Daemon starting", "down": "Daemon stopped" },

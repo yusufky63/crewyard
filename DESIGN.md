@@ -111,7 +111,11 @@ Icons inside buttons are 14 px.
 - **Sidebar** is two framed blocks:
   - **Nav:** six destinations, counters only on Inbox. The active item gets bright corner ticks.
   - **Accounts:** pinned to the bottom. One 28 px line per account (vendor mark, name, 8-tick meter, value: % for plan windows, $ for API keys, `—` for unknown), sorted most urgent first. It scrolls on its own above about 236 px (34% of the window height), so many accounts never push the nav away. `ALL LIMITS` opens Limits.
-- **Breakpoints:** below 1280 px the inspector overlays the main view; below 1180 px the sidebar becomes a 56 px icon rail (the accounts block hides; the status bar still shows near-limit counts). 960 px is the minimum supported width.
+- **Pane sizes** (all through the shared `Splitter`, stored per window in prefs, never in the database, clamped on load and applied before the first paint so nothing shifts at start):
+  - **Sidebar:** expanded at 224 px by default, resized by dragging its right edge between 184 and 360 px, or collapsed to the 56 px icon rail with the toggle at its foot or `Ctrl B` (tooltip says so). Dragging the edge under 136 px collapses it; dragging the rail's edge out expands it to the last width. In the rail each nav item is an icon with its name as tooltip and screen-reader text, Inbox keeps its count as a small badge, and the accounts block hides (the status bar keeps the near-limit count).
+  - **Inspector:** 380 px by default, resized by dragging its left edge between 320 and 720 px, never so wide that the main view drops under 600 px. A toggle collapses it to a 44 px strip that keeps the selection (task title written vertically, expand and close buttons); ✕ still closes it. In Crew graph full screen it overlays the graph under the caption buttons.
+  - **Inbox:** the request list is 360 px by default, 280–560 px, and the detail pane never gets narrower than 320 px.
+- **Breakpoints:** below 1280 px the inspector overlays the main view (still resizable, up to the window minus 120 px); below 1180 px the sidebar is always the 56 px icon rail and its toggle and handle hide; below 1280 px the Inbox list and detail stack. 960 px is the minimum supported width.
 
 ## 5. Components
 
@@ -119,7 +123,8 @@ Icons inside buttons are 14 px.
 |---|---|---|---|
 | `TitleBar` | brand, project switcher, command search, notifications | notifications popover | `-webkit-app-region: drag` except on controls |
 | `StatusBar` | daemon, slots, need you, near limit, RAM, GitHub sync, Actions, quiet hours, theme, density | each item opens its screen | mono 11 px, items separated by hairlines |
-| `Sidebar` | framed nav block (6 items, Inbox count) | rail mode | active item marked by bright corner ticks |
+| `Sidebar` | framed nav block (6 items, Inbox count), collapse toggle with `Ctrl B` at its foot | rail mode, drag the right edge to resize | active item marked by bright corner ticks; the rail keeps the Inbox count as a badge |
+| `Splitter` | invisible 9 px handle over a pane edge (16 px in-flow between two columns); hairline on hover, 3 px accent line on focus and while dragging | drag; `Left`/`Right` move 16 px, `Home`/`End` give the pane its min/max, `Enter` collapses or restores a collapsible pane; double-click resets | `packages/ui`; `role="separator"` with `aria-valuenow`/`min`/`max` in px, `aria-controls` the pane, tooltip says how to reset; never animates |
 | `AccountsBlock` | pinned to the sidebar bottom, one line per account, most urgent first | scrolls on its own; tooltip with source and reset | value shows % (plan window), $ (API key today vs cap) or `—` (unknown) |
 | `BrandIcon` | the vendor's mark for a catalog provider id, a runner id or `git` / `github` | `label` turns it into a named image; otherwise it is decorative next to the visible name | `packages/ui`; data in `brand-icons.gen.ts`, never edited by hand |
 | `ProjectTile` | index, line-art type glyph, name, path (ellipsized, full path in tooltip), state line, last opened | opens the project | dashed variant for `Import from C:\Projeler` |
@@ -138,7 +143,8 @@ Icons inside buttons are 14 px.
 | `GraphNode` | role, runner, status, model · account, one fact line | inspector on click, context menu on right-click | fixed 180 × 100; draggable, snaps to 12 px; `Alt` + arrows move it by keyboard; moving a node only changes the layout, never who does the work |
 | `GraphEdge` | `reports to` (solid), `depends on` (dotted), `fallback` (amber dashed) | `messages`, `files` edge sets via the segmented control | orthogonal with one rounded elbow, recomputed while a node is dragged; selected path in accent; leader lines carry mono annotations (limit, reset) |
 | `GraphView` | fit to width | drag the background to pan, `Ctrl` + wheel or +/− to zoom, fit, `Reset layout`, full screen (`F`, `Esc` leaves) | layout is saved per task; full screen keeps the inspector available as an overlay |
-| `Inspector` | header, status, tabs Details / Conversation / Changes / Usage, meters, facts, worktree, actions | transcript loads only on the Conversation tab | `Stop agent` is a danger text button, separate from `Pause` |
+| `Inspector` | header, status, tabs Details / Conversation / Changes / Usage, meters, facts, worktree, actions | transcript loads only on the Conversation tab; drag the left edge to resize; collapse to a 44 px strip | `Stop agent` is a danger text button, separate from `Pause`; collapsing, like closing, never stops anything |
+| `MachineStrip` | `This machine` with a one-line summary (all passed / n need attention), checked time, `Check again`, then one spec tile per check (agent CLIs, Git, GitHub CLI, long paths, Defender): state icon, vendor mark, short name, index, one status line | the problem's fix inside its tile (`Copy update`, `Copy sign-in`, `Open steps`); `Details` opens the full panel under the tiles with the reason and the command for each | ticks turn amber on a problem; a missing agent CLI is neutral (one is enough); commands are copied, never run |
 
 ### Status labels
 
@@ -162,7 +168,7 @@ Icons inside buttons are 14 px.
 
 | Screen | First view | Second level |
 |---|---|---|
-| **Start** (no project open) | hero line, `New project` / `Open folder` / `Clone from GitHub`, recent project tiles, `Import from C:\Projeler`, This machine check, Getting started checklist | all projects, install guides; the sidebar hides, and the 32 px hero is used only here |
+| **Start** (no project open) | hero line, `New project` / `Open folder` / `Clone from GitHub` beside recent project tiles; the This machine strip across the full width under them, visible without scrolling at 1280 × 800; then Getting started and `Import from C:\Projeler` | all projects, install guides, the full machine panel; the sidebar hides, and the 32 px hero is used only here |
 | **New project** | five numbered step tiles (Folder, Agents, Accounts & budget, Rules, GitHub), one step pane, Back / Next | edit detected commands, create a private repo, CI template; nothing is written until `Create project` |
 | **Tasks** (project home) | composer, crew proposal when drafting, filters `All / Running / Needs you / Ready for review / Merged / Done`, task rows | steps, limit banner, diff, PR link, inspector |
 | **Inbox** | items that need an answer first, then limits and GitHub notices | detail pane: approve once / allow in project / deny; question options + note |
@@ -178,7 +184,7 @@ Icons inside buttons are 14 px.
 - **Approvals:** Windows toasts may offer `Approve once` only for low-risk, read-only or in-worktree commands. Anything else opens the Inbox. `Always allow` is never the default button.
 - **Hand off dialog** shows what transfers (summary, diff, branch, open questions), whether it is a native resume or a new session, the target account's headroom, and the cost estimate. In Auto mode the same record is written and shown afterwards.
 - **Pushes:** agents commit locally; pushes wait in GitHub → "Waiting to push" so CI runs once per finished change.
-- **Keyboard:** `Ctrl K` command palette, `Ctrl Enter` submit composer or approve the focused crew, `Esc` closes the topmost layer (menu, then inspector, then full screen), `J/K` move in lists, `Enter` expands a row, `G T / G I / G G / G L / G P / G H` jump to screens; in the graph `Shift+F10` opens the node menu, `Alt` + arrows move a node, `F` toggles full screen.
+- **Keyboard:** `Ctrl K` command palette, `Ctrl B` collapses or expands the sidebar, `Ctrl Enter` submit composer or approve the focused crew, `Esc` closes the topmost layer (menu, then inspector, then full screen), `J/K` move in lists, `Enter` expands a row, `G T / G I / G G / G L / G P / G H` jump to screens; in the graph `Shift+F10` opens the node menu, `Alt` + arrows move a node, `F` toggles full screen.
 
 ## 8. Accessibility
 

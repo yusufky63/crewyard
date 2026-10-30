@@ -161,3 +161,17 @@ svg.i, .i { width: 16px; height: 16px; flex: none; }
 .cmenu button.danger:hover, .cmenu button.danger:focus { background: var(--bad-soft); }
 .cmenu button.danger[aria-disabled="true"] { color: var(--ink-3); }
 .cmenu-sep { height: 1px; margin: 4px 2px; background: var(--line); }
+
+/* Splitter (DESIGN.md §5): a 9 px hit area over a pane's edge, a hairline that shows on hover and
+   an accent line on focus or while dragging. It never animates. */
+.splitter { position: absolute; top: 0; bottom: 0; width: 9px; z-index: 5; cursor: col-resize; touch-action: none; }
+.splitter[data-edge="end"] { right: -5px; }
+.splitter[data-edge="start"] { left: -5px; }
+.splitter::after { content: ""; position: absolute; top: 0; bottom: 0; left: 4px; width: 1px; background: transparent; }
+.splitter:hover::after { background: var(--line-strong); }
+.splitter:focus-visible { outline: none; }
+.splitter:focus-visible::after, .splitter[data-dragging]::after { left: 3px; width: 3px; background: var(--accent); }
+.splitter-inline { position: relative; right: auto; left: auto; width: 16px; align-self: stretch; }
+.splitter-inline::after { left: 7px; }
+.splitter-inline:focus-visible::after, .splitter-inline[data-dragging]::after { left: 6px; }
+:root.is-resizing, :root.is-resizing * { cursor: col-resize !important; user-select: none; }

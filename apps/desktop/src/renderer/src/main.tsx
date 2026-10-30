@@ -22,6 +22,13 @@ const forcedLang = query.get("lang");
 if (forcedLang === "en" || forcedLang === "tr") usePrefs.setState({ language: forcedLang });
 const forcedScreen = query.get("screen");
 if (forcedScreen) useNav.setState({ screen: forcedScreen });
+// Pane layout for screenshots: ?sidebar=rail or a width, ?inspectorW=, ?inspector=collapsed, ?inboxW=.
+const forcedSidebar = query.get("sidebar");
+if (forcedSidebar === "rail") usePrefs.setState({ sidebarCollapsed: true });
+else if (forcedSidebar && Number(forcedSidebar) > 0) usePrefs.setState({ sidebarCollapsed: false, sidebarWidth: Number(forcedSidebar) });
+if (Number(query.get("inspectorW")) > 0) usePrefs.setState({ inspectorWidth: Number(query.get("inspectorW")) });
+if (query.get("inspector") === "collapsed") usePrefs.setState({ inspectorCollapsed: true });
+if (Number(query.get("inboxW")) > 0) usePrefs.setState({ inboxListWidth: Number(query.get("inboxW")) });
 
 // ?project= and ?screen= are screenshot mode too: add the folder to the throwaway profile and open it.
 const forcedProject = query.get("project");

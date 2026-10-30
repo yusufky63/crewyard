@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ArrowLeftRight, CircleDollarSign, CircleHelp, Gauge, Terminal, Wallet } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { LimitNoticePayload, RequestAnswer, RequestPayload, RequestView, TaskDetail } from "@crewyard/core";
@@ -12,6 +12,7 @@ import { useActivity } from "../tasks/live.ts";
 import { codeKey, profileNames } from "../tasks/model.ts";
 import { ConfirmButton, ErrorLine, useFormat, Who } from "../tasks/parts.tsx";
 import { ApprovalActions } from "./ApprovalActions.tsx";
+import { InboxSplit } from "./InboxSplit.tsx";
 import { defaultTarget, emptyForm, formAnswer, formReady, handoffChoices, infoNotices, orderRequests, titleKey, type QuestionForm } from "./model.ts";
 import "../tasks/tasks.css";
 import "./inbox.css";
@@ -305,6 +306,7 @@ export function InboxScreen() {
   const profiles = useDaemon("providers.profiles", undefined, { staleTime: 60_000 });
   const notices = useActivity((s) => s.notices);
   const [picked, setPicked] = useState<string | null>(null);
+  const grid = useRef<HTMLDivElement>(null);
   if (!projectId) return null;
 
   const open = orderRequests((requests.data ?? []).filter((q) => q.answeredAt === null), taskId);
@@ -321,8 +323,8 @@ export function InboxScreen() {
         </div>
       </div>
       {requests.isError && <p className="muted">{t("errors.load")}</p>}
-      <div className="ib-grid">
-        <div className="ib-col">
+      <div className={selected ? "ib-grid split" : "ib-grid"} ref={grid}>
+        <div className="ib-col" id="inbox-list">
           <Panel className="ib-list" role="listbox" aria-label={t("listLabel")}>
             {open.length === 0 && requests.isSuccess && <p className="ib-empty muted">{t("empty")}</p>}
             {open.map((q) => (
@@ -340,6 +342,7 @@ export function InboxScreen() {
             </>
           )}
         </div>
+        {selected && <InboxSplit grid={grid} list="inbox-list" />}
         {selected && <Detail key={selected.id} q={selected} />}
       </div>
     </div>

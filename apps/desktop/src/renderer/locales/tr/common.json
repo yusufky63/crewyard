@@ -2,6 +2,21 @@
   "app": { "name": "Crewyard" },
   "titlebar": { "noProject": "Açık proje yok", "allProjects": "Tüm projeler" },
   "nav": { "label": "Ana menü" },
+  "layout": {
+    "resetHint": "Boyutlandırmak için sürükleyin. Varsayılana dönmek için çift tıklayın.",
+    "sidebar": {
+      "resize": "Kenar çubuğunu boyutlandır",
+      "collapse": "Daralt",
+      "collapseTitle": "Kenar çubuğunu simgelere daralt",
+      "expandTitle": "Kenar çubuğunu genişlet"
+    },
+    "inspector": {
+      "resize": "Çalışma ayrıntılarını boyutlandır",
+      "collapse": "Paneli daralt",
+      "expand": "Paneli genişlet"
+    },
+    "inbox": { "resize": "İstek listesini boyutlandır" }
+  },
   "status": {
     "label": "Durum",
     "daemon": { "running": "Servis çalışıyor", "starting": "Servis başlıyor", "down": "Servis durdu" },

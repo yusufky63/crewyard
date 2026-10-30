@@ -63,7 +63,30 @@
       "checkAdmin": "Mevcut listeyi görmek için yönetici olarak açtığınız PowerShell'de şunu çalıştırın:",
       "never": "Her istisna korumada bir boşluktur; yalnızca çalışma ağaçları yavaş geliyorsa ekleyin. Crewyard bu ayarları sadece okur, hiçbir zaman değiştirmez.",
       "how": "Nasıl eklenir"
-    }
+    },
+    "unread": "okunamadı",
+    "details": "Ayrıntılar",
+    "hideDetails": "Ayrıntıları gizle",
+    "summary": {
+      "ok": "Tüm kontroller tamam",
+      "attention_one": "{{count}} kontrol ilgilenmenizi bekliyor",
+      "attention_other": "{{count}} kontrol ilgilenmenizi bekliyor",
+      "checking_one": "{{count}} kontrol sürüyor",
+      "checking_other": "{{count}} kontrol sürüyor"
+    },
+    "short": {
+      "longPaths": "Uzun yollar",
+      "defender": "Defender"
+    },
+    "fix": {
+      "update": "Güncellemeyi kopyala",
+      "signIn": "Giriş komutunu kopyala",
+      "steps": "Adımları aç",
+      "copyTitle": "{{command}} komutunu kopyalar. Terminalde kendiniz çalıştırın; Crewyard bunu asla çalıştırmaz."
+    },
+    "ghNote": "Push ve pull request işlemleri GitHub CLI üzerinden yapılır; böylece onayınızı bekleyebilirler. Bir terminalden giriş yapın:",
+    "longNote": "Ajan çalışma ağaçlarında 260 karakteri aşan yollar olabilir (derin node_modules klasörleri gibi); uzun yollar kapalıyken bunlar hata verir. Yönetici olarak açtığınız PowerShell'de açın; yeniden başlatmak gerekebilir:",
+    "longNever": "Crewyard bu ayarı yalnızca okur, asla değiştirmez."
   },
   "recent": {
     "title": "Son projeler",

@@ -63,7 +63,30 @@
       "checkAdmin": "To see the current list, run this in PowerShell opened as administrator:",
       "never": "An exclusion is a gap in protection, so add it only if worktrees feel slow. Crewyard only reads these settings and never changes them.",
       "how": "How to add it"
-    }
+    },
+    "unread": "could not be read",
+    "details": "Details",
+    "hideDetails": "Hide details",
+    "summary": {
+      "ok": "All checks passed",
+      "attention_one": "{{count}} check needs attention",
+      "attention_other": "{{count}} checks need attention",
+      "checking_one": "{{count}} check still running",
+      "checking_other": "{{count}} checks still running"
+    },
+    "short": {
+      "longPaths": "Long paths",
+      "defender": "Defender"
+    },
+    "fix": {
+      "update": "Copy update",
+      "signIn": "Copy sign-in",
+      "steps": "Open steps",
+      "copyTitle": "Copies {{command}}. Run it in a terminal yourself; Crewyard never runs it."
+    },
+    "ghNote": "Pushes and pull requests go through the GitHub CLI, so they can wait for your approval. Sign in from a terminal:",
+    "longNote": "Agent worktrees can hold paths longer than 260 characters, such as deep node_modules folders, and those fail while long paths are off. Turn them on in PowerShell opened as administrator; a restart may be needed:",
+    "longNever": "Crewyard only reads this setting and never changes it."
   },
   "recent": {
     "title": "Recent projects",

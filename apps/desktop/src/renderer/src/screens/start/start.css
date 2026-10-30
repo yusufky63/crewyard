@@ -1,9 +1,18 @@
-.start .launch-grid { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.3fr); gap: 40px; align-items: start; margin-top: 20px; }
+/* Intro and recent projects, then This machine across the full width, then Getting started and the import list. */
+.start .launch-grid {
+  display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.3fr); gap: 24px 40px; align-items: start; margin-top: 8px;
+  grid-template-areas: "intro recent" "machine machine" "checklist import";
+}
+.start .launch-intro { grid-area: intro; }
+.start .launch-recent { grid-area: recent; }
+.start .launch-machine { grid-area: machine; }
+.start .launch-checklist { grid-area: checklist; }
+.start .launch-import { grid-area: import; }
 /* The 32 px hero is used only on the Start screen (DESIGN.md §6). */
 .start .hero { font-size: 32px; line-height: 1.12; font-weight: 500; letter-spacing: -0.02em; margin: 14px 0 12px; }
 .start .hero .dim { color: var(--ink-3); }
 .start .lead { max-width: 440px; font-size: 15px; margin-bottom: 22px; }
-.start .launch-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 28px; }
+.start .launch-actions { display: flex; gap: 12px; flex-wrap: wrap; padding: 4px 0; }
 .start .launch-head { display: flex; align-items: center; margin-bottom: 12px; min-height: 28px; }
 .start .lbl.strong { color: var(--ink); }
 .start .sysrow { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 10px; align-items: center; min-height: 40px; padding: 0 16px; border-top: 1px solid var(--line); font-size: 13px; }
@@ -15,19 +24,43 @@
 .start .p-name { font-size: 15px; font-weight: 500; }
 .start .p-path { font: 400 11px / 1.3 var(--mono); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .start .path-inline { font-size: 11px; margin-left: 6px; }
-.start .empty { margin-bottom: 16px; }
+.start .empty { margin-bottom: 0; }
+.start .launch-recent .recent-grid { margin-bottom: 0; }
 .start .import .ph svg { color: var(--ink-2); }
 
 @media (max-width: 1180px) {
-  .start .launch-grid { grid-template-columns: 1fr; }
+  .start .launch-grid { grid-template-columns: 1fr; grid-template-areas: "intro" "machine" "recent" "checklist" "import"; }
   .start .recent-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .start .mtiles { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
 }
 .start .import-filter { padding: 8px 16px; border-top: 1px solid var(--line); }
 .start .input { width: 100%; height: 30px; border: 1px solid var(--line-strong); background: var(--canvas); padding: 0 10px; font: 400 13px / 1 var(--ui); color: var(--ink); }
 .start .input::placeholder { color: var(--ink-3); }
 
-/* This machine: the note under a check says why it matters and what to run (never run for you). */
+/* This machine: one spec tile per check, the problem's fix inside its tile; ticks turn amber on a
+   problem (DESIGN.md §1). The full panel under the tiles says why each matters and what to run. */
 .start .machine:focus { outline: none; }
+.start .machine-head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; padding: 12px 12px 0 16px; min-height: 40px; }
+.start .machine-head h2 { font-size: 15px; font-weight: 500; }
+.start .machine-sum { font-size: 13px; font-weight: 500; }
+.start .machine-time { margin-left: auto; }
+.start .machine-tools { display: flex; align-items: center; gap: 10px; }
+.start .machine-tools .flip { transform: rotate(180deg); }
+.start .mtiles { list-style: none; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; padding: 12px 16px 16px; }
+.start .mtile { padding: 10px 12px; display: grid; gap: 4px; align-content: start; min-width: 0; }
+.start .mtile:hover { --tk: var(--ink-3); }
+.start .mtile.s-warn, .start .mtile.s-unknown { --tk: var(--warn); }
+.start .mtile-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.start .mtile-name { font-size: 13px; font-weight: 500; flex: 1; }
+.start .mtile-name-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.start .mtile-n { flex: none; }
+.start .mtile-detail { padding-left: 23px; font: 400 12px / 1.35 var(--mono); color: var(--ink-2); overflow: hidden; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.start .mtile.s-neutral .mtile-detail, .start .mtile.s-pending .mtile-detail { color: var(--ink-3); }
+.start .mtile-fix { justify-self: start; margin-left: 19px; }
+.start .machine-details { border-top: 1px solid var(--line); }
+.start .machine-row:first-child .sysrow { border-top: 0; }
+.start .machine-row:focus { outline: none; }
+.start .machine-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .start .machine:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .start .sysnote { display: grid; gap: 8px; padding: 0 16px 12px 44px; font-size: 13px; color: var(--ink-2); }
 .start .sysnote p { margin: 0; max-width: 60ch; }
@@ -38,7 +71,7 @@
 .start .cmd code { flex: 1; min-width: 0; font: 400 12px / 1.4 var(--mono); color: var(--ink); overflow-wrap: anywhere; }
 
 /* Getting started. */
-.start .checklist { margin-bottom: 16px; }
+.start .checklist { margin-bottom: 0; }
 .start .cl-list { list-style: none; margin: 8px 0 0; padding: 0; }
 .start .cl-row { min-height: 48px; padding-top: 6px; padding-bottom: 6px; }
 .start .cl-text { display: grid; gap: 2px; min-width: 0; }
@@ -57,3 +90,8 @@
 .start .sysdetails > * + * { margin-top: 8px; }
 .start .sysdetails summary { width: max-content; cursor: pointer; font: 500 11px / 1.2 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); padding: 4px 0; }
 .start .sysdetails summary:hover { color: var(--ink); }
+/* Once Getting started is done its area is empty; the import list takes the full width. */
+.start .launch-grid:has(> .launch-checklist:empty) { grid-template-areas: "intro recent" "machine machine" "import import"; }
+@media (max-width: 1180px) {
+  .start .launch-grid:has(> .launch-checklist:empty) { grid-template-areas: "intro" "machine" "recent" "import"; }
+}
