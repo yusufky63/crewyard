@@ -1,4 +1,4 @@
-import { useQuery, type UseQueryOptions } from "@tanstack/react-query";
+import { useQuery, useQueryClient, type UseQueryOptions } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import type { IpcMethod, IpcParams, IpcResult } from "@crewyard/core";
 import { call } from "../../ipc.ts";
@@ -23,5 +23,16 @@ export function useErrorText(): (err: unknown) => string {
     // Electron prefixes errors from ipcMain.handle with "Error invoking remote method '...': Error: ".
     const code = raw.replace(/^.*Error: /, "").trim();
     return t(`errors.${codeKey(code)}`, { defaultValue: t("errors.other", { message: code }) });
+  };
+}
+
+/**
+ * A stop, pause, message or answer refused with `run.session_changed` means a handoff or a later
+ * run took the step over since you looked: re-read everything, so you decide on what is true now.
+ */
+export function useRecheck(): (err: unknown) => void {
+  const qc = useQueryClient();
+  return (err) => {
+    if (String(err instanceof Error ? err.message : err).includes("run.session_changed")) void qc.invalidateQueries();
   };
 }

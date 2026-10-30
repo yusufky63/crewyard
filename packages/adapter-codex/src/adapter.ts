@@ -219,6 +219,9 @@ export class CodexAdapter implements AgentAdapter {
     if (answer.kind !== "cancel" && answer.kind !== waiting.kind) throw new Error(`request ${requestId} expects a ${waiting.kind} answer`);
     run.waiting.delete(requestId);
     waiting.resolve(answer);
+    // Codex approval replies carry no reason, so a deny's reason follows as a steer into the same turn.
+    const reason = answer.kind === "approval" && answer.decision === "deny" ? answer.message?.trim() : undefined;
+    if (reason && run.mapper.turnId && !run.ended) await this.send(handle, { kind: "text", text: `The user denied that request: ${reason}` }).catch(() => undefined);
   }
 
   async interrupt(handle: RunHandle): Promise<void> {

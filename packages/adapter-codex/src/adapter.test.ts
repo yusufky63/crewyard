@@ -83,7 +83,7 @@ describe("CodexAdapter against a fake app-server", () => {
     const run = await adapter.start(request(dir));
     const events = await collect(adapter, run, async (e) => {
       if (e.type !== "request.approval") return;
-      await adapter.answer(run, e.requestId, e.command ? { kind: "approval", decision: "allow_once" } : { kind: "approval", decision: "deny" });
+      await adapter.answer(run, e.requestId, e.command ? { kind: "approval", decision: "allow_once" } : { kind: "approval", decision: "deny", message: " Edit src/b.ts instead. " });
     });
     const approvals = events.filter((e) => e.type === "request.approval");
     expect(approvals).toMatchObject([
@@ -96,6 +96,8 @@ describe("CodexAdapter against a fake app-server", () => {
       { answered: "command", response: { decision: "accept" } },
       { answered: "file", response: { decision: "decline" } },
     ]);
+    // The reason has no place in the reply, so it reaches the agent as a steer into the same turn.
+    expect(sentBy(log, "turn/steer")).toEqual([{ threadId: "thr-1", input: [{ type: "text", text: "The user denied that request: Edit src/b.ts instead.", text_elements: [] }], expectedTurnId: "turn-1" }]);
   });
 
   it("uses an answer that arrived before codex asked", async () => {

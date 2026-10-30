@@ -19,7 +19,7 @@ const notice = (profileId: string, window: LimitNoticePayload["window"], minAgo:
 });
 
 const request = (id: string, minAgo: number, answered = false): RequestView =>
-  ({ id, taskId: "t", projectId: "p", runId: null, kind: "question", risk: null, payload: { kind: "question", questions: [] }, createdAt: at(minAgo), answeredAt: answered ? at(0) : null, answer: null, answeredBy: null }) as RequestView;
+  ({ id, taskId: "t", projectId: "p", runId: null, sessionId: null, kind: "question", risk: null, payload: { kind: "question", questions: [] }, createdAt: at(minAgo), answeredAt: answered ? at(0) : null, answer: null, answeredBy: null }) as RequestView;
 
 describe("openRequests", () => {
   it("keeps unanswered requests, newest first", () => {

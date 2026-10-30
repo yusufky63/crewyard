@@ -99,6 +99,9 @@ export function requestToastPlan(req: RequestView, s: NotificationSettings, proj
 export interface ToastGrant {
   token: string;
   requestId: string;
+  /** The run and native session the toast showed; the answer carries them so a handoff in between is refused. */
+  runId: string | null;
+  sessionId: string | null;
   taskId: string;
   projectId: string;
   actions: ToastAction[];

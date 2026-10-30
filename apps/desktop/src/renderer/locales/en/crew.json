@@ -145,6 +145,7 @@
       "memory": "waiting for free memory",
       "worktree_busy": "worktree in use by another step",
       "no_profile": "no account; edit the crew",
+      "budget_reserved": "budget held by other steps",
       "no_adapter": "runner not available in this build"
     },
     "other": "held back"
@@ -210,6 +211,8 @@
       "not_resumable": "That run cannot be resumed",
       "resume_unsupported": "This runner cannot resume a session",
       "superseded": "A later run already continues this step",
+      "session_changed": "This step moved to another session. Check it again and retry",
+      "price_unknown": "The model has no known price. Approve it in the Inbox first",
       "still_limited": "The limit is still reached. Try again after it resets."
     },
     "task": {

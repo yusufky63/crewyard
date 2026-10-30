@@ -57,6 +57,7 @@ const req = (payload: RequestPayload, over: Partial<RequestView> = {}): RequestV
   taskId: "t1",
   projectId: "p1",
   runId: "r1",
+  sessionId: "s1",
   kind: payload.kind,
   risk: payload.kind === "approval" ? "low" : null,
   payload,
@@ -137,7 +138,7 @@ describe("toast buttons per risk", () => {
 
 describe("activation validation", () => {
   const grantFor = (g: ToastGrants, actions: ToastAction[] = ["approve", "open"], targetProfileId: string | null = null) =>
-    g.issue({ requestId: "q1", taskId: "t1", projectId: "p1", actions, targetProfileId });
+    g.issue({ requestId: "q1", runId: "r1", sessionId: "s1", taskId: "t1", projectId: "p1", actions, targetProfileId });
 
   it("redeems a token once, only for an action its toast offered, and only before it expires", () => {
     let now = 1_000;

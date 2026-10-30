@@ -356,6 +356,31 @@ export const MIGRATIONS: Migration[] = [
      updated_at text not null
    );`,
   },
+  // Orchestrator safety (feature scan F3, F8): each paid run's estimate is held against its key's
+  // caps until the run ends and settles to what it spent, and same-profile retries after a
+  // transient error are recorded so a step stops retrying on its own after a few.
+  {
+    id: "orchestrator-safety",
+    sql: `create table if not exists spend_reservations (
+     run_id text primary key,
+     task_id text not null,
+     credential_id text,
+     amount_usd real not null,
+     created_at text not null,
+     settled_at text,
+     actual_usd real
+   );
+   create index if not exists spend_reservations_open on spend_reservations(settled_at, credential_id, task_id);
+   create table if not exists run_retries (
+     run_id text primary key,
+     from_run_id text not null,
+     attempt integer not null,
+     failure text not null,
+     status integer,
+     delay_ms integer not null,
+     created_at text not null
+   );`,
+  },
 ];
 
 /** What the positional scheme applied: a database at `user_version` N has the first N of these. */

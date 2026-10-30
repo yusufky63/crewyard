@@ -242,6 +242,16 @@ export class OrchestratorDb {
     return this.all<RunRow>("select * from runs where ended_at is null order by started_at");
   }
 
+  /** Ended runs waiting for a same-profile retry after a transient error. */
+  pendingRetries(): RunRow[] {
+    return this.all<RunRow>("select * from runs where ended_at is not null and resume_at is not null");
+  }
+
+  /** Which same-profile retry this run is: 0 for a run nobody retried. */
+  retryAttempt(runId: string): number {
+    return Number(this.one<{ attempt: number }>("select attempt from run_retries where run_id = ?", runId)?.attempt ?? 0);
+  }
+
   /** Runs that hold a process slot: open and not paused. */
   activeCounts(): { byProject: Map<string, number>; byProfile: Map<string, number>; total: number } {
     const rows = this.all<{ project_id: string; profile_id: string }>(
@@ -419,14 +429,16 @@ export class OrchestratorDb {
     return hit ? { window: hit.limit_window, resetsAt: hit.resets_at! } : null;
   }
 
-  /** Spend caps you approved going past for this run ("continue" on a budget request). */
+  /** Spend caps you approved going past for this run ("continue" on a budget request), and "unpriced" for spend without a price. */
   approvedCaps(runId: string): Set<string> {
     const rows = this.all<{ payload: string; answer: string | null }>("select payload, answer from requests where run_id = ? and kind = 'handoff' and answered_by = 'user'", runId);
     const out = new Set<string>();
     for (const r of rows) {
       const answer = json<RequestAnswer>(r.answer);
       const payload = JSON.parse(r.payload) as RequestPayload;
-      if (answer?.kind === "handoff" && answer.decision === "continue" && payload.kind === "handoff" && payload.cap) out.add(payload.cap.kind);
+      if (answer?.kind !== "handoff" || answer.decision !== "continue" || payload.kind !== "handoff") continue;
+      if (payload.cap) out.add(payload.cap.kind);
+      if (payload.trigger === "unpriced") out.add("unpriced");
     }
     return out;
   }
@@ -459,7 +471,8 @@ export class OrchestratorDb {
         endReason: r.end_reason,
         pendingRequestId: firstOpen(r.id),
         limitReached: r.limit_reached === 1,
-        retryPending: runs.some((o) => o.resumed_from === r.id),
+        // A run waiting for its own same-profile retry (resume_at on an ended run) is not failed yet.
+        retryPending: runs.some((o) => o.resumed_from === r.id) || (r.ended_at !== null && r.resume_at !== null),
       })),
     };
   }
@@ -578,6 +591,7 @@ export class OrchestratorDb {
       taskId: q.task_id,
       projectId: t.project_id,
       runId: q.run_id,
+      sessionId: q.run_id ? (this.one<{ s: string | null }>("select native_session_id as s from runs where id = ?", q.run_id)?.s ?? null) : null,
       kind: q.kind,
       risk: q.risk,
       payload: JSON.parse(q.payload) as RequestPayload,

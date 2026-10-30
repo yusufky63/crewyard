@@ -103,6 +103,7 @@
     "admission_memory": "Waiting for memory: {{freeMb}} MB free, needs {{neededMb}} MB",
     "admission_worktree_busy": "Another run is writing in the worktree",
     "admission_no_profile": "No account chosen; edit the crew",
+    "admission_budget_reserved": "Waiting for budget: other runs hold an estimated {{reservedUsd}} of the {{capUsd}} cap",
     "admission_no_adapter": "{{runner}} is not available in this build"
   },
   "status": {
@@ -211,6 +212,7 @@
   "inspector": {
     "label": "Run details",
     "close": "Close panel (Esc)",
+    "approval": "Waiting for your approval",
     "closeNote": "Closing this panel does not stop the agent.",
     "loading": "Loading…",
     "eyebrow": "Run · {{index}} {{role}}",
@@ -260,13 +262,15 @@
     "run_resume_unsupported": "This runner cannot resume a session.",
     "run_superseded": "A later run already continues this step.",
     "run_still_limited": "The limit is still in place. Try again after it resets.",
+    "run_session_changed": "This step moved to another session since you looked. Check it again and retry.",
+    "run_price_unknown": "This model has no known price and the task has a cap. Approve it in the Inbox first.",
     "request_not_found": "This request no longer exists.",
     "request_answered": "This request was already answered.",
     "request_answer_kind": "That answer does not fit this request.",
     "request_always_high_risk": "High-risk commands can only be approved once.",
     "request_no_target": "Pick an account to hand off to.",
     "request_no_reset": "The reset time is unknown, so the run cannot wait for it.",
-    "request_not_budget": "Only a spend pause can be continued past.",
+    "request_not_budget": "Only a run paused for spend or an unknown price can be continued.",
     "handoff_same_profile": "The run already uses that account.",
     "handoff_open": "This run is already being handed off.",
     "handoff_target_not_ready": "That account is not signed in or has no key.",

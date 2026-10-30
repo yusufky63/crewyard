@@ -239,6 +239,9 @@ export class AcpAdapter implements AgentAdapter {
     run.pending.delete(requestId);
     pending.resolve({ outcome });
     if (run.pending.size === 0 && run.busy) this.setState(run, "running");
+    // ACP's permission outcome has no reason field, so a deny's reason follows as the next prompt.
+    const reason = answer.kind === "approval" && answer.decision === "deny" ? answer.message?.trim() : undefined;
+    if (reason) this.enqueue(run, `The user denied that request: ${reason}`);
   }
 
   async interrupt(handle: RunHandle): Promise<void> {

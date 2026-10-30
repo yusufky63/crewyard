@@ -249,7 +249,7 @@ function CrewView({ task, fixture }: { task: TaskDetail; fixture: boolean }) {
         if (run) void runCall(() => call("runs.retry", { runId: run.id }), t("done.retry", { target: title(n, task.title) }));
         return;
       case "pause":
-        if (run) void runCall(() => call("runs.pause", { runId: run.id }), t("done.pause", { target: title(n, task.title) }));
+        if (run) void runCall(() => call("runs.pause", { runId: run.id, sessionId: run.nativeSessionId }), t("done.pause", { target: title(n, task.title) }));
         return;
       case "resume":
         if (run) void runCall(() => call("runs.resume", { runId: run.id }), t("done.resume", { target: title(n, task.title) }));
@@ -403,7 +403,7 @@ function CrewView({ task, fixture }: { task: TaskDetail; fixture: boolean }) {
             account: dialogNode.account ?? t("node.noAccount"),
           })}
           onClose={() => setDialog(null)}
-          onConfirm={() => runCall(() => call("runs.stop", { runId: dialogNode.run!.id }), t("done.stop", { target: title(dialogNode, task.title) })).then(() => setDialog(null))}
+          onConfirm={() => runCall(() => call("runs.stop", { runId: dialogNode.run!.id, sessionId: dialogNode.run!.nativeSessionId }), t("done.stop", { target: title(dialogNode, task.title) })).then(() => setDialog(null))}
         />
       )}
       {dialog?.kind === "change_ai" && dialogNode?.run && dialogNode.memberId && (
@@ -422,7 +422,7 @@ function CrewView({ task, fixture }: { task: TaskDetail; fixture: boolean }) {
           target={title(dialogNode, task.title)}
           live={dialogNode.run.state === "starting" || dialogNode.run.state === "running" || dialogNode.run.state === "waiting_input" || dialogNode.run.state === "waiting_approval"}
           onClose={() => setDialog(null)}
-          onSend={(text) => runCall(() => call("runs.message", { runId: dialogNode.run!.id, text }), t("done.message")).then(() => setDialog(null))}
+          onSend={(text) => runCall(() => call("runs.message", { runId: dialogNode.run!.id, text, sessionId: dialogNode.run!.nativeSessionId }), t("done.message")).then(() => setDialog(null))}
         />
       )}
     </section>

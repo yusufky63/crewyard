@@ -162,6 +162,16 @@ describe("ACP adapter against a fake Gemini agent", () => {
     }
   });
 
+  it("sends a deny's reason as the next prompt, since ACP's outcome has no place for it", async () => {
+    const { adapter, req, logFile } = await setup("perm-reason", "approve");
+    const run = await adapter.start(req);
+    const events = await collect(adapter, run, async (ev) => {
+      if (ev.type === "request.approval") await adapter.answer(run, ev.requestId, { kind: "approval", decision: "deny", message: " Run the tests with pnpm. " });
+    });
+    expect(texts(events)).toEqual(["outcome:cancel", "ok"]);
+    expect((await readLog(logFile)).filter((l) => l.kind === "prompt").map((l) => l.text)).toEqual([req.prompt, "The user denied that request: Run the tests with pnpm."]);
+  });
+
   it("refuses edits for a read-only role without asking the user", async () => {
     const { adapter, req } = await setup("readonly", "edit", READ_ONLY);
     const run = await adapter.start(req);

@@ -145,6 +145,7 @@
       "memory": "boş bellek bekleniyor",
       "worktree_busy": "çalışma ağacını başka bir adım kullanıyor",
       "no_profile": "hesap yok; ekibi düzenle",
+      "budget_reserved": "bütçe diğer adımlara ayrıldı",
       "no_adapter": "bu sürümde bu çalıştırıcı yok"
     },
     "other": "bekletiliyor"
@@ -210,6 +211,8 @@
       "not_resumable": "Bu çalıştırma sürdürülemiyor",
       "resume_unsupported": "Bu çalıştırıcı oturumu sürdüremiyor",
       "superseded": "Bu adımı zaten daha yeni bir çalıştırma sürdürüyor",
+      "session_changed": "Bu adım başka bir oturuma geçti. Yeniden bakıp tekrar dene",
+      "price_unknown": "Modelin fiyatı bilinmiyor. Önce Gelen kutusunda onayla",
       "still_limited": "Limit hâlâ dolu. Sıfırlandıktan sonra yeniden dene."
     },
     "task": {
