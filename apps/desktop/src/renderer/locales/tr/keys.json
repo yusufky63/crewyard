@@ -7,6 +7,7 @@
   "space": "Boşluk",
   "group": {
     "global": "Her yerde",
+    "navigate": "Ekrana git",
     "tasks": "Görevler ve ekipler",
     "graph": "Ekip grafiği",
     "review": "Fark incelemesi"
@@ -32,6 +33,12 @@
     "review.nextFile": "Sonraki dosya",
     "review.prevFile": "Önceki dosya",
     "review.comment": "Satıra yorum yaz",
-    "review.remove": "Odaktaki taslak yorumu sil"
+    "review.remove": "Odaktaki taslak yorumu sil",
+    "go.tasks": "Görevler",
+    "go.inbox": "Gelen kutusu",
+    "go.crew": "Ekip grafiği",
+    "go.limits": "Limitler ve kullanım",
+    "go.providers": "Sağlayıcılar",
+    "go.github": "GitHub"
   }
 }

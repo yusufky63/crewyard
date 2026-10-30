@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { resources } from "./i18n.ts";
-import { ariaKeys, keycaps, keyText, matches, SHORTCUTS, type KeyLike, type ShortcutId } from "./keys.ts";
+import { ariaKeys, keycaps, keyText, matches, sequenceStep, SHORTCUTS, type KeyLike, type ShortcutId } from "./keys.ts";
 
 const key = (k: string, mods: Partial<KeyLike> = {}): KeyLike => ({ key: k, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, ...mods });
 
@@ -76,5 +76,22 @@ describe("registry", () => {
     expect(ids.size).toBe(SHORTCUTS.length);
     const _typed: ShortcutId = "palette";
     expect(_typed).toBe("palette");
+  });
+});
+
+describe("sequenceStep", () => {
+  it("jumps on G then a letter within the wait, and only then", () => {
+    let s = sequenceStep({ prefix: null, at: 0 }, key("g"), 1000);
+    expect(s.id).toBeNull();
+    s = sequenceStep(s.state, key("t"), 1500);
+    expect(s.id).toBe("go.tasks");
+    expect(matches(key("t"), "go.tasks")).toBe(false);
+    const late = sequenceStep(sequenceStep({ prefix: null, at: 0 }, key("g"), 0).state, key("i"), 5000);
+    expect(late.id).toBeNull();
+    const gg = sequenceStep(sequenceStep({ prefix: null, at: 0 }, key("g"), 0).state, key("g"), 10);
+    expect(gg.id).toBe("go.crew");
+    const broken = sequenceStep(sequenceStep({ prefix: null, at: 0 }, key("g"), 0).state, key("g", { ctrlKey: true }), 10);
+    expect(broken.id).toBeNull();
+    expect(keycaps("go.limits")).toEqual([["G", "L"]]);
   });
 });

@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Keyboard } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { GROUPS, keycaps, keyText, matches, SHORTCUTS, ariaKeys } from "../../keys.ts";
+import { GROUPS, keycaps, keyText, matches, sequenceStep, SHORTCUTS, ariaKeys, type SequenceState, type ShortcutId } from "../../keys.ts";
+import { useNav } from "../../nav.ts";
 import type { StatusItemDef } from "../../registry.ts";
 import { Modal } from "../../screens/providers/Modal.tsx";
 import "../keymap/keymap.css";
@@ -52,9 +54,34 @@ export function KeyboardMap({ onClose }: { onClose: () => void }) {
   );
 }
 
+/** G then a letter jumps to a project screen (DESIGN.md §7). */
+const JUMPS: Array<[ShortcutId, () => string]> = [
+  ["go.tasks", () => "tasks"],
+  ["go.inbox", () => "inbox"],
+  ["go.crew", () => "crew"],
+  ["go.limits", () => "limits"],
+  ["go.providers", () => "providers"],
+  ["go.github", () => "github"],
+];
+
 function KeysStatus() {
   const { t } = useTranslation("keys");
   const [open, setOpen] = useState(SHOT_OPEN);
+  const seq = useRef<SequenceState>({ prefix: null, at: 0 });
+  useEffect(() => {
+    const onJump = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.repeat || typing(e.target) || document.querySelector("dialog[open], [role=menu]")) return;
+      const step = sequenceStep(seq.current, e, Date.now());
+      seq.current = step.state;
+      const to = JUMPS.find(([id]) => id === step.id)?.[1]();
+      // Project screens need an open project; on Start the keys do nothing.
+      if (!to || !useNav.getState().projectId) return;
+      e.preventDefault();
+      useNav.getState().go(to);
+    };
+    window.addEventListener("keydown", onJump);
+    return () => window.removeEventListener("keydown", onJump);
+  }, []);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!matches(e, "help") || e.defaultPrevented) return;
@@ -73,7 +100,8 @@ function KeysStatus() {
         <Keyboard size={13} strokeWidth={1.75} aria-hidden="true" />
         {t("short")}
       </button>
-      {open && <KeyboardMap onClose={() => setOpen(false)} />}
+      {/* In the body, not the status bar, so it does not take on the bar's mono, no-wrap type. */}
+      {open && createPortal(<KeyboardMap onClose={() => setOpen(false)} />, document.body)}
     </>
   );
 }

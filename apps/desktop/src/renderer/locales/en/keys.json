@@ -7,6 +7,7 @@
   "space": "Space",
   "group": {
     "global": "Everywhere",
+    "navigate": "Go to a screen",
     "tasks": "Tasks and crews",
     "graph": "Crew graph",
     "review": "Diff review"
@@ -32,6 +33,12 @@
     "review.nextFile": "Next file",
     "review.prevFile": "Previous file",
     "review.comment": "Comment on the line",
-    "review.remove": "Delete the focused draft comment"
+    "review.remove": "Delete the focused draft comment",
+    "go.tasks": "Tasks",
+    "go.inbox": "Inbox",
+    "go.crew": "Crew graph",
+    "go.limits": "Limits & usage",
+    "go.providers": "Providers",
+    "go.github": "GitHub"
   }
 }

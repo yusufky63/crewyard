@@ -291,7 +291,7 @@ ipcMain.handle("crewyard:save-export", async (_e, kind: unknown, defaultName: un
   // Written beside the target and renamed, so a failed write never leaves half a file.
   const tmp = `${res.filePath}.${process.pid}.tmp`;
   // Excel reads a CSV as UTF-8 only when it starts with a byte order mark.
-  writeFileSync(tmp, kind === "csv" ? `﻿${content}` : content, "utf8");
+  writeFileSync(tmp, kind === "csv" ? `\uFEFF${content}` : content, "utf8");
   renameSync(tmp, res.filePath);
   return res.filePath;
 });

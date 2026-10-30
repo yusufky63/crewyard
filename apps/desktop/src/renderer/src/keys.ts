@@ -11,12 +11,14 @@ export interface Chord {
   shift?: boolean;
 }
 
-export type ShortcutGroup = "global" | "tasks" | "graph" | "review";
+export type ShortcutGroup = "global" | "navigate" | "tasks" | "graph" | "review";
 
 export interface Shortcut {
   id: string;
   group: ShortcutGroup;
   chords: Chord[];
+  /** A key pressed just before, for two-key sequences such as G then T. */
+  after?: string;
   /** How the overlay shows it when listing every chord would be noise (the four arrows). */
   display?: string[][];
 }
@@ -28,6 +30,12 @@ export const SHORTCUTS = [
   { id: "sidebar", group: "global", chords: [{ key: "b", ctrl: true }] },
   { id: "help", group: "global", chords: [{ key: "?" }, { key: "F1" }] },
   { id: "close", group: "global", chords: [{ key: "Escape" }] },
+  { id: "go.tasks", group: "navigate", after: "g", chords: [{ key: "t" }] },
+  { id: "go.inbox", group: "navigate", after: "g", chords: [{ key: "i" }] },
+  { id: "go.crew", group: "navigate", after: "g", chords: [{ key: "g" }] },
+  { id: "go.limits", group: "navigate", after: "g", chords: [{ key: "l" }] },
+  { id: "go.providers", group: "navigate", after: "g", chords: [{ key: "p" }] },
+  { id: "go.github", group: "navigate", after: "g", chords: [{ key: "h" }] },
   { id: "submit", group: "tasks", chords: [{ key: "Enter", ctrl: true }] },
   { id: "graph.full", group: "graph", chords: [{ key: "f" }] },
   { id: "graph.menu", group: "graph", chords: [{ key: "F10", shift: true }, { key: "ContextMenu" }] },
@@ -49,7 +57,7 @@ export const SHORTCUTS = [
 
 export type ShortcutId = (typeof SHORTCUTS)[number]["id"];
 
-export const GROUPS: ShortcutGroup[] = ["global", "tasks", "graph", "review"];
+export const GROUPS: ShortcutGroup[] = ["global", "navigate", "tasks", "graph", "review"];
 
 const byId = new Map<string, Shortcut>(SHORTCUTS.map((s) => [s.id, s]));
 
@@ -78,7 +86,32 @@ function chordMatches(c: Chord, e: KeyLike): boolean {
 }
 
 export function matches(e: KeyLike, id: ShortcutId): boolean {
-  return shortcut(id).chords.some((c) => chordMatches(c, e));
+  const s = shortcut(id);
+  // A sequence's second key alone is not the shortcut; sequenceStep() tracks the first.
+  return !s.after && s.chords.some((c) => chordMatches(c, e));
+}
+
+export interface SequenceState {
+  prefix: string | null;
+  at: number;
+}
+
+/** How long the first key of a sequence waits for the second. */
+export const SEQUENCE_MS = 1500;
+
+/**
+ * One key of a two-key sequence: returns the shortcut it completes, if any, and what to remember for
+ * the next key. Any other key clears a waiting prefix.
+ */
+export function sequenceStep(state: SequenceState, e: KeyLike, now: number): { state: SequenceState; id: ShortcutId | null } {
+  const plain = !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey;
+  const pending = state.prefix && now - state.at <= SEQUENCE_MS ? state.prefix : null;
+  if (pending && plain) {
+    const hit = SHORTCUTS.find((s) => "after" in s && s.after === pending && s.chords.some((c) => chordMatches(c, e)));
+    if (hit) return { state: { prefix: null, at: 0 }, id: hit.id };
+  }
+  const starts = plain && SHORTCUTS.some((s) => "after" in s && s.after === e.key.toLowerCase());
+  return { state: starts ? { prefix: e.key.toLowerCase(), at: now } : { prefix: null, at: 0 }, id: null };
 }
 
 const NAMES: Record<string, string> = {
@@ -99,7 +132,7 @@ export function keycaps(id: ShortcutId, space = "Space"): string[][] {
   const s = shortcut(id);
   if (s.display) return s.display;
   return s.chords.map((c) => {
-    const caps: string[] = [];
+    const caps: string[] = s.after ? [s.after.toUpperCase()] : [];
     if (c.ctrl) caps.push("Ctrl");
     if (c.alt) caps.push("Alt");
     if (c.shift) caps.push("Shift");

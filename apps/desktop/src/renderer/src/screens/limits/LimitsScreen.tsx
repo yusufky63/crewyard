@@ -9,6 +9,7 @@ import { useProvidersQuery as useDaemon } from "../providers/data.ts";
 import { providerColor, ProvBadge, RUNNER_COLOR, useMoney, useProvidersLive, useWhen } from "../providers/shared.tsx";
 import { SignInBadge, SignInControl, useSignIn } from "../providers/SignIn.tsx";
 import "../providers/providers.css";
+import { FIXTURE } from "./fixture.ts";
 import { UsagePanel } from "./Usage.tsx";
 import "./limits.css";
 
@@ -16,7 +17,7 @@ const RANGES = [1, 7, 30] as const;
 // Limits first (what needs you), the usage ledger one click away (DESIGN.md §6, second level).
 const VIEWS = ["limits", "usage"] as const;
 /** Screenshot mode only (`fixture&view=usage`). */
-const SHOT_VIEW = new URLSearchParams(location.search).has("fixture") ? new URLSearchParams(location.search).get("view") : null;
+const SHOT_VIEW = FIXTURE ? new URLSearchParams(location.search).get("view") : null;
 // Plan windows, shortest first; context and budget windows belong to runs and tasks.
 const WINDOW_ORDER: string[] = ["5h", "daily", "weekly", "monthly"];
 
