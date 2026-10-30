@@ -8,6 +8,7 @@ import { call, useDaemon } from "../../ipc.ts";
 import { useNav } from "../../nav.ts";
 import { usePrefs, type Density, type ThemePref } from "../../prefs.ts";
 import { AboutSection, DataSection } from "./DataSection.tsx";
+import { KeepAwakeRows } from "./KeepAwake.tsx";
 import { backTarget, SECTIONS, useSettingsNav, type SectionId } from "./model.ts";
 import { Row, Section, Seg, Toggle } from "./parts.tsx";
 import "../providers/providers.css";
@@ -178,6 +179,7 @@ function Notifications({ supported }: { supported: boolean }) {
 function Startup() {
   const { t } = useTranslation("settings");
   const qc = useQueryClient();
+  const app = useAppSettings();
   const state = useQuery({ queryKey: ["app.startup"], queryFn: () => window.crewyard.startup() });
   const info = useQuery({ queryKey: ["app.info"], queryFn: () => window.crewyard.appInfo(), staleTime: Infinity });
   const s = state.data;
@@ -193,6 +195,8 @@ function Startup() {
       </Row>
       {s?.supported && s.development && info.data && <p className="st-note mono as-typed">{t("startup.dev", { path: info.data.exePath })}</p>}
       <Row label={t("startup.close")} hint={t("startup.closeHint")} />
+      {app.settings && <KeepAwakeRows settings={app.settings} save={app.save} />}
+      {app.error && <p className="pv-error st-note">{t("saveFailed", { error: app.error })}</p>}
     </Section>
   );
 }

@@ -16,6 +16,10 @@ export interface Candidate {
   credentialId?: string | null;
   /** Hash of the catalog snapshot `model` prices came from, stored with estimated spend. */
   catalogVersion?: string | null;
+  /** The profile's "when to use" note for the crew proposal's reason; never sent to an agent. */
+  note?: string | null;
+  /** Profile preset: offered only for roles that never write. */
+  readOnly?: boolean;
 }
 
 export interface ProfileDirectory {

@@ -127,5 +127,55 @@
     "copy": "Kopyala",
     "copied": "Kopyalandı",
     "copyCommand": "Güncelleme komutunu kopyala"
+  },
+  "keyCheck": {
+    "state": {
+      "valid": "Anahtar çalışıyor",
+      "invalid": "Anahtar reddedildi",
+      "unknown": "Anahtar doğrulanamadı",
+      "unchecked": "Anahtar henüz denetlenmedi"
+    },
+    "reason": {
+      "public_list": "model listesi herkese açık, bu yüzden anahtarı kanıtlamaz",
+      "no_list": "bu sağlayıcıda model listesi bulunamadı",
+      "http": "sağlayıcı HTTP {{status}} döndürdü",
+      "network": "sağlayıcıya ulaşılamadı",
+      "timeout": "8 saniye içinde yanıt gelmedi",
+      "not_json": "gelen yanıt bir model listesi değildi",
+      "local": "yerel sunucu, anahtar gerekmiyor",
+      "no_key": "kayıtlı anahtar yok"
+    },
+    "http": "HTTP {{status}}",
+    "check": "Anahtarı denetle",
+    "listModels": "Modelleri listele",
+    "speed": "Hızı ölç",
+    "listed": "Listelenen model: {{count}}",
+    "extra": "katalogda olmayan: {{count}}",
+    "extraTitle": "Sağlayıcı listeliyor ama katalogda yok; yine de bir profilin modeli olarak seçebilirsiniz",
+    "extraGroup": "Sağlayıcının listesinden",
+    "latency": {
+      "ok": "Erişilebilir",
+      "slow": "Yavaş",
+      "unreachable": "Erişilemiyor"
+    },
+    "ms": "{{ms}} ms",
+    "latencyNote": "Yalnızca bilginiz için; devir ya da yedeğe geçişi asla tetiklemez."
+  },
+  "presets": {
+    "note": "Ne zaman kullanılır",
+    "notePlaceholder": "ör. hızlı ve ucuz, dokümantasyona uygun",
+    "effort": "Çaba",
+    "effortDefault": "Çalıştırıcının varsayılanı",
+    "effortLevel": {
+      "low": "Düşük",
+      "medium": "Orta",
+      "high": "Yüksek"
+    },
+    "readOnly": "Yalnızca salt okunur roller",
+    "readOnlyHint": "Ekip önerileri bu profili yalnızca hiç yazmayan rollere sunar: planlayıcı, gözden geçiren, test eden, araştırmacı ve güvenlik.",
+    "slots": "Claude Code yuvaları",
+    "slotDefault": "Çalışmanın modeli",
+    "fill": "Listeden doldur",
+    "fillHint": "Her yuva için katalogdan ve sağlayıcının listesinden bir model seçer. Çalıştırmadan önce seçimi gözden geçirin."
   }
 }

@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { AccountRow, CredentialSummary, ProfileSummary, TaskStatus, TaskSummary } from "@crewyard/core";
+import { NO_PRESETS, type AccountRow, type CredentialSummary, type ProfileSummary, type TaskStatus, type TaskSummary } from "@crewyard/core";
 import { checklist, showChecklist, type ChecklistInput } from "./checklist.ts";
 
 const profile = (id: string, runner: ProfileSummary["runner"], credentialId: string | null): ProfileSummary => ({
+  ...NO_PRESETS,
   id,
   alias: id,
   runner,

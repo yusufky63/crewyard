@@ -148,6 +148,14 @@ export function createProvidersHandlers(ctx: HandlerContext, service?: Providers
     planQuota: { enabled: getPlanQuotaRefresh(db), endpoints: Object.values(PLAN_QUOTA).map(({ providerId, url, auth }) => ({ providerId, url, auth })) },
   });
 
+  // A new or replaced key is checked right away, in the background, so adding it never waits on
+  // the provider. Only the model list is asked; the result arrives as a providers.changed event.
+  const checkSoon = (credentialId: string) =>
+    void svc.checkKey(credentialId).then(
+      () => changed("key-check"),
+      () => undefined,
+    );
+
   // Background work starts with the first request, so creating handlers in tests stays inert.
   let started = false;
   const touch = () => {
@@ -177,12 +185,25 @@ export function createProvidersHandlers(ctx: HandlerContext, service?: Providers
     "providers.credentialAdd": withTouch(async ({ alias, providerId, secret }) => {
       const c = await svc.addCredential(alias, providerId, secret);
       changed("credentials");
+      checkSoon(c.id);
       return c;
     }),
     "providers.credentialSetSecret": withTouch(async ({ id, secret }) => {
       const c = await svc.setSecret(id, secret);
       changed("credentials");
+      checkSoon(c.id);
       return c;
+    }),
+    "providers.keyChecks": withTouch(() => svc.listKeyChecks()),
+    "providers.keyCheck": withTouch(async ({ credentialId }) => {
+      const v = await svc.checkKey(credentialId);
+      changed("key-check");
+      return v;
+    }),
+    "providers.latencyCheck": withTouch(async ({ credentialId }) => {
+      const v = await svc.checkLatency(credentialId);
+      changed("key-check");
+      return v;
     }),
     "providers.credentialRemove": withTouch(({ id }) => {
       svc.removeCredential(id);

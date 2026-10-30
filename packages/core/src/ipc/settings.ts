@@ -36,12 +36,25 @@ export interface NotificationSettings {
   limitActions: boolean;
 }
 
+/**
+ * Keep the machine awake while runs are active (feature scan A15). Opt-in. The main process holds
+ * Electron's "prevent-app-suspension" blocker from the first active run to the last, and lets the
+ * machine sleep on battery power below `minBatteryPct`.
+ */
+export interface KeepAwakeSettings {
+  enabled: boolean;
+  /** 5–95 in steps of 5. On battery at or below this charge the blocker is released. */
+  minBatteryPct: number;
+}
+
 export interface AppSettings {
   notifications: NotificationSettings;
+  keepAwake: KeepAwakeSettings;
 }
 
 export interface SettingsPatch {
   notifications?: Partial<Omit<NotificationSettings, "quietHours">> & { quietHours?: Partial<QuietHours> };
+  keepAwake?: Partial<KeepAwakeSettings>;
 }
 
 export interface BackupEntry {

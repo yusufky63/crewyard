@@ -87,3 +87,19 @@ tr.dim .prov-name { color: var(--ink-2); }
   .pv-search { margin-left: 0; width: 100%; }
   .pv-table td:first-child, .pv-table td:nth-child(2) { width: auto; }
 }
+
+/* Key check, listed models and reachability (A6); profile presets and note (A16). */
+.pv-kc { display: grid; gap: 6px; }
+.pv-kc .pv-item-line .end { margin-left: auto; display: flex; gap: 4px; }
+.pv-kc .st { font-size: 12px; }
+.pv-models summary { font-size: 12px; color: var(--ink-2); cursor: pointer; }
+.pv-model-list { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; max-height: 120px; overflow-y: auto; font-size: 11px; }
+.pv-model-list span { padding: 2px 6px; border: 1px solid var(--line); color: var(--ink-2); }
+.pv-model-list span.extra { border-color: var(--accent); color: var(--accent); }
+.pv-presets { display: grid; gap: 8px; padding-top: 8px; border-top: 1px dashed var(--line); }
+.pv-note { display: flex; }
+.pv-note .pv-input { flex: 1; }
+.pv-ro { font-size: 12px; cursor: pointer; }
+.pv-ro input { accent-color: var(--accent); }
+.pv-slots { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; }
+.pv-slots .pv-input { max-width: 200px; }

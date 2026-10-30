@@ -3,11 +3,12 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { BrandIcon, Button, Label, Panel } from "@crewyard/ui";
-import { PROFILE_RUNNERS, runnerSupport, type BalanceView, type CatalogProvider, type CredentialSummary, type ProfileSummary, type SignInStatus, type SpendSlice } from "@crewyard/core";
+import { PROFILE_RUNNERS, runnerSupport, type BalanceView, type CatalogProvider, type CredentialSummary, type KeyCheckView, type ProfileSummary, type SignInStatus, type SpendSlice } from "@crewyard/core";
 import { call } from "../../ipc.ts";
 import { useProvidersQuery as useDaemon } from "./data.ts";
 import { FIXTURE } from "./fixture.ts";
 import { AddProviderDialog, ManageDialog } from "./Dialogs.tsx";
+import { KeyStateNote, useKeyChecks } from "./KeyCheck.tsx";
 import { newestModels, ProvBadge, useMoney, usePrice, useProvidersLive, useWhen } from "./shared.tsx";
 import { SignInBadge, useSignIn } from "./SignIn.tsx";
 import "./providers.css";
@@ -60,6 +61,7 @@ function CredentialCell({
   balances,
   today,
   signIns,
+  checks,
 }: {
   provider: CatalogProvider;
   creds: CredentialSummary[];
@@ -67,6 +69,7 @@ function CredentialCell({
   balances: BalanceView[];
   today: SpendSlice[];
   signIns: SignInStatus[];
+  checks: KeyCheckView[];
 }) {
   const { t } = useTranslation("providers");
   const money = useMoney();
@@ -88,6 +91,7 @@ function CredentialCell({
           <div key={c.id}>
             <div>{c.kind === "local" ? t("noKeyNeeded", { alias: c.alias }) : t("keyAlias", { alias: c.alias })}</div>
             <div className="pv-sub">
+              <KeyStateNote check={checks.find((k) => k.credentialId === c.id)} />
               {bal?.wallets.length ? (
                 <>
                   {t("balance", { amount: bal.wallets.map((w) => money(w)).join(" · ") })} <ProvBadge value="reported" />
@@ -135,6 +139,7 @@ export function ProvidersScreen() {
   const balances = useDaemon("providers.balances", undefined);
   const spend = useDaemon("providers.spend", { days: 1 });
   const signIn = useSignIn();
+  const checks = useKeyChecks();
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState<{ id: string | null } | null>(null);
@@ -267,6 +272,7 @@ export function ProvidersScreen() {
                       balances={balances.data ?? []}
                       today={spend.data?.todayByCredential ?? []}
                       signIns={signIn.status}
+                      checks={checks}
                     />
                   </td>
                   <td className="pv-act">

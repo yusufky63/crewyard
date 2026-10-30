@@ -8,22 +8,25 @@ import {
   type AccountRow,
   type BalanceView,
   type CredentialSummary,
+  type KeyCheckView,
   type LimitWindow,
   type Money,
   type PlanQuotaView,
   type ProfileInput,
+  type ProfilePresets,
   type ProfileRunner,
   type ProfileSummary,
   type SignInStatus,
   type UsageWindowView,
 } from "@crewyard/core";
 import { balanceKind, fetchBalance } from "./balances.ts";
+import { checkKey, measureLatency, modelListCandidates } from "./key-check.ts";
 import { fetchPlanQuota, planQuotaTarget, type PlanQuota } from "./plan-quota.ts";
 import { CatalogService } from "./catalog.ts";
 import type { Protector } from "./dpapi.ts";
 import { latestWindows, spentToday } from "./ledger.ts";
 import { SecretStore } from "./secrets.ts";
-import { checkAlias, checkRunner, validateProfile } from "./validate.ts";
+import { checkAlias, checkPresets, checkRunner, validateProfile } from "./validate.ts";
 
 export interface ProvidersDeps {
   db: DatabaseSync;
@@ -53,6 +56,27 @@ interface ProfileRow {
   config_dir: string;
   created_at: string;
   updated_at: string;
+  // From profile_presets through a left join; null when the profile has no presets row.
+  note: string | null;
+  effort: ProfilePresets["effort"];
+  read_only: number | null;
+  model_slots: string | null;
+}
+
+interface KeyCheckRow {
+  credential_id: string;
+  provider_id: string;
+  state: KeyCheckView["state"] | null;
+  reason: KeyCheckView["reason"];
+  status: number | null;
+  endpoint: string | null;
+  models: string;
+  checked_at: string | null;
+  latency_ms: number | null;
+  latency_class: NonNullable<KeyCheckView["latency"]>["class"] | null;
+  latency_status: number | null;
+  latency_url: string | null;
+  latency_at: string | null;
 }
 
 interface SignInRow {
@@ -91,7 +115,13 @@ const toProfile = (r: ProfileRow): ProfileSummary => ({
   configDir: r.config_dir,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
+  note: r.note ?? null,
+  effort: r.effort ?? null,
+  readOnly: r.read_only === 1,
+  modelSlots: r.model_slots ? (JSON.parse(r.model_slots) as ProfilePresets["modelSlots"]) : null,
 });
+
+const PROFILE_SELECT = "select p.*, x.note, x.effort, x.read_only, x.model_slots from profiles p left join profile_presets x on x.profile_id = p.id";
 
 const BALANCE_EVERY_MS = 15 * 60_000;
 
@@ -215,6 +245,8 @@ export class ProvidersService {
     await this.secrets.set(id, key);
     if (row.kind !== "api_key") this.db.prepare("update credentials set kind = 'api_key' where id = ?").run(id);
     this.db.prepare("delete from balances where credential_id = ?").run(id);
+    // The old key's check says nothing about the new one.
+    this.db.prepare("delete from key_checks where credential_id = ?").run(id);
     return this.credential(id);
   }
 
@@ -248,20 +280,22 @@ export class ProvidersService {
   }
 
   private profileRow(id: string): ProfileRow {
-    const row = this.db.prepare("select * from profiles where id = ?").get(id) as ProfileRow | undefined;
+    const row = this.db.prepare(`${PROFILE_SELECT} where p.id = ?`).get(id) as ProfileRow | undefined;
     if (!row) throw new Error(`Unknown profile: ${id}`);
     return row;
   }
 
   listProfiles(): ProfileSummary[] {
-    return (this.db.prepare("select * from profiles order by runner, alias").all() as unknown as ProfileRow[]).map(toProfile);
+    return (this.db.prepare(`${PROFILE_SELECT} order by p.runner, p.alias`).all() as unknown as ProfileRow[]).map(toProfile);
   }
 
   createProfile(input: ProfileInput): ProfileSummary {
     const runner = checkRunner(input.runner);
     const alias = checkAlias(input.alias);
     const credential = input.credentialId ? this.credential(input.credentialId) : null;
-    validateProfile({ ...input, alias, runner }, this.catalog.provider(input.providerId), credential);
+    const provider = this.catalog.provider(input.providerId);
+    const presets = checkPresets(runner, provider, input);
+    validateProfile({ ...input, ...presets, alias, runner }, provider, credential, this.discoveredModels(input.credentialId));
     if (this.db.prepare("select 1 from profiles where runner = ? and alias = ?").get(runner, alias)) throw new Error(`A ${runner} profile named ${alias} already exists`);
     const dir = this.configDirFor(runner, alias);
     mkdirSync(dir, { recursive: true });
@@ -270,11 +304,22 @@ export class ProvidersService {
     this.db
       .prepare("insert into profiles (id, alias, runner, provider_id, credential_id, default_model, config_dir, created_at, updated_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?)")
       .run(id, alias, runner, input.providerId, input.credentialId, input.defaultModel, dir, at, at);
+    this.savePresets(id, presets);
     return toProfile(this.profileRow(id));
   }
 
-  updateProfile(id: string, patch: Partial<Pick<ProfileInput, "alias" | "credentialId" | "defaultModel">>): ProfileSummary {
+  private savePresets(id: string, p: ProfilePresets): void {
+    this.db
+      .prepare(
+        `insert into profile_presets (profile_id, note, effort, read_only, model_slots) values (?, ?, ?, ?, ?)
+         on conflict(profile_id) do update set note = excluded.note, effort = excluded.effort, read_only = excluded.read_only, model_slots = excluded.model_slots`,
+      )
+      .run(id, p.note, p.effort, p.readOnly ? 1 : 0, p.modelSlots ? JSON.stringify(p.modelSlots) : null);
+  }
+
+  updateProfile(id: string, patch: Partial<Pick<ProfileInput, "alias" | "credentialId" | "defaultModel">> & Partial<ProfilePresets>): ProfileSummary {
     const row = this.profileRow(id);
+    const current = toProfile(row);
     const next: ProfileInput = {
       alias: patch.alias !== undefined ? checkAlias(patch.alias) : row.alias,
       runner: row.runner,
@@ -282,7 +327,10 @@ export class ProvidersService {
       credentialId: patch.credentialId !== undefined ? patch.credentialId : row.credential_id,
       defaultModel: patch.defaultModel !== undefined ? patch.defaultModel : row.default_model,
     };
-    validateProfile(next, this.catalog.provider(next.providerId), next.credentialId ? this.credential(next.credentialId) : null);
+    const provider = this.catalog.provider(next.providerId);
+    const pick = <K extends keyof ProfilePresets>(k: K): ProfilePresets[K] => (patch[k] !== undefined ? (patch[k] as ProfilePresets[K]) : current[k]);
+    const presets = checkPresets(row.runner, provider, { note: pick("note"), effort: pick("effort"), readOnly: pick("readOnly"), modelSlots: pick("modelSlots") });
+    validateProfile({ ...next, ...presets }, provider, next.credentialId ? this.credential(next.credentialId) : null, this.discoveredModels(next.credentialId));
     let dir = row.config_dir;
     if (next.alias.toLowerCase() !== row.alias.toLowerCase()) {
       if (this.db.prepare("select 1 from profiles where runner = ? and alias = ? and id <> ?").get(row.runner, next.alias, id)) throw new Error(`A ${row.runner} profile named ${next.alias} already exists`);
@@ -293,6 +341,7 @@ export class ProvidersService {
     this.db
       .prepare("update profiles set alias = ?, credential_id = ?, default_model = ?, config_dir = ?, updated_at = ? where id = ?")
       .run(next.alias, next.credentialId, next.defaultModel, dir, this.now().toISOString(), id);
+    this.savePresets(id, presets);
     return toProfile(this.profileRow(id));
   }
 
@@ -447,6 +496,80 @@ export class ProvidersService {
       )
       .run(c.id, quota?.state ?? "error", problem, this.now().toISOString());
     return { view: this.listPlanQuota().find((v) => v.credentialId === c.id)!, quota };
+  }
+
+  // ── key checks and model discovery ─────────────────────────
+
+  private keyCheckRow(credentialId: string): KeyCheckRow | undefined {
+    return this.db.prepare("select * from key_checks where credential_id = ?").get(credentialId) as KeyCheckRow | undefined;
+  }
+
+  private toKeyCheck(c: CredentialSummary, r: KeyCheckRow | undefined): KeyCheckView {
+    const models = r ? (JSON.parse(r.models) as string[]) : [];
+    const known = new Set(this.catalog.provider(c.providerId)?.models.map((m) => m.id) ?? []);
+    return {
+      credentialId: c.id,
+      providerId: c.providerId,
+      state: r?.state ?? "unchecked",
+      reason: r?.reason ?? null,
+      status: r?.status ?? null,
+      endpoint: r?.endpoint ?? null,
+      models,
+      extraModels: models.filter((m) => !known.has(m)),
+      checkedAt: r?.checked_at ?? null,
+      latency: r?.latency_class && r.latency_url && r.latency_at ? { ms: r.latency_ms, class: r.latency_class, status: r.latency_status, url: r.latency_url, checkedAt: r.latency_at } : null,
+    };
+  }
+
+  listKeyChecks(): KeyCheckView[] {
+    const rows = new Map((this.db.prepare("select * from key_checks").all() as unknown as KeyCheckRow[]).map((r) => [r.credential_id, r]));
+    return this.listCredentials().map((c) => this.toKeyCheck(c, rows.get(c.id)));
+  }
+
+  /** Models the provider listed for this key the last time it was checked; empty when never checked. */
+  discoveredModels(credentialId: string | null): string[] {
+    if (!credentialId) return [];
+    const r = this.keyCheckRow(credentialId);
+    return r ? (JSON.parse(r.models) as string[]) : [];
+  }
+
+  /**
+   * One free model-list call with the key (key-check.ts). An Unknown answer keeps the models an
+   * earlier check found, so a network blip never empties a profile's model choices; a rejected key
+   * clears them.
+   */
+  async checkKey(credentialId: string): Promise<KeyCheckView> {
+    const c = this.credential(credentialId);
+    const provider = this.catalog.provider(c.providerId);
+    if (!provider) throw new Error(`Unknown provider: ${c.providerId}`);
+    const key = c.kind === "api_key" ? await this.secrets.get(c.id) : null;
+    const res = await checkKey(modelListCandidates(provider), key, this.fetchFn);
+    const models = res.models.length || res.state === "invalid" ? res.models : this.discoveredModels(c.id);
+    this.db
+      .prepare(
+        `insert into key_checks (credential_id, provider_id, state, reason, status, endpoint, models, checked_at) values (?, ?, ?, ?, ?, ?, ?, ?)
+         on conflict(credential_id) do update set provider_id = excluded.provider_id, state = excluded.state, reason = excluded.reason, status = excluded.status,
+           endpoint = excluded.endpoint, models = excluded.models, checked_at = excluded.checked_at`,
+      )
+      .run(c.id, c.providerId, res.state, res.reason, res.status, res.endpoint, JSON.stringify(models), this.now().toISOString());
+    return this.toKeyCheck(c, this.keyCheckRow(c.id));
+  }
+
+  /** Reachability of the provider's first model-list URL, without the key. Stored for display only. */
+  async checkLatency(credentialId: string): Promise<KeyCheckView> {
+    const c = this.credential(credentialId);
+    const provider = this.catalog.provider(c.providerId);
+    const url = provider ? modelListCandidates(provider)[0]?.url : undefined;
+    if (!url) throw new Error("This provider has no endpoint to check");
+    const res = await measureLatency(url, this.fetchFn);
+    this.db
+      .prepare(
+        `insert into key_checks (credential_id, provider_id, latency_ms, latency_class, latency_status, latency_url, latency_at) values (?, ?, ?, ?, ?, ?, ?)
+         on conflict(credential_id) do update set latency_ms = excluded.latency_ms, latency_class = excluded.latency_class, latency_status = excluded.latency_status,
+           latency_url = excluded.latency_url, latency_at = excluded.latency_at`,
+      )
+      .run(c.id, c.providerId, res.ms, res.class, res.status, res.url, this.now().toISOString());
+    return this.toKeyCheck(c, this.keyCheckRow(c.id));
   }
 
   // ── sidebar accounts ───────────────────────────────────────

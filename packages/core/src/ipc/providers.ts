@@ -70,7 +70,69 @@ export interface CredentialSummary {
   createdAt: string;
 }
 
-export interface ProfileSummary {
+/** Reasoning effort a profile can preset; the subset every runner that takes one understands. */
+export type EffortLevel = "low" | "medium" | "high";
+export const EFFORT_LEVELS: readonly EffortLevel[] = ["low", "medium", "high"];
+
+/**
+ * Where an effort preset reaches the runner, or null where it is not offered: Claude Code reads
+ * `CLAUDE_CODE_EFFORT_LEVEL`, Codex `model_reasoning_effort` in the profile's config.toml. Only
+ * against the runner's own vendor, because other endpoints may drop or reject the field.
+ */
+export function effortSupport(runner: ProfileRunner, providerId: string): "env" | "config" | null {
+  if (runner === "claude-code" && providerId === "anthropic") return "env";
+  if (runner === "codex" && providerId === "openai") return "config";
+  return null;
+}
+
+/** Claude Code's default model slots, set for Anthropic-compatible providers (PLAN.md §6.1 "direct"). */
+export interface ModelSlots {
+  haiku: string | null;
+  sonnet: string | null;
+  opus: string | null;
+}
+
+// Models a coding agent never runs: embeddings, speech, images, moderation, rerankers.
+const NOT_CHAT = /embed|whisper|tts|audio|speech|image|dall-e|moderation|rerank|ocr|transcri/;
+
+/**
+ * A first guess for the three slots from a provider's model list, for the user to correct: Claude
+ * names win, then small or fast names for haiku and large or reasoning names for opus. Sonnet is
+ * the profile's default model when it is listed. A slot with no better match takes sonnet's model.
+ */
+export function suggestSlots(models: readonly string[], defaultModel: string | null): ModelSlots {
+  const chat = models.filter((m) => !NOT_CHAT.test(m.toLowerCase()));
+  const find = (...res: RegExp[]) => {
+    for (const re of res) {
+      const hit = chat.find((m) => re.test(m.toLowerCase()));
+      if (hit) return hit;
+    }
+    return null;
+  };
+  const sonnet = find(/sonnet/) ?? (defaultModel && chat.includes(defaultModel) ? defaultModel : null) ?? defaultModel ?? chat[0] ?? null;
+  const haiku = find(/haiku/, /flash|mini|lite|air|turbo|small|fast|instant/) ?? sonnet;
+  const opus = find(/opus/, /reasoner|thinking|pro\b|-pro|max|large|plus/) ?? sonnet;
+  return { haiku, sonnet, opus };
+}
+
+/** Longest "when to use" note; it is one line in the crew proposal. */
+export const PROFILE_NOTE_MAX = 80;
+
+/**
+ * Optional presets stored with a profile. The note is for you and the crew proposal's reason only;
+ * it is never sent to an agent. `readOnly` keeps the profile to roles that never write.
+ */
+export interface ProfilePresets {
+  note: string | null;
+  effort: EffortLevel | null;
+  readOnly: boolean;
+  /** Claude Code on a non-Anthropic endpoint only; null leaves every slot on the default model. */
+  modelSlots: ModelSlots | null;
+}
+
+export const NO_PRESETS: ProfilePresets = { note: null, effort: null, readOnly: false, modelSlots: null };
+
+export interface ProfileSummary extends ProfilePresets {
   id: string;
   alias: string;
   runner: ProfileRunner;
@@ -83,12 +145,51 @@ export interface ProfileSummary {
   updatedAt: string;
 }
 
-export interface ProfileInput {
+export interface ProfileInput extends Partial<ProfilePresets> {
   alias: string;
   runner: ProfileRunner;
   providerId: string;
   credentialId: string | null;
   defaultModel: string | null;
+}
+
+/**
+ * Last key check (a free `GET …/models`). "valid": the list answered with the key and refused
+ * without it; "invalid": 401/403 (Google: 400 with an invalid-key error); "unknown": no list
+ * found, a public list, a network problem or a local server with no key.
+ */
+export type KeyState = "valid" | "invalid" | "unknown" | "unchecked";
+export type KeyCheckReason = "public_list" | "no_list" | "http" | "network" | "timeout" | "not_json" | "local" | "no_key";
+
+/** Reachability of the provider's endpoint: a warm-up, then one timed GET without the key. */
+export type LatencyClass = "ok" | "slow" | "unreachable";
+
+export interface LatencyView {
+  /** Round trip of the timed request; null when it never answered. */
+  ms: number | null;
+  class: LatencyClass;
+  /** HTTP status of the timed request; any status counts as reachable. */
+  status: number | null;
+  url: string;
+  checkedAt: string;
+}
+
+export interface KeyCheckView {
+  credentialId: string;
+  providerId: string;
+  state: KeyState;
+  reason: KeyCheckReason | null;
+  /** HTTP status behind an "invalid" or "http" answer. */
+  status: number | null;
+  /** The URL that answered (or the last one tried). */
+  endpoint: string | null;
+  /** Model ids the provider listed, sorted. */
+  models: string[];
+  /** Listed models the catalog does not have; these can be a profile's default model too. */
+  extraModels: string[];
+  checkedAt: string | null;
+  /** Kept apart from the limit rules: it never feeds handoff or fallback. */
+  latency: LatencyView | null;
 }
 
 export interface Money {
@@ -270,7 +371,13 @@ export interface ProvidersIpc {
   "providers.credentialRemove": { params: { id: string }; result: void };
   "providers.profiles": { params: void; result: ProfileSummary[] };
   "providers.profileCreate": { params: ProfileInput; result: ProfileSummary };
-  "providers.profileUpdate": { params: { id: string } & Partial<Pick<ProfileInput, "alias" | "credentialId" | "defaultModel">>; result: ProfileSummary };
+  "providers.profileUpdate": { params: { id: string } & Partial<Pick<ProfileInput, "alias" | "credentialId" | "defaultModel">> & Partial<ProfilePresets>; result: ProfileSummary };
+  /** Stored key checks, one per credential. */
+  "providers.keyChecks": { params: void; result: KeyCheckView[] };
+  /** Asks the provider's model list with the key now (also runs on its own after a key is added or replaced). */
+  "providers.keyCheck": { params: { credentialId: string }; result: KeyCheckView };
+  /** Warm-up plus one timed GET, 8 s timeout, "slow" above 6 s. Never read by the limit or handoff rules. */
+  "providers.latencyCheck": { params: { credentialId: string }; result: KeyCheckView };
   /** Deletes the profile and its own config folder (never the runner's default folder). */
   "providers.profileDelete": { params: { id: string }; result: void };
   "providers.balances": { params: void; result: BalanceView[] };
