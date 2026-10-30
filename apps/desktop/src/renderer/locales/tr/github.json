@@ -137,6 +137,26 @@
       "merge": "merge commit",
       "squash": "squash",
       "rebase": "rebase"
+    },
+    "mergeState": {
+      "clean": "Birleştirilebilir",
+      "has_hooks": "Birleştirilebilir",
+      "dirty": "{{base}} ile çakışıyor",
+      "behind": "Önce {{base}} dalından güncelle",
+      "blocked": "Dal kuralları engelliyor",
+      "unstable": "Bazı kontroller yeşil değil",
+      "draft": "Taslak",
+      "unknown": "Birleştirme durumu bilinmiyor"
+    },
+    "mergeStateTitle": {
+      "clean": "GitHub bu pull request'i birleştirilebilir görüyor (CLEAN).",
+      "has_hooks": "GitHub bu pull request'i birleştirilebilir görüyor; depoda birleştirme kancaları çalışıyor (HAS_HOOKS).",
+      "dirty": "GitHub çakışma bildiriyor (DIRTY). Çakışmalar dalda çözülene kadar birleştirme kapalı kalır.",
+      "behind": "Dal kuralları, dalın {{base}} ile güncel olmasını istiyor (BEHIND). Dal güncellenene kadar birleştirme kapalı kalır.",
+      "blocked": "Dal koruması hâlâ bir şey bekliyor, örneğin zorunlu bir inceleme (BLOCKED). Birleştirdiğinde GitHub bunu yeniden denetler.",
+      "unstable": "Zorunlu olmayan bir kontrol geçmiyor (UNSTABLE). Birleştirmeyi durdurmaz.",
+      "draft": "Taslak pull request'ler birleştirilemez.",
+      "unknown": "GitHub birleştirme durumunu henüz hesaplamadı. Biraz sonra yenile; durum belli olana kadar birleştirme kapalı kalır."
     }
   },
   "workflows": {
@@ -280,7 +300,9 @@
       "pull_gate_closed": "Pull request öncesi maddelerin hepsi artık geçmiyor.",
       "worktree_busy": "Bu worktree zaten kaldırılıyor.",
       "feedback_busy": "Bu geri bildirim zaten gönderiliyor.",
-      "feedback_no_owner": "Bu görevde dalın sahibi olan bir adım yok."
+      "feedback_no_owner": "Bu görevde dalın sahibi olan bir adım yok.",
+      "merge_dirty": "GitHub temel dalla çakışma bildiriyor. Önce çakışmaları dalda çöz.",
+      "merge_behind": "Dal, temel dalın gerisinde ve dal kuralları güncel olmasını istiyor. Önce dalı güncelle."
     }
   }
 }

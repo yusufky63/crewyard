@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, CircleHelp, Clock, ExternalLink, GitMerge, GitPullRequest, MessageSquare, ShieldAlert, ShieldCheck, Upload, X } from "lucide-react";
+import { AlertTriangle, Check, CircleHelp, Clock, ExternalLink, GitMerge, GitPullRequest, MessageSquare, ShieldAlert, ShieldCheck, Upload, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button, Label, Panel } from "@crewyard/ui";
 import type { ChecksSummary, FeedbackItem, GateStatus, IpcMethod, IpcParams, IpcResult, TaskPullView } from "@crewyard/core";
@@ -8,14 +8,14 @@ import { call } from "../../ipc.ts";
 import { FIXTURE } from "../tasks/fixture.ts";
 import { fixtureTaskPull, fixtureTaskPulls } from "./fixture.ts";
 import { useMinuteTick, useRelative } from "./live.ts";
-import { nextStep, pullLabel, type PullStep } from "./pullModel.ts";
+import { gateTextKey, gateTitleKey, nextStep, pullLabel, type PullStep } from "./pullModel.ts";
 import "./github.css";
 
 // A task's pull request, one approved step at a time (PLAN.md §10, D8): push, open, merge, clean
 // up. Each button is the approval for exactly that step; nothing here runs on its own.
 
 const ICON = { size: 14, strokeWidth: 1.75 } as const;
-const GATE_ICON = { pass: Check, wait: Clock, fail: X, unknown: CircleHelp } as const;
+const GATE_ICON = { pass: Check, wait: Clock, fail: X, unknown: CircleHelp, warn: AlertTriangle } as const;
 
 const read = <M extends IpcMethod>(method: M, params: IpcParams<M>): Promise<IpcResult<M>> => {
   if (!FIXTURE) return call(method, params);
@@ -110,13 +110,13 @@ function ChecksLine({ c }: { c: ChecksSummary }) {
   );
 }
 
-function GateList({ items, label }: { items: Array<{ id: string; status: GateStatus; text: string }>; label: string }) {
+function GateList({ items, label }: { items: Array<{ id: string; status: GateStatus; text: string; title?: string }>; label: string }) {
   return (
     <ul className="tp-gate" aria-label={label}>
       {items.map((i) => {
         const Icon = GATE_ICON[i.status];
         return (
-          <li key={i.id} className={`g-${i.status}`}>
+          <li key={i.id} className={`g-${i.status}`} title={i.title}>
             <Icon {...ICON} aria-hidden="true" />
             <span>{i.text}</span>
           </li>
@@ -318,7 +318,10 @@ export function PullPanel({ v, showTitle = false }: { v: TaskPullView; showTitle
             {t("pulls.flow", { head: v.pull.head, base: v.pull.base })}
           </div>
           {live ? <ChecksLine c={live.checks} /> : <span className="muted tp-small">{t("taskPull.notRead")}</span>}
-          {live?.gate && <GateList label={t("pulls.colGate")} items={live.gate.items.map((i) => ({ id: i.id, status: i.status, text: t(`pulls.gate.${i.id}.${i.status}`, { base: v.pull!.base }) }))} />}
+          {live?.gate && <GateList label={t("pulls.colGate")} items={live.gate.items.map((i) => {
+                const titleKey = gateTitleKey(i, live.mergeState, live.state === "draft");
+                return { id: i.id, status: i.status, text: t(gateTextKey(i, live.mergeState), { base: v.pull!.base }), title: titleKey ? t(titleKey, { base: v.pull!.base }) : undefined };
+              })} />}
           {asking === "merge" && live ? (
             <Confirm
               text={t("pulls.confirm", { number: v.pull.number, method: t(`pulls.method.${v.mergeMethod ?? "merge"}`), sha: sha(live.headSha) })}

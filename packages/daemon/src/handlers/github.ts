@@ -1,6 +1,7 @@
 import type { GithubIpc } from "@crewyard/core";
 import { GithubClient } from "../github/client.ts";
 import { PrFlow, type TaskSource } from "../github/flow.ts";
+import { ReviewDesk } from "../github/review.ts";
 import { GithubService, type OpenQuestionsSource } from "../github/service.ts";
 import { createTokenSource } from "../github/token.ts";
 import { orchestratorFor } from "../orchestrator/index.ts";
@@ -46,6 +47,7 @@ export function createGithubHandlers(
   });
   flow = new PrFlow({ store: ctx.store, service: svc, client, tasks, projectPath, emit: ctx.emit });
   const prs = flow;
+  const review = new ReviewDesk({ store: ctx.store, service: svc, client, tasks, emit: ctx.emit });
   service?.stop();
   service = svc;
   if (!deps.client) svc.startBackground();
@@ -76,5 +78,14 @@ export function createGithubHandlers(
     "github.routing": ({ projectId }) => ({ enabled: prs.routing(projectId) }),
     "github.setRouting": ({ projectId, enabled }) => ({ enabled: prs.setRouting(projectId, enabled) }),
     "github.sendFeedback": async ({ taskId }) => ({ sent: await prs.sendHeld(taskId) }),
+    "github.issues": ({ projectId }) => review.issues(projectId),
+    "github.issue": ({ projectId, number }) => review.issue(projectId, number),
+    "github.linkIssue": ({ taskId, number, url, title }) => review.link(taskId, number, url, title),
+    "github.taskIssue": ({ taskId }) => review.taskIssue(taskId),
+    "github.taskDiff": ({ taskId, scope, runId }) => review.diff(taskId, scope, runId),
+    "github.reviewDrafts": ({ taskId }) => review.drafts(taskId),
+    "github.addReviewComment": ({ taskId, ...input }) => review.add(taskId, input),
+    "github.removeReviewComment": ({ taskId, id }) => review.remove(taskId, id),
+    "github.sendReview": ({ taskId }) => review.send(taskId),
   };
 }
