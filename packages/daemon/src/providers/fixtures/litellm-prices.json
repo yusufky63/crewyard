@@ -1,0 +1,61 @@
+{
+  "sample_spec": {
+    "input_cost_per_token": 0,
+    "litellm_provider": "one of https://docs.litellm.ai/docs/providers",
+    "mode": "one of: chat, embedding, completion, image_generation"
+  },
+  "deepseek/deepseek-model": {
+    "litellm_provider": "deepseek",
+    "mode": "chat",
+    "input_cost_per_token": 1e-6,
+    "output_cost_per_token": 2.2e-6,
+    "cache_read_input_token_cost": 1e-7
+  },
+  "deepseek-model": {
+    "litellm_provider": "deepseek",
+    "mode": "chat",
+    "input_cost_per_token": 9e-6,
+    "output_cost_per_token": 9e-6
+  },
+  "openai-model": {
+    "litellm_provider": "openai",
+    "mode": "responses",
+    "input_cost_per_token": 1.1e-6,
+    "output_cost_per_token": 1.8e-6
+  },
+  "anthropic-model": {
+    "litellm_provider": "anthropic",
+    "mode": "chat",
+    "input_cost_per_token": 0,
+    "output_cost_per_token": 2e-6
+  },
+  "gemini-model": {
+    "litellm_provider": "vertex_ai-language-models",
+    "mode": "chat",
+    "input_cost_per_token": 5e-6,
+    "output_cost_per_token": 5e-6
+  },
+  "gemini/google-model": {
+    "litellm_provider": "gemini",
+    "mode": "chat",
+    "input_cost_per_token": 1e-6,
+    "output_cost_per_token": 2e-6
+  },
+  "moonshot/moonshotai-model": {
+    "litellm_provider": "moonshot",
+    "mode": "embedding",
+    "input_cost_per_token": 5e-6
+  },
+  "dashscope/alibaba-cn-model": {
+    "litellm_provider": "dashscope",
+    "mode": "chat",
+    "input_cost_per_token": 5e-6,
+    "output_cost_per_token": 5e-6
+  },
+  "mistral/mistral-model": {
+    "litellm_provider": "mistral",
+    "mode": "chat",
+    "input_cost_per_token": "free",
+    "output_cost_per_token": 2e-6
+  }
+}

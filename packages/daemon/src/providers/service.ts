@@ -23,6 +23,7 @@ import { balanceKind, fetchBalance } from "./balances.ts";
 import { checkKey, measureLatency, modelListCandidates, refusedModels } from "./key-check.ts";
 import { fetchPlanQuota, planQuotaTarget, type PlanQuota } from "./plan-quota.ts";
 import { CatalogService } from "./catalog.ts";
+import { PriceCheckService } from "./litellm.ts";
 import type { Protector } from "./dpapi.ts";
 import { latestWindows, spentToday } from "./ledger.ts";
 import { SecretStore } from "./secrets.ts";
@@ -149,6 +150,7 @@ export function newestPerWindow(windows: UsageWindowView[]): UsageWindowView[] {
 
 export class ProvidersService {
   readonly catalog: CatalogService;
+  readonly priceCheck: PriceCheckService;
   readonly secrets: SecretStore;
   private readonly db: DatabaseSync;
   private readonly dataDir: string;
@@ -162,6 +164,7 @@ export class ProvidersService {
     this.fetchFn = deps.fetchFn ?? fetch;
     this.now = deps.now ?? (() => new Date());
     this.catalog = new CatalogService(deps.db, this.fetchFn, this.now);
+    this.priceCheck = new PriceCheckService(deps.db, () => this.catalog.current(), this.fetchFn, this.now);
     this.secrets = new SecretStore(deps.dataDir, deps.protector);
   }
 
@@ -174,6 +177,7 @@ export class ProvidersService {
     const tick = async () => {
       const before = this.catalog.info().hash;
       const info = await this.catalog.refresh();
+      await this.priceCheck.run();
       const balances = await this.refreshBalances(undefined, true);
       if (info.hash !== before || balances.length) onChange();
     };

@@ -47,6 +47,58 @@ export interface CatalogInfo {
   checkedAt: string | null;
   /** Last refresh error; the last good snapshot keeps serving. */
   lastError: string | null;
+  /** True while the user holds this version: refreshes still download but do not switch. */
+  pinned: boolean;
+  /** Newest snapshot models.dev gave us; differs from `hash` only while pinned to an older one. */
+  latestHash: string;
+}
+
+/** One stored catalog version, newest first in `providers.catalogSnapshots`. */
+export interface CatalogSnapshotView {
+  hash: string;
+  origin: "bundled" | "models.dev";
+  generatedAt: string;
+  sourceSha: string;
+  /** When this machine first stored it. */
+  storedAt: string;
+  active: boolean;
+  pinned: boolean;
+  latest: boolean;
+}
+
+export type PriceField = "input" | "output" | "cacheRead";
+
+/** One catalog price that differs from LiteLLM's table by more than the threshold. Both in USD per million tokens. */
+export interface PriceDiff {
+  providerId: string;
+  model: string;
+  /** The key the model was matched under in LiteLLM's file. */
+  litellmKey: string;
+  field: PriceField;
+  ours: number;
+  theirs: number;
+  /** (ours − theirs) / theirs in percent; null when LiteLLM lists the price as zero. */
+  deltaPct: number | null;
+}
+
+/**
+ * Diagnostics only: comparing never changes a price. `unknown` means there is no usable LiteLLM table
+ * (never fetched, or the last download failed), so the counts are null rather than zero.
+ */
+export interface PriceCheckView {
+  status: "ok" | "unknown";
+  /** The catalog version the differences were computed against (the active one). */
+  catalogHash: string;
+  /** Last time LiteLLM's file was asked (200 or 304). */
+  checkedAt: string | null;
+  error: string | null;
+  sourceUrl: string;
+  thresholdPct: number;
+  /** Catalog providers with a mapping to a LiteLLM provider. */
+  mappedProviders: string[];
+  /** Catalog models found in LiteLLM's table; null while unknown. */
+  matched: number | null;
+  diffs: PriceDiff[] | null;
 }
 
 export interface CatalogView {
@@ -363,6 +415,14 @@ export interface ProvidersIpc {
   "providers.catalog": { params: void; result: CatalogView };
   /** Asks models.dev with ETag; `force` skips the 24 h wait. Offline keeps the last good snapshot. */
   "providers.catalogRefresh": { params: { force?: boolean }; result: CatalogInfo };
+  /** Stored versions, newest first. */
+  "providers.catalogSnapshots": { params: void; result: CatalogSnapshotView[] };
+  /** Pins a stored version (estimates use it from now on); `null` unpins and switches to the newest one. */
+  "providers.catalogPin": { params: { hash: string | null }; result: CatalogInfo };
+  /** Catalog prices against LiteLLM's table, as last fetched. Never changes a price. */
+  "providers.priceCheck": { params: void; result: PriceCheckView };
+  /** Asks LiteLLM now (with ETag, 30 s timeout) and compares. */
+  "providers.priceCheckRun": { params: void; result: PriceCheckView };
   "providers.credentials": { params: void; result: CredentialSummary[] };
   /** The key is encrypted with DPAPI and written to its own file; it never comes back over IPC. */
   "providers.credentialAdd": { params: { alias: string; providerId: string; secret: string | null }; result: CredentialSummary };

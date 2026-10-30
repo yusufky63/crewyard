@@ -177,5 +177,35 @@
     "slotDefault": "Run's model",
     "fill": "Fill from list",
     "fillHint": "Picks a model for each slot from the catalog and the provider's list. Check the choice before a run."
+  },
+  "catalog": {
+    "open": "Versions",
+    "title": "Catalog versions",
+    "versions": "Stored versions",
+    "pinAbout": "Pinning keeps estimates on one version. Background refreshes still download new prices but do not switch until you unpin; every spend row keeps the version its price came from.",
+    "cols": { "version": "Version", "generated": "Generated", "source": "models.dev", "origin": "Origin", "state": "State" },
+    "active": "In use",
+    "pinned": "Pinned",
+    "pinnedNewer": "Pinned · newer version downloaded",
+    "pinnedHint": "Estimates use this catalog version until you unpin it under Versions.",
+    "newest": "Newest",
+    "pin": "Pin",
+    "unpin": "Unpin",
+    "pinNamed": "Pin catalog version {{hash}}",
+    "unpinNamed": "Unpin catalog version {{hash}}",
+    "check": {
+      "title": "Price check against LiteLLM",
+      "about": "Catalog prices that differ from LiteLLM's community price table by more than {{pct}}% in input, output or cache read. Shown only: this never changes a price.",
+      "run": "Check now",
+      "running": "Checking",
+      "never": "Not checked yet. It runs with a catalog refresh, or now with Check now.",
+      "failed": "LiteLLM's table could not be read, so differences are unknown. {{error}}",
+      "summary_one": "Checked {{time}} against version {{hash}} · {{matched}} models matched · {{count}} price over {{pct}}%",
+      "summary_other": "Checked {{time}} against version {{hash}} · {{matched}} models matched · {{count}} prices over {{pct}}%",
+      "cols": { "model": "Model", "price": "Price", "ours": "Catalog", "theirs": "LiteLLM", "delta": "Difference" },
+      "field": { "input": "Input", "output": "Output", "cacheRead": "Cache read" },
+      "theirsZero": "LiteLLM lists 0",
+      "source": "Source: BerriAI/litellm model_prices_and_context_window.json (MIT). Prices in USD per 1M tokens. {{providers}} catalog providers are matched through a fixed mapping; China endpoints and coding plans are left out because they are priced differently."
+    }
   }
 }

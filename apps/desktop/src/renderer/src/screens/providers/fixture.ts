@@ -1,4 +1,4 @@
-import type { AccountRow, CredentialSummary, IpcMethod, IpcParams, IpcResult, KeyCheckView, LimitsOverview, ProfilePresets, ProfileSummary, SignInSession, SignInStatus, SpendSummary } from "@crewyard/core";
+import type { AccountRow, CatalogSnapshotView, CredentialSummary, IpcMethod, IpcParams, IpcResult, KeyCheckView, LimitsOverview, PriceCheckView, ProfilePresets, ProfileSummary, SignInSession, SignInStatus, SpendSummary } from "@crewyard/core";
 import { DEFAULT_THRESHOLDS, NO_PRESETS } from "@crewyard/core";
 
 // Screenshot data for the Providers and Limits screens and the accounts block. Used only when the
@@ -144,6 +144,31 @@ const ACCOUNTS: AccountRow[] = [
   }),
 ];
 
+// `versions`: pinned to yesterday's download while today's waits, and a price check with a few gaps.
+const SNAPSHOTS: CatalogSnapshotView[] = [
+  { hash: "9c41e07ab2d35f18", origin: "models.dev", generatedAt: ago(60 * 3), sourceSha: "5e0a9d2c71b4f836", storedAt: ago(60 * 3), active: false, pinned: false, latest: true },
+  { hash: "3f8d2b6e90a1c457", origin: "models.dev", generatedAt: ago(60 * 27), sourceSha: "b17c4e9a02d8f365", storedAt: ago(60 * 27), active: true, pinned: true, latest: false },
+  { hash: "e2a7c90d4b6f1835", origin: "bundled", generatedAt: ago(60 * 24 * 2), sourceSha: "d645251e1d2a24ed", storedAt: ago(60 * 24 * 2), active: false, pinned: false, latest: false },
+];
+
+const PRICE_CHECK: PriceCheckView = {
+  status: "ok",
+  catalogHash: "3f8d2b6e90a1c457",
+  checkedAt: ago(60 * 3),
+  error: null,
+  sourceUrl: "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json",
+  thresholdPct: 10,
+  mappedProviders: ["anthropic", "openai", "google", "deepseek", "moonshotai", "zai", "minimax", "alibaba", "xiaomi", "mistral", "xai", "groq", "fireworks-ai", "deepinfra", "togetherai", "vercel", "novita-ai", "nvidia"],
+  matched: 214,
+  diffs: [
+    { providerId: "zai", model: "glm-4.6v-flash", litellmKey: "zai/glm-4.6v-flash", field: "input", ours: 0.05, theirs: 0, deltaPct: null },
+    { providerId: "deepseek", model: "deepseek-v4-pro", litellmKey: "deepseek/deepseek-v4-pro", field: "cacheRead", ours: 0.07, theirs: 0.035, deltaPct: 100 },
+    { providerId: "mistral", model: "codestral-latest", litellmKey: "mistral/codestral-latest", field: "output", ours: 0.9, theirs: 0.6, deltaPct: 50 },
+    { providerId: "openai", model: "gpt-5.2", litellmKey: "gpt-5.2", field: "input", ours: 1.75, theirs: 1.5, deltaPct: 16.666667 },
+    { providerId: "xai", model: "grok-4.3", litellmKey: "xai/grok-4.3", field: "output", ours: 13, theirs: 15, deltaPct: -13.333333 },
+  ],
+};
+
 const DATA: Partial<{ [M in IpcMethod]: (params: IpcParams<M>) => IpcResult<M> }> = {
   "providers.profiles": () => PROFILES,
   "providers.credentials": () => CREDENTIALS,
@@ -154,6 +179,8 @@ const DATA: Partial<{ [M in IpcMethod]: (params: IpcParams<M>) => IpcResult<M> }
   "providers.balances": () => [{ credentialId: "c-ds", providerId: "deepseek", wallets: [{ amount: 18.4, currency: "USD" }], provenance: "reported", fetchedAt: ago(9), error: null }],
   "providers.spend": () => SPEND,
   "providers.keyChecks": () => KEY_CHECKS,
+  "providers.catalogSnapshots": () => SNAPSHOTS,
+  "providers.priceCheck": () => PRICE_CHECK,
 };
 
 export function hasFixture(method: IpcMethod): boolean {
