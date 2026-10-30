@@ -90,7 +90,16 @@ export class GithubClient {
     return body.data;
   }
 
-  /** Write call. Only explicit user actions reach this (merge); it never retries. */
+  /**
+   * Plain-text read (a job log). GitHub answers with a redirect to a signed download URL; fetch
+   * follows it and drops the Authorization header on the cross-origin hop.
+   */
+  async text(path: string): Promise<string> {
+    const res = await this.send("GET", `${API}${path}`, undefined, { Accept: "text/plain" }, "core");
+    return res.text();
+  }
+
+  /** Write call. Only explicit user actions reach this (merge, opening a PR); it never retries. */
   async write<T>(method: "PUT" | "POST" | "PATCH", path: string, body: unknown): Promise<T> {
     const res = await this.send(method, `${API}${path}`, JSON.stringify(body), {}, "core");
     return (await res.json()) as T;

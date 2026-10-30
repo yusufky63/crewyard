@@ -121,7 +121,7 @@
       }
     },
     "gateTitle": {
-      "questions_unknown": "Open agent questions are tracked per task. This branch has no task in Crewyard yet, so merging stays closed.",
+      "questions_unknown": "Crewyard could not read the open agent questions for this branch, so merging stays closed.",
       "draft": "Draft pull requests cannot be merged."
     },
     "reviewMerge": "Review and merge",
@@ -172,5 +172,115 @@
   },
   "time": {
     "now": "just now"
+  },
+  "taskPull": {
+    "label": "Pull request",
+    "panel": "Task pull requests",
+    "count_one": "{{count}} task",
+    "count_other": "{{count}} tasks",
+    "empty": "No code task is ready for review yet. A task shows up here once its crew finishes.",
+    "openOnGithub": "Open #{{number}} on GitHub",
+    "notRead": "Not read from GitHub yet.",
+    "state": {
+      "none": "No pull request yet",
+      "open": "Ready for review",
+      "draft": "Draft",
+      "merged": "Merged",
+      "closed": "Closed without merge"
+    },
+    "gateLabel": "Before a pull request",
+    "gate": {
+      "review": {
+        "pass": "Review passed",
+        "wait": "Review not finished",
+        "fail": "Review failed",
+        "unknown": "Review state unknown"
+      },
+      "commits": {
+        "pass": "Has commits",
+        "wait": "No commits yet",
+        "fail": "No commits on top of {{base}}",
+        "unknown": "Commits unknown"
+      },
+      "clean": {
+        "pass": "Nothing uncommitted",
+        "wait": "Uncommitted changes",
+        "fail": "Uncommitted changes in the worktree",
+        "unknown": "Worktree folder not found"
+      },
+      "pushed": {
+        "pass": "On GitHub",
+        "wait": "Not pushed yet",
+        "fail": "Not pushed",
+        "unknown": "Push state unknown"
+      },
+      "no_pull": {
+        "pass": "No pull request yet",
+        "wait": "Pull request pending",
+        "fail": "Already has a pull request",
+        "unknown": "Pull request state unknown"
+      }
+    },
+    "push_one": "Push branch · {{count}} commit",
+    "push_other": "Push branch · {{count}} commits",
+    "pushNote": "Pushes once, never with force. Workflows on GitHub may start.",
+    "titleLabel": "Title",
+    "bodyLabel": "Description",
+    "open": "Open pull request",
+    "openBlocked": "Every item above must pass first.",
+    "openConfirm": "Open a pull request on GitHub from {{head}} into {{base}} at {{sha}}?",
+    "openNow": "Open now",
+    "opening": "Opening…",
+    "opened": "Pull request opened.",
+    "step": {
+      "push": "Push branch",
+      "open": "Open pull request",
+      "merge": "Review and merge",
+      "feedback": "Feedback waiting",
+      "cleanup": "Clean up"
+    },
+    "feedback": {
+      "label": "Feedback from GitHub",
+      "routing": "Send failing checks and review comments to the agent",
+      "none": "No failing checks or review comments yet.",
+      "off": "Off for this project. Feedback stays on GitHub until you turn it on.",
+      "check": "Check {{name}} failed",
+      "review": "Review by {{who}}",
+      "comment": "Comment by {{who}}",
+      "commentAt": "Comment by {{who}} on {{where}}",
+      "held": "Waiting for you",
+      "sent": "Sent to the agent {{time}}",
+      "send_one": "Send to agent",
+      "send_other": "Send {{count}} to agent",
+      "sendNote": "The step that wrote this branch has finished. Sending continues it on the same profile."
+    },
+    "cleanup": {
+      "label": "Worktree",
+      "remove": "Remove worktree",
+      "removeNow": "Remove now",
+      "confirm": "Remove this worktree folder? The branch {{branch}} stays in the repository.",
+      "done": "Worktree removed.",
+      "removed": "The worktree folder was removed. The branch is still there.",
+      "block": {
+        "not_merged": "The branch is not merged yet.",
+        "unknown_to_git": "Git does not list this folder as a worktree, so it is never removed from here.",
+        "primary": "This is the main checkout.",
+        "missing": "The folder is already gone.",
+        "dirty": "It has uncommitted changes.",
+        "unpushed": "It has commits that are not on GitHub.",
+        "live_run": "An agent is still working in it."
+      }
+    },
+    "error": {
+      "pull_busy": "This pull request is already being opened.",
+      "pull_no_github": "GitHub could not be read for this project.",
+      "pull_no_title": "Give the pull request a title.",
+      "pull_no_branch": "The task has no branch to open a pull request from.",
+      "pull_moved": "The branch has new commits since you looked. Check it again.",
+      "pull_gate_closed": "Not every item before a pull request passes any more.",
+      "worktree_busy": "This worktree is already being removed.",
+      "feedback_busy": "This feedback is already being sent.",
+      "feedback_no_owner": "No step of this task owns the branch."
+    }
   }
 }

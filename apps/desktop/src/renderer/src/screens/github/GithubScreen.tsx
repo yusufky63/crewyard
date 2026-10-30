@@ -7,6 +7,7 @@ import type { ActionsMinutes, GateItem, GithubProblem, PullSummary, PushCandidat
 import { call, useDaemon } from "../../ipc.ts";
 import { useNav } from "../../nav.ts";
 import { useGithubLive, useMinuteTick, useNumber, useRelative } from "./live.ts";
+import { TaskPullsPanel } from "./TaskPull.tsx";
 import "./github.css";
 
 const ICON = { size: 14, strokeWidth: 1.75 } as const;
@@ -136,6 +137,47 @@ function PushPanel({ projectId }: { projectId: string }) {
   );
 }
 
+/** A merged worktree with nothing to lose; removing it is its own confirmed step, and the daemon checks again. */
+function StaleWorktree({ projectId, path, branch }: { projectId: string; path: string; branch: string | null }) {
+  const { t } = useTranslation("github");
+  const qc = useQueryClient();
+  const [asking, setAsking] = useState(false);
+  const [msg, setMsg] = useState<{ text: string; bad: boolean } | null>(null);
+  const remove = async () => {
+    try {
+      const res = await call("github.removeWorktree", { projectId, path });
+      setMsg(res.removed ? { text: t("taskPull.cleanup.done"), bad: false } : { text: res.verdict.blocks.map((b) => t(`taskPull.cleanup.block.${b}`)).join(" "), bad: true });
+    } catch (err) {
+      setMsg({ text: err instanceof Error ? err.message : String(err), bad: true });
+    } finally {
+      setAsking(false);
+      void qc.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).startsWith("github.") });
+    }
+  };
+  return (
+    <div className="gh-note" title={path}>
+      <div className="gh-wt-row">
+        <span>{t("worktrees.staleLine", { branch: branch ?? path })}</span>
+        {asking ? (
+          <span className="gh-act-stack">
+            <Button size="sm" variant="ghost" onClick={() => setAsking(false)}>
+              {t("pulls.cancel")}
+            </Button>
+            <Button size="sm" variant="danger" autoFocus onClick={() => void remove()}>
+              {t("taskPull.cleanup.removeNow")}
+            </Button>
+          </span>
+        ) : (
+          <Button size="sm" variant="ghost" onClick={() => setAsking(true)}>
+            {t("taskPull.cleanup.remove")}
+          </Button>
+        )}
+      </div>
+      {msg && <span className={msg.bad ? "gh-bad" : "gh-ok"}>{msg.text}</span>}
+    </div>
+  );
+}
+
 function WorktreesPanel({ projectId }: { projectId: string }) {
   const { t } = useTranslation("github");
   const q = useDaemon("github.worktrees", { projectId });
@@ -149,9 +191,7 @@ function WorktreesPanel({ projectId }: { projectId: string }) {
         {w?.active ?? "—"} <small>{t("worktrees.active")}{w ? ` · ${t("worktrees.stale", { count: w.stale })}` : ""}</small>
       </div>
       {stale.slice(0, 3).map((s) => (
-        <span key={s.path} className="gh-note" title={s.path}>
-          {t("worktrees.staleLine", { branch: s.branch ?? s.path })}
-        </span>
+        <StaleWorktree key={s.path} projectId={projectId} path={s.path} branch={s.branch} />
       ))}
       {w && stale.length === 0 && <span className="gh-note">{t("worktrees.clean")}</span>}
       {dirty > 0 && <span className="gh-note">{t("worktrees.dirtyLine", { count: dirty })}</span>}
@@ -470,6 +510,7 @@ export function GithubScreen() {
         <PushPanel projectId={projectId} />
         <WorktreesPanel projectId={projectId} />
       </div>
+      <TaskPullsPanel projectId={projectId} />
       {hasGithub && <PullsPanel projectId={projectId} now={now} />}
       <WorkflowsPanel projectId={projectId} />
     </section>

@@ -4,6 +4,7 @@ import type { CandidateView, RunView, TaskDetail } from "@crewyard/core";
 import { BrandIcon, Button, Label, TickMeter } from "@crewyard/ui";
 import { useInspector, type InspectorTarget } from "../inspector.ts";
 import { useNav } from "../nav.ts";
+import { TaskPullSection } from "../screens/github/TaskPull.tsx";
 import { ProvBadge } from "../screens/providers/shared.tsx";
 import { act, useErrorText, useWork } from "../screens/tasks/data.ts";
 import { useActivity } from "../screens/tasks/live.ts";
@@ -184,6 +185,7 @@ function Body({ detail, target }: { detail: TaskDetail; target: InspectorTarget 
       )}
       {tab === "details" && (
         <>
+          {detail.kind === "code" && (detail.status === "review" || detail.status === "merged") && <TaskPullSection taskId={detail.id} className="ins-sec" />}
           {activity?.now && run && !run.endedAt && (
             <div className="ins-sec">
               <Label>{f.t("inspector.now")}</Label>

@@ -45,7 +45,8 @@ const pull = (number: number, extra: Record<string, unknown> = {}) => ({
   ...extra,
 });
 
-describe("GitHub service", () => {
+// Each case runs git in a temp repo; under the full parallel suite on Windows that can pass 5 s.
+describe("GitHub service", { timeout: 30_000 }, () => {
   it("lists open and recently merged PRs with checks and gates, and revalidates with ETags", async () => {
     const { fn, seen } = routes({
       "/repos/octo/app": { private: true, default_branch: "main", owner: { type: "User" }, allow_merge_commit: false, allow_squash_merge: true, allow_rebase_merge: true },
@@ -122,5 +123,31 @@ describe("GitHub service", () => {
     const svc = new GithubService({ projectPath: () => repo, emit: () => undefined, client: new GithubClient(async () => "t", fn), tokenState: () => "ok", resetToken: () => undefined, openQuestions: () => 0 });
     expect(await svc.merge("p", 2, "sha2")).toEqual({ merged: true, sha: "m1", method: "squash" });
     expect(seen.filter((s) => s.startsWith("PUT"))).toEqual(["PUT /repos/octo/app/pulls/2/merge"]);
+  });
+});
+
+describe("background refresh", { timeout: 30_000 }, () => {
+  it("refreshes only the projects with a task in review, and runs the after-refresh hook before github.changed", async () => {
+    const { fn, seen } = routes({
+      "/repos/octo/app": { private: true, default_branch: "main", owner: { type: "User" } },
+      "/repos/octo/app/pulls": [],
+    });
+    const order: string[] = [];
+    let watched: string[] = [];
+    const svc = new GithubService({
+      projectPath: () => repo,
+      emit: (topic) => order.push(topic),
+      client: new GithubClient(async () => "t", fn),
+      tokenState: () => "ok",
+      resetToken: () => undefined,
+      watched: () => watched,
+      afterRefresh: async (p) => void order.push(`after:${p}`),
+    });
+    await svc.backgroundTick();
+    expect(seen).toEqual([]);
+    watched = ["p"];
+    await svc.backgroundTick();
+    expect(seen.some((s) => s.startsWith("GET /repos/octo/app/pulls"))).toBe(true);
+    expect(order).toEqual(["after:p", "github.changed"]);
   });
 });

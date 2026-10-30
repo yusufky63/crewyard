@@ -290,6 +290,49 @@ export const MIGRATIONS: Migration[] = [
      probed_at text not null
    );`,
   },
+  // GitHub pull requests per task (PLAN.md §10, §13): facts GitHub reported, the feedback routed
+  // to the owning run (deduplicated by key), and the per-project routing opt-in.
+  {
+    id: "github-pulls",
+    sql: `create table if not exists task_pulls (
+     task_id text primary key references tasks(id),
+     project_id text not null references projects(id),
+     number integer not null,
+     url text not null,
+     head text not null,
+     base text not null,
+     head_sha text not null,
+     state text not null,
+     origin text not null,
+     created_at text not null,
+     merged_at text,
+     merged_sha text,
+     synced_at text not null,
+     worktree_removed_at text
+   );
+   create index if not exists task_pulls_project on task_pulls(project_id, number);
+   create table if not exists pull_feedback (
+     id text primary key,
+     task_id text not null references tasks(id),
+     dedupe_key text not null,
+     kind text not null,
+     source text not null,
+     excerpt text not null,
+     url text,
+     path text,
+     line integer,
+     observed_at text not null,
+     state text not null,
+     run_id text,
+     sent_at text,
+     unique (task_id, dedupe_key)
+   );
+   create index if not exists pull_feedback_task on pull_feedback(task_id, observed_at);
+   create table if not exists github_projects (
+     project_id text primary key references projects(id),
+     route_feedback integer not null default 0
+   );`,
+  },
 ];
 
 /** What the positional scheme applied: a database at `user_version` N has the first N of these. */

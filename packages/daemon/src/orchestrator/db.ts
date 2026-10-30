@@ -447,8 +447,8 @@ export class OrchestratorDb {
       cancelledAt: task.cancelled_at,
       openHandoffId: openHandoff?.id ?? null,
       implementationDone: writers.length > 0 && writers.every((m) => completed(m.id)),
-      // PR state is the GitHub work's; until it reports, a finished code task reads "review".
-      pullRequest: null,
+      // PR facts are written by the GitHub work (table task_pulls); without one a finished code task reads "review".
+      pullRequest: this.pullFact(task.id),
       runs: runs.map((r) => ({
         id: r.id,
         role: r.role,
@@ -462,6 +462,12 @@ export class OrchestratorDb {
         retryPending: runs.some((o) => o.resumed_from === r.id),
       })),
     };
+  }
+
+  private pullFact(taskId: string): TaskFacts["pullRequest"] {
+    const row = this.one<{ state: string }>("select state from task_pulls where task_id = ?", taskId);
+    if (!row) return null;
+    return { state: row.state === "merged" ? "merged" : row.state === "closed" ? "closed" : "open" };
   }
 
   status(task: TaskRow): TaskStatus {

@@ -438,4 +438,6 @@ export type TaskChangeCause =
   | "handoff_failed"
   | "retried"
   | "admission"
-  | "recovered";
+  | "recovered"
+  // The GitHub work: the task's pull request was opened, linked, merged or closed.
+  | "pull_request";

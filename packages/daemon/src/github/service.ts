@@ -74,6 +74,21 @@ export interface ServiceDeps {
   tokenState(): "ok" | "no_gh" | "signed_out";
   resetToken(): void;
   openQuestions?: OpenQuestionsSource;
+  /**
+   * Projects to refresh every 60 s: those with a task in review (PLAN.md §10). Without it the
+   * background refresh covers projects with open PRs.
+   */
+  watched?: () => string[];
+  /** Runs after each refresh, before "github.changed" goes out; task PR facts and feedback hang off it. */
+  afterRefresh?: (projectId: string) => Promise<void>;
+}
+
+/** What the task PR flow needs from the last refresh, without starting another one. */
+export interface RepoRef {
+  owner: string;
+  repo: string;
+  defaultBranch: string;
+  mergeMethod: MergeMethod;
 }
 
 export class GithubService {
@@ -113,6 +128,10 @@ export class GithubService {
 
   async backgroundTick(): Promise<void> {
     if (this.deps.client.remaining("core") < BACKGROUND_FLOOR) return;
+    if (this.deps.watched) {
+      for (const projectId of this.deps.watched()) if (!this.cache(projectId).refreshing) await this.refresh(projectId).catch(() => undefined);
+      return;
+    }
     for (const [projectId, c] of this.projects) {
       const open = c.pulls?.pulls.some((p) => p.state !== "merged");
       if (open && !c.refreshing) await this.refresh(projectId).catch(() => undefined);
@@ -259,10 +278,13 @@ export class GithubService {
   /** Refreshes one project; concurrent calls share the same run. */
   refresh(projectId: string): Promise<void> {
     const c = this.cache(projectId);
-    c.refreshing ??= this.doRefresh(projectId, c).finally(() => {
-      c.refreshing = null;
-      this.deps.emit("github.changed", { projectId });
-    });
+    c.refreshing ??= this.doRefresh(projectId, c)
+      .then(() => this.deps.afterRefresh?.(projectId))
+      .catch(() => undefined)
+      .finally(() => {
+        c.refreshing = null;
+        this.deps.emit("github.changed", { projectId });
+      });
     return c.refreshing;
   }
 
@@ -295,6 +317,16 @@ export class GithubService {
     if (c.refreshing) await c.refreshing;
     else if (!c.pulls || Date.now() - c.attemptedAt > REFRESH_MS) await this.refresh(projectId);
     return c.pulls!;
+  }
+
+  /** The last refreshed PR list, or null; never starts a refresh. */
+  cachedPulls(projectId: string): PullsResult | null {
+    return this.cache(projectId).pulls;
+  }
+
+  repoRef(projectId: string): RepoRef | null {
+    const m = this.cache(projectId).meta;
+    return m ? { owner: m.owner, repo: m.repo, defaultBranch: m.defaultBranch, mergeMethod: m.mergeMethod } : null;
   }
 
   sync(projectId: string): GithubSync {
