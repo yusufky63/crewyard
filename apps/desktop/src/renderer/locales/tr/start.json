@@ -2,8 +2,8 @@
   "title": "Başlangıç",
   "version": "Crewyard · v{{version}}",
   "hero1": "Ajan ekiplerini",
-  "hero2": "tek yerden yönet.",
-  "lead": "Claude Code, Codex, Gemini CLI ve OpenCode kendi hesaplarınla ve anahtarlarınla çalışır. Sen onaylamadan hiçbir şey başlamaz.",
+  "hero2": "tek yerden yönetin.",
+  "lead": "Claude Code, Codex, Gemini CLI ve OpenCode kendi hesaplarınız ve anahtarlarınızla çalışır. Siz onaylamadan hiçbir şey başlamaz.",
   "openFolder": "Klasör aç",
   "machine": {
     "title": "Bu bilgisayar",
@@ -35,6 +35,8 @@
       "isolation": "profilleri ayıramayacak kadar eski",
       "unknown": "sürüm bilinmiyor"
     },
+    "otherCopies_one": "PATH'te {{count}} kopya daha var",
+    "otherCopies_other": "PATH'te {{count}} kopya daha var",
     "gate": {
       "rule": {
         "min": "{{verified}} veya daha yeni",
@@ -44,6 +46,11 @@
       "untested": "Crewyard'ın uyumluluk denetiminden yalnızca {{tool}} {{verified}} geçti. Diğer sürümler protokolü haber vermeden değiştirebilir. Denetlenen sürüme geçin:",
       "isolation": "{{verified}} sürümünden eski {{tool}}, profile özel klasörü yok sayar; her çalıştırma sizin kendi ~/.gemini oturumunuzu ve ayarlarınızı kullanır. Güncelleyene kadar Crewyard onu başlatmaz:",
       "unknown": "Kurulu sürüm okunamadı. Crewyard için {{tool}} {{need}} gerekiyor. Emin olmak için şunu çalıştırın:"
+    },
+    "copies": {
+      "why": "Crewyard {{path}} ({{version}}) dosyasını başlatıyor. PATH'teki öbür kopya ondan geri kalır: bir güncelleme yalnızca birine ulaşır ve hangisinin çalışacağı PATH sırasına bağlı olur. Öbür kopyalar:",
+      "other": "npm ile kurulmamış bir kopyayı, onu kuran yolla kaldırın.",
+      "versionUnknown": "sürüm bilinmiyor"
     },
     "defender": {
       "label": "Çalışma ağaçları için Defender istisnası",
@@ -81,6 +88,7 @@
     "fix": {
       "update": "Güncellemeyi kopyala",
       "signIn": "Giriş komutunu kopyala",
+      "remove": "Kaldırmayı kopyala",
       "steps": "Adımları aç",
       "copyTitle": "{{command}} komutunu kopyalar. Terminalde kendiniz çalıştırın; Crewyard bunu asla çalıştırmaz."
     },
@@ -90,7 +98,7 @@
   },
   "recent": {
     "title": "Son projeler",
-    "empty": "Henüz proje yok. Bir klasör aç ya da {{root}} içinde bulunan bir depoyu ekle.",
+    "empty": "Henüz proje yok. Bir klasör açın ya da {{root}} içindeki bir depoyu ekleyin.",
     "opened": "{{time}} açıldı",
     "never": "Henüz açılmadı"
   },

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defenderFolders, defenderReport, isExcluded, parseDefender, VERSION_GATES, versionGate } from "./machine.ts";
+import { defenderFolders, defenderReport, isExcluded, otherCopies, parseDefender, uninstallFor, VERSION_GATES, versionGate } from "./machine.ts";
 
 describe("versionGate", () => {
   const claude = VERSION_GATES.claude!.verified;
@@ -104,5 +104,28 @@ describe("defenderReport", () => {
   it("puts real-time off and a missing Defender ahead of the exclusion list", () => {
     expect(defenderReport({ active: true, realtime: false, exclusions: [] }, folders, at).state).toBe("realtime_off");
     expect(defenderReport({ active: false, realtime: null, exclusions: null }, folders, at).state).toBe("unavailable");
+  });
+});
+
+describe("other copies of a CLI", () => {
+  // `claude update` on 2026-10-30: a leftover npm install next to the native one.
+  const native = "C:\\Users\\Ada Lovelace\\.local\\bin\\claude.exe";
+  const npm = "C:\\Users\\Ada Lovelace\\AppData\\Roaming\\npm\\claude.cmd";
+
+  it("lists every copy on PATH except the one in use", () => {
+    expect(otherCopies(native, [native, npm])).toEqual([npm]);
+    expect(otherCopies(npm, [native, npm])).toEqual([native]);
+    expect(otherCopies(native, [native])).toEqual([]);
+  });
+
+  it("counts two entries in the same folder as one install", () => {
+    expect(otherCopies(npm, [npm, npm.replace(".cmd", ".exe")])).toEqual([]);
+  });
+
+  it("names the npm uninstall for a copy in npm's global folder only", () => {
+    expect(uninstallFor("claude", npm)).toBe("npm -g uninstall @anthropic-ai/claude-code");
+    expect(uninstallFor("codex", "C:\\Users\\Ada Lovelace\\AppData\\Roaming\\npm\\codex.cmd")).toBe("npm -g uninstall @openai/codex");
+    expect(uninstallFor("claude", native)).toBeNull();
+    expect(uninstallFor("git", "C:\\Users\\Ada Lovelace\\AppData\\Roaming\\npm\\git.cmd")).toBeNull();
   });
 });

@@ -8,13 +8,13 @@ export type MachineItemId = ToolId | "longPaths" | "defender";
 export type MachineState = "ok" | "warn" | "neutral" | "unknown" | "pending";
 
 /** What the user can do about a problem. The app never runs a fix; it copies a command or shows steps. */
-export type MachineFix = { kind: "copy"; command: string; label: "update" | "signIn" } | { kind: "steps"; target: "longPaths" | "defender" } | null;
+export type MachineFix = { kind: "copy"; command: string; label: "update" | "signIn" | "remove" } | { kind: "steps"; target: "longPaths" | "defender" } | null;
 
 export interface MachineItem {
   id: MachineItemId;
   state: MachineState;
   /** i18n key in `start` plus params for the one-line status. */
-  detail: { key: string; params?: Record<string, string> };
+  detail: { key: string; params?: Record<string, string | number> };
   fix: MachineFix;
 }
 
@@ -40,6 +40,12 @@ export function toolItem(id: ToolId, q: ToolInput, env: MachineEnv | undefined):
   const gate = tool.gate;
   if (gate && gate.status !== "ok") {
     return { id, state: "warn", detail: { key: `machine.gateShort.${gate.status}` }, fix: gate.update ? { kind: "copy", command: gate.update, label: "update" } : null };
+  }
+  // A second install drifts from the first (an update reaches one of them), so it is worth a look.
+  const others = tool.others ?? [];
+  if (others.length > 0) {
+    const removable = others.filter((o) => o.uninstall);
+    return { id, state: "warn", detail: { key: "machine.otherCopies", params: { count: others.length } }, fix: removable.length === 1 && others.length === 1 ? { kind: "copy", command: removable[0]!.uninstall!, label: "remove" } : null };
   }
   if (id === "gh") {
     return env?.ghUser

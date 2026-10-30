@@ -3,8 +3,8 @@ import { GEMINI_ISOLATION_MIN, versionAtLeast } from "@crewyard/adapter-acp";
 import { SDK_CLI_VERSION } from "@crewyard/adapter-claude";
 import { MIN_CODEX_VERSION } from "@crewyard/adapter-codex";
 import { TESTED_VERSION } from "@crewyard/adapter-opencode";
-import type { DefenderCheck, MachineEnv, MachineReport, ToolCheck, ToolId, VersionGate, VersionGateStatus } from "@crewyard/core";
-import { parseVersion, ProbeCache, resolveBin, run } from "@crewyard/proc";
+import type { DefenderCheck, MachineEnv, MachineReport, ToolCheck, ToolCopy, ToolId, VersionGate, VersionGateStatus } from "@crewyard/core";
+import { parseVersion, ProbeCache, resolveBin, run, whichAll } from "@crewyard/proc";
 import { CREWYARD_DIR, LEGACY_WORKTREES_DIR } from "./setup/config.ts";
 
 // The "This machine" check on the Start screen. Read-only: it never installs or changes anything.
@@ -80,7 +80,42 @@ async function probeTool(id: ToolId): Promise<ToolCheck> {
   if (!path) return { id, found: false, path: null, version: null, detail: null, gate: null };
   const res = await run(path, ["--version"], { timeoutMs: 15_000 });
   const version = parseVersion(res.stdout || res.stderr);
-  return { id, found: true, path, version, detail: res.code === 0 ? null : "version check failed", gate: versionGate(id, version) };
+  const check: ToolCheck = { id, found: true, path, version, detail: res.code === 0 ? null : "version check failed", gate: versionGate(id, version) };
+  if (!NPM_PACKAGES[id]) return check;
+  const others = otherCopies(path, await whichAll(TOOL_BINS[id]));
+  if (others.length === 0) return check;
+  const copies = await Promise.all(
+    others.map(async (p): Promise<ToolCopy> => {
+      const v = await run(p, ["--version"], { timeoutMs: 15_000 });
+      return { path: p, version: parseVersion(v.stdout || v.stderr), uninstall: uninstallFor(id, p) };
+    }),
+  );
+  return { ...check, others: copies };
+}
+
+/** The npm package each agent CLI is published as; git and gh are not checked for copies. */
+const NPM_PACKAGES: Partial<Record<ToolId, string>> = {
+  claude: "@anthropic-ai/claude-code",
+  codex: "@openai/codex",
+  gemini: "@google/gemini-cli",
+  opencode: "opencode-ai",
+};
+
+/**
+ * The copies on PATH that are not the one in use. npm puts a `.cmd` shim, an extensionless script
+ * and a `.ps1` side by side for one install; only the startable one comes back from whichAll, so
+ * one install is one entry.
+ */
+export function otherCopies(inUse: string, hits: readonly string[]): string[] {
+  const same = (a: string, b: string) => (process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b);
+  return hits.filter((p) => !same(p, inUse) && !same(dirname(p), dirname(inUse)));
+}
+
+/** `npm -g uninstall <package>` for a copy in npm's global folder (`...\npm\` on Windows); null otherwise. */
+export function uninstallFor(id: ToolId, copyPath: string): string | null {
+  const pkg = NPM_PACKAGES[id];
+  const inNpm = /[\\/]npm[\\/][^\\/]+$/i.test(copyPath) || /[\\/]node_modules[\\/]\.bin[\\/]/i.test(copyPath);
+  return pkg && inNpm ? `npm -g uninstall ${pkg}` : null;
 }
 
 /** `gh api user --jq .login` prints the login when signed in; anything else means not signed in. */

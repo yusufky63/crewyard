@@ -21,6 +21,18 @@ export interface ToolCheck {
   detail: string | null;
   /** Agent CLIs only: the installed version against the one its adapter was verified with. */
   gate: VersionGate | null;
+  /**
+   * Agent CLIs only: other copies on PATH besides `path`, the one Crewyard starts. Two copies drift
+   * apart (`claude update` updates one), and which one runs then depends on PATH order.
+   */
+  others?: ToolCopy[];
+}
+
+export interface ToolCopy {
+  path: string;
+  version: string | null;
+  /** How to remove it when it is a global npm install, e.g. `npm -g uninstall @anthropic-ai/claude-code`. */
+  uninstall: string | null;
 }
 
 /**

@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Check, ChevronDown, CircleHelp, Copy, FolderTree, ListChecks, Minus, RefreshCw, ShieldCheck } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import type { DefenderCheck, MachineEnv, ToolId, VersionGate } from "@crewyard/core";
+import type { DefenderCheck, MachineEnv, ToolCopy, ToolId, VersionGate } from "@crewyard/core";
 import { BrandIcon, Button, Panel } from "@crewyard/ui";
 import { useDaemon } from "../../ipc.ts";
 import { usePrefs } from "../../prefs.ts";
@@ -41,13 +41,15 @@ function useMachine() {
   if (def) items.push(def);
   const errors: Partial<Record<MachineItemId, string>> = {};
   const gates: Partial<Record<MachineItemId, VersionGate>> = {};
+  const copies: Partial<Record<MachineItemId, { inUse: string; version: string | null; others: ToolCopy[] }>> = {};
   for (const id of TOOL_ORDER) {
     const q = tools[id];
     if (q.error) errors[id] = String(q.error);
     if (q.data?.found && q.data.gate) gates[id] = q.data.gate;
+    if (q.data?.found && q.data.path && q.data.others?.length) copies[id] = { inUse: q.data.path, version: q.data.version, others: q.data.others };
   }
   if (defender.error) errors.defender = defender.error.message;
-  return { items, env, defender, errors, gates };
+  return { items, env, defender, errors, gates, copies };
 }
 
 function StateIcon({ state }: { state: MachineState }) {
@@ -153,6 +155,26 @@ function GateNote({ id, gate }: { id: MachineItemId; gate: VersionGate }) {
   );
 }
 
+/** The copy Crewyard starts and the others on PATH, with the npm removal where one applies. It never removes anything. */
+function CopiesNote({ inUse, version, others }: { inUse: string; version: string | null; others: ToolCopy[] }) {
+  const { t } = useTranslation("start");
+  const unknown = t("machine.copies.versionUnknown");
+  return (
+    <>
+      <p>{t("machine.copies.why", { path: inUse, version: version ?? unknown })}</p>
+      <ul className="sysfolders">
+        {others.map((o) => (
+          <li key={o.path} className="mono">
+            {o.path} · {o.version ?? unknown}
+          </li>
+        ))}
+      </ul>
+      {others.map((o) => (o.uninstall ? <Cmd key={o.path} text={o.uninstall} /> : null))}
+      {others.some((o) => !o.uninstall) && <p className="muted">{t("machine.copies.other")}</p>}
+    </>
+  );
+}
+
 /** Read-only: says whether the worktree folder is excluded and how to add it. It never adds it. */
 function DefenderNote({ check, open }: { check: DefenderCheck; open: boolean }) {
   const { t } = useTranslation("start");
@@ -192,7 +214,7 @@ function DefenderNote({ check, open }: { check: DefenderCheck; open: boolean }) 
 }
 
 /** Why a check matters and what to run, under its line in the full panel; null when all is well. */
-function noteFor(t: (k: string) => string, item: MachineItem, env: MachineEnv | undefined, defender: DefenderCheck | undefined, gate: VersionGate | undefined, focus: boolean): ReactNode {
+function noteFor(t: (k: string) => string, item: MachineItem, env: MachineEnv | undefined, defender: DefenderCheck | undefined, gate: VersionGate | undefined, focus: boolean, copies?: { inUse: string; version: string | null; others: ToolCopy[] }): ReactNode {
   if (item.state === "pending") return null;
   if (item.id === "defender") return defender && item.fix ? <DefenderNote check={defender} open={focus} /> : null;
   if (item.id === "longPaths") {
@@ -206,6 +228,7 @@ function noteFor(t: (k: string) => string, item: MachineItem, env: MachineEnv | 
     );
   }
   if (gate && gate.status !== "ok" && gate.update) return <GateNote id={item.id} gate={gate} />;
+  if (copies) return <CopiesNote {...copies} />;
   if (item.id === "gh" && env && !env.ghUser && item.fix) {
     return (
       <>
@@ -220,7 +243,7 @@ function noteFor(t: (k: string) => string, item: MachineItem, env: MachineEnv | 
 export function MachineCheck() {
   const { t, i18n } = useTranslation("start");
   const qc = useQueryClient();
-  const { items, env, defender, errors, gates } = useMachine();
+  const { items, env, defender, errors, gates, copies } = useMachine();
   // `machineDetails` in the query opens the panel for screenshots only.
   const [open, setOpen] = useState(() => typeof location !== "undefined" && new URLSearchParams(location.search).has("machineDetails"));
   const [focus, setFocus] = useState<MachineItemId | null>(null);
@@ -279,7 +302,7 @@ export function MachineCheck() {
         <div id={DETAILS_ID} className="machine-details">
           {items.map((item) => {
             const detail = errors[item.id] ? t("common:errors.daemon", { message: errors[item.id] }) : t(item.detail.key, item.detail.params);
-            const note = noteFor(t, item, env.data, defender.data, gates[item.id], focus === item.id);
+            const note = noteFor(t, item, env.data, defender.data, gates[item.id], focus === item.id, copies[item.id]);
             return (
               <div key={item.id} id={rowId(item.id)} tabIndex={-1} className="machine-row">
                 <div className="sysrow">

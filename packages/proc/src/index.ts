@@ -85,10 +85,29 @@ const WHERE = join(process.env.SystemRoot ?? "C:\\Windows", "System32", "where.e
  * folder, so a git.exe planted in a repo is never picked up.
  */
 export async function which(name: string, opts: { env?: NodeJS.ProcessEnv } = {}): Promise<string | null> {
-  const res = await run(isWin ? WHERE : "which", [isWin ? `$PATH:${name}` : name], { timeoutMs: 5_000, env: opts.env });
-  if (res.code !== 0) return null;
-  const hits = res.stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const hits = await pathHits(name, opts.env);
   return isWin ? pickWindowsHit(hits) : (hits[0] ?? null);
+}
+
+/**
+ * Every startable copy of a command on PATH, in PATH order and without repeats. A CLI installed
+ * twice (`claude update` warns about an npm copy beside the native one) shows up as two entries.
+ */
+export async function whichAll(name: string, opts: { env?: NodeJS.ProcessEnv } = {}): Promise<string[]> {
+  const hits = (await pathHits(name, opts.env)).filter((p) => !isWin || SPAWNABLE.test(p));
+  const seen = new Set<string>();
+  return hits.filter((p) => {
+    const key = isWin ? p.toLowerCase() : p;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+async function pathHits(name: string, env?: NodeJS.ProcessEnv): Promise<string[]> {
+  const res = await run(isWin ? WHERE : "which", isWin ? [`$PATH:${name}`] : ["-a", name], { timeoutMs: 5_000, env });
+  if (res.code !== 0) return [];
+  return res.stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
 }
 
 /**

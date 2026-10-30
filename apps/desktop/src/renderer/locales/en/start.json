@@ -35,6 +35,8 @@
       "isolation": "too old to keep profiles apart",
       "unknown": "version unknown"
     },
+    "otherCopies_one": "{{count}} more copy on PATH",
+    "otherCopies_other": "{{count}} more copies on PATH",
     "gate": {
       "rule": {
         "min": "{{verified}} or newer",
@@ -44,6 +46,11 @@
       "untested": "Only {{tool}} {{verified}} has passed Crewyard's conformance checks. Other versions may change the protocol without notice. Switch to the checked version:",
       "isolation": "{{tool}} older than {{verified}} ignores the per-profile folder, so every run would use your own ~/.gemini sign-in and settings. Crewyard will not start it until you update:",
       "unknown": "The installed version could not be read. Crewyard needs {{tool}} {{need}}. To be sure, run:"
+    },
+    "copies": {
+      "why": "Crewyard starts {{path}} ({{version}}). Another copy on PATH falls behind it, because an update reaches only one of them, and which one runs then depends on PATH order. The other copies:",
+      "other": "Remove a copy that is not from npm with the installer it came with.",
+      "versionUnknown": "version unknown"
     },
     "defender": {
       "label": "Defender exclusion for worktrees",
@@ -81,6 +88,7 @@
     "fix": {
       "update": "Copy update",
       "signIn": "Copy sign-in",
+      "remove": "Copy removal",
       "steps": "Open steps",
       "copyTitle": "Copies {{command}}. Run it in a terminal yourself; Crewyard never runs it."
     },

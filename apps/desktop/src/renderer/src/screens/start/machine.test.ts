@@ -23,6 +23,20 @@ describe("toolItem", () => {
     expect(item.fix).toEqual({ kind: "copy", command: "npm install -g @google/gemini-cli@latest", label: "update" });
   });
 
+  it("warns about a second copy on PATH and offers the npm removal when there is one to remove", () => {
+    const npm = { path: "C:\\Users\\Ada\\AppData\\Roaming\\npm\\claude.cmd", version: "2.1.200", uninstall: "npm -g uninstall @anthropic-ai/claude-code" };
+    const gate = { status: "ok" as const, verified: "2.0.0", rule: "min" as const, update: null };
+    const item = toolItem("claude", ok(tool({ gate, others: [npm] })), env());
+    expect(item.state).toBe("warn");
+    expect(item.detail).toEqual({ key: "machine.otherCopies", params: { count: 1 } });
+    expect(item.fix).toEqual({ kind: "copy", command: "npm -g uninstall @anthropic-ai/claude-code", label: "remove" });
+    // Two copies, or one without an npm removal: the panel lists them, no single button guesses.
+    expect(toolItem("claude", ok(tool({ gate, others: [npm, { ...npm, path: "D:\\tools\\claude.exe", uninstall: null }] })), env()).fix).toBeNull();
+    // A failing version gate comes first.
+    const old = { status: "outdated" as const, verified: "2.1.312", rule: "min" as const, update: "claude update" };
+    expect(toolItem("claude", ok(tool({ gate: old, others: [npm] })), env()).detail.key).toBe("machine.gateShort.outdated");
+  });
+
   it("treats a missing agent CLI as neutral but missing git as a problem", () => {
     expect(toolItem("codex", ok(tool({ id: "codex", found: false, version: null })), env()).state).toBe("neutral");
     expect(toolItem("git", ok(tool({ id: "git", found: false, version: null })), env()).state).toBe("warn");
