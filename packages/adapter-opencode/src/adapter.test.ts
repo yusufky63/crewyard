@@ -227,6 +227,12 @@ describe("OpenCode adapter against a fake opencode serve", () => {
     expect((last(events) as { detail?: string }).detail).toContain("exited");
   });
 
+  it("ends as interrupted when Windows ends the server at shutdown", async () => {
+    const { adapter, req } = await setup("shutdown", "shutdown");
+    const run = await adapter.start(req);
+    expect(last(await collect(adapter, run))).toMatchObject({ type: "run.ended", reason: "interrupted", detail: "windows_shutdown" });
+  });
+
   it("switches the model for the next prompt and queues follow-up input", async () => {
     const { adapter, req, logFile } = await setup("model", "approve");
     const run = await adapter.start(req);

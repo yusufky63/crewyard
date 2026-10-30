@@ -86,6 +86,8 @@ async function play(client, sessionId, text) {
   }
   if (text.includes("refuse")) return "refusal";
   if (text.includes("crash")) process.exit(4);
+  // The status Windows gives children it ends at sign-out or restart.
+  if (text.includes("shutdown")) process.exit(0x40010004);
   await chunk(client, sessionId, "ok");
   return "end_turn";
 }

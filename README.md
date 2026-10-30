@@ -65,3 +65,36 @@ pnpm check
 ```
 
 `pnpm check` runs the token check, contrast check, typecheck, lint with zero warnings, tests and the build. CI runs the same on ubuntu for pull requests and pushes to `main`.
+
+## Building the Windows installer
+
+```bash
+pnpm package
+```
+
+This builds the app and writes `apps/desktop/dist/Crewyard-Setup-<version>-x64.exe`. Nothing is uploaded or published. The installer:
+
+- installs per user to `%LOCALAPPDATA%\Programs\crewyard`, without asking for admin;
+- adds Start-menu and desktop shortcuts;
+- keeps your data in `%APPDATA%\Crewyard` when you uninstall.
+
+Install silently with `Crewyard-Setup-<version>-x64.exe /S`. Uninstall from Windows Settings, or silently with `"%LOCALAPPDATA%\Programs\crewyard\Uninstall Crewyard.exe" /S /currentuser`.
+
+Builds are unsigned for now, so SmartScreen warns about an unknown publisher. To sign:
+
+- set `WIN_CSC_LINK` (the `.pfx` path or its base64) and `WIN_CSC_KEY_PASSWORD` in the environment, never in a file in the repo;
+- set `CREWYARD_SIGN=1` before `pnpm package`. A missing certificate then fails the build instead of producing an unsigned installer.
+
+There is no auto-update yet: it needs a release host, which you have not chosen yet.
+
+The icon is generated from the title-bar mark by `pnpm --filter @crewyard/desktop icon`.
+
+[docs/adr/0004-packaging-and-recovery.md](docs/adr/0004-packaging-and-recovery.md) explains these choices and the crash recovery.
+
+## Stress test
+
+```bash
+pnpm stress
+```
+
+Runs 20 tasks at once through admission control with the fake runner, three rounds in a row. It prints peak concurrency and retained memory. It is slow, so it is not part of `pnpm check`.

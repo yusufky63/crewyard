@@ -5,8 +5,23 @@ import type { ProjectSummary } from "@crewyard/core";
 // SQLite through node:sqlite (built into Node 24 and Electron 45), so there is no native module to
 // rebuild on Windows. Facts and an append-only event log; status is derived elsewhere (PLAN.md D5).
 
-const MIGRATIONS: string[] = [
-  `create table projects (
+/**
+ * Schema changes, applied once each and recorded by id in `applied_migrations`, so branches that
+ * add migrations in parallel can merge in any order without a database skipping one
+ * (agent-orchestrator #3476 lost a migration to positional versions). To add one, append
+ * `{ id, sql }` with a new id; never edit or reorder an entry that has shipped. Entries after
+ * LEGACY_IDS must be idempotent (`create ... if not exists`): a database from the positional
+ * scheme may already have them without a record.
+ */
+export interface Migration {
+  id: string;
+  sql: string;
+}
+
+export const MIGRATIONS: Migration[] = [
+  {
+    id: "core",
+    sql: `create table projects (
      id text primary key,
      name text not null,
      path text not null unique collate nocase,
@@ -26,9 +41,12 @@ const MIGRATIONS: string[] = [
    );
    create index events_run on events(run_id, seq);
    create table settings (key text primary key, value text not null);`,
+  },
   // Providers: catalog snapshots, credentials (keys live DPAPI-encrypted in files, never here),
   // profiles, last balance per credential and the spend ledger with its caps (PLAN.md §4.3, §6).
-  `create table catalog_snapshots (
+  {
+    id: "providers",
+    sql: `create table catalog_snapshots (
      hash text primary key,
      origin text not null,
      generated_at text not null,
@@ -83,8 +101,11 @@ const MIGRATIONS: string[] = [
    );
    create index spend_credential_at on spend(credential_id, at);
    create index spend_task on spend(task_id, credential_id);`,
+  },
   // Orchestrator (PLAN.md §4.3): facts only; task and run status are derived on read.
-  `create table tasks (
+  {
+    id: "orchestrator",
+    sql: `create table tasks (
      id text primary key,
      project_id text not null references projects(id),
      title text not null,
@@ -243,7 +264,53 @@ const MIGRATIONS: string[] = [
      weight integer not null,
      primary key (project_id, role, profile_id)
    );`,
+  },
+  // Recovery: which daemon process (pid, start time) was running when, so a run's agent process
+  // can be matched to the daemon that spawned it after a crash (recovery/orphans.ts).
+  {
+    id: "daemon-sessions",
+    sql: `create table if not exists daemon_sessions (
+     pid integer not null,
+     started_at text not null,
+     primary key (started_at, pid)
+   );`,
+  },
 ];
+
+/** What the positional scheme applied: a database at `user_version` N has the first N of these. */
+const LEGACY_IDS = ["core", "providers", "orchestrator"];
+
+/** Applies every migration whose id is not recorded yet, each in its own transaction; returns the ids it ran. */
+export function applyMigrations(db: DatabaseSync, migrations: readonly Migration[]): string[] {
+  const ids = migrations.map((m) => m.id);
+  if (new Set(ids).size !== ids.length) throw new Error(`Duplicate migration id in ${ids.join(", ")}`);
+  db.exec("create table if not exists applied_migrations (id text primary key, applied_at text not null)");
+  const applied = new Set((db.prepare("select id from applied_migrations").all() as Array<{ id: string }>).map((r) => r.id));
+  if (applied.size === 0) {
+    // A database from before ids existed: trust user_version for the migrations it covered.
+    const version = Number((db.prepare("pragma user_version").get() as { user_version: number }).user_version);
+    const insert = db.prepare("insert into applied_migrations (id, applied_at) values (?, ?)");
+    for (const id of LEGACY_IDS.slice(0, version)) {
+      insert.run(id, "legacy");
+      applied.add(id);
+    }
+  }
+  const ran: string[] = [];
+  for (const m of migrations) {
+    if (applied.has(m.id)) continue;
+    db.exec("begin");
+    try {
+      db.exec(m.sql);
+      db.prepare("insert into applied_migrations (id, applied_at) values (?, ?)").run(m.id, new Date().toISOString());
+      db.exec("commit");
+    } catch (err) {
+      db.exec("rollback");
+      throw err;
+    }
+    ran.push(m.id);
+  }
+  return ran;
+}
 
 export interface EventInput {
   kind: string;
@@ -265,18 +332,7 @@ export class Store {
   }
 
   private migrate(): void {
-    const current = Number((this.db.prepare("pragma user_version").get() as { user_version: number }).user_version);
-    MIGRATIONS.slice(current).forEach((sql, i) => {
-      this.db.exec("begin");
-      try {
-        this.db.exec(sql);
-        this.db.exec(`pragma user_version = ${current + i + 1}`);
-        this.db.exec("commit");
-      } catch (err) {
-        this.db.exec("rollback");
-        throw err;
-      }
-    });
+    applyMigrations(this.db, MIGRATIONS);
   }
 
   /** Appends an event; a repeated dedupe key is ignored so replays never double-count. */

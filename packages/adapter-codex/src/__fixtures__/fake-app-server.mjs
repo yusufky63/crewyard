@@ -81,6 +81,12 @@ async function runTurn() {
       await tick();
       process.exit(3);
       return;
+    case "shutdown":
+      // The status Windows gives children it ends at sign-out or restart (0x40010004).
+      started();
+      await tick();
+      process.exit(0x40010004);
+      return;
     case "hang":
       // Stays in the turn until turn/interrupt or the process is killed.
       started();

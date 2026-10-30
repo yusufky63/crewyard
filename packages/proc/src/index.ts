@@ -85,3 +85,27 @@ export function killTree(pid: number): Promise<void> {
 export function parseVersion(text: string): string | null {
   return text.match(/\d+\.\d+(?:\.\d+)?(?:[-+][\w.]+)?/)?.[0] ?? null;
 }
+
+/**
+ * Exit status Windows gives processes it ends at shutdown, restart or sign-out
+ * (DBG_TERMINATE_PROCESS, 0x40010004). Children often get it before the app hears about the
+ * session ending, so a run that dies with it was interrupted, not failed (orca #33536).
+ */
+export const WINDOWS_SHUTDOWN_EXIT = 0x40010004;
+
+export function isShutdownExit(code: number | null | undefined): boolean {
+  return code === WINDOWS_SHUTDOWN_EXIT;
+}
+
+/** Resolves with a child's exit code, or null when it has not exited within `ms`. */
+export function exitCodeWithin(child: Pick<ChildProcess, "exitCode" | "once">, ms: number): Promise<number | null> {
+  if (child.exitCode !== null) return Promise.resolve(child.exitCode);
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), ms);
+    timer.unref?.();
+    child.once("exit", (code) => {
+      clearTimeout(timer);
+      resolve(code);
+    });
+  });
+}

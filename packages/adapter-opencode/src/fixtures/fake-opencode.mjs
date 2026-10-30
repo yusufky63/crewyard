@@ -182,6 +182,9 @@ async function play(session, prompt, userID) {
     broadcast("session.error", { sessionID: sid, error: { name: "APIError", data: { message: "invalid key", isRetryable: false } } });
   } else if (prompt.includes("crash")) {
     process.exit(3);
+  } else if (prompt.includes("shutdown")) {
+    // The status Windows gives children it ends at sign-out or restart.
+    process.exit(0x40010004);
   } else {
     text(session, a.id, "ok");
   }

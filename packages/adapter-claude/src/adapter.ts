@@ -1,8 +1,9 @@
+import type { ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
 import type { CanUseTool, HookCallback, Options, Query, SDKMessage, SDKResultMessage, SDKUserMessage, SpawnedProcess } from "@anthropic-ai/claude-agent-sdk";
 import type { AgentAdapter, AgentCapabilities, AgentEvent, Answer, NativeSessionRef, Probe, Profile, RunHandle, StartRequest, UserInput } from "@crewyard/core";
-import { killTree, parseVersion, run, start as spawnChild, which } from "@crewyard/proc";
+import { exitCodeWithin, isShutdownExit, killTree, parseVersion, run, start as spawnChild, which } from "@crewyard/proc";
 import { buildEnv, redact } from "./env.ts";
 import { EventMapper, type EventBody, type TurnOutcome } from "./mapper.ts";
 import { AsyncQueue } from "./queue.ts";
@@ -45,6 +46,8 @@ interface RunCtx {
   abort: AbortController;
   secrets: string[];
   stderrTail: string;
+  /** The CLI process, once the SDK has spawned it; its exit status tells a Windows shutdown from a crash. */
+  child: ChildProcess | null;
   /** Set by us, so it wins over whatever the last result said. */
   forced: TurnOutcome | null;
   outcome: TurnOutcome | null;
@@ -180,6 +183,7 @@ export class ClaudeAdapter implements AgentAdapter {
       abort,
       secrets,
       stderrTail: "",
+      child: null,
       forced: null,
       outcome: null,
     } as Omit<RunCtx, "q" | "done"> as RunCtx;
@@ -201,6 +205,7 @@ export class ClaudeAdapter implements AgentAdapter {
       spawnClaudeCodeProcess: (o) => {
         const child = this.deps.spawn(o.command, o.args, { cwd: o.cwd, env: o.env as NodeJS.ProcessEnv, stdio: ["pipe", "pipe", "pipe"] });
         handle.pid = child.pid ?? null;
+        ctx.child = child;
         child.stderr?.setEncoding("utf8").on("data", (d: string) => {
           ctx.stderrTail = (ctx.stderrTail + d).slice(-STDERR_TAIL);
         });
@@ -233,7 +238,10 @@ export class ClaudeAdapter implements AgentAdapter {
     } finally {
       this.cancelPending(ctx);
       ctx.input.end();
-      const end = ctx.forced ?? ctx.outcome ?? { reason: "failed", detail: "Claude Code exited without a result." };
+      let end = ctx.forced ?? ctx.outcome ?? { reason: "failed", detail: "Claude Code exited without a result." };
+      // Windows ends children with a shutdown status at sign-out or restart: interrupted, not failed.
+      // The SDK's stream can end before the exit status arrives, so wait for it briefly.
+      if (!ctx.forced && end.reason === "failed" && ctx.child && isShutdownExit(await exitCodeWithin(ctx.child, 2_000))) end = { reason: "interrupted", detail: "windows_shutdown" };
       this.emit(ctx, { type: "run.ended", reason: end.reason, ...(end.detail ? { detail: redact(end.detail, ctx.secrets) } : {}) });
       ctx.events.end();
     }
