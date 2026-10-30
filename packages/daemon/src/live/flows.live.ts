@@ -642,13 +642,15 @@ Then create a new file ENV_CHECK.md that holds its single output line, and commi
   });
 
   /**
-   * Hibernation live: a research run asks a question and nobody answers; after the idle window
+   * Hibernation live: an implementer asks a question and nobody answers; after the idle window
    * (1 minute here) its process stops and the run stays open. The answer wakes it by session id.
+   * (A read-only role cannot ask: Claude Code runs it in "dontAsk", where AskUserQuestion is off.)
    */
   it("hibernate: an idle run waiting on a question sleeps and wakes with the answer", { timeout: 15 * MIN }, async () => {
     if (!want("hibernate") || (await overBudget("hibernate"))) return;
     const p = profiles["cc-ds"];
-    if (!p) throw new Error("the hibernate flow needs cc-ds");
+    const reviewer = profiles[REVIEWER];
+    if (!p || !reviewer) throw new Error("the hibernate flow needs cc-ds and the reviewer profile");
     await d.call("settings.update", { hibernation: { enabled: true, idleMinutes: 1 } });
     let taskId = "";
     let held: RequestView | null = null;
@@ -663,11 +665,12 @@ Then create a new file ENV_CHECK.md that holds its single output line, and commi
     try {
       const t = await d.call("tasks.propose", {
         projectId,
-        title: "Ask which name to use",
-        description: "Use the AskUserQuestion tool to ask me one question: which name the new helper should have, with the options multiply and times. Wait for my answer, then reply with one sentence that uses the name I chose. Do not change any files and do not run commands.",
-        kind: "research",
+        title: "Write the chosen name to NAME.txt",
+        description: "Before you change anything, use the AskUserQuestion tool to ask me one question: which name the new helper should have, with the options square and sq. Wait for my answer. Then create a file NAME.txt at the repository root that contains only the name I chose, and commit it. Do not run any other command than git.",
+        kind: "code",
         size: "S",
-        pins: { researcher: p },
+        budgetUsd: 0.5,
+        pins: { implementer: p, reviewer },
       });
       taskId = t.id;
       await d.call("tasks.approve", { taskId: t.id });
@@ -678,8 +681,11 @@ Then create a new file ENV_CHECK.md that holds its single output line, and commi
       release = true;
       const end = await watch(t.id, settled, 6 * MIN);
       const woke = d.store.db.prepare("select woke_by from run_hibernation where run_id = ?").all(run.id) as Array<{ woke_by: string | null }>;
-      const ok = Boolean(run.hibernatedAt) && !run.endedAt && end.status === "done" && end.runs.length === 1 && woke.some((w) => w.woke_by === "answer");
-      d.row({ flow: "hibernate and wake on the answer", runner: "claude-code/deepseek-flash", result: ok ? "pass" : held ? "fail" : "partial", costUsd: end.spend.usd, notes: `question ${held ? "asked" : "never asked"}; hibernated ${Boolean(run.hibernatedAt)}; woke by ${woke.map((w) => w.woke_by).join(",") || "-"}; runs ${end.runs.length}; task ${end.status}` });
+      const impl = end.runs.filter((r) => r.role === "implementer");
+      const name = end.worktree && existsSync(join(end.worktree.path, "NAME.txt")) ? readFileSync(join(end.worktree.path, "NAME.txt"), "utf8").trim() : null;
+      d.log("after wake", "implementer runs", impl.length, "NAME.txt", name ?? "-", "status", end.status);
+      const ok = Boolean(run.hibernatedAt) && !run.endedAt && end.status === "review" && impl.length === 1 && woke.some((w) => w.woke_by === "answer") && name === "square";
+      d.row({ flow: "hibernate and wake on the answer", runner: `claude-code/deepseek-flash -> ${REVIEWER}`, result: ok ? "pass" : held ? "fail" : "partial", costUsd: end.spend.usd, notes: `question ${held ? "asked" : "never asked"}; hibernated ${Boolean(run.hibernatedAt)}; woke by ${woke.map((w) => w.woke_by).join(",") || "-"}; implementer runs ${impl.length}; NAME.txt ${name ?? "-"}; task ${end.status}` });
     } finally {
       d.decide = defaultDecide;
       await d.call("settings.update", { hibernation: { idleMinutes: 30 } });

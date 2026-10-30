@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmdirSync } from "node:fs";
 import { freemem } from "node:os";
 import { join, resolve } from "node:path";
 import {
@@ -61,7 +61,7 @@ import { OrchestratorDb, type MemberRow, type ProjectRow, type RequestRow, type 
 import { EMPTY_DIRECTORY, type Candidate, type ProfileDirectory } from "./directory.ts";
 import { errorCode, errorDetail, OrchestratorError, redactDetail } from "./errors.ts";
 import { classifyFailure, RETRY, retryDelayMs, type Failure, type FailureClass } from "./failures.ts";
-import { addDetachedCheckout, checkpoint, defaultWorktreeRoot, diffStat, ensureWorktree, headSha, isClean, removeDetachedCheckout, taskSlug, writeFileAtomic } from "./git.ts";
+import { addDetachedCheckout, checkpoint, defaultWorktreeRoot, diffStat, ensureWorktree, git, headSha, isClean, removeDetachedCheckout, taskSlug, writeFileAtomic } from "./git.ts";
 import { LoopStore, reviewChangesMessage, reviewContext, testFailureMessage } from "./loops.ts";
 import { snapshot } from "./checkpoints.ts";
 import { runSteps } from "../worktrees/steps.ts";
@@ -153,6 +153,10 @@ const DRAIN_TIMEOUT_MS = 10 * 60_000;
 
 /** Roles that read a pinned, detached checkout of the commit they review instead of the live worktree. */
 const PINNED_ROLES: RoleId[] = ["reviewer", "security"];
+
+/** Parking a discarded Best of N variant: tries, and the wait before the next one (times the try). */
+const PARK_ATTEMPTS = 3;
+const PARK_RETRY_MS = 1_500;
 
 /** Largest tool output kept whole on disk when its event is cut; bigger ones keep only the head. */
 const KEEP_FULL_MAX = 8 * 1024 * 1024;
@@ -847,18 +851,48 @@ export class Orchestrator {
   private async discardVariant(variantId: string, variantTaskId: string): Promise<void> {
     for (const r of this.db.runs(variantTaskId).filter((r) => !r.ended_at)) await this.stopRun(r.id, "best_of.discarded");
     await this.cancel(variantTaskId);
-    if (!this.db.worktree(variantTaskId)) {
+    const wt = this.db.worktree(variantTaskId);
+    if (!wt) {
       this.bestOf.parked(variantId, null);
       return;
     }
-    try {
-      await this.bootstrap.park(variantTaskId);
-      this.bestOf.parked(variantId, null);
-    } catch (err) {
-      // A cleanup step waiting for approval, a locked file: the folder stays and the code says why.
-      this.bestOf.parked(variantId, errorCode(err));
+    let error: string | null = null;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await this.bootstrap.park(variantTaskId);
+        break;
+      } catch (err) {
+        // On Windows a process tree killed a moment ago can still hold its folder: git removed the
+        // files and the registration but not the folder. Finish that, or try again shortly.
+        if (await this.finishHalfRemoved(wt)) break;
+        if (attempt >= PARK_ATTEMPTS) {
+          // A cleanup step waiting for approval, a locked file: the folder stays and the code says why.
+          error = errorCode(err);
+          this.audit(variantTaskId, null, "best_of.park_failed", { variantId, code: error, detail: errorDetail(err, []).slice(0, 400) });
+          break;
+        }
+        await new Promise((r) => setTimeout(r, PARK_RETRY_MS * attempt));
+      }
     }
-    this.audit(variantTaskId, null, "best_of.discarded", { variantId });
+    this.bestOf.parked(variantId, error);
+    this.audit(variantTaskId, null, "best_of.discarded", { variantId, parked: error === null });
+  }
+
+  /** True when a park left only an empty folder behind, which is then removed and pruned from git. */
+  private async finishHalfRemoved(wt: WorktreeRow): Promise<boolean> {
+    if (!existsSync(wt.path)) return true;
+    if (existsSync(join(wt.path, ".git")) || readdirSync(wt.path).length > 0) return false;
+    for (let i = 0; i < PARK_ATTEMPTS; i++) {
+      try {
+        rmdirSync(wt.path);
+        break;
+      } catch {
+        await new Promise((r) => setTimeout(r, PARK_RETRY_MS));
+      }
+    }
+    if (existsSync(wt.path)) return false;
+    await git(wt.repo_path, ["worktree", "prune"], this.opts.gitBin).catch(() => "");
+    return true;
   }
 
   private groupView(task: TaskRow): BestOfView | null {
@@ -874,6 +908,8 @@ export class Orchestrator {
       const loop = vt ? this.loops.view(vt.id, max, () => false) : null;
       // The kept variant's worktree belongs to the parent now.
       const wt = vt ? (this.db.worktree(vt.id) ?? (v.outcome === "kept" ? this.db.worktree(task.id) : null)) : null;
+      // Parked later from the compare view or the Worktrees screen: the folder is gone, so it is parked.
+      const parkedLater = v.outcome === "discarded" && !v.parked_at && wt !== null && !existsSync(wt.path);
       return {
         id: v.id,
         position: v.position,
@@ -889,8 +925,8 @@ export class Orchestrator {
         branch: wt?.branch ?? null,
         worktreePath: wt?.path ?? null,
         outcome: v.outcome,
-        parkedAt: v.parked_at,
-        parkError: v.park_error,
+        parkedAt: v.parked_at ?? (parkedLater ? group.kept_at : null),
+        parkError: parkedLater ? null : v.park_error,
       };
     });
     return {

@@ -606,11 +606,12 @@
     "keep": "Keep this one",
     "keepConfirm_one": "Keep it? {{count}} other variant is stopped ({{running}} still running) and its worktree parked.",
     "keepConfirm_other": "Keep it? {{count}} other variants are stopped ({{running}} still running) and their worktrees parked.",
+    "parkNow": "Park now",
     "keepYes": "Keep it",
     "keepConfirmAlone": "Keep it? It continues the crew.",
     "stop": "Stop",
     "stopConfirm": "Stop this variant? Its worktree stays until you keep another one.",
-    "inspect": "[ Details ]"
+    "inspect": "Details"
   },
   "hibernation": {
     "title": "Hibernated",

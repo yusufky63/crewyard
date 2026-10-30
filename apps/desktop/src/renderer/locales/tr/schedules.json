@@ -64,7 +64,7 @@
   "run": {
     "manual": "Şimdi çalıştırıldı",
     "exit": "çıkış kodu {{code}}",
-    "openTask": "[ Görevi aç ]",
+    "openTask": "Görevi aç",
     "none": "Henüz çalışma yok."
   },
   "row": {
@@ -83,7 +83,7 @@
     "off": "Kapalı",
     "runNow": "Şimdi çalıştır",
     "runNowHint": "Görevi ön kontrol olmadan şimdi öner",
-    "edit": "[ Düzenle ]",
+    "edit": "Düzenle",
     "delete": "Sil",
     "deleteConfirm": "Bu zamanlama silinsin mi? Oluşturduğu görevler kalır.",
     "deleteYes": "Sil"

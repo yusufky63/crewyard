@@ -145,6 +145,11 @@ function Variant({ detail, v, others, stacked }: { detail: TaskDetail; v: BestOf
             {f.t("action.retry")}
           </Button>
         )}
+        {v.outcome === "discarded" && v.parkError && v.taskId && (
+          <Button size="sm" onClick={() => void run$(() => act("worktrees.park", { taskId: v.taskId! }))}>
+            {f.t("bestOf.parkNow")}
+          </Button>
+        )}
         {v.taskId && (
           <Button size="sm" variant="ghost" onClick={() => inspect({ taskId: v.taskId!, ...(v.run ? { memberId: v.run.memberId, runId: v.run.id } : {}) })}>
             {f.t("bestOf.inspect")}
@@ -166,7 +171,7 @@ export function BestOfCompare({ detail, stacked = false }: { detail: TaskDetail;
     <section className={stacked ? "ins-sec bo" : "tk-crew frame bo"} aria-label={f.t("bestOf.aria", { title: detail.title })}>
       <div className="tk-crew-head">
         <Label>{f.t("bestOf.title", { count: group.n })}</Label>
-        <span className="lbl">{f.t(`bestOf.phase.${group.phase}`)}</span>
+        <span className="lbl">· {f.t(`bestOf.phase.${group.phase}`)}</span>
         {group.estimate.usd !== null && (
           <span className="lbl">
             · {f.t("bestOf.groupEstimate", { usd: f.usd(group.estimate.usd) })} <ProvBadge value={group.estimate.provenance} />

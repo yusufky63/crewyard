@@ -606,11 +606,12 @@
     "keep": "Bunu seç",
     "keepConfirm_one": "Seçilsin mi? Diğer {{count}} varyant durdurulur ({{running}} tanesi hâlâ çalışıyor) ve worktree'si park edilir.",
     "keepConfirm_other": "Seçilsin mi? Diğer {{count}} varyant durdurulur ({{running}} tanesi hâlâ çalışıyor) ve worktree'leri park edilir.",
+    "parkNow": "Şimdi park et",
     "keepYes": "Seç",
     "keepConfirmAlone": "Seçilsin mi? Ekiple bu devam eder.",
     "stop": "Durdur",
     "stopConfirm": "Bu varyant durdurulsun mu? Siz başka birini seçene kadar worktree'si kalır.",
-    "inspect": "[ Ayrıntılar ]"
+    "inspect": "Ayrıntılar"
   },
   "hibernation": {
     "title": "Uykuda",

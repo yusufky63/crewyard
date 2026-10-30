@@ -64,7 +64,7 @@
   "run": {
     "manual": "Run now",
     "exit": "exit {{code}}",
-    "openTask": "[ Open task ]",
+    "openTask": "Open task",
     "none": "No runs yet."
   },
   "row": {
@@ -83,7 +83,7 @@
     "off": "Off",
     "runNow": "Run now",
     "runNowHint": "Propose the task now without the precheck",
-    "edit": "[ Edit ]",
+    "edit": "Edit",
     "delete": "Delete",
     "deleteConfirm": "Delete this schedule? Tasks it created stay.",
     "deleteYes": "Delete"

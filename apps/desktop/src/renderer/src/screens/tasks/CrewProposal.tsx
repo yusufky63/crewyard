@@ -112,7 +112,7 @@ function Variants({ task, picks, onPick }: { task: TaskDetail; picks: string[]; 
     <div className="bo-variants">
       <div className="tk-crew-head">
         <Label>{f.t("bestOf.proposalTitle", { count: group.n })}</Label>
-        <span className="lbl">{total !== null ? f.t("bestOf.groupEstimate", { usd: f.usd(total) }) : f.t("proposal.estimateUnknown")}</span>
+        <span className="lbl">· {total !== null ? f.t("bestOf.groupEstimate", { usd: f.usd(total) }) : f.t("proposal.estimateUnknown")}</span>
       </div>
       <p className="bo-note">{f.t("bestOf.proposalNote", { count: group.n })}</p>
       <div className="bo-variants-list">

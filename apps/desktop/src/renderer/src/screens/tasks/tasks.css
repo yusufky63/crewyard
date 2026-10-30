@@ -139,7 +139,9 @@
 .tk-sched { display: inline-flex; align-items: center; gap: 5px; }
 
 /* Schedules (the Tasks screen's second view) */
-.sc-only-open { margin-bottom: 12px; color: var(--ink-2); background: var(--surface); }
+.sc-only-open { margin-bottom: 12px; color: var(--ink-2); background: var(--surface); flex-wrap: nowrap; align-items: flex-start; }
+.sc-only-open svg { flex: none; margin-top: 2px; }
+.sc-only-open span { flex: 1; min-width: 0; line-height: 1.4; }
 .sc-head { display: flex; justify-content: flex-end; margin-bottom: 12px; }
 .sc-form { margin-top: 0; margin-bottom: 16px; }
 .sc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px 16px; margin-top: 12px; }
