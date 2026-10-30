@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { RunnerId } from "./events.ts";
 
-// .mission/project.json, written by the New project wizard (PLAN.md §11.1). Never holds secrets.
+// .crewyard/project.json, written by the New project wizard (PLAN.md §11.1). Never holds secrets.
 
 export type CommandProblem = "empty" | "unclosed_quote" | "shell_syntax" | "multiline";
 

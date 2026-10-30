@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import type { GitState, PackageManager, PathLengthCheck, ProjectTypeGuess } from "@crewyard/core";
 import { run, which } from "@crewyard/proc";
+import { CREWYARD_DIR } from "./config.ts";
 
 // Read-only detection for the New project wizard (PLAN.md §11.1). Nothing here writes to the folder.
 
@@ -146,10 +147,10 @@ export async function gitState(dir: string): Promise<GitState> {
   };
 }
 
-/** PLAN.md §10: worktrees live next to the projects folder, e.g. C:\Projeler\.mc\worktrees\<repo>. */
+/** PLAN.md §10: worktrees live next to the projects folder, e.g. C:\Projeler\.crewyard\worktrees\<repo>. */
 export function defaultWorktreeRoot(projectPath: string): string {
   const abs = resolve(projectPath);
-  return join(dirname(abs), ".mc", "worktrees", basename(abs));
+  return join(dirname(abs), CREWYARD_DIR, "worktrees", basename(abs));
 }
 
 /** Room left for the per-task folder under the worktree root (`<root>\<task>\`). Task slugs are cut to this. */

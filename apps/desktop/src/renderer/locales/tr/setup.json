@@ -11,7 +11,7 @@
   "checking": "Kontrol ediliyor…",
   "browse": "Gözat",
   "change": "Değiştir",
-  "footNote": "Projeye .mission/project.json yazar. Anahtarlar oraya hiç girmez, Windows'un gizli deposunda kalır.",
+  "footNote": "Projeye .crewyard/project.json yazar. Anahtarlar oraya hiç girmez, Windows'un gizli deposunda kalır.",
   "steps": {
     "1": { "name": "Klasör", "sub": "depo, tür, komutlar" },
     "2": { "name": "Ajanlar", "sub": "burada kimler çalışabilir" },
@@ -35,7 +35,7 @@
     "gitInit": "git init",
     "createRepo": "Özel GitHub deposu",
     "ci": "CI iş akışı",
-    "config": ".mission/project.json",
+    "config": ".crewyard/project.json",
     "dismiss": "Kapat",
     "state": { "none": "Başlamadı", "run": "Çalışıyor…", "ok": "Tamam", "bad": "Başarısız" }
   },
@@ -51,7 +51,7 @@
     "pickEmpty": "Boş bir klasör seçin ya da oluşturun",
     "reading": "Klasör okunuyor",
     "existing": "Mevcut ayarlar",
-    "existingText": ".mission/project.json bulundu; adımlar oradaki ayarlarla başlıyor.",
+    "existingText": ".crewyard/project.json bulundu; adımlar oradaki ayarlarla başlıyor.",
     "added": "Zaten ekli",
     "addedText": "Bu klasör Crewyard'da zaten var. Yeniden oluşturursanız ayarları üzerine yazılır.",
     "folder": "Klasör",
@@ -125,7 +125,7 @@
   },
   "rules": {
     "title": "Bu projenin kuralları",
-    "lead": "Her kural .mission/project.json içinde, gizli bilgi olmadan saklanır. Sonradan değiştirebilirsiniz.",
+    "lead": "Her kural .crewyard/project.json içinde, gizli bilgi olmadan saklanır. Sonradan değiştirebilirsiniz.",
     "fallback": "Bir ajan limite takılınca",
     "fallbacks": { "manual": "Elle", "ask": "Sor", "auto": "Otomatik" },
     "fallbackHint": {

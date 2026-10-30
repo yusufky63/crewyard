@@ -36,7 +36,7 @@ export interface BootstrapHost {
   /** Inserts an open High-risk approval request in the Inbox and returns its id. */
   requestApproval(taskId: string, runId: string | null, payload: ApprovalPayload): string;
   audit(taskId: string, runId: string | null, kind: string, payload: unknown): void;
-  /** The project's .mission/project.json, or the wizard defaults. */
+  /** The project's .crewyard/project.json, or the wizard defaults. */
   config(projectId: string): ProjectConfig;
 }
 

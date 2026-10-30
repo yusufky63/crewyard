@@ -1,4 +1,4 @@
-# Mission Control: product and architecture plan
+# Crewyard: product and architecture plan
 
 **Status:** plan, 2026-10-29. Replaces the earlier draft package (`AI_MISSION_CONTROL_RESEARCH.md`, `UI_UX_DESIGN_SYSTEM.md` and the rest).
 **Scope:** a local, Windows 11 first desktop app that runs and supervises four agent runners (Claude Code, Codex, Gemini CLI, OpenCode) on models from any provider you have a key or plan for: Anthropic, OpenAI, Google, DeepSeek, Moonshot Kimi, Zhipu GLM, Alibaba Qwen, MiniMax, Xiaomi MiMo, OpenRouter and more (§6.1). Built for your own use first, designed so it can be shared later; for that reason Claude Code never uses a claude.ai sign-in, only API keys (§6).
@@ -25,7 +25,7 @@
 | Earlier draft | Now | Why |
 |---|---|---|
 | Graph-first, nine overlapping documents, Tauri + Node sidecar undecided | Tasks-first, four documents, Electron + TypeScript | Every agent client library we need is TypeScript; one runtime is simpler on Windows (§3) |
-| An LLM orchestrator spawns workers | Mission Control is the orchestrator: a deterministic scheduler runs a crew plan you approved | agent-orchestrator shows the cost of LLM-driven spawning: runaway workers (#3921), roles enforced only by prompts (#6842) |
+| An LLM orchestrator spawns workers | Crewyard is the orchestrator: a deterministic scheduler runs a crew plan you approved | agent-orchestrator shows the cost of LLM-driven spawning: runaway workers (#3921), roles enforced only by prompts (#6842) |
 | Loopback HTTP API | UI talks to the daemon over Electron IPC; external ingress only through a per-user named pipe with a token | A localhost port is reachable from any web page you open |
 | Quota "if available" | Quota only from the agent's own reporting channel, labelled Reported / Estimated / Unknown | Calling undocumented usage endpoints with subscription tokens conflicts with provider credential rules (PRIOR_ART.md) |
 | "completed" vs "merged" ambiguous | One canonical state model (§13) | |
@@ -42,7 +42,7 @@
 
 **D3. Native protocol per agent, one internal event model shaped like ACP.** Details in §5. A generic ACP driver covers Gemini and future agents.
 
-**D4. An account is an isolated config folder.** Each account runs its CLI with its own `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_CLI_HOME` or OpenCode data folder. Subscription sign-in (ChatGPT for Codex, Google for Gemini CLI) always happens through the CLI's own login flow. Claude never uses a claude.ai sign-in; each Claude profile gets an Anthropic API key from our secret store. Mission Control never reads, copies or relays subscription tokens, and never touches your default `~/.claude`, `~/.codex` or `~/.gemini`.
+**D4. An account is an isolated config folder.** Each account runs its CLI with its own `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `GEMINI_CLI_HOME` or OpenCode data folder. Subscription sign-in (ChatGPT for Codex, Google for Gemini CLI) always happens through the CLI's own login flow. Claude never uses a claude.ai sign-in; each Claude profile gets an Anthropic API key from our secret store. Crewyard never reads, copies or relays subscription tokens, and never touches your default `~/.claude`, `~/.codex` or `~/.gemini`.
 
 **D5. Store facts, derive status.** SQLite in WAL mode holds facts and an append-only event log. Display status is computed when read. A change feed pushes updates to the UI, and the UI can replay from a sequence number after a reconnect.
 
@@ -168,7 +168,7 @@ Start a run in a temp repo, receive a plan and a tool call, approve once, deny o
 ## 6. Accounts and credentials
 
 - **Claude is API-key only.** Anthropic's Agent SDK terms say third-party products may not offer claude.ai login or rate limits without Anthropic's approval. Because the app may be shared later, Claude profiles always use an Anthropic API key, from the first build. Several Claude profiles means several keys (for example one per Anthropic workspace), each with its own daily and per-task cap. If Anthropic ever approves claude.ai login for the app, it becomes a separate profile kind; nothing else changes.
-- **Adding a subscription account (Codex, Gemini CLI, OpenCode providers):** Settings → Accounts → Add → choose runner → Mission Control creates `%APPDATA%\MissionControl\profiles\<runner>\<alias>\` and starts that CLI's own login with the profile env set (for Codex through the app-server's `account/login/start`). When the probe sees a signed-in state, the account is ready. Removing an account deletes only that folder, after confirmation.
+- **Adding a subscription account (Codex, Gemini CLI, OpenCode providers):** Settings → Accounts → Add → choose runner → Crewyard creates `%APPDATA%\MissionControl\profiles\<runner>\<alias>\` and starts that CLI's own login with the profile env set (for Codex through the app-server's `account/login/start`). When the probe sees a signed-in state, the account is ready. Removing an account deletes only that folder, after confirmation.
 - **Adding an API key:** stored encrypted with DPAPI (user scope) in `%APPDATA%\MissionControl\secrets\<alias>.bin`. Not Windows Credential Manager, which caps entries at about 2.5 KB (claude-swap #45). Keys reach child processes only through environment variables, never on a command line, never in logs (pino redaction + a secret scanner on debug logs).
 - **Keys stay with the runner process, not the agent's commands.** Each runner gets only the one variable it reads the key from. Each runner's own mechanism then keeps that variable from the commands the agent runs (checked 2026-10-30, live run in the PR notes):
   - **Claude Code:** we set `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1` (documented in code.claude.com/docs/en/env-vars). Claude Code then strips its Anthropic credentials and other credential-named variables from Bash commands, hooks and stdio MCP servers.
@@ -306,7 +306,7 @@ The first version is rule-based and deterministic; it learns only from your own 
 
 ### 9.1 Roles
 
-Roles are Markdown files with YAML front matter (`.mission/roles/*.md` in a repo, or global), so you can add your own.
+Roles are Markdown files with YAML front matter (`.crewyard/roles/*.md` in a repo, or global), so you can add your own.
 
 | Role | Permissions (enforced by our approval layer, not by the prompt) | Output contract |
 |---|---|---|
@@ -347,7 +347,7 @@ A run cannot create other runs. If an agent asks for more work, the request beco
 - **Pushes wait for you:** agents commit locally. GitHub → "Waiting to push" lists branches with commit counts and the workflows a push would trigger; one click pushes once.
 - **Actions minutes guard:** shows minutes used this month and the Windows multiplier, when the token has billing access; otherwise Unknown.
 - **Workflow check:** warns when a repo's workflows break your CI rules: `push` on all branches, no `concurrency` with `cancel-in-progress`, missing `timeout-minutes`, Windows/macOS runners on push, `schedule` in a private repo.
-- **Worktrees:** one per code-writing run under `C:\Projeler\.mc\worktrees\<repo>\<task>`. Cleanup only after merge, only when clean with nothing unpushed and no live process, and only after you confirm.
+- **Worktrees:** one per code-writing run under `C:\Projeler\.crewyard\worktrees\<repo>\<task>`. Cleanup only after merge, only when clean with nothing unpushed and no live process, and only after you confirm.
 
 ## 11. Inbox: questions and approvals
 
@@ -402,7 +402,7 @@ A run cannot create other runs. If an agent asks for more work, the request beco
    - an optional CI workflow template that already follows your CI rules (ubuntu, `push` on `main` only, `concurrency` with `cancel-in-progress`, `timeout-minutes`, no `schedule`);
    - Actions-minutes warning at 80%.
 
-The result is `.mission/project.json` in the repo: name, commands, allowed runners, profile ids, caps, rules, worktree path. It never contains keys or tokens. Secrets stay in the DPAPI store and profiles stay in `%APPDATA%\MissionControl`.
+The result is `.crewyard/project.json` in the repo: name, commands, allowed runners, profile ids, caps, rules, worktree path. It never contains keys or tokens. Secrets stay in the DPAPI store and profiles stay in `%APPDATA%\MissionControl`.
 
 ## 12. Windows specifics
 
@@ -444,7 +444,7 @@ Each milestone ends with: typecheck, lint with `--max-warnings=0`, tests, build,
 
 | Milestone | Scope | Done when |
 |---|---|---|
-| **M0 Foundations** | monorepo, Electron shell (custom title bar, status bar, tray, single instance), daemon process, SQLite + event log + change feed, design tokens and primitives, Start screen with recent projects and the `C:\Projeler` import, New project wizard writing `.mission/project.json`, machine check (CLIs, git, `gh`, long paths), Tasks screen on real data | a project is created and reopened from the Start screen; restart keeps state; no console window flashes; empty states designed |
+| **M0 Foundations** | monorepo, Electron shell (custom title bar, status bar, tray, single instance), daemon process, SQLite + event log + change feed, design tokens and primitives, Start screen with recent projects and the `C:\Projeler` import, New project wizard writing `.crewyard/project.json`, machine check (CLIs, git, `gh`, long paths), Tasks screen on real data | a project is created and reopened from the Start screen; restart keeps state; no console window flashes; empty states designed |
 | **M1 One agent end to end** | Codex adapter (app-server), ChatGPT sign-in per profile, worktree per task, live steps, Inbox for questions and approvals, toasts, pause/stop/resume, diff view, limit meters and 80/95% notifications from `account/rateLimits/updated` | a task runs, asks for an approval, gets answered from a toast, finishes with a diff; two Codex accounts run side by side without sharing state |
 | **M2 Claude Code, OpenCode, providers** | Claude adapter (Agent SDK) on Anthropic and Anthropic-compatible keys (DeepSeek, Kimi, GLM, Qwen, MiniMax), OpenCode adapter on catalog providers, catalog sync, Providers screen, DPAPI secrets, daily and per-task caps, balances, spend ledger, conformance suites per runner × provider, admission control | Claude Code runs the same task on Anthropic and on DeepSeek; three runners in parallel under the cap; a run stops at its budget cap and asks; killing the app leaves no agent processes |
 | **M3 Crews, roles, fallback, graph** | role templates and enforcement, crew proposal and approval, deterministic DAG scheduler, standby chains, handoff protocol with Manual/Ask/Auto/Wait, ahead-of-pace warning, Gemini via ACP behind its conformance gate, Crew graph with list view | a limit hit mid-task hands off in Ask mode and in Auto mode, and the target continues in the same worktree |
@@ -482,7 +482,9 @@ Each milestone ends with: typecheck, lint with `--max-warnings=0`, tests, build,
 - 2026-10-29: runners and providers are separate (D9). Providers are not limited to the four vendors: the catalog (D10, §6.1) brings DeepSeek, Kimi, GLM, Qwen, MiniMax, MiMo, OpenRouter and others, with data from models.dev and cc-switch.
 - 2026-10-30: other projects, whatever their license, are read only to learn how they work; Crewyard's code is our own and nothing is copied or ported (AGENTS.md, D1).
 - 2026-10-30: automatic switching between accounts of the same provider exists, as an opt-in that is off by default. In the owner's words: "evet olsun kullanıcı isterse açık bıraksın ve otomatik geçiş olur" (yes, it should exist; if you want it, you leave it on and the switch happens automatically). Rules in §8.3, decision in [ADR 0009](docs/adr/0009-same-provider-auto-switch.md).
+- 2026-10-30: the name is Crewyard everywhere (owner: "crewyard olsun her yerde"). The working name Mission Control is gone; a project's config moved from `.mission\project.json` to `.crewyard\project.json` and new worktrees go to `.crewyard\worktrees`. Configs in the old place are still read and move on the next save; existing worktree roots stay where their config puts them.
+- 2026-10-30: the code is kept in a private GitHub repository, pushed when a piece of work is finished rather than after every step; releases come once everything is done. Windows stays first; Linux and macOS are prepared for but not shipped yet.
+- 2026-10-30: the Crew graph hides React Flow's attribution link (`proOptions.hideAttribution`); React Flow is MIT and its licence notice ships with the app.
 
 **Open**
-1. Before sharing: confirm OpenAI's and Google's terms for ChatGPT and Google sign-in through a third-party app (§6).
-2. Name: the project folder and repo are `crewyard` (proposed 2026-10-29; GitHub had one empty repo with that name). "Mission Control" stays the in-app working name until you pick one.
+1. Before sharing: confirm OpenAI's and Google's terms for ChatGPT and Google sign-in through a third-party app (§6). The owner will check them (2026-10-30).

@@ -120,7 +120,7 @@ describe("worktrees", { timeout: 30_000 }, () => {
   it("names tasks safely and places worktrees next to the projects folder", () => {
     expect(taskSlug("İçerik: Fix the *login* page!", "abcdef123")).toBe("icerik-fix-the-login-page-abcdef");
     expect(taskSlug("???", "123456789")).toBe("task-123456");
-    expect(defaultWorktreeRoot(join("C:", "Projeler", "new-rts"))).toBe(join("C:", "Projeler", ".mc", "worktrees", "new-rts"));
+    expect(defaultWorktreeRoot(join("C:", "Projeler", "new-rts"))).toBe(join("C:", "Projeler", ".crewyard", "worktrees", "new-rts"));
   });
 
   it("creates a worktree on a new branch in a path with spaces, reuses it and checkpoints locally", async () => {

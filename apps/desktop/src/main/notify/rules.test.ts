@@ -116,7 +116,7 @@ describe("toast buttons per risk", () => {
     expect(requestToastPlan(req(approval, { risk: "high" }), settings(), "low").actions).toEqual(["open"]);
     expect(requestToastPlan(req(approval, { risk: null }), settings(), "low").actions).toEqual(["open"]);
     expect(requestToastPlan(req(approval, { risk: "low" }), settings({ approveFromToast: false }), "low").actions).toEqual(["open"]);
-    // The project's own rule (.mission/project.json `toastApprovals: "none"`) wins over the app setting.
+    // The project's own rule (.crewyard/project.json `toastApprovals: "none"`) wins over the app setting.
     expect(requestToastPlan(req(approval, { risk: "low" }), settings(), "none").actions).toEqual(["open"]);
   });
 

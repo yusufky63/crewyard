@@ -121,12 +121,12 @@ describe("toast policy", () => {
   it("reads the project's toast rule and defaults to low without a config", async () => {
     const { h, store, dir } = setup();
     const repo = join(dir, "my repo");
-    mkdirSync(join(repo, ".mission"), { recursive: true });
+    mkdirSync(join(repo, ".crewyard"), { recursive: true });
     const project = store.addProject(repo, "my repo");
     expect(await h["settings.toastPolicy"]({ projectId: project.id })).toEqual({ toastApprovals: "low" });
     const cfg = defaultProjectConfig("my repo", join(dir, "wt"));
     cfg.rules.toastApprovals = "none";
-    writeFileSync(join(repo, ".mission", "project.json"), JSON.stringify(cfg));
+    writeFileSync(join(repo, ".crewyard", "project.json"), JSON.stringify(cfg));
     expect(await h["settings.toastPolicy"]({ projectId: project.id })).toEqual({ toastApprovals: "none" });
     await expect(attempt(() => h["settings.toastPolicy"]({ projectId: "nope" }))).rejects.toThrow("project.not_found");
   });

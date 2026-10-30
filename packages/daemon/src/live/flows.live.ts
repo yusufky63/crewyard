@@ -690,7 +690,7 @@ Then create a new file ENV_CHECK.md that holds its single output line, and commi
 
   /** Points the project's test command elsewhere for one flow; returns the undo. */
   function setTestCommand(command: string | null): () => void {
-    const file = join(projectPath, ".mission", "project.json");
+    const file = join(projectPath, ".crewyard", "project.json");
     const before = readFileSync(file, "utf8");
     const cfg = JSON.parse(before) as { commands: { test: string | null } };
     cfg.commands.test = command;

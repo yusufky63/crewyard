@@ -2,8 +2,9 @@ import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync }
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { run } from "@crewyard/proc";
 import { OrchestratorError } from "./errors.ts";
+import { CREWYARD_DIR } from "../setup/config.ts";
 
-// Git through @crewyard/proc only. Worktrees live under `<projects parent>\.mc\worktrees\<repo>\<task>`
+// Git through @crewyard/proc only. Worktrees live under `<projects parent>\.crewyard\worktrees\<repo>\<task>`
 // (PLAN.md §10) and are never deleted as a side effect: removal is the GitHub work's job after merge
 // and a click, or a confirmed park, which keeps the branch.
 
@@ -16,7 +17,7 @@ export async function git(cwd: string, args: string[], bin = "git"): Promise<str
 }
 
 /** Default worktree root next to the projects folder, as the New project wizard proposes it. */
-export const defaultWorktreeRoot = (projectPath: string) => join(dirname(projectPath), ".mc", "worktrees", basename(projectPath));
+export const defaultWorktreeRoot = (projectPath: string) => join(dirname(projectPath), CREWYARD_DIR, "worktrees", basename(projectPath));
 
 /** Short, path-safe folder and branch name for a task; keeps worktree paths well under 260 chars. */
 export function taskSlug(title: string, taskId: string): string {

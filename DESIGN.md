@@ -1,4 +1,4 @@
-# Mission Control: design system
+# Crewyard: design system
 
 This file is the single source for UI decisions. It overrides the house-design skill where the two differ (see "Deviations from house style" at the end).
 

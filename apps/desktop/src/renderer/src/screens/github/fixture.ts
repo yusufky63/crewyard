@@ -148,7 +148,7 @@ function build(projectId: string): TaskPullView[] {
       live: live(merged, "Move the catalog snapshot into the data folder"),
       mergeMethod: "squash",
       draft: null,
-      cleanup: { path: "C:\\Projeler\\.mc\\worktrees\\crewyard\\catalog-snapshot", branch: "crewyard/catalog-snapshot", ok: true, blocks: [] },
+      cleanup: { path: "C:\\Projeler\\.crewyard\\worktrees\\crewyard\\catalog-snapshot", branch: "crewyard/catalog-snapshot", ok: true, blocks: [] },
       feedback: [],
       routing: true,
       problem: null,

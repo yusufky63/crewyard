@@ -99,7 +99,7 @@ const INSTALL: Record<PackageManager, string> = { pnpm: "pnpm install --frozen-l
 
 export const newStep = (command = ""): DraftStep => ({ command, timeoutSec: String(DEFAULT_STEP_TIMEOUT_SEC) });
 
-/** Fills the fields from a detection; an existing .mission/project.json wins over guesses. */
+/** Fills the fields from a detection; an existing .crewyard/project.json wins over guesses. */
 export function seedFromDetection(draft: Draft, det: FolderDetection): Draft {
   const cfg = det.existingConfig;
   const base = cfg ?? defaultProjectConfig(det.name, det.worktreeRoot);
@@ -183,7 +183,7 @@ const orNull = (s: string) => (s.trim() ? s.trim() : null);
 // Blank rows are dropped; the command text is kept exactly as typed apart from outer spaces, since its hash is what gets approved.
 const toSteps = (steps: DraftStep[]) => steps.filter((s) => s.command.trim()).map((s) => ({ command: s.command.trim(), timeoutSec: num(s.timeoutSec) }));
 
-/** The config written to .mission/project.json. Profiles stay empty until profiles exist to pick. */
+/** The config written to .crewyard/project.json. Profiles stay empty until profiles exist to pick. */
 export function buildConfig(d: Draft, remote: string | null): ProjectConfig {
   return {
     version: 1,

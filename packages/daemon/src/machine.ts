@@ -5,6 +5,7 @@ import { MIN_CODEX_VERSION } from "@crewyard/adapter-codex";
 import { TESTED_VERSION } from "@crewyard/adapter-opencode";
 import type { DefenderCheck, MachineEnv, MachineReport, ToolCheck, ToolId, VersionGate, VersionGateStatus } from "@crewyard/core";
 import { parseVersion, ProbeCache, resolveBin, run } from "@crewyard/proc";
+import { CREWYARD_DIR, LEGACY_WORKTREES_DIR } from "./setup/config.ts";
 
 // The "This machine" check on the Start screen. Read-only: it never installs or changes anything.
 
@@ -122,14 +123,16 @@ const norm = (p: string) => p.replace(/\//g, "\\").replace(/\\+$/, "").toLowerCa
 
 /**
  * Where agents write: each project's worktree root. Roots in the default layout
- * (<projects>\.mc\worktrees\<repo>) collapse into their shared `.mc\worktrees` folder, so one
- * exclusion covers every project in that projects folder, including ones added later.
+ * (<projects>\.crewyard\worktrees\<repo>, or `.mc` from before the rename) collapse into their
+ * shared worktrees folder, so one exclusion covers every project in that projects folder, including
+ * ones added later.
  */
 export function defenderFolders(worktreeRoots: string[]): string[] {
   const out = new Map<string, string>();
   for (const root of worktreeRoots) {
     const parent = dirname(root);
-    const shared = basename(parent).toLowerCase() === "worktrees" && basename(dirname(parent)).toLowerCase() === ".mc";
+    const home = basename(dirname(parent)).toLowerCase();
+    const shared = basename(parent).toLowerCase() === "worktrees" && (home === CREWYARD_DIR || home === LEGACY_WORKTREES_DIR);
     const folder = shared ? parent : root;
     out.set(norm(folder), folder);
   }
@@ -205,7 +208,7 @@ const DEFENDER_SCRIPT = [
 
 /** `scanRoot` stands in for the projects folder until a project is added. */
 export function checkDefender(worktreeRoots: string[], scanRoot: string, maxAgeMs: number = PROBE_FRESHNESS.defender): Promise<DefenderCheck> {
-  const folders = worktreeRoots.length > 0 ? defenderFolders(worktreeRoots) : [join(scanRoot, ".mc", "worktrees")];
+  const folders = worktreeRoots.length > 0 ? defenderFolders(worktreeRoots) : [join(scanRoot, CREWYARD_DIR, "worktrees")];
   if (process.platform !== "win32") return Promise.resolve(defenderReport(NO_DEFENDER, folders));
   return defenders.get(folders.join("|"), maxAgeMs, async () => {
     const ps = (await resolveBin("powershell")) ?? "powershell.exe";

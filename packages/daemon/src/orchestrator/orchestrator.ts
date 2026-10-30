@@ -81,6 +81,7 @@ import { Scheduler } from "./schedules.ts";
 import { StallMonitor } from "./stall.ts";
 import { snapshotTranscript, transcriptPath } from "./transcripts.ts";
 import { TurnControl } from "./turns.ts";
+import { configFile } from "../setup/config.ts";
 
 // The deterministic scheduler (PLAN.md D7, D8, §8, §9): it runs the crew you approved as a DAG,
 // under admission control, and never lets an agent start another agent. All state lives in the
@@ -3078,7 +3079,7 @@ export class Orchestrator {
   }
 
   private config(project: ProjectRow): { config: ProjectConfig; fromFile: boolean } {
-    const file = join(project.path, ".mission", "project.json");
+    const file = configFile(project.path);
     if (existsSync(file)) {
       try {
         const parsed = ProjectConfig.safeParse(JSON.parse(readFileSync(file, "utf8")));

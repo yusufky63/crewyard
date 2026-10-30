@@ -1,5 +1,5 @@
 {
-  "$description": "Mission Control light theme. Semantic names are identical in dark.json; only values change.",
+  "$description": "Crewyard light theme. Semantic names are identical in dark.json; only values change.",
   "color": {
     "bg": {
       "canvas": { "$type": "color", "$value": "#F6F6F7", "$description": "App background" },

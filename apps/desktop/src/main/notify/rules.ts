@@ -56,7 +56,7 @@ export function suppression(s: NotificationSettings, projectId: string | null, n
 
 // ---------------------------------------------------------------------------------------------
 // Buttons per request. `Approve once` only for Low risk, and only while both the app setting and
-// the project's own rule (`rules.toastApprovals` in .mission/project.json) allow it; Medium, High
+// the project's own rule (`rules.toastApprovals` in .crewyard/project.json) allow it; Medium, High
 // and unclassified approvals open the Inbox. A limit pause offers `Hand off` (only with a proposed target) and `Wait for
 // reset` (only with a known reset time). The toast body always opens the item.
 

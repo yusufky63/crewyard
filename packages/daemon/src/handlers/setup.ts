@@ -4,7 +4,7 @@ import { assertFolder } from "../projects.ts";
 import { caseTwins, checkPathLength, cloneRepo, createPrivateRepo, detectFolder, gitInit, listRepos, longPathsEnabled, writeCi, writeProjectConfig } from "../setup/index.ts";
 import type { HandlerContext, HandlerMap } from "./types.ts";
 
-// Handlers for the New project wizard and .mission/project.json. Owned by the project setup work.
+// Handlers for the New project wizard and .crewyard/project.json. Owned by the project setup work.
 export function createSetupHandlers(ctx: HandlerContext): HandlerMap<SetupIpc> {
   const { store } = ctx;
   // The registry value only changes with a reboot-level setting, so read it once per daemon.

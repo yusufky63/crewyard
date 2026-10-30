@@ -66,7 +66,7 @@ const run = (taskId: string, m: CrewMemberView, c: CandidateView, over: Partial<
   runner: c.runner,
   model: c.model,
   state: "running",
-  cwd: "C:\\Projeler\\.mc\\worktrees\\crewyard\\login-rate-limit",
+  cwd: "C:\\Projeler\\.crewyard\\worktrees\\crewyard\\login-rate-limit",
   worktreeId: "w1",
   startedAt: ago(14),
   endedAt: null,
@@ -119,7 +119,7 @@ function build(projectId: string): { tasks: TaskDetail[]; requests: RequestView[
     classification: [{ code: "classify.keyword", params: { keyword: "add", kind: "code" } }],
     crew: { id: `c-${s.id}`, proposedAt: s.createdAt, approvedAt: s.status === "proposed" ? null : s.createdAt, estimate: { usd: 1.6, provenance: "estimated" }, members },
     runs,
-    worktree: runs.length ? { id: "w1", path: `C:\\Projeler\\.mc\\worktrees\\crewyard\\${s.id}`, branch: `crewyard/${s.id}`, baseSha: "4f2c1aa", ownerRunId: runs[0]!.id, createdAt: s.createdAt } : null,
+    worktree: runs.length ? { id: "w1", path: `C:\\Projeler\\.crewyard\\worktrees\\crewyard\\${s.id}`, branch: `crewyard/${s.id}`, baseSha: "4f2c1aa", ownerRunId: runs[0]!.id, createdAt: s.createdAt } : null,
     handoffs: [],
     loop: { maxIterations: 3, decisions: [], tests: [], verdicts: [] },
     ...over,
@@ -237,7 +237,7 @@ function build(projectId: string): { tasks: TaskDetail[]; requests: RequestView[
 
   // 10. Best of N, choosing: three implementers ran in their own worktrees; two finished.
   const bo = [member("implementer", 1, SOL, [OPUS, FLASH], [], true), member("reviewer", 2, GLM, [ARGON], ["implementer"])];
-  const wt = (position: number) => `C:\\Projeler\\.mc\\worktrees\\crewyard\\cache-layer-v${position}`;
+  const wt = (position: number) => `C:\\Projeler\\.crewyard\\worktrees\\crewyard\\cache-layer-v${position}`;
   const variant = (position: number, c: CandidateView, over: Partial<BestOfVariantView>): BestOfVariantView => ({
     id: `v${position}`,
     position,
@@ -339,7 +339,7 @@ function build(projectId: string): { tasks: TaskDetail[]; requests: RequestView[
       sessionId: approvalRun.nativeSessionId,
       kind: "approval",
       risk: "medium",
-      payload: { kind: "approval", toolCallId: "tc1", command: "pnpm vitest run src/auth", cwd: "C:\\Projeler\\.mc\\worktrees\\crewyard\\t-approval", paths: [], network: false, policy: null },
+      payload: { kind: "approval", toolCallId: "tc1", command: "pnpm vitest run src/auth", cwd: "C:\\Projeler\\.crewyard\\worktrees\\crewyard\\t-approval", paths: [], network: false, policy: null },
       createdAt: ago(2),
       answeredAt: null,
       answer: null,

@@ -4,7 +4,7 @@ import { commandWarnings, mcpInputProblem, type McpReadOnlyAccess, type McpScope
 import type { SecretStore } from "../providers/secrets.ts";
 
 // The user's own stdio MCP servers (docs/adr/0007), global or per project. They live in Crewyard's
-// database, never in the project folder: `.mission/project.json` is committed with the repo, and a
+// database, never in the project folder: `.crewyard/project.json` is committed with the repo, and a
 // server's env often carries a key. Secret values go to DPAPI blobs like provider keys
 // (providers/secrets.ts); the database keeps only the blob's id.
 

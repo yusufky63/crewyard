@@ -8,7 +8,7 @@ import { createHandlers, handleMessage } from "../server.ts";
 import { Store } from "../store.ts";
 import { gitInit, writeCi } from "./actions.ts";
 import { ciTemplate, parseTargetFramework } from "./ci.ts";
-import { CONFIG_REL, readProjectConfig, validateProjectConfig, writeProjectConfig } from "./config.ts";
+import { CONFIG_REL, configFile, readProjectConfig, validateProjectConfig, writeProjectConfig } from "./config.ts";
 import { checkPathLength, defaultWorktreeRoot, detectProjectType, gitState, MAX_PATH, parseGithubRemote, TASK_SEGMENT } from "./detect.ts";
 
 const temps: string[] = [];
@@ -130,7 +130,7 @@ describe("git detection", () => {
 
 describe("path length", () => {
   it("puts worktrees next to the projects folder", () => {
-    expect(defaultWorktreeRoot(join("C:\\Projeler", "new-rts"))).toBe(join("C:\\Projeler", ".mc", "worktrees", "new-rts"));
+    expect(defaultWorktreeRoot(join("C:\\Projeler", "new-rts"))).toBe(join("C:\\Projeler", ".crewyard", "worktrees", "new-rts"));
   });
 
   it("adds the worktree prefix and task folder to the longest relative path", () => {
@@ -182,9 +182,35 @@ describe("project.json", () => {
   it("writes and reads back the config in a folder with spaces", async () => {
     const dir = tempDir();
     const { file } = await writeProjectConfig(dir, valid());
-    expect(file).toBe(join(dir, ".mission", "project.json"));
+    expect(file).toBe(join(dir, ".crewyard", "project.json"));
     expect(JSON.parse(readFileSync(file, "utf8"))).toEqual(valid());
     expect(readProjectConfig(dir)).toEqual(valid());
+  });
+
+  it("reads a project set up before the rename to Crewyard, and moves its config on the next save", async () => {
+    const dir = tempDir();
+    const legacy = join(dir, ".mission", "project.json");
+    mkdirSync(join(dir, ".mission"));
+    writeFileSync(legacy, JSON.stringify(valid()));
+    expect(configFile(dir)).toBe(legacy);
+    expect(readProjectConfig(dir)).toEqual(valid());
+
+    const { file } = await writeProjectConfig(dir, { ...valid(), name: "renamed" });
+    expect(file).toBe(join(dir, ".crewyard", "project.json"));
+    expect(existsSync(legacy)).toBe(false);
+    // The emptied legacy folder goes too; one with other files of the user's would stay.
+    expect(existsSync(join(dir, ".mission"))).toBe(false);
+    expect(readProjectConfig(dir)?.name).toBe("renamed");
+  });
+
+  it("keeps a legacy folder that holds other files", async () => {
+    const dir = tempDir();
+    mkdirSync(join(dir, ".mission"));
+    writeFileSync(join(dir, ".mission", "project.json"), JSON.stringify(valid()));
+    writeFileSync(join(dir, ".mission", "notes.md"), "mine");
+    await writeProjectConfig(dir, valid());
+    expect(readFileSync(join(dir, ".mission", "notes.md"), "utf8")).toBe("mine");
+    expect(existsSync(join(dir, ".mission", "project.json"))).toBe(false);
   });
 
   it("creates the project through IPC, and adds nothing when refused", async () => {

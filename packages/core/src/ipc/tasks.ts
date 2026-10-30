@@ -69,7 +69,7 @@ export type ReasonCode =
   // crew loops: why the run-until-green or review loop went on or stopped
   | "loop.tests_passed" // { command }
   | "loop.tests_failed" // { command, exitCode }
-  | "loop.tests_skipped" // the project has no test command in .mission/project.json
+  | "loop.tests_skipped" // the project has no test command in .crewyard/project.json
   | "loop.review_passed" // { sha }
   | "loop.review_changes" // { comments, sha }
   | "loop.review_invalid" // { error }
@@ -643,7 +643,7 @@ export type RequestPayload =
       /** Why the policy decided on its own, when it did (e.g. `policy.allowlisted`, `policy.role_read_only`). */
       policy: string | null;
       /**
-       * Set for a worktree setup or cleanup step from .mission/project.json rather than an agent's
+       * Set for a worktree setup or cleanup step from .crewyard/project.json rather than an agent's
        * tool call. Allow once approves this exact text (by its sha256) for the project from then on.
        */
       bootstrap?: { phase: "setup" | "cleanup"; hash: string } | null;

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Mission Control Prototype</title>
+<title>Crewyard Prototype</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -470,7 +470,7 @@ tr.dim .prov-name{color:var(--ink-2)}
 
 <div class="app">
   <header class="titlebar">
-    <div class="brand"><span class="mark" aria-hidden="true"></span>Mission Control</div>
+    <div class="brand"><span class="mark" aria-hidden="true"></span>Crewyard</div>
     <button class="tb-chip" aria-label="Switch project" data-screen="start"><svg class="i"><use href="#i-folder"/></svg>cubeofempires<svg class="i" style="width:13px;height:13px"><use href="#i-down"/></svg></button>
     <div class="search" role="button" tabindex="0"><svg class="i"><use href="#i-search"/></svg><span class="search-t">Search tasks, agents, PRs or run a command</span><span class="kbd">Ctrl K</span></div>
     <button class="tb-btn" aria-label="Notifications"><svg class="i"><use href="#i-bell"/></svg></button>
@@ -515,7 +515,7 @@ tr.dim .prov-name{color:var(--ink-2)}
       <section class="screen" id="s-start" aria-label="Start">
         <div class="launch-grid">
           <div>
-            <span class="lbl">Mission Control · v0.1</span>
+            <span class="lbl">Crewyard · v0.1</span>
             <h1 class="hero">Run your agent crews<br><span class="dim">from one place.</span></h1>
             <p class="sec lead">Claude Code, Codex, Gemini CLI and OpenCode on your own accounts and keys. Nothing starts until you approve it.</p>
             <div class="launch-actions">
@@ -617,7 +617,7 @@ tr.dim .prov-name{color:var(--ink-2)}
         <div class="panel">
           <div class="wiz on" data-pane="1">
             <h2>Where is the project?</h2>
-            <p class="sec">Pick a folder you already have, clone one, or start empty. Mission Control reads it to suggest commands.</p>
+            <p class="sec">Pick a folder you already have, clone one, or start empty. Crewyard reads it to suggest commands.</p>
             <div style="margin:16px 0 4px"><div class="seg" role="group" aria-label="Source"><button aria-pressed="true">Local folder</button><button aria-pressed="false">Clone from GitHub</button><button aria-pressed="false">Empty folder</button></div></div>
             <div class="row-input"><span class="input">C:\Projeler\new-rts</span><button class="btn">Browse</button></div>
             <div class="check-list">
@@ -625,7 +625,7 @@ tr.dim .prov-name{color:var(--ink-2)}
               <div class="cl"><span class="st ok"><svg class="i"><use href="#i-check"/></svg></span><span class="muted">Project type</span><span>Godot 4 · C# <span class="muted mono" style="font-size:12px">from project.godot, NewRts.csproj</span></span><span></span></div>
               <div class="cl"><span class="st ok"><svg class="i"><use href="#i-check"/></svg></span><span class="muted">Build command</span><span class="mono" style="font-size:12px">dotnet build</span><button class="btn btn-sm btn-ghost">Edit</button></div>
               <div class="cl"><span class="st ok"><svg class="i"><use href="#i-check"/></svg></span><span class="muted">Test command</span><span class="mono" style="font-size:12px">dotnet test</span><button class="btn btn-sm btn-ghost">Edit</button></div>
-              <div class="cl"><span class="st ok"><svg class="i"><use href="#i-check"/></svg></span><span class="muted">Worktrees</span><span class="mono" style="font-size:12px">C:\Projeler\.mc\worktrees\new-rts</span><button class="btn btn-sm btn-ghost">Change</button></div>
+              <div class="cl"><span class="st ok"><svg class="i"><use href="#i-check"/></svg></span><span class="muted">Worktrees</span><span class="mono" style="font-size:12px">C:\Projeler\.crewyard\worktrees\new-rts</span><button class="btn btn-sm btn-ghost">Change</button></div>
               <div class="cl"><span class="st ok"><svg class="i"><use href="#i-check"/></svg></span><span class="muted">Path length</span><span>longest path in a worktree: 118 of 260 characters</span><span></span></div>
               <div class="cl"><span class="st wait"><svg class="i"><use href="#i-alert"/></svg></span><span class="muted">GitHub remote</span><span>none yet, set it up in step 5</span><span></span></div>
             </div>
@@ -660,7 +660,7 @@ tr.dim .prov-name{color:var(--ink-2)}
 
           <div class="wiz" data-pane="4">
             <h2>Rules for this project</h2>
-            <p class="sec">Defaults follow your global settings. Every rule is stored in <span class="mono">.mission/project.json</span> without secrets.</p>
+            <p class="sec">Defaults follow your global settings. Every rule is stored in <span class="mono">.crewyard/project.json</span> without secrets.</p>
             <div class="setrow" style="border-top:0">When a limit is hit<div class="end seg" role="group" aria-label="Fallback default"><button aria-pressed="false">Manual</button><button aria-pressed="true">Ask</button><button aria-pressed="false">Auto</button></div></div>
             <div class="setrow">Parallel agents (slots)<span class="end field">4</span></div>
             <div class="setrow">Commands allowed without asking<span class="end" style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end"><span class="chip"><b>dotnet build</b></span><span class="chip"><b>dotnet test</b></span><span class="chip"><b>git status</b></span><span class="chip">+ Add</span></span></div>
@@ -670,7 +670,7 @@ tr.dim .prov-name{color:var(--ink-2)}
 
           <div class="wiz" data-pane="5">
             <h2>GitHub</h2>
-            <p class="sec">Mission Control uses your <span class="mono">gh</span> sign-in. Agents commit locally; pushes wait for you.</p>
+            <p class="sec">Crewyard uses your <span class="mono">gh</span> sign-in. Agents commit locally; pushes wait for you.</p>
             <div class="check-list">
               <div class="cl"><span class="st ok"><svg class="i"><use href="#i-check"/></svg></span><span class="muted">Signed in</span><span>yusufky63 via gh</span><span></span></div>
               <div class="cl"><span class="st wait"><svg class="i"><use href="#i-alert"/></svg></span><span class="muted">Remote</span><span>no remote yet</span><button class="btn btn-sm">Create private repo</button></div>
@@ -681,7 +681,7 @@ tr.dim .prov-name{color:var(--ink-2)}
           </div>
 
           <div class="wiz-foot">
-            <span class="muted" style="font-size:12px">Writes <span class="mono">.mission/project.json</span> in the repo. Keys stay in Windows' DPAPI store.</span>
+            <span class="muted" style="font-size:12px">Writes <span class="mono">.crewyard/project.json</span> in the repo. Keys stay in Windows' DPAPI store.</span>
             <div class="end"><button class="btn" id="stepBack">Back</button><button class="btn btn-primary" id="stepNext">Next: Agents</button></div>
           </div>
         </div>
@@ -852,7 +852,7 @@ tr.dim .prov-name{color:var(--ink-2)}
               <p class="sec">Asked in <b style="font-weight:500;color:var(--ink)">Add replay export to match history</b>, step 3 of 4.</p>
               <div class="code">dotnet test Game.Tests --no-build</div>
               <dl class="kv">
-                <dt>Working directory</dt><dd class="mono" style="font-size:12px">C:\Projeler\.mc\worktrees\cubeofempires\replay-export</dd>
+                <dt>Working directory</dt><dd class="mono" style="font-size:12px">C:\Projeler\.crewyard\worktrees\cubeofempires\replay-export</dd>
                 <dt>Scope</dt><dd>Reads and writes inside this worktree only. No network.</dd>
                 <dt>Policy</dt><dd>Not in this project's allowlist yet.</dd>
                 <dt>Requested by</dt><dd><i class="dot" style="--c:var(--s-claude)"></i> Review · Claude Code · API key</dd>
@@ -995,7 +995,7 @@ tr.dim .prov-name{color:var(--ink-2)}
             <div class="lim">
               <div class="lim-top"><i class="dot" style="--c:var(--s-gemini)"></i><span class="name">Gemini CLI · personal</span><span class="lbl">Google sign-in</span><div class="end"><span class="badge unk">Unknown</span></div></div>
               <div class="mline"><span class="sec">Daily requests</span><div class="meter unknown"></div><span class="v">212 sent<small>no limit data</small></span></div>
-              <div class="unk-note">This sign-in method does not report remaining quota, so Mission Control only counts requests and never guesses a percentage.</div>
+              <div class="unk-note">This sign-in method does not report remaining quota, so Crewyard only counts requests and never guesses a percentage.</div>
             </div>
           </div>
 
@@ -1197,7 +1197,7 @@ tr.dim .prov-name{color:var(--ink-2)}
         <div><span class="lbl">Cost</span><div class="v" style="font-size:13px">Subscription</div></div>
         <div><span class="lbl">Files</span><div class="v">6 changed</div></div>
       </div>
-      <div class="ins-sec"><span class="lbl">Worktree</span><div class="mono" style="font-size:12px;word-break:break-all">C:\Projeler\.mc\worktrees\cubeofempires\terrain-seams</div></div>
+      <div class="ins-sec"><span class="lbl">Worktree</span><div class="mono" style="font-size:12px;word-break:break-all">C:\Projeler\.crewyard\worktrees\cubeofempires\terrain-seams</div></div>
       <div class="ins-actions">
         <button class="btn btn-primary full"><svg class="i"><use href="#i-reply"/></svg>Message this agent</button>
         <button class="btn"><svg class="i"><use href="#i-pause"/></svg>Pause</button>
@@ -1209,7 +1209,7 @@ tr.dim .prov-name{color:var(--ink-2)}
   </div>
 
   <footer class="statusbar" aria-label="Status">
-    <span class="sb" title="Mission Control daemon"><i class="dot" style="--c:var(--ok)"></i>Daemon <b>running</b></span>
+    <span class="sb" title="Crewyard daemon"><i class="dot" style="--c:var(--ok)"></i>Daemon <b>running</b></span>
     <button class="sb" data-screen="tasks" title="Running agents, queued runs and the concurrency cap"><i class="dot" style="--c:var(--accent)"></i><b>3</b> running · <b>1</b> queued · slots <b>3/4</b></button>
     <button class="sb" data-screen="inbox"><i class="dot" style="--c:var(--warn)"></i><b>2</b> need you</button>
     <button class="sb" data-screen="limits"><i class="dot" style="--c:var(--warn)"></i><b>1</b> near limit</button>

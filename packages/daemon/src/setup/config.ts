@@ -1,8 +1,25 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { findSecretLikeKeys, ProjectConfig } from "@crewyard/core";
 
-export const CONFIG_REL = join(".mission", "project.json");
+/** Crewyard's folder name: `.crewyard\project.json` in a project, `.crewyard\worktrees` next to the projects. */
+export const CREWYARD_DIR = ".crewyard";
+export const CONFIG_REL = join(CREWYARD_DIR, "project.json");
+/**
+ * Builds before the rename to Crewyard (2026-10-30) wrote `.mission\project.json` and put worktrees
+ * in `.mc\worktrees`. The config is still read from there; a worktree root is stored in the config,
+ * so existing projects keep theirs.
+ */
+export const LEGACY_CONFIG_REL = join(".mission", "project.json");
+export const LEGACY_WORKTREES_DIR = ".mc";
+
+/** The project's config file: the Crewyard one, else a legacy one, else where a new one goes. */
+export function configFile(projectPath: string): string {
+  const file = join(projectPath, CONFIG_REL);
+  if (existsSync(file)) return file;
+  const legacy = join(projectPath, LEGACY_CONFIG_REL);
+  return existsSync(legacy) ? legacy : file;
+}
 
 /**
  * Checks the raw input before parsing: zod drops unknown keys, so an `apiKey` the renderer sent
@@ -45,12 +62,22 @@ export async function writeProjectConfig(projectPath: string, raw: unknown): Pro
   const config = validateProjectConfig(raw);
   const file = join(projectPath, CONFIG_REL);
   await writeFileAtomic(file, `${JSON.stringify(config, null, 2)}\n`);
+  // A legacy file left beside it would be a second copy that drifts; the move shows in git as one rename.
+  const legacy = join(projectPath, LEGACY_CONFIG_REL);
+  if (existsSync(legacy)) {
+    rmSync(legacy, { force: true });
+    try {
+      rmdirSync(dirname(legacy));
+    } catch {
+      // The folder holds something else of the user's; it stays.
+    }
+  }
   return { config, file };
 }
 
 /** The existing config when it parses and holds nothing secret-like; anything else is ignored. */
 export function readProjectConfig(projectPath: string): ProjectConfig | null {
-  const file = join(projectPath, CONFIG_REL);
+  const file = configFile(projectPath);
   if (!existsSync(file)) return null;
   try {
     return validateProjectConfig(JSON.parse(readFileSync(file, "utf8")));

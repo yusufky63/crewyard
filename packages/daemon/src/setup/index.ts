@@ -5,7 +5,7 @@ import { parseLongPaths } from "../machine.ts";
 import { readProjectConfig } from "./config.ts";
 import { caseTwins, checkPathLength, defaultWorktreeRoot, detectProjectType, folderState, gitState, listWorkflows } from "./detect.ts";
 
-export { validateProjectConfig, writeProjectConfig, readProjectConfig, CONFIG_REL } from "./config.ts";
+export { validateProjectConfig, writeProjectConfig, readProjectConfig, configFile, CONFIG_REL, CREWYARD_DIR, LEGACY_CONFIG_REL, LEGACY_WORKTREES_DIR } from "./config.ts";
 export { gitInit, createPrivateRepo, writeCi, listRepos, cloneRepo } from "./actions.ts";
 export { caseTwinProblem, caseTwins, checkPathLength } from "./detect.ts";
 

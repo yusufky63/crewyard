@@ -1,7 +1,5 @@
 # Crewyard
 
-Working name in the planning documents: Mission Control.
-
 A local, Windows-first desktop app that runs and supervises coding agents (Claude Code, Codex, Gemini CLI, OpenCode) across several of your own accounts and API keys. It proposes a crew for each task, waits for your approval, watches limits, hands work to a backup agent when you allow it, and keeps GitHub under your control.
 
 The plan and design package is at the top level; the app lives in `apps/` and `packages/` (see AGENTS.md for the layout).

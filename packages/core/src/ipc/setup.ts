@@ -1,7 +1,7 @@
 import type { ProjectConfig } from "../project.ts";
 import type { ProjectSummary } from "../ipc.ts";
 
-// IPC methods for the New project wizard and .mission/project.json. Owned by the project setup work; other work only reads it.
+// IPC methods for the New project wizard and .crewyard/project.json. Owned by the project setup work; other work only reads it.
 // Implementations live in packages/daemon/src/handlers/setup.ts. Detection only reads; every method
 // that writes (git init, gh repo create, clone, CI template, project.json) runs only on its own call.
 
@@ -60,7 +60,7 @@ export interface FolderDetection {
   worktreeRoot: string;
   pathCheck: PathLengthCheck;
   longPathsEnabled: boolean | null;
-  /** The existing .mission/project.json when it is valid, so the wizard can start from it. */
+  /** The existing .crewyard/project.json when it is valid, so the wizard can start from it. */
   existingConfig: ProjectConfig | null;
   /** Workflow files already in .github/workflows. */
   workflows: string[];
@@ -82,7 +82,7 @@ export interface SetupIpc {
   "setup.detect": { params: { path: string }; result: FolderDetection };
   /** Recomputes the path-length check for a worktree root the user changed. */
   "setup.pathCheck": { params: { path: string; worktreeRoot: string }; result: PathLengthCheck };
-  /** Validates and writes .mission/project.json, then adds and opens the project. Refuses secret-like keys. */
+  /** Validates and writes .crewyard/project.json, then adds and opens the project. Refuses secret-like keys. */
   "setup.create": { params: { path: string; config: unknown }; result: { project: ProjectSummary; configPath: string } };
   "setup.gitInit": { params: { path: string }; result: { branch: string } };
   /** `gh repo create <name> --private --source . --remote origin`. Never pushes. */

@@ -176,7 +176,7 @@ export interface SettingsIpc {
    */
   "settings.restore": { params: { path: string }; result: RestoreResult };
   /**
-   * The project's own toast rule from .mission/project.json (`rules.toastApprovals`), read when a
+   * The project's own toast rule from .crewyard/project.json (`rules.toastApprovals`), read when a
    * toast is built and again when its button is pressed. A missing or unreadable file means "low",
    * the wizard default.
    */

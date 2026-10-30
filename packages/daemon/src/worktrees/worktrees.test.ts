@@ -145,8 +145,8 @@ async function project(bootstrap: Partial<ProjectConfig["bootstrap"]>, pick: (ro
   const writeConfig = (b: Partial<ProjectConfig["bootstrap"]>) => {
     const cfg = defaultProjectConfig("demo repo", join(root, ".mc", "worktrees", "demo repo"));
     cfg.bootstrap = { ...cfg.bootstrap, ...b };
-    mkdirSync(join(repo, ".mission"), { recursive: true });
-    writeFileSync(join(repo, ".mission", "project.json"), JSON.stringify(cfg));
+    mkdirSync(join(repo, ".crewyard"), { recursive: true });
+    writeFileSync(join(repo, ".crewyard", "project.json"), JSON.stringify(cfg));
   };
   writeConfig(bootstrap);
   const store = new Store(join(root, "t.db"));

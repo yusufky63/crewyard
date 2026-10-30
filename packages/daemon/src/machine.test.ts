@@ -34,9 +34,14 @@ describe("versionGate", () => {
 });
 
 describe("defenderFolders", () => {
-  it("collapses default-layout roots into the shared .mc\\worktrees folder", () => {
-    const roots = ["C:\\My Projects\\.mc\\worktrees\\game one", "C:\\My Projects\\.mc\\worktrees\\api", "D:\\Custom Trees\\web"];
-    expect(defenderFolders(roots)).toEqual(["C:\\My Projects\\.mc\\worktrees", "D:\\Custom Trees\\web"]);
+  it("collapses default-layout roots into the shared .crewyard\\worktrees folder", () => {
+    const roots = ["C:\\My Projects\\.crewyard\\worktrees\\game one", "C:\\My Projects\\.crewyard\\worktrees\\api", "D:\\Custom Trees\\web"];
+    expect(defenderFolders(roots)).toEqual(["C:\\My Projects\\.crewyard\\worktrees", "D:\\Custom Trees\\web"]);
+  });
+
+  it("still collapses roots from before the rename, kept in their projects' configs", () => {
+    const roots = ["C:\\My Projects\\.mc\\worktrees\\game one", "C:\\My Projects\\.mc\\worktrees\\api", "C:\\My Projects\\.crewyard\\worktrees\\new"];
+    expect(defenderFolders(roots)).toEqual(["C:\\My Projects\\.mc\\worktrees", "C:\\My Projects\\.crewyard\\worktrees"]);
   });
 
   it("dedupes case-insensitively", () => {

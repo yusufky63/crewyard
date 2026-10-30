@@ -11,7 +11,7 @@
   "checking": "Checking…",
   "browse": "Browse",
   "change": "Change",
-  "footNote": "Writes .mission/project.json in the project. Keys never go there; they stay in the Windows secret store.",
+  "footNote": "Writes .crewyard/project.json in the project. Keys never go there; they stay in the Windows secret store.",
   "steps": {
     "1": { "name": "Folder", "sub": "repo, type, commands" },
     "2": { "name": "Agents", "sub": "which may work here" },
@@ -35,7 +35,7 @@
     "gitInit": "git init",
     "createRepo": "Private GitHub repository",
     "ci": "CI workflow",
-    "config": ".mission/project.json",
+    "config": ".crewyard/project.json",
     "dismiss": "Close",
     "state": { "none": "Not started", "run": "Working…", "ok": "Done", "bad": "Failed" }
   },
@@ -51,7 +51,7 @@
     "pickEmpty": "Choose or create an empty folder",
     "reading": "Reading the folder",
     "existing": "Existing settings",
-    "existingText": "Found .mission/project.json; the steps start from it.",
+    "existingText": "Found .crewyard/project.json; the steps start from it.",
     "added": "Already added",
     "addedText": "This folder is already in Crewyard. Creating it again rewrites its settings.",
     "folder": "Folder",
@@ -125,7 +125,7 @@
   },
   "rules": {
     "title": "Rules for this project",
-    "lead": "Every rule is stored in .mission/project.json without secrets. You can change them later.",
+    "lead": "Every rule is stored in .crewyard/project.json without secrets. You can change them later.",
     "fallback": "When an agent hits a limit",
     "fallbacks": { "manual": "Manual", "ask": "Ask", "auto": "Auto" },
     "fallbackHint": {

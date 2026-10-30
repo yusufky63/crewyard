@@ -42,10 +42,10 @@ async function setup(opts: { pick: Picker; candidates?: Candidate[]; config?: (c
   const root = tempDir();
   const repo = await tempRepo(root);
   if (opts.config) {
-    const cfg = defaultProjectConfig("demo repo", join(root, ".mc", "worktrees", "demo repo"));
+    const cfg = defaultProjectConfig("demo repo", join(root, ".crewyard", "worktrees", "demo repo"));
     opts.config(cfg);
-    mkdirSync(join(repo, ".mission"), { recursive: true });
-    writeFileSync(join(repo, ".mission", "project.json"), JSON.stringify(cfg));
+    mkdirSync(join(repo, ".crewyard"), { recursive: true });
+    writeFileSync(join(repo, ".crewyard", "project.json"), JSON.stringify(cfg));
   }
   const store = new Store(join(root, "t.db"));
   const project = store.addProject(repo, "demo repo");
@@ -91,7 +91,7 @@ describe("end to end", () => {
     expect(proposed.crew?.members.map((m) => m.role)).toEqual(["planner", "implementer", "tester", "reviewer"]);
     // A proposal has no side effects beyond the stored draft.
     expect(proposed.runs).toEqual([]);
-    expect(existsSync(join(root, ".mc"))).toBe(false);
+    expect(existsSync(join(root, ".crewyard"))).toBe(false);
     expect(adapter.started).toEqual([]);
 
     const implementer = proposed.crew!.members.find((m) => m.role === "implementer")!;
@@ -106,7 +106,7 @@ describe("end to end", () => {
     expect(o.get(proposed.id).status).toBe("needs_input");
 
     const detail = o.get(proposed.id);
-    expect(detail.worktree?.path.startsWith(join(root, ".mc", "worktrees", "demo repo"))).toBe(true);
+    expect(detail.worktree?.path.startsWith(join(root, ".crewyard", "worktrees", "demo repo"))).toBe(true);
     expect(detail.worktree?.branch).toMatch(/^crewyard\/implement-rate-limiting/);
     const implStart = adapter.started.find((s) => s.role === "implementer")!;
     expect(implStart.req.cwd).toBe(detail.worktree?.path);
