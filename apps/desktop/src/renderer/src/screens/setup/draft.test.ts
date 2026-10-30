@@ -14,6 +14,7 @@ const detection = (patch: Partial<FolderDetection> = {}): FolderDetection => ({
   pathCheck: { longest: 118, longestRelative: "x", limit: 260, ok: true, truncated: false, filesSeen: 10 },
   longPathsEnabled: false,
   existingConfig: null,
+  configStatus: { state: "missing" },
   workflows: [],
   ...patch,
 });

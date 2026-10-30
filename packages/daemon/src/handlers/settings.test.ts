@@ -130,6 +130,19 @@ describe("toast policy", () => {
     expect(await h["settings.toastPolicy"]({ projectId: project.id })).toEqual({ toastApprovals: "none" });
     await expect(attempt(() => h["settings.toastPolicy"]({ projectId: "nope" }))).rejects.toThrow("project.not_found");
   });
+
+  it("turns toast approvals off when the file is there but cannot be used", async () => {
+    const { h, store, dir } = setup();
+    const repo = join(dir, "my repo");
+    mkdirSync(join(repo, ".crewyard"), { recursive: true });
+    const project = store.addProject(repo, "my repo");
+    writeFileSync(join(repo, ".crewyard", "project.json"), "{ hand edit gone wrong");
+    expect(await h["settings.toastPolicy"]({ projectId: project.id })).toEqual({ toastApprovals: "none" });
+    // An unknown value in the field itself falls to the restrictive one, not the default.
+    const cfg = defaultProjectConfig("my repo", join(dir, "wt"));
+    writeFileSync(join(repo, ".crewyard", "project.json"), JSON.stringify({ ...cfg, rules: { ...cfg.rules, toastApprovals: "medium" } }));
+    expect(await h["settings.toastPolicy"]({ projectId: project.id })).toEqual({ toastApprovals: "none" });
+  });
 });
 
 describe("backup and export", () => {

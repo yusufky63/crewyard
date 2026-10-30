@@ -1,16 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, rmdirSync } from "node:fs";
+import { existsSync, readdirSync, rmdirSync } from "node:fs";
 import { freemem } from "node:os";
 import { join, resolve } from "node:path";
 import {
   type AccountSwitchSkipped,
   capEvent,
   classifyRisk,
-  defaultProjectConfig,
   estimateCost,
   EVENT_LIMITS,
   peakFactor,
-  ProjectConfig,
+  type ProjectConfig,
   requestCost,
   type AgentAdapter,
   type AgentEvent,
@@ -66,7 +65,7 @@ import { OrchestratorDb, type MemberRow, type ProjectRow, type RequestRow, type 
 import { EMPTY_DIRECTORY, type Candidate, type ProfileDirectory } from "./directory.ts";
 import { errorCode, errorDetail, OrchestratorError, redactDetail } from "./errors.ts";
 import { classifyFailure, RETRY, retryDelayMs, type Failure, type FailureClass } from "./failures.ts";
-import { addDetachedCheckout, checkpoint, defaultWorktreeRoot, diffStat, ensureWorktree, git, headSha, isClean, removeDetachedCheckout, taskSlug, writeFileAtomic } from "./git.ts";
+import { addDetachedCheckout, checkpoint, diffStat, ensureWorktree, git, headSha, isClean, removeDetachedCheckout, taskSlug, writeFileAtomic } from "./git.ts";
 import { LoopStore, reviewChangesMessage, reviewContext, testFailureMessage } from "./loops.ts";
 import { snapshot } from "./checkpoints.ts";
 import { runSteps } from "../worktrees/steps.ts";
@@ -81,7 +80,7 @@ import { Scheduler } from "./schedules.ts";
 import { StallMonitor } from "./stall.ts";
 import { snapshotTranscript, transcriptPath } from "./transcripts.ts";
 import { TurnControl } from "./turns.ts";
-import { configFile } from "../setup/config.ts";
+import { effectiveProjectConfig } from "../setup/index.ts";
 
 // The deterministic scheduler (PLAN.md D7, D8, §8, §9): it runs the crew you approved as a DAG,
 // under admission control, and never lets an agent start another agent. All state lives in the
@@ -3079,16 +3078,9 @@ export class Orchestrator {
   }
 
   private config(project: ProjectRow): { config: ProjectConfig; fromFile: boolean } {
-    const file = configFile(project.path);
-    if (existsSync(file)) {
-      try {
-        const parsed = ProjectConfig.safeParse(JSON.parse(readFileSync(file, "utf8")));
-        if (parsed.success) return { config: parsed.data, fromFile: true };
-      } catch {
-        // An unreadable file falls back to the wizard defaults below.
-      }
-    }
-    return { config: defaultProjectConfig(project.name, defaultWorktreeRoot(project.path)), fromFile: false };
+    // Newer files are used as far as understood; unusable ones get the defaults with toast approvals off.
+    const { config, fromFile } = effectiveProjectConfig(project.path, project.name);
+    return { config, fromFile };
   }
 
   private async candidates(project: ProjectRow): Promise<Candidate[]> {

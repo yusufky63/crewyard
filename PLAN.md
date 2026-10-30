@@ -411,6 +411,14 @@ A run cannot create other runs. If an agent asks for more work, the request beco
 
 The result is `.crewyard/project.json` in the repo: name, commands, allowed runners, profile ids, caps, rules, worktree path. It never contains keys or tokens. Secrets stay in the DPAPI store and profiles stay in Crewyard's own data folder (`%APPDATA%\Crewyard\data` on Windows).
 
+Worktree setup and cleanup commands (the Worktrees step) run without a shell in the task worktree. They and the agent get `CREWYARD_REPO` (the main checkout), `CREWYARD_WORKTREE`, `CREWYARD_BRANCH` and, with a port range, `CREWYARD_PORT` plus the chosen variable.
+
+`project.json` is never treated as missing just because Crewyard cannot read all of it, since a file that read as "no config" would be overwritten on the next save:
+- A value this build does not know falls back and is listed in the wizard: `rules.fallback` to its default, an unknown runner is skipped, and security fields go to their most restrictive value (`rules.toastApprovals` to `none`, `rules.network` to `ask`, `github.pushNeedsApproval` stays true).
+- Keys this build does not know survive a save.
+- A higher `version` comes from a newer Crewyard. It is used as far as it is understood and never written, and the wizard and Settings say so.
+- A file that cannot be used (not JSON, no version, a value that breaks its rule, a secret-like key) runs the project on the defaults with toast approvals off. The wizard shows the problem, and `Create project` asks before replacing it, keeping the old file as `project.json.bak`.
+
 ## 12. Windows specifics
 
 - Resolve `.cmd` shims to real paths, spawn with `cross-spawn`, `windowsHide: true`, never `shell: true`.
@@ -529,6 +537,7 @@ Each milestone ends with: typecheck, lint with `--max-warnings=0`, tests, build,
 - 2026-10-30: the code is kept in a private GitHub repository, pushed when a piece of work is finished rather than after every step; releases come once everything is done. Windows stays first; Linux and macOS are prepared for but not shipped yet (owner: "linux ve mac için hazırlıklar da yapabiliriz ama öncelik windows da"; the platform seams are in [ADR 0010](docs/adr/0010-linux-macos-groundwork.md) and §12.1).
 - 2026-10-30: signing and auto-update are prepared and tested before any release ([ADR 0011](docs/adr/0011-signing-and-auto-update.md)). The feed is electron-updater's generic HTTPS provider, its URL set at build time, so the host can be any static HTTPS server and the private code repository needs no token in the app. "Check automatically" is off by default; downloading and installing always wait for a click. A signed build refuses any update that is not signed by its publisher. Signing goes through our own hook, because electron-builder 26's signtool route puts the PFX password on a command line.
 - 2026-10-30: the Crew graph hides React Flow's attribution link (`proOptions.hideAttribution`); React Flow is MIT and its licence notice ships with the app.
+- 2026-10-31: `project.json` is read tolerantly and written conservatively (§11.1): unknown values fall back (security fields fail closed), unknown keys survive saves, a newer version is read-only, and an invalid file is replaced only after asking, with a `.bak` copy. omux fixed the same class of bug in 0.6.1.
 
 **Open**
 1. Before the first release: which code-signing certificate (OV as a PFX, a hardware-bound one in the Windows store, or Azure Trusted Signing) and which HTTPS host serves the update feed (ADR 0011, "What a real release needs").

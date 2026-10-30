@@ -8,6 +8,7 @@ import { call, useDaemon } from "../../ipc.ts";
 import { useNav } from "../../nav.ts";
 import { usePrefs, type Density, type ThemePref } from "../../prefs.ts";
 import { AccountSwitchRows } from "./AccountSwitch.tsx";
+import { ConfigNotices } from "./ConfigNotices.tsx";
 import { AboutSection, DataSection } from "./DataSection.tsx";
 import { HibernationRows } from "./Hibernation.tsx";
 import { KeepAwakeRows } from "./KeepAwake.tsx";
@@ -86,6 +87,7 @@ function Projects() {
         </Button>
       </Row>
       {projects.data && <p className="st-note">{t("projects.added", { count: projects.data.length })}</p>}
+      <ConfigNotices />
     </Section>
   );
 }

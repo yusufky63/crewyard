@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Button, Label } from "@crewyard/ui";
-import { SETUP_CASE_TWINS, type FolderDetection } from "@crewyard/core";
+import { SETUP_CASE_TWINS, SETUP_CONFIG_INVALID, SETUP_CONFIG_NEWER, type FolderDetection } from "@crewyard/core";
 import { call, useDaemon } from "../../ipc.ts";
 import { canOpenProjects, useNav } from "../../nav.ts";
 import { buildConfig, draftProblems, seedFromDetection, STEPS, useDraft, type Draft, type Step } from "./draft.ts";
@@ -37,6 +37,8 @@ function useErrorText() {
     // Electron prefixes errors from ipcMain.handle with "Error invoking remote method '...': Error: ".
     const code = raw.replace(/^.*Error: /, "").trim();
     if (code === SETUP_CASE_TWINS) return t("errors.caseTwins", { folders: (det.caseTwins ?? []).join(", ") || t("errors.caseTwinsUnknown") });
+    if (code === SETUP_CONFIG_NEWER) return t("errors.configNewer");
+    if (code === SETUP_CONFIG_INVALID) return t("errors.configInvalid");
     return raw;
   };
 }
@@ -46,10 +48,17 @@ function useCreate(det: FolderDetection | undefined) {
   const qc = useQueryClient();
   const { go, openProject } = useNav();
   const [progress, setProgress] = useState<Progress | null>(null);
+  // An invalid project.json is replaced only after the user says so, before any step runs.
+  const [confirming, setConfirming] = useState(false);
 
-  const create = async () => {
+  const create = async (replaceInvalid = false) => {
     const d = useDraft.getState();
     if (!det || !d.path) return;
+    if (det.configStatus.state === "invalid" && !replaceInvalid) {
+      setConfirming(true);
+      return;
+    }
+    setConfirming(false);
     const ids = plannedActions(d, det);
     let items: Progress["items"] = ids.map((id) => ({ id, state: "none" }));
     const mark = (id: ActionId, state: RowState, error?: string) => {
@@ -68,7 +77,7 @@ function useCreate(det: FolderDetection | undefined) {
         if (id === "createRepo") remote = (await call("setup.createRepo", { path: d.path, name: d.repoName.trim() })).remoteUrl;
         if (id === "ci") await call("setup.writeCiTemplate", { path: d.path, branch, build: d.build.trim() || null, test: d.test.trim() || null });
         if (id === "config") {
-          const { project } = await call("setup.create", { path: d.path, config: buildConfig(d, remote) });
+          const { project } = await call("setup.create", { path: d.path, config: buildConfig(d, remote), replaceInvalid });
           mark(id, "ok");
           await qc.invalidateQueries({ queryKey: ["projects.list"] });
           await qc.invalidateQueries({ queryKey: ["projects.scan"] });
@@ -86,7 +95,34 @@ function useCreate(det: FolderDetection | undefined) {
       await qc.invalidateQueries({ queryKey: ["setup.detect"] });
     }
   };
-  return { progress, create, dismiss: () => setProgress(null) };
+  return { progress, create, confirming, dismiss: () => setProgress(null), keep: () => setConfirming(false) };
+}
+
+/** Asks before Create project replaces an invalid project.json; the old file is kept as project.json.bak. */
+function ReplaceConfirm({ file, onReplace, onKeep }: { file: string; onReplace: () => void; onKeep: () => void }) {
+  const { t } = useTranslation("setup");
+  const box = useRef<HTMLDivElement>(null);
+  // Focus moves to the answer buttons, so the keyboard reaches the question first.
+  useEffect(() => box.current?.querySelector<HTMLButtonElement>("button:last-of-type")?.focus(), []);
+  return (
+    <div className="wiz-progress" role="group" aria-label={t("config.replaceTitle")} ref={box}>
+      <div className="check-list">
+        <Row state="wait" label={t("config.replaceTitle")}>
+          {t("config.replaceText")}
+          <span className="mono small block as-typed">{file}</span>
+          <span className="block">{t("config.replaceBackup")}</span>
+        </Row>
+      </div>
+      <div className="progress-foot gap">
+        <Button size="sm" variant="ghost" onClick={onKeep}>
+          {t("config.keep")}
+        </Button>
+        <Button size="sm" variant="primary" onClick={onReplace}>
+          {t("config.replace")}
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 export function SetupScreen() {
@@ -94,7 +130,10 @@ export function SetupScreen() {
   const d = useDraft();
   const go = useNav((s) => s.go);
   const det = useDaemon("setup.detect", { path: d.path ?? "" }, { enabled: Boolean(d.path) });
-  const { progress, create, dismiss } = useCreate(det.data);
+  const { progress, create, confirming, dismiss, keep } = useCreate(det.data);
+  const configStatus = det.data?.configStatus;
+  // Asked only while the folder still holds an invalid file; picking another folder drops the question.
+  const asking = confirming && configStatus?.state === "invalid";
 
   // Fill the fields once per folder; later re-detections (after a failed create) keep the user's edits.
   useEffect(() => {
@@ -166,6 +205,8 @@ export function SetupScreen() {
           {d.step === 6 && <GithubStep det={det.data} />}
         </div>
 
+        {asking && <ReplaceConfirm file={configStatus.file} onReplace={() => void create(true)} onKeep={keep} />}
+
         {progress && (
           <div className="wiz-progress">
             <div className="check-list">
@@ -191,13 +232,13 @@ export function SetupScreen() {
               {t(`problems.${firstProblem.problem}`, { step: firstProblem.step })}
             </button>
           ) : (
-            <span className="muted small">{t("footNote")}</span>
+            <span className="muted small">{t(configStatus?.state === "newer" ? "config.newerFoot" : "footNote")}</span>
           )}
           <div className="end">
             <Button onClick={() => d.set({ step: (d.step - 1) as Step })} disabled={d.step === 1 || busy}>
               {t("back")}
             </Button>
-            <Button variant="primary" onClick={next} disabled={busy || (d.step === last && problems.length > 0)}>
+            <Button variant="primary" onClick={next} disabled={busy || asking || (d.step === last && problems.length > 0)}>
               {d.step === last ? (busy ? t("creating") : t("create.go")) : t("next", { step: t(`steps.${d.step + 1}.name`) })}
             </Button>
           </div>

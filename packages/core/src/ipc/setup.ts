@@ -48,6 +48,34 @@ export interface PathLengthCheck {
   filesSeen: number;
 }
 
+/** A value in project.json this build does not know, replaced by `used` when the file was read. */
+export interface ConfigFallback {
+  /** Dotted path, e.g. `rules.network` or `runners.2`. */
+  path: string;
+  /** The value as written, as JSON text. */
+  value: string;
+  /** What Crewyard uses instead, as JSON text; null when the entry was dropped (an unknown runner). */
+  used: string | null;
+}
+
+/** Why project.json could not be used: the file could not be read, is not JSON or not an object, has no usable version, a field fails its rule, or a key looks like a secret. */
+export type ConfigProblem = "unreadable" | "json" | "not_object" | "version" | "schema" | "secret";
+
+/**
+ * What reading .crewyard/project.json found. A newer file is used read-only: Crewyard applies what
+ * it understands and never writes it. An invalid one is never overwritten without asking, and the
+ * old file is kept beside it as project.json.bak.
+ */
+export type ProjectConfigStatus =
+  | { state: "missing" }
+  | { state: "valid"; file: string; fallbacks: ConfigFallback[] }
+  | { state: "newer"; file: string; version: number; fallbacks: ConfigFallback[]; understood: boolean; detail: string | null }
+  | { state: "invalid"; file: string; reason: ConfigProblem; detail: string };
+
+/** setup.create's refusals; the wizard words them in the user's language. */
+export const SETUP_CONFIG_NEWER = "setup.config_newer";
+export const SETUP_CONFIG_INVALID = "setup.config_invalid";
+
 export interface FolderDetection {
   path: string;
   name: string;
@@ -60,8 +88,10 @@ export interface FolderDetection {
   worktreeRoot: string;
   pathCheck: PathLengthCheck;
   longPathsEnabled: boolean | null;
-  /** The existing .crewyard/project.json when it is valid, so the wizard can start from it. */
+  /** The existing .crewyard/project.json when it could be used (valid, or newer and understood), so the wizard can start from it. */
   existingConfig: ProjectConfig | null;
+  /** What reading project.json found; the wizard shows it and Create project follows it. */
+  configStatus: ProjectConfigStatus;
   /** Workflow files already in .github/workflows. */
   workflows: string[];
   /** Sibling folders whose names differ only by letter case; setup.create refuses while any exist. */
@@ -82,8 +112,18 @@ export interface SetupIpc {
   "setup.detect": { params: { path: string }; result: FolderDetection };
   /** Recomputes the path-length check for a worktree root the user changed. */
   "setup.pathCheck": { params: { path: string; worktreeRoot: string }; result: PathLengthCheck };
-  /** Validates and writes .crewyard/project.json, then adds and opens the project. Refuses secret-like keys. */
-  "setup.create": { params: { path: string; config: unknown }; result: { project: ProjectSummary; configPath: string } };
+  /**
+   * Validates and writes .crewyard/project.json, then adds and opens the project. Refuses secret-like keys.
+   * Keys this build does not know survive the write. A file from a newer Crewyard is never written: the
+   * project is added and the file stays as it is (`written: false`). An invalid file is replaced only
+   * with `replaceInvalid: true`, after a copy goes to project.json.bak; otherwise SETUP_CONFIG_INVALID.
+   */
+  "setup.create": {
+    params: { path: string; config: unknown; replaceInvalid?: boolean };
+    result: { project: ProjectSummary; configPath: string; written: boolean; backup: string | null };
+  };
+  /** Projects whose project.json is newer, invalid or had values replaced, for the notices in Settings. */
+  "setup.configNotices": { params: void; result: Array<{ projectId: string; name: string; path: string; status: ProjectConfigStatus }> };
   "setup.gitInit": { params: { path: string }; result: { branch: string } };
   /** `gh repo create <name> --private --source . --remote origin`. Never pushes. */
   "setup.createRepo": { params: { path: string; name: string }; result: { remoteUrl: string } };

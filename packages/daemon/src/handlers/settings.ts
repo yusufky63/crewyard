@@ -2,7 +2,7 @@ import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { AppSettings, DataInfo, SettingsIpc, SettingsPatch } from "@crewyard/core";
 import { orchestratorFor } from "../orchestrator/index.ts";
-import { readProjectConfig } from "../setup/config.ts";
+import { effectiveProjectConfig } from "../setup/index.ts";
 import { backupsDir, backupTo, commitStaged, exportTo, listBackups, stageRestore } from "../settings/data.ts";
 import { ACCOUNT_SWITCH_KEY, applyPatch, HIBERNATION_KEY, KEEP_AWAKE_KEY, NOTIFICATIONS_KEY, readAccountSwitch, readHibernation, readKeepAwake, readNotifications, readStalls, STALLS_KEY } from "../settings/values.ts";
 import { appliedMigrationIds, MIGRATIONS } from "../store.ts";
@@ -82,15 +82,10 @@ export function createSettingsHandlers(ctx: HandlerContext, opts: SettingsOption
       return { restoredFrom: path, safetyBackup, schemaVersion: version };
     },
     "settings.toastPolicy": ({ projectId }) => {
-      const row = db.prepare("select path from projects where id = ?").get(projectId) as { path: string } | undefined;
+      const row = db.prepare("select path, name from projects where id = ?").get(projectId) as { path: string; name: string } | undefined;
       if (!row) throw new Error("project.not_found");
-      let config = null;
-      try {
-        config = readProjectConfig(row.path);
-      } catch {
-        // An unreadable file falls back to the default, as the orchestrator does.
-      }
-      return { toastApprovals: config?.rules.toastApprovals ?? "low" };
+      // The same config the orchestrator runs with: a file it cannot use turns toast approvals off.
+      return { toastApprovals: effectiveProjectConfig(row.path, row.name).config.rules.toastApprovals };
     },
     "app.shutdown": async () => {
       const stopped = activeRuns();

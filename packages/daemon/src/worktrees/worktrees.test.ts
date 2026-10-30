@@ -176,8 +176,8 @@ async function project(bootstrap: Partial<ProjectConfig["bootstrap"]>, pick: (ro
 }
 
 describe("worktree bootstrap", () => {
-  it("asks once per command hash, holds the run, then copies, sets up and passes the port", async () => {
-    const setup = nodeStep("require('fs').writeFileSync('setup-ran.txt', process.env.PORT + ' ' + process.env.CREWYARD_PORT)");
+  it("asks once per command hash, holds the run, then copies, sets up and passes the port and main checkout", async () => {
+    const setup = nodeStep("require('fs').writeFileSync('setup-ran.txt', process.env.PORT + ' ' + process.env.CREWYARD_PORT + '|' + process.env.CREWYARD_REPO)");
     const p = await project({ setup: [setup], include: [".env"], port: { from: 5000, to: 5099, envVar: "PORT" } });
     const taskId = await p.start();
     const [q] = await waitFor(() => (p.bootRequests(taskId).length > 0 ? p.bootRequests(taskId) : null));
@@ -194,7 +194,9 @@ describe("worktree bootstrap", () => {
     expect(port).toBeGreaterThanOrEqual(5000);
     expect(port).toBeLessThanOrEqual(5099);
     expect(impl.req.env?.CREWYARD_PORT).toBe(String(port));
-    expect(readFileSync(join(wt, "setup-ran.txt"), "utf8")).toBe(`${port} ${port}`);
+    // Setup steps and the agent both get the main checkout, so a step can read from it.
+    expect(impl.req.env?.CREWYARD_REPO).toBe(p.repo);
+    expect(readFileSync(join(wt, "setup-ran.txt"), "utf8")).toBe(`${port} ${port}|${p.repo}`);
     expect(readFileSync(join(wt, ".env"), "utf8")).toBe("SECRET_VALUE=do-not-log\n");
     const events = p.store.db.prepare("select kind, payload from events").all() as Array<{ kind: string; payload: string }>;
     expect(events.find((e) => e.kind === "worktree.include_copied")?.payload).toContain(".env");

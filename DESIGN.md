@@ -169,14 +169,14 @@ Icons inside buttons are 14 px.
 | Screen | First view | Second level |
 |---|---|---|
 | **Start** (no project open) | hero line across the full width, `New project` / `Open folder` / `Clone from GitHub` beside the lead; the last project as one wide tile across the full width; then Recently used (the other projects, newest first, one line each) and Getting started beside `Import from C:\Projeler` (the repo git touched last first); the This machine strip last, across the full width (owner, 2026-10-31: "Bu bilgisayar kısmını alt kısma al") | all projects, install guides, the full machine panel; the sidebar hides, and the 32 px hero is used only here |
-| **New project** | five numbered step tiles (Folder, Agents, Accounts & budget, Rules, GitHub), one step pane, Back / Next | edit detected commands, create a private repo, CI template; nothing is written until `Create project` |
+| **New project** | five numbered step tiles (Folder, Agents, Accounts & budget, Rules, GitHub), one step pane, Back / Next | edit detected commands, create a private repo, CI template; nothing is written until `Create project`. An existing `project.json` is the first Folder row: values it replaced (warn), from a newer Crewyard and read-only (warn), or unusable with the reason (bad). Replacing an unusable one asks first, in a row above the footer |
 | **Tasks** (project home) | composer, crew proposal when drafting, filters `All / Running / Needs you / Ready for review / Merged / Done`, task rows | steps, limit banner, diff, PR link, inspector |
 | **Inbox** | items that need an answer first, then limits, automatic account switches (each fact with its provenance badge, `Off for this task`, `Dismiss`) and GitHub notices | detail pane: approve once / allow in project / deny; question options + note |
 | **Crew graph** | one task's crew: task → roles → PR, standby fallback, limit annotation | drag and drop, pan, zoom, full screen, right-click actions (pause, check again, change AI or model, hand off, wait for reset, stop), Messages and Files edge sets, list view for screen readers, inspector |
 | **Providers** | catalog providers with newest models and prices, which runners each works with, credential and limits, connected first | add provider, refresh catalog, filters (connected, first-party, coding plans, aggregators, local) |
 | **Limits & usage** | subscription windows per account with provenance, API spend (7 days) with segmented bar, balances and caps | alert thresholds, on-limit policy, Windows notifications; the `Usage ledger` tab: tokens in, out and cache reads by day, model, provider or task, dollars only for per-token keys (plans and local models show `Plan`), a segmented bar with legend, CSV and JSON export through a save dialog |
 | **GitHub** | Actions minutes this month, branches waiting to push, worktrees, PR table with merge gate | checks and logs, review comments sent back to the agent, worktree cleanup |
-| **Settings** | accounts and API keys (aliases only), roles, policies, theme, density | per-project allowlist, price table version, diagnostics |
+| **Settings** | accounts and API keys (aliases only), roles, policies, theme, density | per-project allowlist, price table version, diagnostics; under Projects, the projects whose `project.json` is newer, unusable or had values replaced |
 
 ## 7. Interaction rules
 

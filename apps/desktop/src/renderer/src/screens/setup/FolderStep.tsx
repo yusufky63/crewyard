@@ -5,6 +5,7 @@ import type { FolderDetection } from "@crewyard/core";
 import { call, useDaemon } from "../../ipc.ts";
 import { usePrefs } from "../../prefs.ts";
 import { useDraft, type Source } from "./draft.ts";
+import { ConfigRow } from "./ConfigNotice.tsx";
 import { CheckBox, Row, Seg } from "./parts.tsx";
 
 function ClonePicker() {
@@ -132,7 +133,7 @@ function Detection({ det }: { det: FolderDetection }) {
   const typeLabel = t(`type.${det.type.kind}`);
   return (
     <div className="check-list">
-      {det.existingConfig && <Row state="ok" label={t("folder.existing")}>{t("folder.existingText")}</Row>}
+      <ConfigRow status={det.configStatus} />
       {det.alreadyAdded && <Row state="wait" label={t("folder.added")}>{t("folder.addedText")}</Row>}
       {det.caseTwins && det.caseTwins.length > 0 && (
         <Row state="bad" label={t("folder.caseTwins")}>
