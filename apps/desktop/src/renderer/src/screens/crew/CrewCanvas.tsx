@@ -153,6 +153,9 @@ export function CrewCanvas({ model, taskTitle, positions, selected, full, onMove
         }}
         onPaneClick={() => onSelect(null)}
         onPaneContextMenu={(e) => e.preventDefault()}
+        // The owner's call (2026-10-30, PLAN.md §17): no attribution link on the canvas. React Flow is
+        // MIT and its licence notice is in NOTICE.
+        proOptions={{ hideAttribution: true }}
         snapToGrid
         snapGrid={[SNAP, SNAP]}
         nodeDragThreshold={4}

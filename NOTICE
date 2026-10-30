@@ -11,6 +11,9 @@ Third-party material used by this project:
   in catalog/curated.json come from cc-switch (MIT, https://github.com/farion1231/cc-switch);
   every entry cites its file and line.
 - Geist and Geist Mono fonts (SIL Open Font License 1.1), bundled through @fontsource.
+- @xyflow/react and @xyflow/system (React Flow), MIT, Copyright (c) 2019-2025 webkid GmbH
+  (https://github.com/xyflow/xyflow). The Crew graph hides React Flow's attribution link
+  (`proOptions.hideAttribution`), which the MIT licence allows; this notice keeps its copyright.
 - packages/ui/src/brand-icons.gen.ts: provider logos from models.dev (MIT,
   https://github.com/anomalyco/models.dev) and the Claude, Google Gemini, Git, GitHub and Ollama
   marks from simple-icons 16.36.0 (CC0-1.0, https://github.com/simple-icons/simple-icons).
