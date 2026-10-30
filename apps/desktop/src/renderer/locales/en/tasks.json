@@ -95,6 +95,7 @@
     "independence_provider": "Different provider than the implementer",
     "independence_model": "Does not share the implementer's {{model}}",
     "pinned": "Pinned by you",
+    "profile_note": "Your note: {{note}}",
     "only_candidate": "The only account that fits",
     "no_candidate": "No signed-in account fits this role",
     "no_independent_candidate": "Every fitting account uses the implementer's model",

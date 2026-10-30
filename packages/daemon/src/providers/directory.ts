@@ -4,7 +4,7 @@ import { capabilities as acpCapabilities } from "@crewyard/adapter-acp";
 import { capabilities as claudeCapabilities } from "@crewyard/adapter-claude";
 import { capabilities as codexCapabilities } from "@crewyard/adapter-codex";
 import { capabilities as opencodeCapabilities } from "@crewyard/adapter-opencode";
-import { runnerSupport, type AgentCapabilities, type CatalogProvider, type Profile, type ProfileRunner, type ProfileSummary } from "@crewyard/core";
+import { effortSupport, runnerSupport, type AgentCapabilities, type CatalogProvider, type EffortLevel, type Profile, type ProfileRunner, type ProfileSummary } from "@crewyard/core";
 import type { Candidate, ProfileDirectory } from "../orchestrator/directory.ts";
 import type { ProvidersService } from "./service.ts";
 
@@ -39,32 +39,52 @@ export function keyNamesFor(runner: ProfileRunner, provider: CatalogProvider | u
 /**
  * Codex reaches a non-OpenAI provider only through `model_providers` in its config.toml
  * (wire_api "responses"; codex 0.147 rejects "chat"). The profile folder is ours, so the file is
- * rewritten before each run; for OpenAI itself any earlier file is removed.
+ * rewritten before each run; for OpenAI itself it holds only the effort preset, or is removed.
  */
-export function writeCodexConfig(configDir: string, provider: CatalogProvider | undefined): void {
+export function writeCodexConfig(configDir: string, provider: CatalogProvider | undefined, effort: EffortLevel | null = null): void {
   const file = join(configDir, "config.toml");
   const base = baseUrlFor("codex", provider);
-  if (!provider || !base) {
+  const reasoning = effort && provider && effortSupport("codex", provider.id) === "config" ? effort : null;
+  if (!provider || (!base && !reasoning)) {
     if (existsSync(file)) rmSync(file, { force: true });
     return;
   }
   const envKey = provider.env[0] ?? `${provider.id.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_API_KEY`;
   const q = (s: string) => JSON.stringify(s);
+  // Top-level keys first: anything after a [table] header belongs to that table.
   const body = [
     "# Managed by Crewyard for this profile; rewritten before each run.",
-    `model_provider = ${q(provider.id)}`,
-    "",
-    `[model_providers.${q(provider.id)}]`,
-    `name = ${q(provider.name)}`,
-    `base_url = ${q(base)}`,
-    `env_key = ${q(envKey)}`,
-    `wire_api = "responses"`,
+    ...(reasoning ? [`model_reasoning_effort = ${q(reasoning)}`] : []),
+    ...(base
+      ? [`model_provider = ${q(provider.id)}`, "", `[model_providers.${q(provider.id)}]`, `name = ${q(provider.name)}`, `base_url = ${q(base)}`, `env_key = ${q(envKey)}`, `wire_api = "responses"`]
+      : []),
     "",
   ].join("\n");
   mkdirSync(configDir, { recursive: true });
   const tmp = `${file}.${process.pid}.tmp`;
   writeFileSync(tmp, body, "utf8");
   renameSync(tmp, file);
+}
+
+/**
+ * Env for a profile's presets, apart from its key: the effort level where the runner reads it
+ * from env, and Claude Code's haiku, sonnet and opus slots on an Anthropic-compatible provider.
+ * The Claude adapter fills slots left empty here with the run's own model.
+ */
+export function presetEnv(p: Pick<ProfileSummary, "runner" | "providerId" | "effort" | "modelSlots">, provider: CatalogProvider | undefined): Record<string, string> {
+  const env: Record<string, string> = {};
+  if (p.effort && effortSupport(p.runner, p.providerId) === "env") env.CLAUDE_CODE_EFFORT_LEVEL = p.effort;
+  if (p.runner === "claude-code" && p.modelSlots && baseUrlFor("claude-code", provider)) {
+    const { haiku, sonnet, opus } = p.modelSlots;
+    if (haiku) {
+      env.ANTHROPIC_DEFAULT_HAIKU_MODEL = haiku;
+      // Older Claude Code builds read the small, fast model from this name instead.
+      env.ANTHROPIC_SMALL_FAST_MODEL = haiku;
+    }
+    if (sonnet) env.ANTHROPIC_DEFAULT_SONNET_MODEL = sonnet;
+    if (opus) env.ANTHROPIC_DEFAULT_OPUS_MODEL = opus;
+  }
+  return env;
 }
 
 /** The adapter-facing profile for a stored one; shared by runs and the sign-in flows. */
@@ -108,6 +128,8 @@ export function providersDirectory(svc: ProvidersService): ProfileDirectory {
       // Spend is recorded and capped per API key; local providers have no key to cap.
       credentialId: credential?.kind === "api_key" ? credential.id : null,
       catalogVersion: svc.catalog.current().hash,
+      note: p.note,
+      readOnly: p.readOnly,
     };
   };
 
@@ -117,10 +139,11 @@ export function providersDirectory(svc: ProvidersService): ProfileDirectory {
       const p = svc.listProfiles().find((x) => x.id === profileId);
       if (!p) throw new Error(`Unknown profile: ${profileId}`);
       const provider = providerOf(p.providerId);
-      if (p.runner === "codex") writeCodexConfig(p.configDir, provider);
+      if (p.runner === "codex") writeCodexConfig(p.configDir, provider, p.effort);
+      const presets = presetEnv(p, provider);
       const secret = p.credentialId ? await svc.secrets.get(p.credentialId) : null;
-      if (!secret) return {};
-      return Object.fromEntries(keyNamesFor(p.runner, provider).map((name) => [name, secret]));
+      if (!secret) return presets;
+      return { ...presets, ...Object.fromEntries(keyNamesFor(p.runner, provider).map((name) => [name, secret])) };
     },
   };
 }

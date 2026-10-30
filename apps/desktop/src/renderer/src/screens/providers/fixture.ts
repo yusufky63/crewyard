@@ -1,5 +1,5 @@
-import type { AccountRow, CredentialSummary, IpcMethod, IpcParams, IpcResult, LimitsOverview, ProfileSummary, SignInSession, SignInStatus, SpendSummary } from "@crewyard/core";
-import { DEFAULT_THRESHOLDS } from "@crewyard/core";
+import type { AccountRow, CredentialSummary, IpcMethod, IpcParams, IpcResult, KeyCheckView, LimitsOverview, ProfilePresets, ProfileSummary, SignInSession, SignInStatus, SpendSummary } from "@crewyard/core";
+import { DEFAULT_THRESHOLDS, NO_PRESETS } from "@crewyard/core";
 
 // Screenshot data for the Providers and Limits screens and the accounts block. Used only when the
 // page URL has `fixture`, which the main process sets only in screenshot mode (CREWYARD_SHOT_QUERY);
@@ -14,7 +14,9 @@ const ago = (min: number) => new Date(T0 - min * 60_000).toISOString();
 const ahead = (min: number) => new Date(T0 + min * 60_000).toISOString();
 const DIR = "C:\\Users\\you\\AppData\\Roaming\\Crewyard\\data\\profiles";
 
-const profile = (id: string, alias: string, runner: ProfileSummary["runner"], providerId: string, credentialId: string | null, defaultModel: string | null): ProfileSummary => ({
+const profile = (id: string, alias: string, runner: ProfileSummary["runner"], providerId: string, credentialId: string | null, defaultModel: string | null, presets: Partial<ProfilePresets> = {}): ProfileSummary => ({
+  ...NO_PRESETS,
+  ...presets,
   id,
   alias,
   runner,
@@ -31,7 +33,12 @@ const PROFILES: ProfileSummary[] = [
   profile("p-personal", "personal", "codex", "openai", null, null),
   profile("p-team", "team", "codex", "openai", null, null),
   profile("p-google", "google", "gemini-cli", "google", null, null),
-  profile("p-ds", "ds-primary", "opencode", "deepseek", "c-ds", null),
+  profile("p-ds", "ds-primary", "opencode", "deepseek", "c-ds", "deepseek-flash", { note: "fast and cheap, good for docs" }),
+  profile("p-ds-cc", "ds-claude", "claude-code", "deepseek", "c-ds", "deepseek-v4-pro", {
+    note: "second opinion on reviews",
+    readOnly: true,
+    modelSlots: { haiku: "deepseek-flash", sonnet: "deepseek-v4-pro", opus: "deepseek-v4-pro" },
+  }),
   profile("p-zai", "zai", "claude-code", "zai-coding-plan", "c-zai", null),
   profile("p-ocg", "zen", "opencode", "opencode-go", "c-ocg", null),
   profile("p-kimi", "kimi", "claude-code", "kimi-code-plan-global", "c-kimi", null),
@@ -92,6 +99,24 @@ const LIMITS: LimitsOverview = {
   ],
 };
 
+const KEY_CHECKS: KeyCheckView[] = [
+  {
+    credentialId: "c-ds",
+    providerId: "deepseek",
+    state: "valid",
+    reason: null,
+    status: 200,
+    endpoint: "https://api.deepseek.com/v1/models",
+    models: ["deepseek-flash", "deepseek-v4-pro"],
+    extraModels: [],
+    checkedAt: ago(6),
+    latency: { ms: 330, class: "ok", status: 401, url: "https://api.deepseek.com/v1/models", checkedAt: ago(6) },
+  },
+  { credentialId: "c-zai", providerId: "zai-coding-plan", state: "unknown", reason: "no_list", status: 404, endpoint: "https://api.z.ai/models", models: [], extraModels: [], checkedAt: ago(30), latency: { ms: 6840, class: "slow", status: 401, url: "https://api.z.ai/api/coding/paas/v4/models", checkedAt: ago(30) } },
+  { credentialId: "c-kimi", providerId: "kimi-code-plan-global", state: "invalid", reason: null, status: 401, endpoint: "https://api.kimi.ai/coding/v1/models", models: [], extraModels: [], checkedAt: ago(2), latency: null },
+  { credentialId: "c-ocg", providerId: "opencode-go", state: "unchecked", reason: null, status: null, endpoint: null, models: [], extraModels: [], checkedAt: null, latency: null },
+];
+
 const SPEND: SpendSummary = {
   days: 7,
   from: ago(60 * 24 * 7),
@@ -128,6 +153,7 @@ const DATA: Partial<{ [M in IpcMethod]: (params: IpcParams<M>) => IpcResult<M> }
   "providers.accounts": () => (VARIANT === "empty" ? [] : VARIANT === "keys" ? ACCOUNTS.filter((a) => ["credential:c-ds", "credential:c-ocg", "credential:c-kimi"].includes(a.key)) : ACCOUNTS),
   "providers.balances": () => [{ credentialId: "c-ds", providerId: "deepseek", wallets: [{ amount: 18.4, currency: "USD" }], provenance: "reported", fetchedAt: ago(9), error: null }],
   "providers.spend": () => SPEND,
+  "providers.keyChecks": () => KEY_CHECKS,
 };
 
 export function hasFixture(method: IpcMethod): boolean {

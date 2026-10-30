@@ -130,6 +130,23 @@
     "settings": "Ayarlar",
     "quiet": "Sessiz {{from}}–{{to}}",
     "quietTitle": "Sessiz saatler. Bildirimler gösterilmez; gelen kutusu yine dolar.",
-    "quietActive": "Şu an sessiz"
+    "quietActive": "Şu an sessiz",
+    "awake": "Uyanık",
+    "awakeBattery": "Uykuya izin var",
+    "awakeIdle": "Çalışırken uyanık"
+  },
+  "keepAwake": {
+    "label": "Ajanlar çalışırken bilgisayarı uyanık tut",
+    "hint": "Bir çalışma sürerken Windows uyku moduna geçmez; ekran yine kapanabilir. Siz açmadıkça kapalıdır.",
+    "battery": "Pil koruması",
+    "batteryHint": "Pille çalışırken şarj bu seviyeye ya da altına inerse Windows, çalışma sürse bile yeniden uyuyabilir. Pille çalışırken şarj bilinmiyorsa da uyuyabilir.",
+    "pct": "%{{pct}}",
+    "now": {
+      "active": "Şu an: Windows uyanık tutuluyor. Süren çalışma: {{count}}",
+      "battery": "Şu an: Windows uyuyabilir. Pil %{{pct}}, sınır %{{min}}",
+      "batteryUnknown": "Şu an: Windows uyuyabilir. Pille çalışıyor, şarj bilinmiyor",
+      "idle": "Şu an: süren çalışma yok, Windows her zamanki gibi uyur",
+      "off": "Şu an: kapalı, Windows her zamanki gibi uyur"
+    }
   }
 }

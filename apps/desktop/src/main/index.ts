@@ -1,10 +1,11 @@
 import { readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
-import { app, BrowserWindow, dialog, ipcMain, Notification, shell, type MessageBoxOptions } from "electron";
-import { inQuietHours, type IpcMethod, type IpcParams, type IpcResult, type NotificationSettings } from "@crewyard/core";
+import { app, BrowserWindow, dialog, ipcMain, Notification, powerMonitor, powerSaveBlocker, shell, type MessageBoxOptions } from "electron";
+import { inQuietHours, type AppSettings, type IpcMethod, type IpcParams, type IpcResult, type NotificationSettings } from "@crewyard/core";
 import type { AppInfo, NavigateTarget, StartupState, TitleBarColors } from "../shared/api.ts";
 import { DaemonHost } from "./daemon-host.ts";
 import { pickMainLanguage, translator, type MainLanguage } from "./i18n.ts";
+import { batteryPct, KeepAwake } from "./keep-awake.ts";
 import { Toaster } from "./notify/toaster.ts";
 import { HIDDEN_ARG, readStartup, writeStartup } from "./startup.ts";
 import { AppTray } from "./tray.ts";
@@ -71,6 +72,9 @@ const send = (topic: string, payload: unknown) => {
   for (const w of BrowserWindow.getAllWindows()) w.webContents.send("crewyard:event", topic, payload);
 };
 
+// Opt-in; it only ever holds the machine in the real desktop app, never in screenshot or smoke runs.
+const keepAwake = new KeepAwake({ blocker: powerSaveBlocker, onChange: (s) => send("keepAwake.changed", s) });
+
 const daemon = new DaemonHost(join(here, "daemon.js"), join(app.getPath("userData"), "data"), (topic, payload) => {
   send(topic, payload);
   if (!desktop) return;
@@ -79,7 +83,8 @@ const daemon = new DaemonHost(join(here, "daemon.js"), join(app.getPath("userDat
     void refreshSettings();
     scheduleWork();
   } else if (topic === "settings.changed") {
-    notifications = (payload as { notifications: NotificationSettings }).notifications;
+    notifications = (payload as AppSettings).notifications;
+    keepAwake.setSettings((payload as AppSettings).keepAwake);
     tray?.render();
   } else if (topic === "tasks.changed" || topic === "requests.changed") scheduleWork();
 });
@@ -96,7 +101,9 @@ const toaster = new Toaster({
 
 async function refreshSettings(): Promise<void> {
   try {
-    notifications = (await callDaemon("settings.get", undefined)).notifications;
+    const settings = await callDaemon("settings.get", undefined);
+    notifications = settings.notifications;
+    keepAwake.setSettings(settings.keepAwake);
     tray?.render();
   } catch {
     // daemon restarting; daemon.ready comes again
@@ -107,6 +114,7 @@ async function refreshWork(): Promise<WorkSummary> {
   const [tasks, requests, projects] = await Promise.all([callDaemon("tasks.list", {}), callDaemon("requests.list", {}), callDaemon("projects.list", undefined)]);
   work = summarize(tasks, requests, projects);
   tray?.update(work);
+  keepAwake.setRuns(work.running);
   return work;
 }
 
@@ -229,6 +237,7 @@ async function requestQuit(): Promise<void> {
     if (response !== 0) return;
   }
   quitting = true;
+  keepAwake.dispose();
   await daemon.shutdown();
   tray?.destroy();
   app.quit();
@@ -296,6 +305,8 @@ ipcMain.on("crewyard:language", (_e, lng: unknown) => {
 ipcMain.on("crewyard:test-toast", () => {
   if (desktop) toaster.plain("toast.test", "toast.testBody");
 });
+ipcMain.handle("crewyard:keep-awake", () => keepAwake.state());
+ipcMain.on("crewyard:battery", (_e, reading: unknown) => keepAwake.setBatteryPct(batteryPct(reading)));
 ipcMain.on("crewyard:titlebar", (_e, colors: TitleBarColors) => {
   if (isWin && win && !win.isDestroyed()) win.setTitleBarOverlay({ ...colors, height: 40 });
 });
@@ -320,6 +331,10 @@ void app.whenReady().then(() => {
     });
     // Quiet hours start and end with the clock, not with an event.
     setInterval(() => tray?.render(), 60_000).unref();
+    // The battery guard follows the power source as Windows reports it; the charge comes from the renderer.
+    keepAwake.setOnBattery(powerMonitor.isOnBatteryPower());
+    powerMonitor.on("on-battery", () => keepAwake.setOnBattery(true));
+    powerMonitor.on("on-ac", () => keepAwake.setOnBattery(false));
   }
   win = createWindow();
   if (smokeRun) void smoke();

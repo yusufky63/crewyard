@@ -49,6 +49,7 @@ export type ReasonCode =
   | "independence.provider" // reviewer on a different provider than the implementer
   | "independence.model" // { model } of the implementer, which this candidate does not share
   | "pinned"
+  | "profile.note" // { note } the profile's own "when to use" note
   | "only_candidate"
   | "no_candidate"
   | "no_independent_candidate"

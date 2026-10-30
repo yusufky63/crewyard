@@ -95,6 +95,7 @@
     "independence_provider": "Uygulayıcıdan farklı bir sağlayıcı",
     "independence_model": "Uygulayıcının {{model}} modelini kullanmıyor",
     "pinned": "Sizin sabitlediğiniz hesap",
+    "profile_note": "Notunuz: {{note}}",
     "only_candidate": "Uyan tek hesap",
     "no_candidate": "Bu role uyan, oturumu açık bir hesap yok",
     "no_independent_candidate": "Uyan her hesap uygulayıcının modelini kullanıyor",

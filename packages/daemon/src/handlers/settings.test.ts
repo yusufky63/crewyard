@@ -65,6 +65,17 @@ describe("settings values", () => {
     expect(await h["settings.get"]()).toEqual(DEFAULT_SETTINGS);
   });
 
+  it("keeps the machine-awake switch off by default and checks the battery threshold", async () => {
+    const { h, store } = setup();
+    expect((await h["settings.get"]()).keepAwake).toEqual({ enabled: false, minBatteryPct: 30 });
+    const next = await h["settings.update"]({ keepAwake: { enabled: true, minBatteryPct: 20 } });
+    expect(next.keepAwake).toEqual({ enabled: true, minBatteryPct: 20 });
+    expect(next.notifications).toEqual(DEFAULT_SETTINGS.notifications);
+    for (const bad of [0, 100, 22, 1.5]) await expect(attempt(() => h["settings.update"]({ keepAwake: { minBatteryPct: bad } }))).rejects.toThrow("settings.invalid");
+    store.db.prepare("update settings set value = ? where key = 'app.keepAwake'").run(JSON.stringify({ enabled: true, minBatteryPct: "low" }));
+    expect((await h["settings.get"]()).keepAwake).toEqual({ enabled: true, minBatteryPct: 30 });
+  });
+
   it("falls back per field when the stored value is damaged", async () => {
     const { h, store } = setup();
     store.db.prepare("insert into settings (key, value) values ('app.notifications', ?)").run(JSON.stringify({ enabled: false, quietHours: { start: "nope" }, approveFromToast: 3 }));

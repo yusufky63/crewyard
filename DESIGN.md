@@ -106,7 +106,7 @@ Icons inside buttons are 14 px.
 - **Title bar** stays short: brand, project switcher, command search, notifications and native-sized Windows caption buttons (46 px wide, close turns `#C42B1C` on hover). It is custom (frameless window).
 - **Status bar** holds system state, so the title bar never fills up:
   - left: daemon state, running / queued / slots, need you, near limit, RAM;
-  - right: last GitHub sync, Actions minutes, quiet hours, theme, density.
+  - right: last GitHub sync, Actions minutes, keep awake (only while that setting is on), quiet hours, theme, density.
   - Every item that has a screen opens it on click. Below 1180 px the lower-priority items (RAM, GitHub sync, Actions) hide.
 - **Sidebar** is two framed blocks:
   - **Nav:** six destinations, counters only on Inbox. The active item gets bright corner ticks.

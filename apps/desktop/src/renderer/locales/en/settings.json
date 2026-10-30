@@ -130,6 +130,23 @@
     "settings": "Settings",
     "quiet": "Quiet {{from}}–{{to}}",
     "quietTitle": "Quiet hours. Notifications are held back; the Inbox still fills.",
-    "quietActive": "Quiet now"
+    "quietActive": "Quiet now",
+    "awake": "Awake",
+    "awakeBattery": "Sleep allowed",
+    "awakeIdle": "Awake when running"
+  },
+  "keepAwake": {
+    "label": "Keep the PC awake while agents run",
+    "hint": "Windows does not go to sleep while a run is active; the screen can still turn off. Off unless you turn it on.",
+    "battery": "Battery guard",
+    "batteryHint": "On battery at or below this charge, Windows may sleep again, even mid-run. On battery with an unknown charge it may sleep too.",
+    "pct": "{{pct}}%",
+    "now": {
+      "active": "Now: keeping Windows awake. Active runs: {{count}}",
+      "battery": "Now: Windows may sleep. Battery at {{pct}}%, guard at {{min}}%",
+      "batteryUnknown": "Now: Windows may sleep. On battery, charge unknown",
+      "idle": "Now: no run is active, so Windows sleeps as usual",
+      "off": "Now: off, so Windows sleeps as usual"
+    }
   }
 }

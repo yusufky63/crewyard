@@ -432,6 +432,34 @@ export const MIGRATIONS: Migration[] = [
      checked_at text not null
    );`,
   },
+  // Key checks and model discovery (feature scan A6): the last answer per key, with the models the
+  // provider listed and the last reachability check. Profile presets (A16) sit in a side table so
+  // the migration stays idempotent; a profile without a row has no presets.
+  {
+    id: "key-checks-presets",
+    sql: `create table if not exists key_checks (
+     credential_id text primary key references credentials(id) on delete cascade,
+     provider_id text not null,
+     state text,
+     reason text,
+     status integer,
+     endpoint text,
+     models text not null default '[]',
+     checked_at text,
+     latency_ms integer,
+     latency_class text,
+     latency_status integer,
+     latency_url text,
+     latency_at text
+   );
+   create table if not exists profile_presets (
+     profile_id text primary key references profiles(id) on delete cascade,
+     note text,
+     effort text,
+     read_only integer not null default 0,
+     model_slots text
+   );`,
+  },
 ];
 
 /** What the positional scheme applied: a database at `user_version` N has the first N of these. */

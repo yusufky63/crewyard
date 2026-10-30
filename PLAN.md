@@ -204,6 +204,8 @@ The first snapshot, `catalog/providers.json`, was built on 2026-10-29 from model
   - Reported balance endpoints: DeepSeek, OpenRouter, Novita, StepFun, SiliconFlow.
   - Coding-plan quota for Kimi Code, Z.ai, MiniMax and OpenCode Go is read with the key from the endpoints cc-switch calls (checked against Z.ai's own plugin and Kimi's CLI on 2026-10-30; `packages/daemon/src/providers/plan-quota.ts`) and shows as Reported. None is documented by its provider, so a response we do not recognise or a failed read shows Unknown, never 0, and "no coding plan" shows as pay as you go. Background reads are opt-in on the Limits screen, with the endpoints listed next to the switch.
 - **Adding a provider:** pick it from the catalog, paste the key (stored with DPAPI), run the probe (a free model-list call where the provider has one), then choose which runners may use it.
+- **Key check and model discovery** (`packages/daemon/src/providers/key-check.ts`): when a key is added or replaced, and on `Check key`, one `GET …/models` per candidate URL (the OpenAI-compatible base, then the Anthropic-compatible base without its `/anthropic`, `/api/coding` or similar suffix; DashScope's `/apps/anthropic` lists under `/compatible-mode/v1/models`). 401/403 (Gemini: 400 with an invalid-key reason) marks the key invalid; a list that also answers without the key is public and leaves the key Unknown. Listed models the catalog lacks can be picked as a profile's model and for Claude Code's haiku, sonnet and opus slots. `Check speed` is a warm-up plus one timed GET without the key (8 s timeout, slow above 6 s); it is shown only and never feeds handoff or fallback.
+- **Profile presets:** a profile can carry a "when to use" note (80 characters, shown first in the crew proposal's reason, never sent to an agent), an effort level where the runner takes one (Claude Code on Anthropic through `CLAUDE_CODE_EFFORT_LEVEL`, Codex on OpenAI through `model_reasoning_effort`), and a read-only preset that keeps it to roles that never write.
 
 ## 7. Limits, usage and notifications
 
@@ -352,6 +354,7 @@ The result is `.mission/project.json` in the repo: name, commands, allowed runne
 - Paths with spaces, long paths (`\\?\` prefix where needed), OneDrive-redirected folders.
 - Signed installer and binaries; per-user install, no admin needed.
 - Windows toasts with an AppUserModelID; tray; start with Windows as an opt-in.
+- Keep the PC awake while runs are active, as an opt-in (Settings → Startup): Electron `powerSaveBlocker("prevent-app-suspension")` from the first active run to the last, released on battery at or below a threshold (default 30%) or with an unknown charge; its state shows in the status bar.
 - Detect and refuse WSL paths for Windows-native runs; WSL support is out of scope for v1.
 - Known risks to test: antivirus scanning slowing worktrees, Smart App Control blocking unsigned helpers, `node-pty` native build matching Electron.
 

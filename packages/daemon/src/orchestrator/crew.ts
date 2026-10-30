@@ -45,6 +45,7 @@ export function eligible(c: Candidate, role: RoleId, ctx: Pick<ScoringContext, "
   if (!c.ready || !ctx.hasAdapter(c.profile.runner)) return false;
   if (ctx.exclude?.includes(c.profile.id)) return false;
   if (!c.capabilities.launch || !c.capabilities.stream || !c.capabilities.approveTools) return false;
+  if (c.readOnly && tpl.policy.writes !== "none") return false;
   return !tpl.needsReadOnly || c.capabilities.readOnlyMode;
 }
 
@@ -123,6 +124,8 @@ export function scoreCandidate(c: Candidate, role: RoleId, ctx: ScoringContext, 
   }
 
   let score = (WEIGHTS.fit * clamp(fit) + WEIGHTS.headroom * clamp(room) + WEIGHTS.cost * clamp(cost) + WEIGHTS.history * clamp(history)) / 100;
+  // The user's own "when to use" note leads the one-line reason; it never changes the score.
+  if (c.note) reasons.unshift({ code: "profile.note", params: { note: c.note } });
   if (tpl.independentOf.length > 0 && avoid.providers.size > 0 && !avoid.providers.has(c.profile.providerId)) {
     score += PROVIDER_BONUS;
     reasons.unshift({ code: "independence.provider" });

@@ -127,5 +127,55 @@
     "copy": "Copy",
     "copied": "Copied",
     "copyCommand": "Copy the update command"
+  },
+  "keyCheck": {
+    "state": {
+      "valid": "Key works",
+      "invalid": "Key rejected",
+      "unknown": "Key not confirmed",
+      "unchecked": "Key not checked yet"
+    },
+    "reason": {
+      "public_list": "the model list is public, so it does not prove the key",
+      "no_list": "no model list found at this provider",
+      "http": "the provider answered HTTP {{status}}",
+      "network": "the provider could not be reached",
+      "timeout": "no answer within 8 seconds",
+      "not_json": "the answer was not a model list",
+      "local": "local server, no key needed",
+      "no_key": "no key stored"
+    },
+    "http": "HTTP {{status}}",
+    "check": "Check key",
+    "listModels": "List models",
+    "speed": "Check speed",
+    "listed": "Models listed: {{count}}",
+    "extra": "not in the catalog: {{count}}",
+    "extraTitle": "Listed by the provider but not in the catalog; you can still pick it as a profile's model",
+    "extraGroup": "Listed by the provider",
+    "latency": {
+      "ok": "Reachable",
+      "slow": "Slow",
+      "unreachable": "Unreachable"
+    },
+    "ms": "{{ms}} ms",
+    "latencyNote": "Shown for you only; it never triggers a handoff or fallback."
+  },
+  "presets": {
+    "note": "When to use",
+    "notePlaceholder": "e.g. fast and cheap, good for docs",
+    "effort": "Effort",
+    "effortDefault": "Runner default",
+    "effortLevel": {
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High"
+    },
+    "readOnly": "Read-only roles only",
+    "readOnlyHint": "Crew proposals offer this profile only for roles that never write: planner, reviewer, tester, researcher and security.",
+    "slots": "Claude Code slots",
+    "slotDefault": "Run's model",
+    "fill": "Fill from list",
+    "fillHint": "Picks a model for each slot from the catalog and the provider's list. Check the choice before a run."
   }
 }

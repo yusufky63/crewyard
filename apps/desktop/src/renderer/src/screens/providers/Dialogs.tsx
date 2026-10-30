@@ -11,12 +11,14 @@ import {
   type BalanceView,
   type CatalogProvider,
   type CredentialSummary,
+  type KeyCheckView,
   type ProfileRunner,
   type ProfileSummary,
 } from "@crewyard/core";
 import { call } from "../../ipc.ts";
 import { Field, Modal } from "./Modal.tsx";
 import { newestModels, ProvBadge, useMoney, useWhen } from "./shared.tsx";
+import { KeyCheckLine, ModelOptions, PresetsEditor, useKeyChecks } from "./KeyCheck.tsx";
 import { SignInControl, useSignIn } from "./SignIn.tsx";
 
 const errorText = (err: unknown) => (err instanceof Error ? err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : String(err));
@@ -32,17 +34,13 @@ const suggestAlias = (providerId: string, taken: Set<string>) => {
   for (let i = 2; ; i++) if (!taken.has(`${base}-${i}`.toLowerCase())) return `${base}-${i}`;
 };
 
-function ModelSelect({ provider, value, onChange, id }: { provider: CatalogProvider; value: string; onChange: (v: string) => void; id?: string }) {
+/** Catalog models, plus the ones the provider listed for this key that the catalog lacks (key check). */
+function ModelSelect({ provider, value, onChange, id, extra = [] }: { provider: CatalogProvider; value: string; onChange: (v: string) => void; id?: string; extra?: string[] }) {
   const { t } = useTranslation("providers");
-  const models = useMemo(() => [...provider.models].sort((a, b) => (b.released ?? "").localeCompare(a.released ?? "")), [provider]);
   return (
     <select id={id} className="pv-input" value={value} onChange={(e) => onChange(e.target.value)}>
       <option value="">{t("dialog.noModel")}</option>
-      {models.map((m) => (
-        <option key={m.id} value={m.id}>
-          {m.id}
-        </option>
-      ))}
+      <ModelOptions provider={provider} extra={extra} />
     </select>
   );
 }
@@ -197,7 +195,7 @@ export function AddProviderDialog({ providers, credentials, initialId, onClose }
   );
 }
 
-function CredentialBlock({ credential, provider, balance, used }: { credential: CredentialSummary; provider: CatalogProvider; balance: BalanceView | undefined; used: boolean }) {
+function CredentialBlock({ credential, provider, balance, used, check }: { credential: CredentialSummary; provider: CatalogProvider; balance: BalanceView | undefined; used: boolean; check: KeyCheckView | undefined }) {
   const { t } = useTranslation("providers");
   const refresh = useRefresh();
   const money = useMoney();
@@ -272,6 +270,7 @@ function CredentialBlock({ credential, provider, balance, used }: { credential: 
           {balance?.error && <span className="pv-error-inline">{t("manage.balanceError", { message: balance.error })}</span>}
         </div>
       )}
+      {(credential.isSet || credential.kind === "local") && <KeyCheckLine credentialId={credential.id} check={check} local={credential.kind === "local"} />}
       {replacing && (
         <form
           className="pv-inline-form"
@@ -291,7 +290,7 @@ function CredentialBlock({ credential, provider, balance, used }: { credential: 
   );
 }
 
-function ProfileLine({ profile, provider, credentials }: { profile: ProfileSummary; provider: CatalogProvider; credentials: CredentialSummary[] }) {
+function ProfileLine({ profile, provider, credentials, listed }: { profile: ProfileSummary; provider: CatalogProvider; credentials: CredentialSummary[]; listed: string[] }) {
   const { t } = useTranslation("providers");
   const refresh = useRefresh();
   const [error, setError] = useState<string | null>(null);
@@ -326,23 +325,24 @@ function ProfileLine({ profile, provider, credentials }: { profile: ProfileSumma
         </div>
       </div>
       <div className="pv-item-line">
-        {provider.models.length > 0 && (
+        {(provider.models.length > 0 || listed.length > 0) && (
           <label className="pv-inline">
             <span className="lbl">{t("dialog.model")}</span>
-            <ModelSelect provider={provider} value={profile.defaultModel ?? ""} onChange={(v) => void act(() => call("providers.profileUpdate", { id: profile.id, defaultModel: v || null }))} />
+            <ModelSelect provider={provider} extra={listed} value={profile.defaultModel ?? ""} onChange={(v) => void act(() => call("providers.profileUpdate", { id: profile.id, defaultModel: v || null }))} />
           </label>
         )}
         <span className="pv-path mono" title={profile.configDir}>
           {profile.configDir}
         </span>
       </div>
+      <PresetsEditor profile={profile} provider={provider} listed={listed} />
       {status && <SignInControl profile={profile} status={status} session={session} />}
       {error && <p className="pv-error">{error}</p>}
     </div>
   );
 }
 
-function AddProfile({ provider, credentials, profiles }: { provider: CatalogProvider; credentials: CredentialSummary[]; profiles: ProfileSummary[] }) {
+function AddProfile({ provider, credentials, profiles, checks }: { provider: CatalogProvider; credentials: CredentialSummary[]; profiles: ProfileSummary[]; checks: KeyCheckView[] }) {
   const { t } = useTranslation("providers");
   const refresh = useRefresh();
   const usable = PROFILE_RUNNERS.filter((r) => usableWith(runnerSupport(provider, r)));
@@ -357,6 +357,7 @@ function AddProfile({ provider, credentials, profiles }: { provider: CatalogProv
   const [model, setModel] = useState("");
   const [error, setError] = useState<string | null>(null);
   const taken = new Set(profiles.filter((p) => p.runner === runner).map((p) => p.alias.toLowerCase()));
+  const listed = checks.find((c) => c.credentialId === credentialId)?.models ?? [];
   if (!usable.length) return null;
 
   const create = async () => {
@@ -395,7 +396,7 @@ function AddProfile({ provider, credentials, profiles }: { provider: CatalogProv
         {signInAllowed && <option value="">{t("manage.ownSignInOption", { runner: t(`runner.${runner}`) })}</option>}
       </select>
       <input className="pv-input mono" value={alias} onChange={(e) => setAlias(e.target.value)} placeholder={t("manage.aliasPlaceholder")} aria-label={t("dialog.alias")} maxLength={40} spellCheck={false} />
-      {provider.models.length > 0 && <ModelSelect provider={provider} value={model} onChange={setModel} />}
+      {(provider.models.length > 0 || listed.length > 0) && <ModelSelect provider={provider} extra={listed} value={model} onChange={setModel} />}
       <Button size="sm" type="submit" disabled={!alias.trim() || taken.has(alias.trim().toLowerCase()) || (!credentialId && !signInAllowed)}>
         {t("manage.addProfile")}
       </Button>
@@ -422,6 +423,8 @@ export function ManageDialog({
   const { t } = useTranslation("providers");
   const mine = credentials.filter((c) => c.providerId === provider.id);
   const myProfiles = profiles.filter((p) => p.providerId === provider.id);
+  const checks = useKeyChecks();
+  const listedFor = (credentialId: string | null) => checks.find((c) => c.credentialId === credentialId)?.models ?? [];
   return (
     <Modal title={t("manage.title", { provider: provider.name })} onClose={onClose} wide footer={<Button size="sm" onClick={onClose}>{t("dialog.close")}</Button>}>
       <section className="pv-section">
@@ -433,7 +436,7 @@ export function ManageDialog({
         </div>
         {mine.length === 0 && <p className="muted pv-empty">{t("manage.noKeys")}</p>}
         {mine.map((c) => (
-          <CredentialBlock key={c.id} credential={c} provider={provider} balance={balances.find((b) => b.credentialId === c.id)} used={profiles.some((p) => p.credentialId === c.id)} />
+          <CredentialBlock key={c.id} credential={c} provider={provider} balance={balances.find((b) => b.credentialId === c.id)} used={profiles.some((p) => p.credentialId === c.id)} check={checks.find((k) => k.credentialId === c.id)} />
         ))}
       </section>
       <section className="pv-section">
@@ -442,9 +445,9 @@ export function ManageDialog({
         </div>
         {myProfiles.length === 0 && <p className="muted pv-empty">{t("manage.noProfiles")}</p>}
         {myProfiles.map((p) => (
-          <ProfileLine key={p.id} profile={p} provider={provider} credentials={credentials} />
+          <ProfileLine key={p.id} profile={p} provider={provider} credentials={credentials} listed={listedFor(p.credentialId)} />
         ))}
-        <AddProfile provider={provider} credentials={mine} profiles={profiles} />
+        <AddProfile provider={provider} credentials={mine} profiles={profiles} checks={checks} />
       </section>
     </Modal>
   );

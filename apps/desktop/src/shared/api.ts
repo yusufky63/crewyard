@@ -38,6 +38,24 @@ export interface NavigateTarget {
   requestId: string | null;
 }
 
+/** What the keep-awake guard decided (feature scan A15), for the status bar; pushed as `keepAwake.changed`. */
+export interface KeepAwakeState {
+  /** "off": setting off; "idle": on, no run active; "active": holding the machine awake; "battery": runs active, released on low battery. */
+  state: "off" | "idle" | "active" | "battery";
+  runs: number;
+  onBattery: boolean;
+  /** 0–100 once the renderer has read the battery; null on a machine without one or before the first read. */
+  batteryPct: number | null;
+  minBatteryPct: number;
+}
+
+/** The battery as the renderer reads it (navigator.getBattery); main has no API for the charge. */
+export interface BatteryReading {
+  charging: boolean;
+  /** 0–1. */
+  level: number;
+}
+
 export interface CrewyardApi {
   call<M extends IpcMethod>(method: M, params: IpcParams<M>): Promise<IpcResult<M>>;
   on(topic: string, listener: (payload: unknown) => void): () => void;
@@ -54,4 +72,7 @@ export interface CrewyardApi {
   setLanguage(language: string): void;
   /** Shows one plain toast so the user can see notifications work. */
   testToast(): void;
+  keepAwake(): Promise<KeepAwakeState>;
+  /** Feeds the battery guard; null when this machine reports no battery. */
+  reportBattery(reading: BatteryReading | null): void;
 }
