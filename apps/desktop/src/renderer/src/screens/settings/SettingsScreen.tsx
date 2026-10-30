@@ -12,6 +12,7 @@ import { AboutSection, DataSection } from "./DataSection.tsx";
 import { HibernationRows } from "./Hibernation.tsx";
 import { KeepAwakeRows } from "./KeepAwake.tsx";
 import { McpSection } from "./McpSection.tsx";
+import { RolesSection } from "./RolesSection.tsx";
 import { backTarget, errorCode, SECTIONS, useSettingsNav, type SectionId } from "./model.ts";
 import { Row, Section, Seg, Toggle } from "./parts.tsx";
 import { StallRules } from "./StallRules.tsx";
@@ -302,8 +303,9 @@ export function SettingsScreen() {
           <Startup />
           <Fallback />
           <McpSection index={6} />
+          <RolesSection index={7} />
           <DataSection />
-          <UpdatesSection index={8} />
+          <UpdatesSection index={9} />
           <AboutSection />
         </div>
       </div>

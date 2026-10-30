@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { RunnerId } from "./events.ts";
+import { CUSTOM_ROLE_STEPS_MAX, CustomRoleStep } from "./roles.ts";
 
 // .crewyard/project.json, written by the New project wizard (PLAN.md §11.1). Never holds secrets.
 
@@ -121,6 +122,9 @@ export const ProjectConfig = z.object({
   bootstrap: WorktreeBootstrap.default(defaultBootstrap),
   // Run until green and the review loop (feature scan A9): fix attempts per step before the loop stops.
   loop: z.object({ maxIterations: z.number().int().min(1).max(10) }).default(defaultLoop),
+  // Custom roles in the crew templates (PLAN.md §9.1). A bad entry drops the whole list instead of
+  // the whole config, so the rest of the project's rules still apply; Settings → Roles says why.
+  customRoles: z.array(CustomRoleStep).max(CUSTOM_ROLE_STEPS_MAX).optional().catch(undefined),
 });
 export type ProjectConfig = z.infer<typeof ProjectConfig>;
 

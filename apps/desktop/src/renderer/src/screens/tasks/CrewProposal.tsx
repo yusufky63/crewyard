@@ -1,6 +1,6 @@
 import { useId, useState, type KeyboardEvent } from "react";
-import { AlertTriangle, ArrowRight, ClipboardList, Code, FileText, FlaskConical, Search, Shield, ShieldCheck } from "lucide-react";
-import type { CandidateView, CrewEdit, CrewMemberView, FallbackMode, RoleId, TaskDetail } from "@crewyard/core";
+import { AlertTriangle, ArrowRight, ClipboardList, Code, FileCog, FileText, FlaskConical, Search, Shield, ShieldCheck } from "lucide-react";
+import type { BuiltinRoleId, CandidateView, CrewEdit, CrewMemberView, FallbackMode, RoleId, TaskDetail } from "@crewyard/core";
 import { Button, Label, TickMeter } from "@crewyard/ui";
 import { ProvBadge } from "../providers/shared.tsx";
 import { useAccountSwitchOn } from "./AccountSwitch.tsx";
@@ -9,7 +9,7 @@ import { IssueNote } from "./IssuePicker.tsx";
 import { ErrorLine, useFormat, Who } from "./parts.tsx";
 import { matches } from "../../keys.ts";
 
-const ROLE_ICON: Record<RoleId, typeof Code> = {
+const ROLE_ICON: Record<BuiltinRoleId, typeof Code> = {
   planner: ClipboardList,
   implementer: Code,
   tester: FlaskConical,
@@ -23,12 +23,14 @@ const MODES: FallbackMode[] = ["manual", "ask", "auto"];
 
 function RoleTile({ index, member, chosen, budget, hideReasons, onSwap }: { index: number; member: CrewMemberView; chosen: CandidateView | null; budget: number | null; hideReasons: boolean; onSwap: (profileId: string) => void }) {
   const f = useFormat();
-  const Icon = ROLE_ICON[member.role];
+  // A custom role from a role file (PLAN.md §9.1) has no icon of its own.
+  const Icon = (ROLE_ICON as Partial<Record<RoleId, typeof Code>>)[member.role] ?? FileCog;
   const options = [member.chosen, ...member.standby].filter((c): c is CandidateView => Boolean(c));
   // A pin the proposal could not keep is said out loud, never swapped silently.
   const dropped = member.reasons.find((r) => r.code === "pin.dropped");
-  const why = chosen?.reasons[0] ?? member.reasons.find((r) => r !== dropped);
-  const name = f.role(member.role);
+  const fromFile = member.reasons.find((r) => r.code === "role.file");
+  const why = chosen?.reasons[0] ?? member.reasons.find((r) => r !== dropped && r !== fromFile);
+  const name = member.roleTitle ?? f.role(member.role);
   return (
     <div className="spec tk-role">
       <div className="tk-role-top">
@@ -36,6 +38,11 @@ function RoleTile({ index, member, chosen, budget, hideReasons, onSwap }: { inde
         <Icon size={28} strokeWidth={1} aria-hidden="true" className="tk-role-art" />
       </div>
       <div className="tk-role-name">{name}</div>
+      {fromFile && (
+        <div className="tk-role-file mono as-typed" title={String(fromFile.params?.path ?? "")}>
+          {f.reason(fromFile)}
+        </div>
+      )}
       {chosen ? (
         <>
           <div className="tk-role-run">

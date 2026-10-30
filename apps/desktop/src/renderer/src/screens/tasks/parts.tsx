@@ -23,7 +23,8 @@ export function useFormat() {
   const { t } = useTranslation("tasks");
   const money = useMoney();
   const when = useWhen();
-  const role = (r: RoleId | string) => t(`role.${r}`);
+  // A custom role (a role file) has no translation; its id stands in.
+  const role = (r: RoleId) => t(`role.${r}`, { defaultValue: r });
   const runner = (r: string) => t(`providers:runner.${r}`, { defaultValue: r });
   const window = (w: LimitWindow | string | null) => (w ? t(`window.${w}`) : t("window.unknown"));
   const usd = (n: number) => money(n, n !== 0 && Math.abs(n) < 0.1 ? 3 : 2);

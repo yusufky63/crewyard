@@ -7,6 +7,8 @@ export * from "./limits.ts";
 export * from "./risk.ts";
 export * from "./catalog.ts";
 export * from "./project.ts";
+export * from "./roles.ts";
+export * from "./ipc/roles.ts";
 export * from "./ipc.ts";
 export * from "./ipc/tasks.ts";
 export * from "./ipc/providers.ts";

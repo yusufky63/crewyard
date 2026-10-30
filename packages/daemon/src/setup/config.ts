@@ -58,10 +58,28 @@ export async function writeFileAtomic(file: string, content: string): Promise<vo
   }
 }
 
+/**
+ * The `customRoles` list as written in the file on disk. The wizard has no field for it, so a save
+ * from the wizard keeps the user's list as it was, even one that does not validate.
+ */
+function customRolesOnDisk(projectPath: string): unknown {
+  const file = configFile(projectPath);
+  if (!existsSync(file)) return undefined;
+  try {
+    const raw = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown> | null;
+    return raw && typeof raw === "object" ? raw.customRoles : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function writeProjectConfig(projectPath: string, raw: unknown): Promise<{ config: ProjectConfig; file: string }> {
   const config = validateProjectConfig(raw);
   const file = join(projectPath, CONFIG_REL);
-  await writeFileAtomic(file, `${JSON.stringify(config, null, 2)}\n`);
+  const given = raw !== null && typeof raw === "object" && "customRoles" in raw;
+  const kept = given ? undefined : customRolesOnDisk(projectPath);
+  const out = kept === undefined ? config : { ...config, customRoles: kept };
+  await writeFileAtomic(file, `${JSON.stringify(out, null, 2)}\n`);
   // A legacy file left beside it would be a second copy that drifts; the move shows in git as one rename.
   const legacy = join(projectPath, LEGACY_CONFIG_REL);
   if (existsSync(legacy)) {
@@ -72,7 +90,7 @@ export async function writeProjectConfig(projectPath: string, raw: unknown): Pro
       // The folder holds something else of the user's; it stays.
     }
   }
-  return { config, file };
+  return { config: kept === undefined ? config : ProjectConfig.parse(out), file };
 }
 
 /** The existing config when it parses and holds nothing secret-like; anything else is ignored. */

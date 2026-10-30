@@ -110,7 +110,7 @@ Electron, React 19, TypeScript, Vite, TanStack Router and Query, Zustand, `@xyfl
 | `providers`, `models` | catalog snapshot: provider id, group, endpoints, env names, balance/quota support; models with context, output, price, reasoning, open weights |
 | `credentials` | alias, provider, kind (`api_key`, `plan_signin`, `local`), secret reference, daily and per-task caps |
 | `profiles` | runner + provider + credential + default model + config folder; what crew proposals choose from |
-| `roles` | built-in and user role templates (§9.1) |
+| `crew_member_roles` | the role a crew member was proposed with when it came from a role file (§9.1); built-in roles live in code |
 | `tasks` | title, description, repo, base branch, kind (`code` / `research` / `review`), fallback mode, budget |
 | `crews`, `crew_members` | proposal per task: role, runner, model, account, reason, standby chain, approved_at |
 | `runs` | one agent session: role, account, model, native session id, worktree, started/ended, end reason |
@@ -313,7 +313,7 @@ The first version is rule-based and deterministic; it learns only from your own 
 
 ### 9.1 Roles
 
-Roles are Markdown files with YAML front matter (`.crewyard/roles/*.md` in a repo, or global), so you can add your own.
+Roles are Markdown files with YAML front matter (`.crewyard/roles/*.md` in a repo, or global), so you can add your own. The seven built-ins below are the defaults.
 
 | Role | Permissions (enforced by our approval layer, not by the prompt) | Output contract |
 |---|---|---|
@@ -324,6 +324,39 @@ Roles are Markdown files with YAML front matter (`.crewyard/roles/*.md` in a rep
 | Researcher | read-only, web allowed | report with sources, no code changes |
 | Docs | write only under doc paths | changed docs |
 | Security | read-only | findings with severity and evidence |
+
+**Role files.** The file name is the role id (lowercase letters, digits and dashes, up to 32 characters): `reviewer.md` overrides the built-in reviewer, `perf-check.md` adds a role. The front matter maps to the role template; the Markdown body is the agent-facing output contract, put in every prompt of the role. Example, `.crewyard/roles/perf-check.md`:
+
+```markdown
+---
+title: Performance check        # required for a new role, at most 60 characters
+policy:
+  writes: none                  # none | docs (doc paths only) | worktree
+  allowCommands: [pnpm bench]   # commands it may run without asking
+  network: denied               # denied | ask | allowed
+needsReadOnly: true             # must stay true when writes is none
+prefersReasoning: false         # reasoning models score higher
+independentOf: [implementer]    # never on the same model as these roles
+tokenShare: 0.15                # share of the task's expected tokens, 0.01 to 1 (estimates only)
+---
+Benchmark numbers for the changed code paths before and after the change, with the machine and
+command they ran on. Do not change any file.
+```
+
+- **Where.** Global files in `roles` under Crewyard's data folder (`%APPDATA%\Crewyard\data\roles`), then the project's `.crewyard\roles`. A repo file wins over a global one, which wins over the built-in. Every field is optional except `title` for a new role; a left-out field keeps the value of the role it overrides, and a new role starts read-only with no commands and no network. An override with an empty body keeps the contract it overrides.
+- **Overrides only narrow.** A file that replaces a built-in or a global role may change its title, contract, `prefersReasoning` and `tokenShare`, and may only narrow the rest: no wider `writes` (none < docs < worktree) or `network` (denied < ask < allowed), no command the replaced role lacks, `needsReadOnly` stays on if it was on, and `independentOf` keeps every entry. To get a different policy, add a role under a new name.
+- **The project's rules win.** A run gets the role's policy narrowed by `.crewyard/project.json`: a custom role keeps only the commands it lists that the project also allows (`rules.allowCommands` and the build and test commands), and the lower of its network and the project's. Built-ins and their overrides keep the built-in rules. Enforcement is the approval layer plus each runner's own engine (sandbox, permission mode or ruleset), never the prompt.
+- **Fail closed.** A file that does not parse, uses an unknown field, has a wrong value, widens what it overrides, is over 16 KiB or has a contract over 4,000 characters is not used; the role it would have replaced stays in effect. At most 32 files per folder are read, in name order. Settings → Roles lists every role with its source and file, and every file that was not used with the reason. The front matter is read with js-yaml's safe loader (plain data only).
+- **Crew templates.** The classifier templates use built-ins (and their overrides) only. A project opts custom roles in with `customRoles` in `.crewyard/project.json`; each entry adds one step to the templates of the listed task kinds and sizes, after the listed steps, and is left out of a template that lacks any of them:
+
+  ```json
+  "customRoles": [
+    { "role": "perf-check", "kinds": ["code"], "sizes": ["M", "L"], "after": ["implementer"] }
+  ]
+  ```
+
+  At most 8 entries; a bad entry drops the whole list (not the rest of the config) and Settings says why. The wizard has no field for it and keeps it as written. The opt-in lives in the project's rules rather than in the role file so that adding a file alone never changes who works on a task.
+- **What runs is what you approved.** The proposal stores each file-defined role as it read it, and the crew runs with that copy; editing the file later affects only new proposals. The proposal names the file each such role came from.
 
 A run cannot create other runs. If an agent asks for more work, the request becomes an Inbox item.
 
@@ -529,6 +562,7 @@ Each milestone ends with: typecheck, lint with `--max-warnings=0`, tests, build,
 - 2026-10-30: the code is kept in a private GitHub repository, pushed when a piece of work is finished rather than after every step; releases come once everything is done. Windows stays first; Linux and macOS are prepared for but not shipped yet (owner: "linux ve mac için hazırlıklar da yapabiliriz ama öncelik windows da"; the platform seams are in [ADR 0010](docs/adr/0010-linux-macos-groundwork.md) and §12.1).
 - 2026-10-30: signing and auto-update are prepared and tested before any release ([ADR 0011](docs/adr/0011-signing-and-auto-update.md)). The feed is electron-updater's generic HTTPS provider, its URL set at build time, so the host can be any static HTTPS server and the private code repository needs no token in the app. "Check automatically" is off by default; downloading and installing always wait for a click. A signed build refuses any update that is not signed by its publisher. Signing goes through our own hook, because electron-builder 26's signtool route puts the PFX password on a command line.
 - 2026-10-30: the Crew graph hides React Flow's attribution link (`proOptions.hideAttribution`); React Flow is MIT and its licence notice ships with the app.
+- 2026-10-31: role files (§9.1) are loaded from `.crewyard\roles` and the data folder's `roles`. An override may only narrow the role it replaces, a custom role never gets more than the project's rules allow, and custom roles join the crew templates only through `customRoles` in project.json, so a role file added to a repo cannot by itself change who works on a task. A proposal keeps a copy of each file-defined role, so a later edit to the file never changes an approved crew.
 
 **Open**
 1. Before the first release: which code-signing certificate (OV as a PFX, a hardware-bound one in the Windows store, or Azure Trusted Signing) and which HTTPS host serves the update feed (ADR 0011, "What a real release needs").

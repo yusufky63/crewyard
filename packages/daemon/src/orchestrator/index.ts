@@ -8,6 +8,7 @@ export { OrchestratorError } from "./errors.ts";
 export { classifyTask } from "./classify.ts";
 export { proposeCrew } from "./crew.ts";
 export { ROLES, planFor } from "./roles.ts";
+export { loadRoleSet, projectRoles, ROLE_LIMITS } from "./role-files.ts";
 
 // One orchestrator per store, so other areas reach the same instance from their own handlers,
 // e.g. the providers work calls `orchestratorFor(ctx).setDirectory(...)` and `.ingestSample(...)`.
