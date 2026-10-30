@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { checkOutput, outputRetryPrompt, parseOutputText } from "@crewyard/core";
 import type { AgentAdapter, AgentCapabilities, AgentEvent, Answer, EndReason, LimitSample, NativeSessionRef, OutputSchema, Probe, Profile, RunHandle, RunOutput, StartRequest, UserInput } from "@crewyard/core";
-import { exitCodeWithin, isShutdownExit, which } from "@crewyard/proc";
+import { exitCodeWithin, isShutdownExit, resolveBin } from "@crewyard/proc";
 import { AppServer, withAppServer, type Launcher } from "./appserver.ts";
 import {
   commandApproval,
@@ -132,7 +132,7 @@ export class CodexAdapter implements AgentAdapter {
   }
 
   async probe(profile: Profile): Promise<Probe> {
-    const executable = this.launcher.command ?? (await which("codex"));
+    const executable = this.launcher.command ?? (await resolveBin("codex"));
     const base: Probe = { installed: executable !== null, executable, version: null, signedIn: null, capabilities, problems: [] };
     if (!executable) return { ...base, problems: ["codex is not installed or not on PATH"] };
     try {

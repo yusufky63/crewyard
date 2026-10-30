@@ -1,13 +1,14 @@
 import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
-import { classify, JsonRpcConnection, LineDecoder, METHOD_NOT_FOUND, RpcError } from "./rpc.ts";
+import { LineSplitter } from "@crewyard/proc";
+import { classify, JsonRpcConnection, METHOD_NOT_FOUND, RpcError } from "./rpc.ts";
 
 function pair() {
   const toClient = new PassThrough();
   const fromClient = new PassThrough();
   fromClient.setEncoding("utf8");
   const sent: unknown[] = [];
-  const decoder = new LineDecoder();
+  const decoder = new LineSplitter();
   fromClient.on("data", (d: string) => sent.push(...decoder.push(d).map((l) => JSON.parse(l))));
   const conn = new JsonRpcConnection(toClient, fromClient);
   const serverSays = (msg: object) => toClient.write(`${JSON.stringify(msg)}\n`);
@@ -16,9 +17,9 @@ function pair() {
 
 const flush = () => new Promise((r) => setImmediate(r));
 
-describe("LineDecoder", () => {
+describe("line splitting", () => {
   it("joins lines split across chunks and drops CR and blank lines", () => {
-    const d = new LineDecoder();
+    const d = new LineSplitter();
     expect(d.push('{"a":')).toEqual([]);
     expect(d.push('1}\r\n\n{"b":2}\n{"c"')).toEqual(['{"a":1}', '{"b":2}']);
     expect(d.push(":3}")).toEqual([]);
@@ -35,6 +36,19 @@ describe("LineDecoder", () => {
     toClient.write(bytes.subarray(cut));
     await flush();
     expect(got).toEqual([{ text: "çalışıyor ✓" }]);
+  });
+
+  it("drops a line over the cap, notes it, and keeps reading the frames after it", async () => {
+    const { conn, toClient } = pair();
+    const got: unknown[] = [];
+    conn.onNotification((_m, p) => got.push(p));
+    // Streamed in pieces, as a runaway frame would arrive; never held whole.
+    toClient.write('{"method":"big","params":"');
+    for (let i = 0; i < 17; i++) toClient.write("x".repeat(1024 * 1024));
+    toClient.write('"}\n{"method":"n","params":1}\n');
+    await flush();
+    expect(got).toEqual([1]);
+    expect(conn.malformed.at(-1)).toMatch(/^dropped a \d+-character line$/);
   });
 });
 

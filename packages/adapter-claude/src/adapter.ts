@@ -4,7 +4,7 @@ import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
 import type { CanUseTool, HookCallback, Options, Query, SDKMessage, SDKResultMessage, SDKUserMessage, SpawnedProcess } from "@anthropic-ai/claude-agent-sdk";
 import { checkOutput, outputRetryPrompt } from "@crewyard/core";
 import type { AgentAdapter, AgentCapabilities, AgentEvent, Answer, NativeSessionRef, Probe, Profile, RunHandle, RunOutput, StartRequest, UserInput } from "@crewyard/core";
-import { exitCodeWithin, isShutdownExit, killTree, parseVersion, run, start as spawnChild, which } from "@crewyard/proc";
+import { exitCodeWithin, isShutdownExit, killTree, parseVersion, resolveBin, run, start as spawnChild } from "@crewyard/proc";
 import { buildEnv, redact } from "./env.ts";
 import { EventMapper, type EventBody, type TurnOutcome } from "./mapper.ts";
 import { AsyncQueue } from "./queue.ts";
@@ -20,7 +20,8 @@ export type QueryFn = (params: { prompt: AsyncIterable<SDKUserMessage>; options:
 
 export interface ClaudeAdapterDeps {
   query: QueryFn;
-  which: typeof which;
+  /** Finds the CLI; resolveBin by default, so the run spawns the file the machine check showed. */
+  which: (name: string) => Promise<string | null>;
   run: typeof run;
   spawn: typeof spawnChild;
   killTree: typeof killTree;
@@ -390,4 +391,4 @@ export function compareVersions(a: string, b: string): number {
   return 0;
 }
 
-export const defaultDeps = (): ClaudeAdapterDeps => ({ query: sdkQuery, which, run, spawn: spawnChild, killTree, env: process.env });
+export const defaultDeps = (): ClaudeAdapterDeps => ({ query: sdkQuery, which: (name) => resolveBin(name), run, spawn: spawnChild, killTree, env: process.env });

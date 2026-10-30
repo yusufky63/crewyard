@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { checkOutput, outputInstruction, outputRetryPrompt, parseOutputText } from "@crewyard/core";
 import type { AgentAdapter, AgentCapabilities, AgentEvent, Answer, EndReason, NativeSessionRef, OutputSchema, Probe, Profile, RunHandle, RunOutput, RunState, StartRequest, UserInput } from "@crewyard/core";
-import { isShutdownExit, parseVersion, run as runCommand, which } from "@crewyard/proc";
+import { isShutdownExit, parseVersion, resolveBin, run as runCommand } from "@crewyard/proc";
 import { createOpencodeClient, type Event as OpenCodeEvent, type Message, type OpencodeClient, type PermissionRequest, type SessionStatus } from "@opencode-ai/sdk/v2";
 import { OpenCodeMapper, type EventBody } from "./mapper.ts";
 import { mustReject, permissionRules } from "./policy.ts";
@@ -213,7 +213,7 @@ export class OpenCodeAdapter implements AgentAdapter {
   // --- internals -------------------------------------------------------------------------------
 
   private async executable(): Promise<string | null> {
-    return this.opts.executable ?? (await which("opencode"));
+    return this.opts.executable ?? (await resolveBin("opencode"));
   }
 
   private async open(req: StartRequest, sessionId: string | null): Promise<Run> {

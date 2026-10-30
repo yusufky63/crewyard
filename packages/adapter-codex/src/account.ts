@@ -1,5 +1,5 @@
 import type { Profile } from "@crewyard/core";
-import { which } from "@crewyard/proc";
+import { resolveBin } from "@crewyard/proc";
 import { withAppServer, type Launcher } from "./appserver.ts";
 import type { GetAccountResponse } from "./protocol/index.ts";
 
@@ -19,7 +19,7 @@ export interface CodexAccount {
 }
 
 export async function readAccount(profile: Pick<Profile, "configDir">, launcher: Launcher = {}): Promise<CodexAccount> {
-  const command = launcher.command ?? (await which("codex"));
+  const command = launcher.command ?? (await resolveBin("codex"));
   if (!command) throw new Error("codex is not installed or not on PATH");
   return withAppServer({ ...launcher, command }, { codexHome: profile.configDir }, async (server) => {
     const res = await server.rpc.request<GetAccountResponse>("account/read", { refreshToken: false }, { timeoutMs: 30_000 });
@@ -38,7 +38,7 @@ export async function readAccount(profile: Pick<Profile, "configDir">, launcher:
  * so nothing is left behind once the caller deletes the folder.
  */
 export async function logout(profile: Pick<Profile, "configDir">, launcher: Launcher = {}): Promise<void> {
-  const command = launcher.command ?? (await which("codex"));
+  const command = launcher.command ?? (await resolveBin("codex"));
   if (!command) throw new Error("codex is not installed or not on PATH");
   await withAppServer({ ...launcher, command }, { codexHome: profile.configDir }, async (server) => {
     await server.rpc.request("account/logout", undefined, { timeoutMs: 30_000 });
