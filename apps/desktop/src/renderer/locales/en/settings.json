@@ -162,5 +162,11 @@
       "idle": "Now: no run is active, so Windows sleeps as usual",
       "off": "Now: off, so Windows sleeps as usual"
     }
+  },
+  "hibernation": {
+    "label": "Hibernate idle agents",
+    "hint": "When an agent waits on your answer with nothing running, its process stops after the time below. The run stays open and wakes with its own session when you answer or send a message. Only for runners that can resume a session.",
+    "after": "Hibernate after",
+    "afterHint": "Idle minutes before the process stops, {{min}} to {{max}}."
   }
 }

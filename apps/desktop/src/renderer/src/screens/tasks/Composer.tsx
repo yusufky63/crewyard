@@ -13,6 +13,8 @@ import { matches } from "../../keys.ts";
 
 const KINDS: Array<TaskKind | "auto"> = ["auto", "code", "research", "review", "docs"];
 const FALLBACKS: Array<FallbackMode | "default"> = ["default", "manual", "ask", "auto", "wait_for_reset"];
+/** Best of N: 0 is off; 2 to 4 run the implement step on that many profiles at once. */
+const BEST_OF = [0, 2, 3, 4];
 
 /**
  * DESIGN.md `Composer`: one text, the repo, base branch, task kind, on-limit mode and an optional
@@ -28,11 +30,12 @@ export function Composer({ projectId, projectName }: { projectId: string; projec
   const [kind, setKind] = useState<TaskKind | "auto">("auto");
   const [fallback, setFallback] = useState<FallbackMode | "default">("default");
   const [budget, setBudget] = useState("");
+  const [bestOf, setBestOf] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
   const [issue, setIssue] = useState<{ number: number; url: string; title: string } | null>(null);
-  const ids = { text: useId(), branch: useId(), kind: useId(), fallback: useId(), budget: useId() };
+  const ids = { text: useId(), branch: useId(), kind: useId(), fallback: useId(), budget: useId(), bestOf: useId() };
 
   const { title, description } = splitTaskText(text);
   const budgetUsd = budget.trim() === "" ? undefined : Number(budget);
@@ -53,6 +56,7 @@ export function Composer({ projectId, projectName }: { projectId: string; projec
         ...(fallback !== "default" ? { fallback } : {}),
         ...(branch.trim() ? { baseBranch: branch.trim() } : {}),
         ...(budgetUsd !== undefined ? { budgetUsd } : {}),
+        ...(bestOf > 0 ? { bestOf } : {}),
       });
       // The link is kept with the task; a failure here leaves the proposed task as it is.
       if (issue) await act("github.linkIssue", { taskId: task.id, number: issue.number, url: issue.url, title: issue.title }).catch((err: unknown) => setError(errorText(err)));
@@ -121,6 +125,16 @@ export function Composer({ projectId, projectName }: { projectId: string; projec
               ))}
             </select>
           </label>
+          <label className="chip tk-field" htmlFor={ids.bestOf} title={t("composer.bestOfTitle")}>
+            {t("composer.bestOf")}
+            <select id={ids.bestOf} value={bestOf} onChange={(e) => setBestOf(Number(e.target.value))}>
+              {BEST_OF.map((n) => (
+                <option key={n} value={n}>
+                  {n === 0 ? t("composer.bestOfOff") : t("composer.bestOfN", { count: n })}
+                </option>
+              ))}
+            </select>
+          </label>
           <label className="chip tk-field" htmlFor={ids.budget}>
             {t("composer.budget")}
             <input id={ids.budget} className="num" inputMode="decimal" value={budget} onChange={(e) => setBudget(e.target.value)} placeholder={t("composer.budgetNone")} aria-invalid={budgetBad || undefined} size={6} />
@@ -135,7 +149,7 @@ export function Composer({ projectId, projectName }: { projectId: string; projec
           </div>
         </div>
         <div className="tk-composer-foot">
-          <Label>{issue ? t("issues.composerNote") : t("composer.note")}</Label>
+          <Label>{issue ? t("issues.composerNote") : bestOf > 0 ? t("composer.bestOfNote", { count: bestOf }) : t("composer.note")}</Label>
         </div>
         <ErrorLine>{error}</ErrorLine>
       </form>

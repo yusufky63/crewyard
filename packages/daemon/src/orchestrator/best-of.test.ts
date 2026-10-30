@@ -95,7 +95,7 @@ describe("best of N: choosing variants", () => {
       { profileId: "b", needed: 1, active: 0 },
     ];
     expect(admitGroup({ projectActive: 2, globalActive: 2, freeMb: 8_000, profiles }, limits)).toBeNull();
-    expect(admitGroup({ projectActive: 3, globalActive: 3, freeMb: 8_000, profiles }, limits)).toEqual({ code: "admission.group_slots", params: { needed: 2, free: 1, scope: "project" } });
+    expect(admitGroup({ projectActive: 3, globalActive: 3, freeMb: 8_000, profiles }, limits)).toEqual({ code: "admission.group_slots", params: { variants: 2, free: 1, scope: "project" } });
     expect(admitGroup({ projectActive: 0, globalActive: 5, freeMb: 8_000, profiles }, limits)?.params?.scope).toBe("global");
     expect(admitGroup({ projectActive: 0, globalActive: 0, freeMb: 8_000, profiles: [{ profileId: "a", needed: 2, active: 1 }] }, limits)?.params?.scope).toBe("profile");
     expect(admitGroup({ projectActive: 0, globalActive: 0, freeMb: 1_500, profiles }, limits)).toEqual({ code: "admission.group_memory", params: { freeMb: 1500, neededMb: 2048 } });

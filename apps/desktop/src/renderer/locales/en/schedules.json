@@ -1,0 +1,90 @@
+{
+  "onlyOpen": "Schedules run only while Crewyard is open, also from the tray. Nothing runs while the app is closed. After sleep or a restart, up to 3 missed runs are caught up, one at a time.",
+  "new": "New schedule",
+  "empty": "No schedules yet. A schedule proposes a task daily or weekly; nothing starts without the crew's approval unless you turn on auto-approve.",
+  "errors": {
+    "load": "Schedules could not be loaded from the background service."
+  },
+  "form": {
+    "newTitle": "New schedule",
+    "editTitle": "Edit schedule",
+    "title": "Task title",
+    "titlePlaceholder": "What the task does each time",
+    "description": "Description",
+    "descriptionPlaceholder": "Details for the crew, optional",
+    "cadence": "Repeats",
+    "weekday": "Day",
+    "time": "Time",
+    "timeZone": "Time zone",
+    "size": "Size",
+    "precheck": "Precheck command",
+    "precheckPlaceholder": "e.g. gh pr list --label deps --limit 1",
+    "precheckHint": "Runs first in the project folder. Exit code 0 lets the run go on; anything else skips it, and no agent starts. One program with plain arguments, no pipes or &&.",
+    "precheckTimeout": "Precheck time limit (s)",
+    "autoApprove": "Auto-approve this crew",
+    "autoApproveWarning": "Each run's crew starts without asking you. Spend caps, Inbox approvals for risky commands, pushes and merges still wait for you, and every auto-approval is recorded.",
+    "newNote": "A new schedule starts switched off. Switch it on when it looks right.",
+    "editNote": "Changes apply from the next slot.",
+    "cancel": "Cancel",
+    "save": "Save schedule",
+    "saving": "Saving…"
+  },
+  "cadence": {
+    "daily": "Daily",
+    "weekly": "Weekly"
+  },
+  "invalid": {
+    "title": "Give the task a title.",
+    "time": "Use a time like 09:00.",
+    "timeZone": "Use an IANA time zone, e.g. Europe/Istanbul.",
+    "budgetUsd": "The budget must be a positive number.",
+    "precheck": "The precheck must be one program with plain arguments, without shell syntax.",
+    "precheckTimeoutSec": "The time limit must be 5 to 600 seconds."
+  },
+  "when": {
+    "daily": "Daily at {{time}} ({{zone}})",
+    "weekly": "Every {{day}} at {{time}} ({{zone}})"
+  },
+  "outcome": {
+    "running_precheck": "Precheck running",
+    "skipped_precheck": "Skipped by the precheck",
+    "skipped_missed_one": "{{count}} missed run skipped",
+    "skipped_missed_other": "{{count}} missed runs skipped",
+    "proposed": "Proposed, waits for approval",
+    "approved": "Proposed and auto-approved",
+    "failed": "Could not propose"
+  },
+  "detail": {
+    "precheck_timeout": "the precheck ran out of time",
+    "precheck_error": "the precheck could not run",
+    "precheck_interrupted": "Crewyard closed while the precheck ran",
+    "crew_missing_profile": "the crew needs an account; review it",
+    "crew_independence": "the reviewer would use the implementer's model; review the crew"
+  },
+  "run": {
+    "manual": "Run now",
+    "exit": "exit {{code}}",
+    "openTask": "[ Open task ]",
+    "none": "No runs yet."
+  },
+  "row": {
+    "precheck": "precheck: {{command}}",
+    "autoApprove": "Auto-approves its crew",
+    "expand": "Show runs",
+    "collapse": "Hide runs",
+    "enabled": "On",
+    "disabled": "Off",
+    "next": "Next {{when}}",
+    "pending_one": "{{count}} run waits for the previous one",
+    "pending_other": "{{count}} runs wait for the previous one",
+    "last": "Last: {{outcome}}",
+    "switch": "Schedule {{title}} on or off",
+    "on": "On",
+    "off": "Off",
+    "runNow": "Run now",
+    "runNowHint": "Propose the task now without the precheck",
+    "edit": "[ Edit ]",
+    "delete": "Delete",
+    "deleteConfirm": "Delete this schedule? Tasks it created stay."
+  }
+}

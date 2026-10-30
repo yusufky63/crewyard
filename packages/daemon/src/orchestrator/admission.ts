@@ -47,12 +47,12 @@ export interface GroupLoad {
 export function admitGroup(load: GroupLoad, limits: AdmissionLimits): Reason | null {
   const needed = load.profiles.reduce((n, p) => n + p.needed, 0);
   const projectFree = limits.projectSlots - load.projectActive;
-  if (projectFree < needed) return { code: "admission.group_slots", params: { needed, free: Math.max(0, projectFree), scope: "project" } };
+  if (projectFree < needed) return { code: "admission.group_slots", params: { variants: needed, free: Math.max(0, projectFree), scope: "project" } };
   const globalFree = limits.globalSlots - load.globalActive;
-  if (globalFree < needed) return { code: "admission.group_slots", params: { needed, free: Math.max(0, globalFree), scope: "global" } };
+  if (globalFree < needed) return { code: "admission.group_slots", params: { variants: needed, free: Math.max(0, globalFree), scope: "global" } };
   for (const p of load.profiles) {
     const free = limits.perProfile - p.active;
-    if (free < p.needed) return { code: "admission.group_slots", params: { needed: p.needed, free: Math.max(0, free), scope: "profile" } };
+    if (free < p.needed) return { code: "admission.group_slots", params: { variants: p.needed, free: Math.max(0, free), scope: "profile" } };
   }
   const neededMb = limits.minFreeMb * needed;
   if (load.freeMb < neededMb) return { code: "admission.group_memory", params: { freeMb: Math.round(load.freeMb), neededMb } };

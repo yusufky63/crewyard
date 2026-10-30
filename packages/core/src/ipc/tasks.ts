@@ -64,7 +64,7 @@ export type ReasonCode =
   | "admission.no_profile" // the step has no profile; edit the crew
   | "admission.budget_reserved" // { reservedUsd, capUsd, cap }: unfinished runs hold the rest of a spend cap
   | "admission.no_adapter" // { runner } is not wired in this build
-  | "admission.group_slots" // { needed, free, scope }: a Best of N group starts all its variants at once; scope is "project", "global" or "profile"
+  | "admission.group_slots" // { variants, free, scope }: a Best of N group starts all its variants at once; scope is "project", "global" or "profile"
   | "admission.group_memory" // { freeMb, neededMb }: free memory for every variant of a Best of N group
   // crew loops: why the run-until-green or review loop went on or stopped
   | "loop.tests_passed" // { command }

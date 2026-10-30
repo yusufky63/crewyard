@@ -98,6 +98,60 @@ function RoleTile({ index, member, chosen, budget, hideReasons, onSwap }: { inde
 }
 
 /**
+ * Best of N in the proposal: one small tile per variant with its profile and estimate, each one
+ * swappable, and the group's estimate, which is what the caps and reservations will count.
+ */
+function Variants({ task, picks, onPick }: { task: TaskDetail; picks: string[]; onPick: (index: number, profileId: string) => void }) {
+  const f = useFormat();
+  const group = task.bestOfGroup!;
+  const impl = task.crew?.members.find((m) => m.id === group.memberId);
+  const pool = [...group.variants.map((v) => v.candidate), ...(impl ? [impl.chosen, ...impl.standby] : [])].filter((c, i, all): c is CandidateView => Boolean(c) && all.findIndex((x) => x?.profileId === c!.profileId) === i);
+  const byId = new Map(pool.map((c) => [c.profileId, c]));
+  const total = picks.reduce((n, id) => (n === null ? null : byId.get(id)?.estimate.usd == null ? null : n + byId.get(id)!.estimate.usd!), 0 as number | null);
+  return (
+    <div className="bo-variants">
+      <div className="tk-crew-head">
+        <Label>{f.t("bestOf.proposalTitle", { count: group.n })}</Label>
+        <span className="lbl">{total !== null ? f.t("bestOf.groupEstimate", { usd: f.usd(total) }) : f.t("proposal.estimateUnknown")}</span>
+      </div>
+      <p className="bo-note">{f.t("bestOf.proposalNote", { count: group.n })}</p>
+      <div className="bo-variants-list">
+        {picks.map((id, i) => {
+          const c = byId.get(id);
+          return (
+            <div key={i} className="spec bo-variant-pick">
+              <div className="row">
+                <span className="lbl num">{String(i + 1).padStart(2, "0")}</span>
+                <span className="num bo-small">{c?.estimate.usd != null ? f.usd(c.estimate.usd) : f.t("proposal.unknown")}</span>
+              </div>
+              {c && (
+                <span className="bo-small">
+                  <Who c={c} model />
+                </span>
+              )}
+              {pool.length > picks.length && (
+                <label className="tk-swap">
+                  <span className="sr">{f.t("bestOf.variantProfile", { index: i + 1 })}</span>
+                  <select value={id} onChange={(e) => onPick(i, e.target.value)}>
+                    {pool
+                      .filter((o) => o.profileId === id || !picks.includes(o.profileId))
+                      .map((o) => (
+                        <option key={o.profileId} value={o.profileId}>
+                          {`${f.runner(o.runner)} · ${o.alias}${o.model ? ` · ${o.model}` : ""}`}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/**
  * DESIGN.md `CrewProposal`: one tile per role with its account, reason and meter, the fallback
  * chain with Manual / Ask / Auto, the estimate with its provenance, and `Approve and start`.
  * Proposing never started anything; this button is the first thing that does.
@@ -110,6 +164,8 @@ export function CrewProposal({ task, onClose }: { task: TaskDetail; onClose: () 
   const [hideReasons, setHideReasons] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const proposedVariants = task.bestOfGroup?.variants.map((v) => v.candidate.profileId) ?? [];
+  const [picks, setPicks] = useState<string[]>(proposedVariants);
   const members = task.crew?.members ?? [];
   const chosenOf = (m: CrewMemberView) => {
     const id = edits[m.id];
@@ -126,7 +182,8 @@ export function CrewProposal({ task, onClose }: { task: TaskDetail; onClose: () 
       const list: CrewEdit[] = Object.entries(edits)
         .filter(([memberId, profileId]) => members.find((m) => m.id === memberId)?.chosen?.profileId !== profileId)
         .map(([memberId, profileId]) => ({ memberId, profileId }));
-      await act("tasks.approve", { taskId: task.id, ...(list.length ? { edits: list } : {}), fallback: mode });
+      const variantsChanged = picks.some((id, i) => id !== proposedVariants[i]);
+      await act("tasks.approve", { taskId: task.id, ...(list.length ? { edits: list } : {}), ...(variantsChanged ? { bestOf: { profileIds: picks } } : {}), fallback: mode });
       onClose();
     } catch (err) {
       setError(errorText(err));
@@ -169,6 +226,7 @@ export function CrewProposal({ task, onClose }: { task: TaskDetail; onClose: () 
           <RoleTile key={m.id} index={i} member={m} chosen={chosenOf(m)} budget={task.budgetUsd} hideReasons={hideReasons} onSwap={(profileId) => setEdits((e) => ({ ...e, [m.id]: profileId }))} />
         ))}
       </div>
+      {task.bestOfGroup && <Variants task={task} picks={picks} onPick={(i, id) => setPicks((p) => p.map((x, j) => (j === i ? id : x)))} />}
       <div className="tk-fallback">
         <Label>{f.t("proposal.ifLimit")}</Label>
         <div className="tk-chain">

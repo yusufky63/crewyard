@@ -1,0 +1,90 @@
+{
+  "onlyOpen": "Zamanlamalar yalnızca Crewyard açıkken çalışır; tepsideyken de çalışır. Uygulama kapalıyken hiçbir şey çalışmaz. Uykudan ya da yeniden başlatmadan sonra kaçırılan en fazla 3 çalışma, sırayla telafi edilir.",
+  "new": "Yeni zamanlama",
+  "empty": "Henüz zamanlama yok. Zamanlama her gün ya da her hafta bir görev önerir; otomatik onayı açmadıkça ekip onayınız olmadan hiçbir şey başlamaz.",
+  "errors": {
+    "load": "Zamanlamalar arka plan hizmetinden okunamadı."
+  },
+  "form": {
+    "newTitle": "Yeni zamanlama",
+    "editTitle": "Zamanlamayı düzenle",
+    "title": "Görev başlığı",
+    "titlePlaceholder": "Görev her seferinde ne yapacak",
+    "description": "Açıklama",
+    "descriptionPlaceholder": "Ekip için ayrıntılar, isteğe bağlı",
+    "cadence": "Tekrar",
+    "weekday": "Gün",
+    "time": "Saat",
+    "timeZone": "Saat dilimi",
+    "size": "Boyut",
+    "precheck": "Ön kontrol komutu",
+    "precheckPlaceholder": "ör. gh pr list --label deps --limit 1",
+    "precheckHint": "Önce proje klasöründe çalışır. Çıkış kodu 0 ise çalışma devam eder; başka her sonuçta atlanır ve hiçbir ajan başlamaz. Düz argümanlı tek bir program; boru ya da && yok.",
+    "precheckTimeout": "Ön kontrol süre sınırı (sn)",
+    "autoApprove": "Bu ekibi otomatik onayla",
+    "autoApproveWarning": "Her çalışmanın ekibi size sormadan başlar. Harcama sınırları, riskli komutlar için Gelen kutusu onayları, push ve merge yine sizi bekler; her otomatik onay kayda geçer.",
+    "newNote": "Yeni zamanlama kapalı başlar. Doğru göründüğünde açın.",
+    "editNote": "Değişiklikler bir sonraki zamandan itibaren geçerli olur.",
+    "cancel": "Vazgeç",
+    "save": "Zamanlamayı kaydet",
+    "saving": "Kaydediliyor…"
+  },
+  "cadence": {
+    "daily": "Her gün",
+    "weekly": "Her hafta"
+  },
+  "invalid": {
+    "title": "Göreve bir başlık verin.",
+    "time": "09:00 gibi bir saat girin.",
+    "timeZone": "IANA saat dilimi kullanın, ör. Europe/Istanbul.",
+    "budgetUsd": "Bütçe pozitif bir sayı olmalı.",
+    "precheck": "Ön kontrol, kabuk sözdizimi olmadan düz argümanlı tek bir program olmalı.",
+    "precheckTimeoutSec": "Süre sınırı 5 ile 600 saniye arasında olmalı."
+  },
+  "when": {
+    "daily": "Her gün {{time}} ({{zone}})",
+    "weekly": "Her {{day}} {{time}} ({{zone}})"
+  },
+  "outcome": {
+    "running_precheck": "Ön kontrol çalışıyor",
+    "skipped_precheck": "Ön kontrol atladı",
+    "skipped_missed_one": "Kaçırılan {{count}} çalışma atlandı",
+    "skipped_missed_other": "Kaçırılan {{count}} çalışma atlandı",
+    "proposed": "Önerildi, onay bekliyor",
+    "approved": "Önerildi ve otomatik onaylandı",
+    "failed": "Önerilemedi"
+  },
+  "detail": {
+    "precheck_timeout": "ön kontrolün süresi doldu",
+    "precheck_error": "ön kontrol çalıştırılamadı",
+    "precheck_interrupted": "ön kontrol çalışırken Crewyard kapandı",
+    "crew_missing_profile": "ekibin bir hesaba ihtiyacı var; gözden geçirin",
+    "crew_independence": "inceleyici, uygulayıcının modelini kullanacaktı; ekibi gözden geçirin"
+  },
+  "run": {
+    "manual": "Şimdi çalıştırıldı",
+    "exit": "çıkış kodu {{code}}",
+    "openTask": "[ Görevi aç ]",
+    "none": "Henüz çalışma yok."
+  },
+  "row": {
+    "precheck": "ön kontrol: {{command}}",
+    "autoApprove": "Ekibini otomatik onaylar",
+    "expand": "Çalışmaları göster",
+    "collapse": "Çalışmaları gizle",
+    "enabled": "Açık",
+    "disabled": "Kapalı",
+    "next": "Sonraki: {{when}}",
+    "pending_one": "{{count}} çalışma bir öncekini bekliyor",
+    "pending_other": "{{count}} çalışma bir öncekini bekliyor",
+    "last": "Son: {{outcome}}",
+    "switch": "{{title}} zamanlamasını aç ya da kapat",
+    "on": "Açık",
+    "off": "Kapalı",
+    "runNow": "Şimdi çalıştır",
+    "runNowHint": "Görevi ön kontrol olmadan şimdi öner",
+    "edit": "[ Düzenle ]",
+    "delete": "Sil",
+    "deleteConfirm": "Bu zamanlama silinsin mi? Oluşturduğu görevler kalır."
+  }
+}

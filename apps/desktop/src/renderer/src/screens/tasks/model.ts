@@ -120,7 +120,7 @@ export interface StatusLine {
   icon: StatusIcon;
   /** Raw values; the component translates roles and formats times. */
   /** `reason` is a code to translate; `reasonText` is a runner's own error text, shown as written. */
-  params: { role?: string; time?: string; target?: string; reason?: string; reasonText?: string };
+  params: { role?: string; time?: string; target?: string; reason?: string; reasonText?: string; count?: number };
 }
 
 /** DESIGN.md §5 "Status labels": one line per canonical state, with the detail that makes it useful. */
@@ -133,9 +133,13 @@ export function statusLine(detail: TaskDetail, requests: RequestView[]): StatusL
     case "queued":
       return { ...base, key: "queued", tone: "wait", icon: "clock" };
     case "running":
+      if (!run && detail.bestOf?.phase === "running") return { ...base, key: "bestOfRunning", tone: "run", icon: "spinner", params: { count: detail.bestOf.n } };
       return { ...base, key: run ? "runningStep" : "running", tone: "run", icon: "spinner", params: { role: run?.role } };
     case "needs_input": {
       const pending = requests.find((q) => q.taskId === detail.id && q.answeredAt === null);
+      // A Best of N group waits on you: a variant asks something, or every variant is done and you pick one.
+      if (!pending && detail.bestOf?.phase === "choosing") return { ...base, key: "bestOfChoose", tone: "wait", icon: "crew", params: { count: detail.bestOf.n } };
+      if (!pending && detail.bestOf?.phase === "running") return { ...base, key: "bestOfNeedsYou", tone: "wait", icon: "question" };
       if (pending?.kind === "approval") return { ...base, key: "needsApproval", tone: "wait", icon: "terminal" };
       if (pending?.kind === "handoff") return { ...base, key: "needsDecision", tone: "wait", icon: "gauge" };
       return { ...base, key: "needsAnswer", tone: "wait", icon: "question" };
@@ -158,6 +162,7 @@ export function statusLine(detail: TaskDetail, requests: RequestView[]): StatusL
     case "done":
       return { ...base, key: "done", tone: "ok", icon: "check" };
     case "failed": {
+      if (detail.bestOf?.phase === "failed") return { ...base, key: "bestOfFailed", tone: "bad", icon: "x" };
       const failed = [...detail.runs].reverse().find((r) => r.endReason === "failed");
       const why = splitEndDetail(failed?.endDetail ?? null);
       // A code says it in our words; the runner's full text is in the inspector.
@@ -169,7 +174,7 @@ export function statusLine(detail: TaskDetail, requests: RequestView[]): StatusL
   }
 }
 
-export type StepState = "waiting" | "blocked" | "running" | "needs_you" | "paused" | "limited" | "handing_off" | "done" | "failed" | "stopped" | "interrupted";
+export type StepState = "waiting" | "blocked" | "running" | "needs_you" | "paused" | "hibernated" | "limited" | "handing_off" | "done" | "failed" | "stopped" | "interrupted";
 
 /** What one crew step is doing, for the expanded row and the inspector. */
 export function stepState(member: CrewMemberView, run: RunView | null): StepState {
@@ -180,6 +185,8 @@ export function stepState(member: CrewMemberView, run: RunView | null): StepStat
     if (run.endReason === "interrupted") return "interrupted";
     return "stopped";
   }
+  // Its process is stopped while it waits (on you, or idle); it is not stopped and still holds the step.
+  if (run.hibernatedAt && run.state !== "paused") return "hibernated";
   switch (run.state) {
     case "waiting_input":
     case "waiting_approval":
@@ -190,6 +197,8 @@ export function stepState(member: CrewMemberView, run: RunView | null): StepStat
       return "handing_off";
     case "paused":
       return "paused";
+    case "hibernated":
+      return "hibernated";
     default:
       return "running";
   }

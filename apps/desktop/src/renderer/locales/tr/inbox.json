@@ -92,6 +92,7 @@
   },
   "policy": {
     "notAllowlisted": "Henüz bu projenin izin listesinde değil.",
+    "policy_approved_while_hibernated": "Bir kez izin verildi: ajan uykudayken tam olarak bu çağrıyı onaylamıştınız.",
     "policy_allowlisted": "İzin listesinde.",
     "policy_role_read_only": "Reddedildi: bu rol yalnızca okuyabilir.",
     "policy_role_docs_only": "Reddedildi: bu rol yalnızca belgeleri değiştirebilir.",

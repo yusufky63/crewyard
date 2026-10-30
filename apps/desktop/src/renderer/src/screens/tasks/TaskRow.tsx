@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronDown, ChevronUp, GitBranch } from "lucide-react";
+import { CalendarClock, ChevronDown, ChevronUp, GitBranch, Layers } from "lucide-react";
 import type { RequestView, TaskSummary } from "@crewyard/core";
 import { BrandIcon, Button } from "@crewyard/ui";
 import { useInspector } from "../../inspector.ts";
@@ -100,6 +100,18 @@ export function TaskRow({ summary, requests }: { summary: TaskSummary; requests:
               </span>
             )}
             <span>{f.t(`kind.${detail.kind}`)}</span>
+            {detail.bestOf && (
+              <span>
+                <Layers size={13} strokeWidth={1.75} aria-hidden="true" />
+                {f.t("bestOf.chip", { count: detail.bestOf.n })}
+              </span>
+            )}
+            {detail.scheduled && (
+              <span className="tk-sched" title={detail.scheduled.autoApproved ? f.t("row.scheduledAuto") : undefined}>
+                <CalendarClock size={13} strokeWidth={1.75} aria-hidden="true" />
+                <span className="as-typed">{f.t("row.scheduled", { title: detail.scheduled.title })}</span>
+              </span>
+            )}
           </div>
         </button>
         <span className="tk-right num">{elapsed !== null ? formatDuration(elapsed) : f.when.ago(detail.createdAt)}</span>
@@ -126,7 +138,12 @@ export function TaskRow({ summary, requests }: { summary: TaskSummary; requests:
               {f.t("row.reviewCrew")}
             </Button>
           )}
-          {detail.status === "needs_input" && (
+          {detail.bestOf && ["running", "choosing", "failed"].includes(detail.bestOf.phase) && !detail.cancelledAt && (
+            <Button size="sm" onClick={() => selectTask(detail.id)}>
+              {f.t("bestOf.compare")}
+            </Button>
+          )}
+          {detail.status === "needs_input" && detail.bestOf?.phase !== "choosing" && (
             <Button
               size="sm"
               onClick={() => {

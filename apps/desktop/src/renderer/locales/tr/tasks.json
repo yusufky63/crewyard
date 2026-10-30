@@ -2,6 +2,12 @@
   "nav": "Görevler",
   "title": "Görevler",
   "composer": {
+    "bestOf": "En iyisi",
+    "bestOfTitle": "Uygulama adımını birkaç profilde aynı anda, her birini kendi worktree'sinde çalıştırın, sonra birini seçin",
+    "bestOfOff": "kapalı",
+    "bestOfN_one": "{{count}} profil",
+    "bestOfN_other": "{{count}} profil",
+    "bestOfNote": "Uygulama adımı paralel olarak {{count}} kez çalışacak. Öneri hepsinin toplam tahminini gösterir; sınırlar tüm grubu sayar.",
     "label": "Yeni görev",
     "placeholder": "Görevi anlatın. İlk satır başlık olur.",
     "repoTitle": "Görevin çalışacağı proje",
@@ -80,6 +86,8 @@
     "unavailable": "Sabitlediğiniz {{alias}} kullanılmadı: hazır değil ya da bu rolü üstlenemiyor."
   },
   "reason": {
+    "admission_group_slots": "Aynı anda {{variants}} boş yuva bekleniyor ({{free}} boş)",
+    "admission_group_memory": "Tüm varyantlar için bellek bekleniyor: {{freeMb}} MB boş, {{neededMb}} MB gerekli",
     "classify_keyword": "“{{keyword}}” ifadesi {{kind}} işi gibi duruyor",
     "classify_explicit": "Tür ve boyutu siz seçtiniz",
     "classify_length": "{{chars}} karakter: boyut {{size}}",
@@ -126,6 +134,10 @@
     "loop_no_resume": "{{runner}} oturumu sürdüremiyor"
   },
   "status": {
+    "bestOfRunning": "Çalışıyor · {{count}} varyant",
+    "bestOfChoose": "Varyantları karşılaştırıp birini seçin",
+    "bestOfNeedsYou": "Bir varyant sizi bekliyor",
+    "bestOfFailed": "Hiçbir varyant bitmedi",
     "proposed": "Onay bekliyor",
     "queued": "Sırada",
     "running": "Çalışıyor",
@@ -167,6 +179,7 @@
     "interrupted": "Yarıda kaldı"
   },
   "step": {
+    "hibernated": "Uykuda",
     "waiting": "Bekliyor",
     "blocked": "Sırada",
     "running": "Çalışıyor",
@@ -199,6 +212,8 @@
     "pause": "Duraklat"
   },
   "row": {
+    "scheduled": "Zamanlamadan: {{title}}",
+    "scheduledAuto": "Ekibi, zamanlamanın otomatik onay ayarıyla onaylandı",
     "agents_one": "{{count}} ajan",
     "agents_other": "{{count}} ajan",
     "files_one": "{{count}} dosya",
@@ -428,6 +443,18 @@
     "sent_other": "{{count}} yorum {{who}} adımına gönderildi."
   },
   "errors": {
+    "best_of_bad_count": "En iyisi seçimi 2 ile 4 profil arasında çalışır.",
+    "best_of_too_few": "Bu kadar varyant için uygulama adımını üstlenebilecek yeterli profil yok. İnceleyicinin modeli sayılmaz.",
+    "best_of_not_found": "Bu görevde En iyisi grubu ya da kod yazan bir adım yok.",
+    "best_of_kept": "Bir varyant zaten seçildi.",
+    "best_of_not_finished": "Yalnızca uygulama çalışması biten bir varyant seçilebilir.",
+    "best_of_not_started": "Varyantlar henüz başlamadı.",
+    "best_of_over_budget": "Tüm varyantların tahmini görev bütçesini aşıyor. Bütçeyi artırın ya da daha az profil kullanın.",
+    "best_of_slots": "Projede ya da bu makinede varyant sayısından az yuva var; varyantlar hiçbir zaman birlikte başlayamaz.",
+    "schedule_not_found": "Bu zamanlama artık yok.",
+    "schedule_invalid": "Zamanlamanın bir alanı geçerli değil.",
+    "schedule_busy": "Zamanlamanın bir önceki çalışması hâlâ sürüyor.",
+    "run_hibernated": "Çalışma uykuda; uyandırmak için bir mesaj gönderin ya da isteğini yanıtlayın.",
     "crew_read_only_profile": "Bu hesap salt okunur olarak işaretli, dosya değiştiren bir rolü üstlenemez. Başka bir hesap seçin ya da Sağlayıcılar'da salt okunur ayarını kapatın.",
     "handoff_over_budget": "Bu görev bütçesini aştı. Önce Gelen kutusunda bütçeyi aşmayı onaylayın.",
     "load": "Görevler arka plan hizmetinden okunamadı.",
@@ -510,5 +537,83 @@
   "handoffRecord": {
     "out": "{{target}} hesabına devredildi",
     "in": "{{source}} hesabından devralındı"
+  },
+  "view": {
+    "label": "Görünüm",
+    "tasks": "Görevler",
+    "schedules": "Zamanlamalar"
+  },
+  "bestOf": {
+    "title_one": "{{count}} profilden en iyisi",
+    "title_other": "{{count}} profilden en iyisi",
+    "aria": "{{title}} için En iyisi varyantları",
+    "variantAria": "Varyant {{index}}, {{alias}}",
+    "chip": "{{count}} profilden en iyisi",
+    "compare": "Karşılaştır",
+    "phase": {
+      "proposed": "Önerildi",
+      "waiting": "Başlamayı bekliyor",
+      "running": "Varyantlar çalışıyor",
+      "choosing": "Birini seçin",
+      "kept": "Biri seçildi",
+      "failed": "Hiçbiri bitmedi"
+    },
+    "runningNote": "Her varyant kendi worktree'sinde çalışıyor. Bittiklerinde değişikliklerini, testlerini ve kararlarını karşılaştırıp birini seçin.",
+    "chooseNote_one": "{{count}} varyant bitti. Birini seçin: seçilen ekiple devam eder (test, inceleme, PR); diğerleri durdurulur ve worktree'leri park edilir.",
+    "chooseNote_other": "{{count}} varyant bitti. Birini seçin: seçilen ekiple devam eder (test, inceleme, PR); diğerleri durdurulur ve worktree'leri park edilir.",
+    "keptNote": "Seçilen varyant ekiple kendi worktree'sinde devam ediyor. Diğerleri durduruldu ve park edildi: yarım iş commit'lendi, klasör silindi, dal korundu.",
+    "groupEstimate": "tüm varyantlar için {{usd}}",
+    "proposalTitle_one": "{{count}} profilden en iyisi · uygulama adımı",
+    "proposalTitle_other": "{{count}} profilden en iyisi · uygulama adımı",
+    "proposalNote_one": "Uygulama adımı aynı anda {{count}} profilde, her biri kendi worktree'sinde çalışır. Aşağıdaki tahmin her varyantı sayar; sınırlar da öyle.",
+    "proposalNote_other": "Uygulama adımı aynı anda {{count}} profilde, her biri kendi worktree'sinde çalışır. Aşağıdaki tahmin her varyantı sayar; sınırlar da öyle.",
+    "variantProfile": "Varyant {{index}} için profil",
+    "variantOf": "Varyant {{index}} / {{count}} · görevi aç",
+    "status": {
+      "waiting": "Başlamayı bekliyor",
+      "proposed": "Onay bekliyor",
+      "queued": "Sırada",
+      "running": "Çalışıyor",
+      "needs_input": "Sizi bekliyor",
+      "limited": "Limit doldu",
+      "handing_off": "Devrediliyor",
+      "review": "Bitti",
+      "merged": "Birleştirildi",
+      "done": "Bitti",
+      "failed": "Başarısız",
+      "cancelled": "Durduruldu"
+    },
+    "kept": "Seçildi",
+    "discarded": "Bırakıldı",
+    "discardedParked": "Bırakıldı · park edildi",
+    "discardedNotParked": "Bırakıldı · park edilemedi",
+    "spend": "Harcama",
+    "estimate": "tahmin {{usd}}",
+    "changes": "Değişiklikler",
+    "noChanges": "Değişiklik yok",
+    "noChangesYet": "Henüz değişiklik yok",
+    "moreFiles_one": "{{count}} dosya daha",
+    "moreFiles_other": "{{count}} dosya daha",
+    "tests": "Kendi worktree'sindeki testler",
+    "testsPassed": "Geçti",
+    "testsFailed": "Kaldı · çıkış kodu {{code}}",
+    "output": "Çıktı",
+    "noTests": "Çalıştırılmadı",
+    "verdict": "Karar",
+    "noVerdict": "Henüz yok",
+    "branch": "Dal",
+    "parkFailed": "Park edilemedi",
+    "keep": "Bunu seç",
+    "keepConfirm_one": "Seçilsin mi? Diğer {{count}} varyant durdurulur ({{running}} tanesi hâlâ çalışıyor) ve worktree'si park edilir.",
+    "keepConfirm_other": "Seçilsin mi? Diğer {{count}} varyant durdurulur ({{running}} tanesi hâlâ çalışıyor) ve worktree'leri park edilir.",
+    "keepConfirmAlone": "Seçilsin mi? Ekiple bu devam eder.",
+    "stop": "Durdur",
+    "stopConfirm": "Bu varyant durdurulsun mu? Siz başka birini seçene kadar worktree'si kalır.",
+    "inspect": "[ Ayrıntılar ]"
+  },
+  "hibernation": {
+    "title": "Uykuda",
+    "waitingOnYou": "Süreci {{time}} durduruldu; bellek ve yuva boşaldı. Siz yanıtlayınca kendi oturumuyla uyanır.",
+    "idle": "Süreci {{time}} durduruldu; bellek ve yuva boşaldı. Bir sonraki mesajınızda kendi oturumuyla uyanır."
   }
 }

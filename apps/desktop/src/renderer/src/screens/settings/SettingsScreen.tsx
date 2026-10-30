@@ -8,6 +8,7 @@ import { call, useDaemon } from "../../ipc.ts";
 import { useNav } from "../../nav.ts";
 import { usePrefs, type Density, type ThemePref } from "../../prefs.ts";
 import { AboutSection, DataSection } from "./DataSection.tsx";
+import { HibernationRows } from "./Hibernation.tsx";
 import { KeepAwakeRows } from "./KeepAwake.tsx";
 import { backTarget, SECTIONS, useSettingsNav, type SectionId } from "./model.ts";
 import { Row, Section, Seg, Toggle } from "./parts.tsx";
@@ -198,6 +199,7 @@ function Startup() {
       {s?.supported && s.development && info.data && <p className="st-note mono as-typed">{t("startup.dev", { path: info.data.exePath })}</p>}
       <Row label={t("startup.close")} hint={t("startup.closeHint")} />
       {app.settings && <KeepAwakeRows settings={app.settings} save={app.save} />}
+      {app.settings && <HibernationRows key={app.settings.hibernation.idleMinutes} settings={app.settings} save={app.save} />}
       {app.error && <p className="pv-error st-note">{t("saveFailed", { error: app.error })}</p>}
     </Section>
   );
