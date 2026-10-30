@@ -283,6 +283,14 @@ function build(projectId: string): { tasks: TaskDetail[]; requests: RequestView[
     bestOfGroup: { id: "g1", memberId: bo[0]!.id, n: 3, phase: "choosing", estimate: { usd: 2.1, provenance: "estimated" }, variants, startedAt: ago(40), keptVariantId: null, keptAt: null },
   });
 
+  // 10b. The same kind of task as a proposal: three variants with their estimates and the group's total.
+  const bp = [member("implementer", 1, SOL, [OPUS, FLASH], [], true), member("reviewer", 2, GLM, [ARGON], ["implementer"])];
+  const proposedVariants = [SOL, OPUS, FLASH].map((c, i) => variant(i + 1, c, { taskId: null, status: null, run: null, branch: null, worktreePath: null, spend: { usd: 0, provenance: "estimated" } }));
+  const bestOfProposed = detail(summary("t-bestof-proposed", "Rewrite the pricing cache with an LRU and a TTL", { status: "proposed", size: "S", bestOf: { n: 3, phase: "proposed" }, createdAt: ago(1) }), bp, [], {
+    crew: { id: "c-t-bestof-proposed", proposedAt: ago(1), approvedAt: null, estimate: { usd: 1.6, provenance: "estimated" }, members: bp },
+    bestOfGroup: { id: "g2", memberId: bp[0]!.id, n: 3, phase: "proposed", estimate: { usd: 1.6, provenance: "estimated" }, variants: proposedVariants, startedAt: null, keptVariantId: null, keptAt: null },
+  });
+
   // 11. Hibernated: the process stopped while the run waits on a question; it wakes with the answer.
   const h = [member("researcher", 1, ARGON, [OPUS])];
   const asleepRun = run("t-asleep", h[0]!, ARGON, { state: "waiting_input", startedAt: ago(95), lastActivityAt: ago(80), pendingRequestId: "q-asleep", hibernatedAt: ago(50), worktreeId: null, cwd: "C:\\Projeler\\crewyard" });
@@ -347,7 +355,8 @@ function build(projectId: string): { tasks: TaskDetail[]; requests: RequestView[
     },
   ];
   // The failed rows first, so a 1280 px shot of the list shows how their errors fit.
-  return { tasks: [bestOf, asleep, noStart, credit, proposed, running, approval, capped, unpriced, review, done], requests };
+  // New kinds of rows go last, so earlier shots of the list keep their first rows.
+  return { tasks: [noStart, credit, proposed, running, approval, capped, unpriced, review, done, bestOf, asleep, bestOfProposed], requests };
 }
 
 let cache: { projectId: string; data: ReturnType<typeof build> } | null = null;

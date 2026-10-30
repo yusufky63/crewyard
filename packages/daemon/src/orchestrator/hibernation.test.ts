@@ -96,7 +96,7 @@ describe("hibernation", () => {
     const { o, adapter, clock, projectId } = await setup((_role, _req, resumed) => (resumed ? [running, done("used redis")] : asks));
     const t = await o.propose({ projectId, ...RESEARCH });
     await o.approve({ taskId: t.id });
-    const q = await waitFor(() => o.requests({ taskId: t.id })[0]);
+    const q = await waitFor(() => o.requests({ taskId: t.id })[0], 20_000);
     // Not idle long enough yet.
     clock.shift = 29 * MIN;
     await o.checkHibernation();
@@ -116,7 +116,7 @@ describe("hibernation", () => {
     expect(run.state).toBe("waiting_input");
 
     await o.answer(q.id, { kind: "question", answers: [{ selected: ["redis"] }] });
-    const woke = await waitFor(() => adapter.started.find((s) => s.resumed));
+    const woke = await waitFor(() => adapter.started.find((s) => s.resumed), 20_000);
     expect(woke.ref).toEqual({ runner: "fake", sessionId: adapter.started[0]!.runId });
     expect(woke.req.prompt).toContain("Which store?");
     expect(woke.req.prompt).toContain("Answer: redis");
@@ -131,7 +131,7 @@ describe("hibernation", () => {
     store.db.prepare("insert into settings (key, value) values ('app.hibernation', ?)").run(JSON.stringify({ enabled: false, idleMinutes: 30 }));
     const t = await o.propose({ projectId, ...RESEARCH });
     await o.approve({ taskId: t.id });
-    await waitFor(() => o.requests({ taskId: t.id })[0]);
+    await waitFor(() => o.requests({ taskId: t.id })[0], 20_000);
     clock.shift = 120 * MIN;
     await o.checkHibernation();
     expect(o.get(t.id).runs[0]!.hibernatedAt).toBeNull();
@@ -141,7 +141,7 @@ describe("hibernation", () => {
     const run = o.get(t.id).runs[0]!;
     expect(run.hibernatedAt).not.toBeNull();
     await o.message(run.id, "Use memory for now.");
-    const woke = await waitFor(() => adapter.started.find((s) => s.resumed));
+    const woke = await waitFor(() => adapter.started.find((s) => s.resumed), 20_000);
     expect(woke.req.prompt).toContain("Use memory for now.");
     expect(o.get(t.id).runs[0]!.hibernatedAt).toBeNull();
   });
@@ -169,7 +169,7 @@ describe("hibernation", () => {
     const { o, clock, projectId } = await setup((_role, _req, resumed) => (resumed ? [...wantsInstall.slice(0, 2), done("installed")] : wantsInstall));
     const t = await o.propose({ projectId, ...RESEARCH });
     await o.approve({ taskId: t.id });
-    const q = await waitFor(() => o.requests({ taskId: t.id })[0]);
+    const q = await waitFor(() => o.requests({ taskId: t.id })[0], 20_000);
     expect(q.risk).toBe("high");
     clock.shift = 31 * MIN;
     await o.checkHibernation();

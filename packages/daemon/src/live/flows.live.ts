@@ -597,6 +597,95 @@ Then create a new file ENV_CHECK.md that holds its single output line, and commi
     return () => writeFileSync(file, before);
   }
 
+  /**
+   * Best of 2 live: the implement step on two DeepSeek profiles of different runners, each in its
+   * own worktree; the first that finishes is kept, the other stopped and parked, and the review
+   * continues on the kept worktree.
+   */
+  it("best of 2: two implementers, keep one, review continues", { timeout: 25 * MIN }, async () => {
+    if (!want("best-of") || (await overBudget("best-of"))) return;
+    const a = profiles["cc-ds"];
+    const b = profiles["oc-ds"] ?? profiles["cx-ds"];
+    const reviewer = profiles[REVIEWER];
+    if (!a || !b || !reviewer) throw new Error("best of 2 needs cc-ds, oc-ds or cx-ds, and the reviewer profile");
+    const description = "In src/math.js add and export a function square(n) that returns n * n. Add a test for it in src/math.test.js. Run `npm test`, then commit. Keep the change small.";
+    const t = await d.call("tasks.propose", { projectId, title: "Add a square function and its test", description, kind: "code", size: "S", budgetUsd: 0.5, bestOf: 2, pins: { implementer: a, reviewer } });
+    const g = t.bestOfGroup!;
+    d.log("best-of proposal", g.variants.map((v) => `${alias(v.candidate.profileId)} ${v.candidate.estimate.usd ?? "?"}`).join(" | "), "| crew estimate", t.crew?.estimate.usd ?? "?", t.crew?.estimate.provenance);
+    await d.call("tasks.approve", { taskId: t.id, bestOf: { profileIds: [a, b] } });
+    const started = await d.call("tasks.get", { taskId: t.id });
+    d.log("best-of started", started.bestOfGroup?.phase, "reservations", JSON.stringify(d.store.db.prepare("select amount_usd from spend_reservations where task_id = ? and settled_at is null").all(t.id)));
+    const ready = await d.waitFor(
+      "a finished variant",
+      async () => {
+        const x = await d.call("tasks.get", { taskId: t.id });
+        const done = x.bestOfGroup?.variants.find((v) => v.status === "review" && v.diffStat);
+        const stuck = x.bestOfGroup?.phase === "failed" || x.status === "cancelled";
+        return done ? { x, done } : stuck ? { x, done: null } : null;
+      },
+      15 * MIN,
+      5_000,
+    );
+    for (const v of ready.x.bestOfGroup!.variants) d.log(`  variant ${v.position} ${alias(v.candidate.profileId)}: ${v.status} files ${v.diffStat?.files.map((f) => f.path).join(",") ?? "-"} test ${v.test ? (v.test.passed ? "pass" : "fail") : "-"} verdict ${v.decisions.at(-1)?.kind ?? "-"} spend ${v.spend.usd ?? "?"}`);
+    if (!ready.done) {
+      d.row({ flow: "best of 2", runner: "cc-ds + oc-ds", result: "fail", costUsd: ready.x.spend.usd, notes: `no variant finished; phase ${ready.x.bestOfGroup?.phase}` });
+      return;
+    }
+    const kept = await d.call("tasks.keepVariant", { taskId: t.id, variantId: ready.done.id });
+    const lost = kept.bestOfGroup!.variants.find((v) => v.id !== ready.done!.id)!;
+    d.log("kept", alias(ready.done.candidate.profileId), "worktree", kept.worktree ? d.rel(kept.worktree.path) : "-", "| other", lost.outcome, lost.parkedAt ? "parked" : `not parked (${lost.parkError ?? "-"})`, "folder there", lost.worktreePath ? existsSync(lost.worktreePath) : false);
+    const end = await watch(t.id, settled, 12 * MIN);
+    const verdict = verdictOf(t.id);
+    const pass = end.worktree ? testsPass(end.worktree.path) : false;
+    const ok = end.status === "review" && end.bestOfGroup?.phase === "kept" && end.worktree?.path === ready.done.worktreePath && Boolean(lost.parkedAt) && pass;
+    d.row({ flow: "best of 2 (keep one, review continues)", runner: `${alias(a)} + ${alias(b)} -> ${REVIEWER}`, result: ok ? "pass" : "fail", costUsd: end.spend.usd, notes: `kept ${alias(ready.done.candidate.profileId)}; other ${lost.outcome}/${lost.parkedAt ? "parked" : lost.parkError}; task ${end.status}; tests ${pass}; verdict ${verdict.ok ? verdict.value.verdict : "none"}; spend counts both variants ${end.spend.provenance}` });
+  });
+
+  /**
+   * Hibernation live: a research run asks a question and nobody answers; after the idle window
+   * (1 minute here) its process stops and the run stays open. The answer wakes it by session id.
+   */
+  it("hibernate: an idle run waiting on a question sleeps and wakes with the answer", { timeout: 15 * MIN }, async () => {
+    if (!want("hibernate") || (await overBudget("hibernate"))) return;
+    const p = profiles["cc-ds"];
+    if (!p) throw new Error("the hibernate flow needs cc-ds");
+    await d.call("settings.update", { hibernation: { enabled: true, idleMinutes: 1 } });
+    let taskId = "";
+    let held: RequestView | null = null;
+    let release = false;
+    d.decide = (r): ReturnType<Decide> => {
+      if (r.taskId === taskId && r.kind === "question") {
+        held = r;
+        return release ? defaultDecide(r) : null;
+      }
+      return defaultDecide(r);
+    };
+    try {
+      const t = await d.call("tasks.propose", {
+        projectId,
+        title: "Ask which name to use",
+        description: "Use the AskUserQuestion tool to ask me one question: which name the new helper should have, with the options multiply and times. Wait for my answer, then reply with one sentence that uses the name I chose. Do not change any files and do not run commands.",
+        kind: "research",
+        size: "S",
+        pins: { researcher: p },
+      });
+      taskId = t.id;
+      await d.call("tasks.approve", { taskId: t.id });
+      const asleep = await watch(t.id, (x) => Boolean(x.runs[0]?.hibernatedAt) || ENDED.has(x.status), 6 * MIN, 5_000);
+      const run = asleep.runs[0]!;
+      const counts = d.store.db.prepare("select count(*) as n from run_hibernation where run_id = ? and woke_at is null").get(run.id) as { n: number };
+      d.log("hibernated", run.hibernatedAt ?? "no", "question held", Boolean(held), "end", run.endReason ?? "open", "rows asleep", counts.n);
+      release = true;
+      const end = await watch(t.id, settled, 6 * MIN);
+      const woke = d.store.db.prepare("select woke_by from run_hibernation where run_id = ?").all(run.id) as Array<{ woke_by: string | null }>;
+      const ok = Boolean(run.hibernatedAt) && !run.endedAt && end.status === "done" && end.runs.length === 1 && woke.some((w) => w.woke_by === "answer");
+      d.row({ flow: "hibernate and wake on the answer", runner: "claude-code/deepseek-flash", result: ok ? "pass" : held ? "fail" : "partial", costUsd: end.spend.usd, notes: `question ${held ? "asked" : "never asked"}; hibernated ${Boolean(run.hibernatedAt)}; woke by ${woke.map((w) => w.woke_by).join(",") || "-"}; runs ${end.runs.length}; task ${end.status}` });
+    } finally {
+      d.decide = defaultDecide;
+      await d.call("settings.update", { hibernation: { idleMinutes: 30 } });
+    }
+  });
+
   it("turn control and stall alerts", async () => {
     if (!want("turns")) return;
     const has = (m: string) => m in d.handlers;

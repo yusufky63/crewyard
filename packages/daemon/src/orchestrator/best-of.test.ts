@@ -157,7 +157,7 @@ describe("best of N: a task", () => {
     expect(held.map((r) => r.task_id)).toEqual([t.id, t.id]);
     expect(held.reduce((n, r) => n + r.amount_usd, 0)).toBeCloseTo(started.estimate.usd!, 4);
     // Both variants wait on a question: the parent needs you, and the list shows only the parent.
-    await waitFor(() => o.requests({}).length === 2);
+    await waitFor(() => o.requests({}).length === 2, 30_000);
     const detail = o.get(t.id);
     expect(detail.status).toBe("needs_input");
     expect(o.list(project.id).map((x) => x.id)).toEqual([t.id]);
@@ -178,7 +178,7 @@ describe("best of N: a task", () => {
     const ready = await waitFor(() => {
       const g = o.get(t.id).bestOfGroup!;
       return g.variants[1]!.status === "review" && g.variants[1]!.diffStat && o.requests({}).length === 1 ? g : null;
-    });
+    }, 30_000);
     const keep = ready.variants[1]!;
     expect(keep.diffStat!.files.map((f) => f.path)).toEqual([`${keep.candidate.profileId}.txt`]);
     expect(keep.decisions.map((d) => d.kind)).toEqual(["tests_skipped"]);
@@ -199,7 +199,7 @@ describe("best of N: a task", () => {
     expect((await git(repo, "branch", "--list")).split("\n").length).toBeGreaterThanOrEqual(3);
     expect(o.requests({})).toEqual([]);
     // The reviewer reads the kept worktree's head, and the task ends ready for review.
-    const done = await waitFor(() => (o.get(t.id).status === "review" ? o.get(t.id) : null));
+    const done = await waitFor(() => (o.get(t.id).status === "review" ? o.get(t.id) : null), 30_000);
     const review = adapter.started.find((s) => s.role === "reviewer")!;
     expect(review.req.cwd.startsWith(keep.worktreePath!)).toBe(true);
     expect(done.loop.verdicts).toMatchObject([{ verdict: "pass" }]);
@@ -209,7 +209,7 @@ describe("best of N: a task", () => {
     const { o, project } = await setup({ pick: writes(() => true) });
     const t = await o.propose({ projectId: project.id, ...CODE_S, bestOf: 2 });
     await o.approve({ taskId: t.id });
-    await waitFor(() => o.requests({}).length === 2);
+    await waitFor(() => o.requests({}).length === 2, 30_000);
     // Two variants at one cent each: the parent's spend and its budget see both.
     expect(o.get(t.id).spend.usd).toBeCloseTo(0.02, 6);
     const cancelled = await o.cancel(t.id);

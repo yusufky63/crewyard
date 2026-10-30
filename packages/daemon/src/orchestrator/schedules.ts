@@ -257,12 +257,23 @@ export class Scheduler {
    * stay pending for the next pass, so caught-up runs go one after another, never together.
    */
   async check(): Promise<void> {
+    let due: ScheduleRow[];
+    try {
+      due = this.all<ScheduleRow>("select * from schedules where enabled = 1 order by created_at, id");
+    } catch {
+      // The store closing on exit; the next tick, if any, tries again.
+      return;
+    }
     const now = this.host.now();
-    for (const s of this.all<ScheduleRow>("select * from schedules where enabled = 1 order by created_at, id")) {
+    for (const s of due) {
       try {
         await this.checkOne(s, now);
       } catch (err) {
-        this.host.audit(s.project_id, null, "schedule.error", { scheduleId: s.id, code: errorCode(err) });
+        try {
+          this.host.audit(s.project_id, null, "schedule.error", { scheduleId: s.id, code: errorCode(err) });
+        } catch {
+          // Same: nothing to record into once the store is closed.
+        }
       }
     }
   }
