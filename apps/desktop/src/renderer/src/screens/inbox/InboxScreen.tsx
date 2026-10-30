@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import type { LimitNoticePayload, RequestAnswer, RequestPayload, RequestView, TaskDetail } from "@crewyard/core";
 import { Button, Label, Panel } from "@crewyard/ui";
 import { useDaemon } from "../../ipc.ts";
+import { useListKeys } from "../../listKeys.ts";
 import { useNav } from "../../nav.ts";
 import { ProvBadge } from "../providers/shared.tsx";
 import { act, useErrorText, useRecheck, useWork } from "../tasks/data.ts";
@@ -54,7 +55,7 @@ function Item({ q, selected, onSelect }: { q: RequestView; selected: boolean; on
   const asker = useAsker(task.data, q);
   const asleep = task.data?.runs.some((r) => r.id === q.runId && r.hibernatedAt && !r.endedAt);
   return (
-    <button type="button" className="ib-item" role="option" aria-selected={selected} onClick={onSelect}>
+    <button type="button" className="ib-item" role="option" aria-selected={selected} data-list-id={q.id} onClick={onSelect}>
       <KindIcon q={q} />
       <span className="ib-text">
         <span className={`t${q.payload.kind === "approval" && q.payload.command ? " mono" : ""}`}>{title(q)}</span>
@@ -319,10 +320,11 @@ export function InboxScreen() {
   const [picked, setPicked] = useState<string | null>(null);
   const [stallError, setStallError] = useState<string | null>(null);
   const grid = useRef<HTMLDivElement>(null);
-  if (!projectId) return null;
-
   const open = orderRequests((requests.data ?? []).filter((q) => q.answeredAt === null), taskId);
   const selected = open.find((q) => q.id === picked) ?? open[0] ?? null;
+  useListKeys(open.map((q) => q.id), selected?.id ?? null, setPicked);
+  if (!projectId) return null;
+
   const info = infoNotices(notices, new Set((tasks.data ?? []).map((x) => x.id)));
   const aliasOf = (id: string) => profiles.data?.find((p) => p.id === id)?.alias ?? id;
   const stalled = stalls.data ?? [];

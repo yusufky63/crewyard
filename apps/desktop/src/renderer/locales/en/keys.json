@@ -8,6 +8,7 @@
   "group": {
     "global": "Everywhere",
     "navigate": "Go to a screen",
+    "lists": "Tasks and Inbox lists",
     "tasks": "Tasks and crews",
     "graph": "Crew graph",
     "review": "Diff review"
@@ -18,6 +19,8 @@
     "help": "Show this list",
     "close": "Close the topmost layer: menu, dialog, inspector, then full screen",
     "submit": "Submit the composer, approve the focused crew, send a message or comment",
+    "list.next": "Next item in the list",
+    "list.prev": "Previous item in the list",
     "graph.full": "Full screen on or off",
     "graph.menu": "Open the menu of the focused node",
     "graph.move": "Move the focused node by one grid step",

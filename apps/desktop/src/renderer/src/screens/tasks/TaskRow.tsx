@@ -78,6 +78,7 @@ export function TaskRow({ summary, requests }: { summary: TaskSummary; requests:
         <button
           type="button"
           className="tk-top-main"
+          data-list-id={detail.id}
           onClick={() => {
             selectTask(detail.id);
             inspect({ taskId: detail.id });

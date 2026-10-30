@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Panel } from "@crewyard/ui";
+import { useInspector } from "../../inspector.ts";
 import { useDaemon } from "../../ipc.ts";
+import { useListKeys } from "../../listKeys.ts";
 import { useNav } from "../../nav.ts";
 import { BestOfCompare } from "./BestOfCompare.tsx";
 import { Composer } from "./Composer.tsx";
@@ -32,11 +34,22 @@ export function TasksScreen() {
   // A selected Best of N task that is still choosing shows its variants side by side.
   const comparing = selected?.bestOf && ["running", "choosing", "failed"].includes(selected.bestOf.phase) && !selected.cancelledAt;
   const group = useWork("tasks.get", { taskId: selected?.id ?? "" }, { enabled: Boolean(comparing) });
+  const inspect = useInspector((s) => s.open);
+  const all = tasks.data ?? [];
+  const shown = all.filter((x) => matchesFilter(x.status, filter));
+  // J and K select as a click on the row does: the task, and the inspector on it.
+  useListKeys(
+    shown.map((x) => x.id),
+    taskId,
+    (id) => {
+      selectTask(id);
+      inspect({ taskId: id });
+    },
+    view === "tasks",
+  );
 
   if (!projectId) return null;
-  const all = tasks.data ?? [];
   const counts = filterCounts(all);
-  const shown = all.filter((x) => matchesFilter(x.status, filter));
 
   return (
     <div className="screen">
