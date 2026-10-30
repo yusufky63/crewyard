@@ -260,7 +260,7 @@ function ScheduleRow({ s, onEdit, onOpenTask }: { s: ScheduleView; onEdit: () =>
           <Button size="sm" variant="ghost" onClick={onEdit}>
             {t("row.edit")}
           </Button>
-          <ConfirmButton label={t("row.delete")} confirm={t("row.deleteConfirm")} onConfirm={() => run$(() => act("schedules.delete", { id: s.id }))} />
+          <ConfirmButton label={t("row.delete")} confirm={t("row.deleteConfirm")} confirmLabel={t("row.deleteYes")} onConfirm={() => run$(() => act("schedules.delete", { id: s.id }))} />
         </div>
       </div>
       <ErrorLine>{error}</ErrorLine>

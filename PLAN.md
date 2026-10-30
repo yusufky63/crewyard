@@ -317,6 +317,12 @@ A run cannot create other runs. If an agent asks for more work, the request beco
 - **Pinned review:** reviewers read a detached checkout of the exact head; the verdict is stored with that sha, and the merge gate passes only a pass verdict for the PR head. Codex reviewers use its own `review/start`.
 - **Records:** every decision is recorded with its reason and shown in the timeline and the crew graph.
 
+### 9.3 Best of N ([ADR 0007](docs/adr/0007-best-of-schedules-hibernation.md))
+
+- A code task can run its implement step on 2 to 4 profiles at once (composer option). Each variant is a hidden task of its own with its own worktree, bootstrap and run-until-green loop; the proposal shows every variant's estimate and the group's total, and no variant may share a reviewer's model.
+- The group starts all at once or not at all: N free slots and memory, and every paid estimate reserved against the parent's caps in one step. The parent's budget and per-task caps count every variant.
+- When the variants finish, the Tasks screen and the inspector compare them side by side (files changed, tests in each worktree, loop verdict, spend). Keeping one, after a confirm, moves its worktree and session to the parent, where test, review and PR continue; the others are stopped and parked.
+
 ## 10. GitHub
 
 - **Auth:** reuse the `gh` CLI login (token read at startup, kept in memory). No new token is stored.
@@ -343,6 +349,9 @@ A run cannot create other runs. If an agent asks for more work, the request beco
   - `Undo last turn` puts the worktree back to the git checkpoint taken before the turn, after the runner's own rewind where it has one (Claude file checkpoints, Codex thread rollback, OpenCode revert). It shows every file it changes first, asks to confirm, and never runs while a turn does.
   - Stall alerts: a running turn quiet for N minutes, the same failure N runs in a row, or a request unanswered for N minutes becomes an Inbox item and a notice, with a cooldown; defaults in Settings.
   - At handoff and at run end the runner's own transcript is copied into the task folder, and the handoff package cites the copy.
+
+- **Scheduled tasks** ([ADR 0007](docs/adr/0007-best-of-schedules-hibernation.md)): a task template proposes a task daily or weekly at a time in an IANA time zone, created disabled. An optional precheck command gates each run by its exit code; a skip costs nothing. A schedule never overlaps its own previous run, catches up at most 3 missed slots after sleep or a restart, and goes through crew approval unless its template says "auto-approve this crew" (audited). The timer lives in the daemon: nothing runs while the app is closed.
+- **Hibernation** (ADR 0007): a run idle for N minutes (default 30) with its process alive, in practice one waiting on your answer, has its process stopped on runners that can resume. It stays open, shows `hibernated`, frees its slot, and wakes by session id on your answer or message or when its step continues.
 
 ### 11.1 First run and project setup
 
@@ -390,7 +399,7 @@ The result is `.mission/project.json` in the repo: name, commands, allowed runne
 
 ## 13. Canonical states
 
-**Facts per run:** `started_at`, `ended_at`, `end_reason` (`completed` / `failed` / `stopped` / `limit` / `interrupted`), `last_activity_at`, `pending_request_id`, `limit_state`, `handoff_id`.
+**Facts per run:** `started_at`, `ended_at`, `end_reason` (`completed` / `failed` / `stopped` / `limit` / `interrupted`), `last_activity_at`, `pending_request_id`, `limit_state`, `handoff_id`. A hibernated run (`run_hibernation`) is open, not stopped, and holds no admission slot.
 
 **Derived task status** (first match wins):
 

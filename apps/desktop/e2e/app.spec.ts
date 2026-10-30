@@ -180,6 +180,62 @@ test("Crew graph: right-clicks a node and runs Check again", async () => {
   await expect.poll(async () => (await taskByTitle(task.title))?.status, { timeout: 20_000 }).toBe("done");
 });
 
+test("Best of: runs two implementers, compares them and keeps one, which the review continues", async () => {
+  const { page } = h;
+  const work = [running, say("Implemented."), { wait: 200 }];
+  h.setScripts({ implementer: [work, work], reviewer: [[running, say("Reviewed."), { wait: 100 }]] });
+  await page.locator("#app-sidebar").getByRole("button", { name: "Tasks", exact: true }).click();
+  await page.getByLabel("New task").fill("Add a token bucket to the limiter");
+  await page.getByLabel("Kind").selectOption("code");
+  await page.getByLabel("Best of").selectOption("2");
+  await page.getByRole("button", { name: "Propose crew" }).click();
+  const proposal = page.getByRole("region", { name: /Suggested crew for/ });
+  await expect(proposal.getByText("Best of 2 · implement step")).toBeVisible();
+  await expect(proposal.getByText(/for every variant/)).toBeVisible();
+  await proposal.getByRole("button", { name: "Approve and start" }).click();
+
+  const title = "Add a token bucket to the limiter";
+  const phase = async () => (await daemon<{ bestOfGroup: { phase: string } | null }>(h.page, "tasks.get", { taskId: (await taskByTitle(title))!.id })).bestOfGroup?.phase;
+  await expect.poll(phase, { timeout: 30_000 }).toBe("choosing");
+  // The variants are hidden tasks: the list shows the parent only.
+  expect((await tasks()).filter((t) => t.title === title)).toHaveLength(1);
+  const row = page.locator(".tk-row", { hasText: title });
+  await row.getByRole("button", { name: "Compare" }).click();
+  const compare = page.getByRole("region", { name: `Best of variants for ${title}` });
+  await expect(compare).toBeVisible();
+  const first = compare.getByLabel(/^Variant 1, /);
+  await first.getByRole("button", { name: "Keep this one" }).click();
+  await expect(first.locator(".tk-confirm")).toContainText("1 other variant is stopped");
+  await first.getByRole("button", { name: "Keep it" }).click();
+  await expect.poll(phase, { timeout: 20_000 }).toBe("kept");
+  await expect.poll(async () => (await taskByTitle(title))?.status, { timeout: 30_000 }).toBe("review");
+});
+
+test("Schedules: creates one switched off, switches it on and runs it now", async () => {
+  const { page } = h;
+  await page.locator("#app-sidebar").getByRole("button", { name: "Tasks", exact: true }).click();
+  await page.getByRole("group", { name: "View" }).getByRole("button", { name: /^Schedules/ }).click();
+  await expect(page.getByText(/Schedules run only while Crewyard is open/)).toBeVisible();
+  await page.getByRole("button", { name: "New schedule" }).click();
+  const form = page.getByRole("region", { name: "New schedule" });
+  await form.getByLabel("Task title").fill("Nightly limiter check");
+  await form.getByLabel("Kind").selectOption("research");
+  await form.getByLabel("Auto-approve this crew").check();
+  await expect(form.getByText(/starts without asking you/)).toBeVisible();
+  await form.getByLabel("Auto-approve this crew").uncheck();
+  await form.getByRole("button", { name: "Save schedule" }).click();
+  const row = page.locator(".tk-row", { hasText: "Nightly limiter check" });
+  await expect(row.locator(".tk-status .st")).toHaveText("Off");
+  await row.getByRole("group", { name: /on or off/ }).getByRole("button", { name: "On" }).click();
+  await expect(row.locator(".tk-status .st")).toHaveText("On");
+  await expect(row.getByText(/^Next /)).toBeVisible();
+  await row.getByRole("button", { name: "Run now" }).click();
+  // It proposes the task and waits for your approval, like any task.
+  await expect.poll(async () => (await taskByTitle("Nightly limiter check"))?.status).toBe("proposed");
+  await expect(row.getByText(/Last: Proposed, waits for approval/)).toBeVisible();
+  await page.getByRole("group", { name: "View" }).getByRole("button", { name: "Tasks" }).click();
+});
+
 test("Settings: theme and language change and the UI follows", async () => {
   const { page } = h;
   const html = page.locator("html");

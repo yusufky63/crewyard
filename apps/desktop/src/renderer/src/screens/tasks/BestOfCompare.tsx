@@ -130,6 +130,8 @@ function Variant({ detail, v, others, stacked }: { detail: TaskDetail; v: BestOf
         {group.phase !== "kept" && finished && (
           <ConfirmButton
             size="md"
+            variant="secondary"
+            confirmLabel={f.t("bestOf.keepYes")}
             label={f.t("bestOf.keep")}
             confirm={others.length > 0 ? f.t("bestOf.keepConfirm", { count: others.length, running }) : f.t("bestOf.keepConfirmAlone")}
             onConfirm={() => run$(() => act("tasks.keepVariant", { taskId: detail.id, variantId: v.id }))}

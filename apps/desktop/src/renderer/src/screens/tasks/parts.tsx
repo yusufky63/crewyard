@@ -169,12 +169,13 @@ export function LimitBanner({ info, who, onHandOff, onDismiss, onOpenInbox }: { 
  * Destructive actions confirm in place and name what they stop (DESIGN.md §7 "Close is not stop").
  * The first click asks, the second acts; Esc or "Keep" backs out.
  */
-export function ConfirmButton({ label, confirm, onConfirm, disabled, size = "sm" }: { label: string; confirm: string; onConfirm: () => void | Promise<unknown>; disabled?: boolean; size?: "sm" | "md" }) {
+/** Asks before acting. Danger by default (stop, delete); `confirmLabel` and `variant` fit other choices (keep one). */
+export function ConfirmButton({ label, confirm, onConfirm, disabled, size = "sm", variant = "danger", confirmLabel }: { label: string; confirm: string; onConfirm: () => void | Promise<unknown>; disabled?: boolean; size?: "sm" | "md"; variant?: "danger" | "secondary"; confirmLabel?: string }) {
   const { t } = useTranslation("tasks");
   const [asking, setAsking] = useState(false);
   if (!asking)
     return (
-      <Button size={size} variant="danger" disabled={disabled} onClick={() => setAsking(true)}>
+      <Button size={size} variant={variant} disabled={disabled} onClick={() => setAsking(true)}>
         {label}
       </Button>
     );
@@ -186,14 +187,14 @@ export function ConfirmButton({ label, confirm, onConfirm, disabled, size = "sm"
       </Button>
       <Button
         size={size}
-        variant="danger"
+        variant={variant}
         autoFocus
         onClick={() => {
           setAsking(false);
           void onConfirm();
         }}
       >
-        {t("action.confirmStop")}
+        {confirmLabel ?? t("action.confirmStop")}
       </Button>
     </span>
   );

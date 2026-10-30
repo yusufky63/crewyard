@@ -85,6 +85,7 @@
     "runNowHint": "Görevi ön kontrol olmadan şimdi öner",
     "edit": "[ Düzenle ]",
     "delete": "Sil",
-    "deleteConfirm": "Bu zamanlama silinsin mi? Oluşturduğu görevler kalır."
+    "deleteConfirm": "Bu zamanlama silinsin mi? Oluşturduğu görevler kalır.",
+    "deleteYes": "Sil"
   }
 }

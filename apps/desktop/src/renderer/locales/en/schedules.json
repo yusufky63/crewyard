@@ -85,6 +85,7 @@
     "runNowHint": "Propose the task now without the precheck",
     "edit": "[ Edit ]",
     "delete": "Delete",
-    "deleteConfirm": "Delete this schedule? Tasks it created stay."
+    "deleteConfirm": "Delete this schedule? Tasks it created stay.",
+    "deleteYes": "Delete"
   }
 }
