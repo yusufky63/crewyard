@@ -118,7 +118,7 @@ export function reviewFixture<M extends IpcMethod>(method: M, params: IpcParams<
     case "github.taskDiff": {
       const t = task(p.taskId);
       const all = t.worktree ? files() : [];
-      return { taskId: t.id, scope: p.scope ?? "worktree", runId: null, baseSha: t.worktree?.baseSha ?? null, files: all, cut: false, problem: t.worktree ? null : "no_worktree" } satisfies TaskDiff;
+      return { taskId: t.id, scope: p.scope ?? "worktree", runId: null, baseSha: t.worktree?.baseSha ?? null, files: all, cut: false, unreadable: t.worktree ? ["src/auth/session.db", ".vs/app/v17/.suo"] : [], problem: t.worktree ? null : "no_worktree" } satisfies TaskDiff;
     }
     case "github.reviewDrafts":
       return drafts.filter((d) => d.taskId === p.taskId);

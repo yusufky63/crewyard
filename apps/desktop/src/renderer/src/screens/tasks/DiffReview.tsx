@@ -32,6 +32,30 @@ function useDrafts(taskId: string) {
   return { drafts: q.data ?? [], set, refetch: () => q.refetch() };
 }
 
+/** Files Windows kept from git, usually because an editor or a running process holds them open. */
+function Unreadable({ paths }: { paths: string[] }) {
+  const f = useFormat();
+  const [open, setOpen] = useState(paths.length <= 3);
+  return (
+    <div className="rv-banner rv-unreadable" role="status">
+      <p>{f.t("review.unreadable", { count: paths.length })}</p>
+      {open ? (
+        <ul>
+          {paths.map((p) => (
+            <li key={p} className="mono as-typed">
+              {p}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <button type="button" className="rv-link" onClick={() => setOpen(true)}>
+          {f.t("review.unreadableShow", { count: paths.length })}
+        </button>
+      )}
+    </div>
+  );
+}
+
 /** Mounted once in the inspector's Changes tab. */
 export function DiffReview({ detail, run }: { detail: TaskDetail; run: RunView | null }) {
   const f = useFormat();
@@ -289,6 +313,7 @@ function ReviewDialog({ detail, run, scope, onScope, onClose }: { detail: TaskDe
 
         <div className="rv-diff">
           {diff.data?.cut && <p className="rv-banner">{f.t("review.cut")}</p>}
+          {diff.data?.unreadable && diff.data.unreadable.length > 0 && <Unreadable paths={diff.data.unreadable} />}
           {diff.data?.problem && <p className="rv-banner">{f.t(`review.problem.${diff.data.problem}`)}</p>}
           {diff.isError && <p className="rv-banner">{errorText(diff.error)}</p>}
           {diff.isLoading && <p className="muted rv-pad">{f.t("review.loading")}</p>}

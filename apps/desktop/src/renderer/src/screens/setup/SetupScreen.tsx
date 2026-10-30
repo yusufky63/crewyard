@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Button, Label } from "@crewyard/ui";
-import type { FolderDetection } from "@crewyard/core";
+import { SETUP_CASE_TWINS, type FolderDetection } from "@crewyard/core";
 import { call, useDaemon } from "../../ipc.ts";
 import { canOpenProjects, useNav } from "../../nav.ts";
 import { buildConfig, draftProblems, seedFromDetection, STEPS, useDraft, type Draft, type Step } from "./draft.ts";
@@ -29,7 +29,20 @@ function plannedActions(d: Draft, det: FolderDetection): ActionId[] {
   ];
 }
 
+/** Daemon refusals that arrive as a code get the user's language; anything else is shown as it came. */
+function useErrorText() {
+  const { t } = useTranslation("setup");
+  return (err: unknown, det: FolderDetection) => {
+    const raw = err instanceof Error ? err.message : String(err);
+    // Electron prefixes errors from ipcMain.handle with "Error invoking remote method '...': Error: ".
+    const code = raw.replace(/^.*Error: /, "").trim();
+    if (code === SETUP_CASE_TWINS) return t("errors.caseTwins", { folders: (det.caseTwins ?? []).join(", ") || t("errors.caseTwinsUnknown") });
+    return raw;
+  };
+}
+
 function useCreate(det: FolderDetection | undefined) {
+  const errorText = useErrorText();
   const qc = useQueryClient();
   const { go, openProject } = useNav();
   const [progress, setProgress] = useState<Progress | null>(null);
@@ -68,7 +81,7 @@ function useCreate(det: FolderDetection | undefined) {
         mark(id, "ok");
       }
     } catch (err) {
-      mark(current, "bad", err instanceof Error ? err.message : String(err));
+      mark(current, "bad", errorText(err, det));
       // Re-read the folder so a retry sees what already happened (a new repo, a remote, ci.yml).
       await qc.invalidateQueries({ queryKey: ["setup.detect"] });
     }

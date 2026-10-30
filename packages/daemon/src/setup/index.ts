@@ -7,7 +7,7 @@ import { caseTwins, checkPathLength, defaultWorktreeRoot, detectProjectType, fol
 
 export { validateProjectConfig, writeProjectConfig, readProjectConfig, CONFIG_REL } from "./config.ts";
 export { gitInit, createPrivateRepo, writeCi, listRepos, cloneRepo } from "./actions.ts";
-export { caseTwinProblem, checkPathLength } from "./detect.ts";
+export { caseTwinProblem, caseTwins, checkPathLength } from "./detect.ts";
 
 export async function longPathsEnabled(): Promise<boolean | null> {
   if (process.platform !== "win32") return null;

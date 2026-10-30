@@ -90,3 +90,5 @@
 .tk-step-dot.s-needs_you, .tk-step-dot.s-paused, .tk-step-dot.s-handing_off, .tk-step-dot.s-blocked { background: var(--warn); }
 .tk-step-dot.s-limited, .tk-step-dot.s-failed { background: var(--bad); }
 .tk-step-dot.s-done { background: var(--ok); }
+/* Placeholder for a row not mounted yet (LazyRow): the height of a collapsed row, so the scrollbar is right. */
+.tk-row-ph { min-height: var(--row); }

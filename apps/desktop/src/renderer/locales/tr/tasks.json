@@ -306,6 +306,9 @@
     "notInView": "Bu satır şu anki görünümde yok.",
     "remove": "{{where}} üzerindeki yorumu kaldır",
     "cut": "Fark çok büyük, sonraki dosyalar dışarıda kaldı. Son tur ile daralt ya da dalı başka yerde incele.",
+    "unreadable_one": "{{count}} dosya okunamadı ve gösterilmiyor. Başka bir program açık tutuyor olabilir; onu kapatıp incelemeyi yeniden aç.",
+    "unreadable_other": "{{count}} dosya okunamadı ve gösterilmiyor. Başka bir program açık tutuyor olabilir; onu kapatıp incelemeyi yeniden aç.",
+    "unreadableShow": "{{count}} dosyayı göster",
     "problem": {
       "no_worktree": "Bu görevin worktree'si yok, incelenecek bir fark da yok.",
       "missing": "Worktree klasörü artık yok.",

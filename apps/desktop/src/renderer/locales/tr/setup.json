@@ -24,6 +24,7 @@
     "folder": "Adım {{step}}: önce proje klasörünü seçin.",
     "name": "Adım {{step}}: projenin bir adı olmalı.",
     "git": "Adım {{step}}: ajanlar git worktree'lerinde çalışır, bu klasörde git olmalı.",
+    "caseTwins": "Adım {{step}}: yanındaki başka bir klasör aynı adı farklı büyük-küçük harfle taşıyor.",
     "budget": "Adım {{step}}: limitler sıfır ya da daha fazla dolar olmalı.",
     "slots": "Adım {{step}}: slot sayısı 1 ile 16 arasında bir tam sayı olmalı.",
     "bootstrap": "Adım {{step}}: bir worktree komutu, kopyalama öğesi, sınır ya da port düzeltilmeli.",
@@ -40,6 +41,9 @@
   },
   "source": { "local": "Yerel klasör", "clone": "GitHub'dan klonla", "empty": "Boş klasör" },
   "folder": {
+    "caseTwins": "Büyük-küçük harf",
+    "caseTwinsText_one": "Bu klasörün yalnızca büyük-küçük harf farkıyla ayrılan bir eşi var. Crewyard yolları harf büyüklüğüne bakmadan karşılaştırır; ikisi tek proje ve tek worktree klasörünü paylaşırdı. Önce birini yeniden adlandır:",
+    "caseTwinsText_other": "Bu klasörün yalnızca büyük-küçük harf farkıyla ayrılan {{count}} eşi var. Crewyard yolları harf büyüklüğüne bakmadan karşılaştırır; hepsi tek proje ve tek worktree klasörünü paylaşırdı. Önce bunları yeniden adlandır:",
     "title": "Proje nerede?",
     "lead": "Elinizdeki bir klasörü seçin, bir depo klonlayın ya da boş başlayın. Crewyard klasörü okuyup komut önerir.",
     "source": "Kaynak",
@@ -213,5 +217,9 @@
     "portVar": "Değişken",
     "portVarText": "kurulum ve ajanlar {{name}} ile CREWYARD_PORT değişkenlerini alır",
     "note": "Kurulum ve temizlik komutları yüksek risklidir. Her biri Gelen kutusunda bir kez onaylanır; metni değişirse yeniden sorulur."
+  },
+  "errors": {
+    "caseTwins": "Oluşturulmadı: {{folders}} bu klasörden yalnızca büyük-küçük harfle ayrılıyor. Birini yeniden adlandırıp projeyi yeniden oluştur.",
+    "caseTwinsUnknown": "başka bir klasör"
   }
 }

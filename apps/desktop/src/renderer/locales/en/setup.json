@@ -24,6 +24,7 @@
     "folder": "Step {{step}}: choose the project folder first.",
     "name": "Step {{step}}: the project needs a name.",
     "git": "Step {{step}}: agents work in git worktrees, so this folder needs git.",
+    "caseTwins": "Step {{step}}: another folder next to this one has the same name in different letter case.",
     "budget": "Step {{step}}: caps must be zero or more dollars.",
     "slots": "Step {{step}}: slots must be a whole number from 1 to 16.",
     "bootstrap": "Step {{step}}: a worktree command, copy entry, limit or port needs fixing.",
@@ -40,6 +41,9 @@
   },
   "source": { "local": "Local folder", "clone": "Clone from GitHub", "empty": "Empty folder" },
   "folder": {
+    "caseTwins": "Letter case",
+    "caseTwinsText_one": "This folder has a twin that differs only by letter case. Crewyard compares paths without case, so both would share one project and one worktree folder. Rename one of them first:",
+    "caseTwinsText_other": "This folder has {{count}} twins that differ only by letter case. Crewyard compares paths without case, so they would share one project and one worktree folder. Rename them first:",
     "title": "Where is the project?",
     "lead": "Pick a folder you already have, clone one, or start empty. Crewyard reads it to suggest commands.",
     "source": "Source",
@@ -213,5 +217,9 @@
     "portVar": "Variable",
     "portVarText": "setup and agents get {{name}} and CREWYARD_PORT",
     "note": "Setup and cleanup commands are high risk. Each one is approved once in the Inbox; changing its text asks again."
+  },
+  "errors": {
+    "caseTwins": "Not created: {{folders}} differs from this folder only by letter case. Rename one of them, then create the project again.",
+    "caseTwinsUnknown": "another folder"
   }
 }

@@ -10,6 +10,7 @@ import { useFixtureState } from "./fixtureState.ts";
 import { FILTERS, filterCounts, matchesFilter, type Filter } from "./model.ts";
 import { TaskRow } from "./TaskRow.tsx";
 import "./tasks.css";
+import { LazyRow } from "./LazyRow.tsx";
 
 export function TasksScreen() {
   const { t } = useTranslation("tasks");
@@ -59,8 +60,10 @@ export function TasksScreen() {
         {tasks.isError && <p className="tk-empty muted">{t("errors.load")}</p>}
         {tasks.isSuccess && all.length === 0 && <p className="tk-empty muted">{t("empty.none")}</p>}
         {tasks.isSuccess && all.length > 0 && shown.length === 0 && <p className="tk-empty muted">{t("empty.filter")}</p>}
-        {shown.map((s) => (
-          <TaskRow key={s.id} summary={s} requests={requests.data ?? []} />
+        {shown.map((s, i) => (
+          <LazyRow key={s.id} index={i}>
+            <TaskRow summary={s} requests={requests.data ?? []} />
+          </LazyRow>
         ))}
       </Panel>
     </div>

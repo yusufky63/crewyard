@@ -54,6 +54,8 @@ describe("setup draft", () => {
     expect(draftProblems({ ...d, slots: "2.5" }, detection())).toEqual([{ step: 4, problem: "slots" }]);
     expect(draftProblems({ ...d, actionsWarnPct: "" }, detection())).toEqual([{ step: 6, problem: "warnPct" }]);
     expect(draftProblems({ ...d, path: null }, undefined)).toContainEqual({ step: 1, problem: "folder" });
+    expect(draftProblems(d, { ...detection(), caseTwins: ["C:\work\App"] })).toEqual([{ step: 1, problem: "caseTwins" }]);
+    expect(draftProblems(d, { ...detection(), caseTwins: [] })).toEqual([]);
   });
 
   it("suggests the lockfile's install as setup and builds the bootstrap block", () => {

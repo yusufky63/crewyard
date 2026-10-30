@@ -68,6 +68,9 @@ export interface FolderDetection {
   caseTwins?: string[];
 }
 
+/** setup.create's refusal while `caseTwins` is not empty; the wizard words it with the twins it shows. */
+export const SETUP_CASE_TWINS = "setup.case_twins";
+
 export interface GithubRepoItem {
   nameWithOwner: string;
   description: string | null;
