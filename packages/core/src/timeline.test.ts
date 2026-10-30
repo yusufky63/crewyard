@@ -148,3 +148,12 @@ describe("track geometry", () => {
     expect(trackPct(ms(500), tl)).toBe(100);
   });
 });
+
+describe("buildTimeline: crew reports", () => {
+  it("puts a report between tool bursts, closing the burst before it", () => {
+    const events = [call(1, "r1", "a"), done(2, "r1", "a"), ev(3, "r1", { kind: "report", reportId: "q1", report: "needs_input", text: "Which region?", title: null }), call(4, "r1", "b")];
+    const tl = buildTimeline([run("r1", 0, null)], events, ms(10));
+    expect(tl.entries.map((e) => e.kind)).toEqual(["started", "tools", "report", "tools"]);
+    expect(tl.entries[2]).toMatchObject({ kind: "report", runId: "r1", report: "needs_input", text: "Which region?" });
+  });
+});

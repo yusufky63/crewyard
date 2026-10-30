@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeftRight, ChevronDown, ChevronRight, CircleHelp, Flag, MessageSquare, Play, RotateCw, ShieldQuestion, Timer, Wrench } from "lucide-react";
+import { ArrowLeftRight, ChevronDown, ChevronRight, CircleAlert, CircleCheck, CircleHelp, Flag, Lightbulb, MessageSquare, Milestone, Play, RotateCw, ShieldQuestion, Timer, Wrench } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { buildTimeline, timeIn, visibleSegments, type Lane, type LaneState, type TaskDetail, type TasksTopics, type TimelineEntry, type ToolStep } from "@crewyard/core";
+import { buildTimeline, timeIn, visibleSegments, type CrewReportType, type Lane, type LaneState, type McpTopics, type TaskDetail, type TasksTopics, type TimelineEntry, type ToolStep } from "@crewyard/core";
 import { BrandIcon, Button, Label } from "@crewyard/ui";
 import { call } from "../../ipc.ts";
 import { formatDuration, loopLook } from "../../screens/tasks/model.ts";
@@ -29,15 +29,21 @@ function useTimeline(detail: TaskDetail) {
     if (FIXTURE) return;
     let timer: ReturnType<typeof setTimeout> | null = null;
     // Runs stream many events a second; re-read the timeline at most once a second.
-    const off = window.crewyard.on("runs.event", (p) => {
-      if ((p as TasksTopics["runs.event"]).taskId !== taskId) return;
-      timer ??= setTimeout(() => {
+    const later = () =>
+      (timer ??= setTimeout(() => {
         timer = null;
         void qc.invalidateQueries({ queryKey: ["usage.timeline", { taskId }] });
-      }, 1000);
+      }, 1000));
+    const off = window.crewyard.on("runs.event", (p) => {
+      if ((p as TasksTopics["runs.event"]).taskId === taskId) later();
+    });
+    // A report from the agent is not a run event; it has its own topic (docs/adr/0007).
+    const offReports = window.crewyard.on("mcp.reports.changed", (p) => {
+      if ((p as McpTopics["mcp.reports.changed"]).taskId === taskId) later();
     });
     return () => {
       off();
+      offReports();
       if (timer) clearTimeout(timer);
     };
   }, [qc, taskId]);
@@ -179,8 +185,31 @@ const ENTRY_ICON: Record<TimelineEntry["kind"], typeof Play> = {
   retry: RotateCw,
   // Drawn with the decision's own status icon instead (loopLook).
   loop: RotateCw,
+  // Drawn with the report's own icon instead (REPORT_ICON).
+  report: Milestone,
   ended: Flag,
 };
+
+export const REPORT_ICON: Record<CrewReportType, typeof Play> = { checkpoint: Milestone, needs_input: CircleHelp, stuck: CircleAlert, done: CircleCheck, followup: Lightbulb };
+
+/**
+ * What the agent said through the report tool. Its words are untrusted: React renders them as
+ * text, and the "from the agent" line keeps them apart from what Crewyard says.
+ */
+function ReportText({ e, who }: { e: Extract<TimelineEntry, { kind: "report" }>; who: string }) {
+  const { t } = useTranslation("timeline");
+  return (
+    <span className="tl-report">
+      <span>{t(`entry.report.${e.report}`, { who })}</span>
+      {e.title && <span className="tl-report-title">{e.title}</span>}
+      {e.text && (
+        <span className="tl-quote" aria-label={t("entry.fromAgent")}>
+          {e.text}
+        </span>
+      )}
+    </span>
+  );
+}
 
 /** One loop decision as a sentence: what the tests or the reviewer said, and what the loop did next. */
 function LoopText({ e, role }: { e: Extract<TimelineEntry, { kind: "loop" }>; role: string }) {
@@ -226,6 +255,8 @@ function EntryText({ e, who, roleOf, now, locale, first }: { e: TimelineEntry; w
       return <span>{t("entry.retry", { who: who(e.runId) })}</span>;
     case "loop":
       return <LoopText e={e} role={roleOf(e.memberId, e.runId)} />;
+    case "report":
+      return <ReportText e={e} who={who(e.runId)} />;
     case "ended":
       return <span>{t("entry.ended", { who: who(e.runId), reason: t(`reason.${e.reason ?? "completed"}`, { defaultValue: e.reason ?? "" }) })}</span>;
   }
@@ -296,10 +327,10 @@ export function TaskTimeline({ detail }: { detail: TaskDetail }) {
       <ol className="tl-entries">
         {visible.map((e, i) => {
           const look = e.kind === "loop" ? loopLook(e.decision) : null;
-          const Icon = look ? STATUS_ICONS[look.icon] : e.kind === "request" && e.request === "question" ? CircleHelp : ENTRY_ICON[e.kind];
+          const Icon = look ? STATUS_ICONS[look.icon] : e.kind === "request" && e.request === "question" ? CircleHelp : e.kind === "report" ? REPORT_ICON[e.report] : ENTRY_ICON[e.kind];
           const d = durationOf(e, now);
           return (
-            <li key={`${e.kind}-${e.at}-${i}`} className={`tl-entry tl-e-${e.kind}${e.kind === "wait" ? ` tl-w-${e.state}` : ""}${look ? ` tl-l-${look.tone}` : ""}`}>
+            <li key={`${e.kind}-${e.at}-${i}`} className={`tl-entry tl-e-${e.kind}${e.kind === "wait" ? ` tl-w-${e.state}` : ""}${e.kind === "report" ? ` tl-r-${e.report}` : ""}${look ? ` tl-l-${look.tone}` : ""}`}>
               <time className="num muted" dateTime={new Date(e.at).toISOString()}>
                 {clock.format(e.at)}
               </time>

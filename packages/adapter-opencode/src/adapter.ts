@@ -29,6 +29,7 @@ import { isShutdownExit, parseVersion, resolveBin, run as runCommand } from "@cr
 import { compactionOf, errorText, exportSession, importSession, isNotFound, usageOf, type CliCall } from "./fork.ts";
 import { createOpencodeClient, type Event as OpenCodeEvent, type Message, type OpencodeClient, type PermissionRequest, type SessionStatus } from "@opencode-ai/sdk/v2";
 import { OpenCodeMapper, type EventBody } from "./mapper.ts";
+import { isUserMcpPermission, mcpConfig, mcpPermissionRules, withMcpConfig } from "./mcp.ts";
 import { mustReject, permissionRules } from "./policy.ts";
 import { EventQueue } from "./queue.ts";
 import { basicAuth, childEnv, launchServer, providerConfigEnv, type OpenCodeServer } from "./server.ts";
@@ -161,7 +162,7 @@ export class OpenCodeAdapter implements AgentAdapter {
   async start(req: StartRequest): Promise<RunHandle> {
     const run = await this.open(req, null);
     try {
-      const created = await run.client.session.create({ title: title(req.prompt), permission: permissionRules(req.policy) });
+      const created = await run.client.session.create({ title: title(req.prompt), permission: [...permissionRules(req.policy), ...mcpPermissionRules(req.mcpServers ?? [], req.policy)] });
       this.attach(run, need(created).id);
       await this.listenUntilConnected(run);
       await this.prompt(run, req.prompt);
@@ -182,7 +183,7 @@ export class OpenCodeAdapter implements AgentAdapter {
       );
       // A forked or imported copy has no permission rules (an export does not carry them), and
       // without rules OpenCode allows what its defaults allow: give it this role's rules first.
-      if (!info.permission?.length) await run.client.session.update({ sessionID: ref.sessionId, permission: permissionRules(req.policy) });
+      if (!info.permission?.length) await run.client.session.update({ sessionID: ref.sessionId, permission: [...permissionRules(req.policy), ...mcpPermissionRules(req.mcpServers ?? [], req.policy)] });
       this.attach(run, ref.sessionId);
       // History is already in our event log; prime the mapper so it is not emitted twice.
       const history = await run.client.session.messages({ sessionID: ref.sessionId });
@@ -377,7 +378,11 @@ export class OpenCodeAdapter implements AgentAdapter {
     const executable = await this.executable();
     if (!executable) throw new Error("opencode was not found on PATH");
     await this.ensureVersion(executable);
-    const server = await launchServer({ executable, prefixArgs: this.opts.prefixArgs, cwd: req.cwd, configDir: req.profile.configDir, env: req.env, extraEnv: providerEnv(req), readyTimeoutMs: this.opts.readyTimeoutMs });
+    // The run's MCP servers ride in the inline config; it then holds the report ticket and server
+    // secrets, so the env guard hides the whole variable from the agent's commands (docs/adr/0007).
+    const mcp = mcpConfig(req.mcpServers ?? []);
+    const extraEnv = withMcpConfig(providerEnv(req), mcp);
+    const server = await launchServer({ executable, prefixArgs: this.opts.prefixArgs, cwd: req.cwd, configDir: req.profile.configDir, env: req.env, extraEnv, hidden: Object.keys(mcp).length ? ["OPENCODE_CONFIG_CONTENT"] : [], readyTimeoutMs: this.opts.readyTimeoutMs });
     const client = createOpencodeClient({ baseUrl: server.url, directory: req.cwd, headers: { Authorization: basicAuth(server.password) }, throwOnError: true });
     const runId = `opencode-${randomUUID()}`;
     const model = req.model ?? req.profile.defaultModel;
@@ -554,12 +559,17 @@ export class OpenCodeAdapter implements AgentAdapter {
 
   private onPermission(run: Run, req: PermissionRequest): void {
     if (!run.mapper.owns(req.sessionID) || run.mapper.pending.has(req.id)) return;
-    if (mustReject(run.req.policy, req.permission, req.patterns)) {
+    const specs = run.req.mcpServers ?? [];
+    // A read-only role's user MCP tool that the session rules should have settled: refused here too.
+    const mcpRefused = run.req.policy.writes === "none" && isUserMcpPermission(req.permission, specs) && !specs.some((s) => !s.builtin && (s.tools === null ? req.permission.startsWith(`${s.name}_`) : s.tools.some((t) => req.permission === `${s.name}_${t}`)));
+    if (mcpRefused || mustReject(run.req.policy, req.permission, req.patterns)) {
       run.mapper.settle(req.id);
       void run.client.permission.reply({ requestID: req.id, reply: "reject", message: "This role may not do that; the request was refused by policy." }).catch(() => undefined);
       return;
     }
-    this.emit(run, run.mapper.permission(req));
+    // A user MCP server is another program that may reach anything: rated like network access.
+    const bodies = run.mapper.permission(req);
+    this.emit(run, isUserMcpPermission(req.permission, specs) ? bodies.map((b) => (b.type === "request.approval" ? { ...b, network: true } : b)) : bodies);
   }
 
   private onStatus(run: Run, status: SessionStatus): void {

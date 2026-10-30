@@ -161,4 +161,17 @@ describe("taskTimeline", () => {
     const built = buildTimeline([{ id: "r-ds", memberId: "m1", role: "implementer", runner: "opencode", profileId: "p-ds", startedAt: daysAgo(1).toISOString(), endedAt: null, endReason: null }], tl.events, Date.now() + 1000);
     expect(built.entries.some((e) => e.kind === "request" && e.answeredAt !== null)).toBe(true);
   });
+
+  it("projects crew reports and leaves out rows of an unknown type", () => {
+    const s = newStore();
+    seed(s);
+    const add = (payload: unknown) => s.appendEvent({ kind: "mcp.report", source: "mcp", payload, projectId: "pr", taskId: "t1", runId: "r-ds" });
+    add({ reportId: "a", type: "stuck", text: "No database.", title: null, artifacts: [] });
+    add({ reportId: "b", type: "followup", text: "Later.", title: "Add a cache", artifacts: [] });
+    add({ reportId: "c", type: "spawn_run", text: "x" });
+    expect(taskTimeline(s.db, "t1").events).toMatchObject([
+      { kind: "report", reportId: "a", report: "stuck", text: "No database.", title: null },
+      { kind: "report", reportId: "b", report: "followup", title: "Add a cache" },
+    ]);
+  });
 });

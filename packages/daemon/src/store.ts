@@ -579,6 +579,63 @@ export const MIGRATIONS: Migration[] = [
      forked integer not null default 0
    );`,
   },
+  // MCP (docs/adr/0007): reports and follow-up proposals agents send through the report server,
+  // the user's own stdio servers (secret env values live in DPAPI blobs, only their ids here), and
+  // which servers each run was given.
+  {
+    id: "mcp",
+    sql: `create table if not exists crew_reports (
+     id text primary key,
+     project_id text not null,
+     task_id text not null references tasks(id),
+     run_id text not null,
+     member_id text not null,
+     type text not null,
+     text text not null,
+     title text,
+     artifacts text not null default '[]',
+     created_at text not null,
+     closed_at text,
+     closed_by text,
+     task_created text
+   );
+   create index if not exists crew_reports_task on crew_reports(task_id, created_at);
+   create index if not exists crew_reports_open on crew_reports(project_id, closed_at);
+   create index if not exists crew_reports_run on crew_reports(run_id, type);
+   create table if not exists mcp_servers (
+     id text primary key,
+     scope text not null,
+     project_id text,
+     name text not null,
+     command text not null,
+     args text not null default '[]',
+     enabled integer not null default 1,
+     read_only_access text not null default 'marked',
+     tools text,
+     checked_at text,
+     check_error text,
+     created_at text not null,
+     updated_at text not null
+   );
+   create unique index if not exists mcp_servers_name on mcp_servers(scope, coalesce(project_id, ''), name);
+   create table if not exists mcp_server_env (
+     server_id text not null references mcp_servers(id) on delete cascade,
+     name text not null,
+     secret integer not null,
+     value text,
+     secret_id text,
+     primary key (server_id, name)
+   );
+   create table if not exists mcp_run_servers (
+     run_id text primary key,
+     task_id text not null,
+     project_id text not null,
+     servers text not null,
+     skipped text not null default '[]',
+     at text not null
+   );
+   create index if not exists mcp_run_servers_project on mcp_run_servers(project_id, at);`,
+  },
 ];
 
 /** What the positional scheme applied: a database at `user_version` N has the first N of these. */

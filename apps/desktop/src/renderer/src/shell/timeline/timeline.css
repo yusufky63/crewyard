@@ -52,3 +52,9 @@
 .tl-out { max-height: 240px; overflow: auto; margin: 0; padding: 8px 10px; background: var(--sunken); border: 1px solid var(--line); font: 400 11.5px / 1.45 var(--mono); color: var(--ink-2); white-space: pre-wrap; overflow-wrap: anywhere; }
 .tl-small { font-size: 12px; }
 .tl-more { justify-self: start; }
+/* Crew reports (docs/adr/0007): the agent's words in a quoted block, set apart from our own text. */
+.tl-report { display: grid; gap: 4px; }
+.tl-report-title { color: var(--ink); font-weight: 500; }
+.tl-quote { display: block; padding: 4px 0 4px 10px; border-left: 2px solid var(--line-strong); color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+.tl-r-needs_input > svg, .tl-r-stuck > svg { color: var(--warn); }
+.tl-r-done > svg { color: var(--ok); }

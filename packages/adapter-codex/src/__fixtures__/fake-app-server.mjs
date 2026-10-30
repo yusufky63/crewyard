@@ -18,7 +18,7 @@ const scenario = config.scenario ?? "basic";
 const fixture = (name) => JSON.parse(readFileSync(new URL(`./${name}`, import.meta.url), "utf8"));
 const log = (entry) => appendFileSync(join(home, "fake-log.jsonl"), `${JSON.stringify(entry)}\n`);
 
-log({ env: { CODEX_HOME: home, OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? null, CREWYARD_TEST_SECRET: process.env.CREWYARD_TEST_SECRET ?? null }, cwd: process.cwd() });
+log({ env: { CODEX_HOME: home, OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? null, CREWYARD_TEST_SECRET: process.env.CREWYARD_TEST_SECRET ?? null, CREWYARD_RUN_TICKET: process.env.CREWYARD_RUN_TICKET ?? null, GH_TOKEN: process.env.GH_TOKEN ?? null }, cwd: process.cwd() });
 
 const send = (msg) => process.stdout.write(`${JSON.stringify(msg)}\n`);
 const notify = (method, params) => send({ method, params });
@@ -51,6 +51,16 @@ async function runTurn() {
       log({ answered: "command", response: cmd });
       const file = await ask("item/fileChange/requestApproval", { threadId: "thr-1", turnId: "turn-1", itemId: "fc-1", startedAtMs: 1, reason: null, grantRoot: null });
       log({ answered: "file", response: file });
+      completed("completed");
+      return;
+    }
+    case "mcp": {
+      started();
+      // An MCP tool approval (codex 0.147: mcpServer/elicitation/request with _meta.codex_approval_kind), then a form.
+      const tool = await ask("mcpServer/elicitation/request", { threadId: "thr-1", turnId: "turn-1", serverName: "github", request: { mode: "form", message: "Allow create_issue?", requestedSchema: { type: "object", properties: {} }, _meta: { codex_approval_kind: "mcp_tool_call", tool_name: "create_issue" } } });
+      log({ answered: "mcp", response: tool });
+      const form = await ask("mcpServer/elicitation/request", { threadId: "thr-1", turnId: "turn-1", serverName: "github", request: { mode: "form", message: "Pick a repo", requestedSchema: { type: "object", properties: {} } } });
+      log({ answered: "form", response: form });
       completed("completed");
       return;
     }

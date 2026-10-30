@@ -49,6 +49,7 @@ import {
   sessionProblemOf,
   utf8Length,
 } from "@crewyard/core";
+import type { McpHook } from "../mcp/service.ts";
 import type { Store } from "../store.ts";
 import { Bootstrapper } from "../worktrees/bootstrap.ts";
 import { admit, DEFAULT_LIMITS, type AdmissionLimits } from "./admission.ts";
@@ -97,6 +98,8 @@ export interface OrchestratorOptions {
   stallCheckMs?: number;
   /** How long a "drain" handoff waits for the turn in flight before it interrupts it. */
   drainTimeoutMs?: number;
+  /** MCP servers per run process and the report server's ticket lifecycle (docs/adr/0007). */
+  mcp?: McpHook;
 }
 
 interface Live {
@@ -170,6 +173,7 @@ export class Orchestrator {
   readonly stalls: StallMonitor;
   private stallTimer: NodeJS.Timeout | null = null;
   private directory: ProfileDirectory;
+  private mcp: McpHook | null;
   private readonly adapters: AdapterRegistry;
   private readonly now: () => Date;
   private readonly live = new Map<string, Live>();
@@ -208,6 +212,7 @@ export class Orchestrator {
     this.db = new OrchestratorDb(opts.store.db);
     this.adapters = opts.adapters ?? new AdapterRegistry();
     this.directory = opts.directory ?? EMPTY_DIRECTORY;
+    this.mcp = opts.mcp ?? null;
     this.now = opts.now ?? (() => new Date());
     this.limits = new LimitMonitor(this.db, (n) => this.emit("limits.notice", n), this.now);
     this.bootstrap = new Bootstrapper({
@@ -286,6 +291,17 @@ export class Orchestrator {
   setDirectory(directory: ProfileDirectory): void {
     this.directory = directory;
     void this.tick();
+  }
+
+  /** Called by the MCP work (handlers/mcp.ts) once its service exists. */
+  setMcp(hook: McpHook): void {
+    this.mcp = hook;
+  }
+
+  /** The MCP servers for a new process of this run; a fresh report ticket each time (docs/adr/0007). */
+  private async mcpFor(runId: string, taskId: string, projectId: string, policy: RolePolicy, adapter: AgentAdapter): Promise<Pick<StartRequest, "mcpServers">> {
+    const servers = this.mcp ? await this.mcp.serversFor({ runId, taskId, projectId, policy, capabilities: adapter.capabilities }) : undefined;
+    return servers ? { mcpServers: servers } : {};
   }
 
   /** Waits until background work (pumps, handoffs, ticks) has settled; for tests and shutdown. */
@@ -1221,16 +1237,18 @@ export class Orchestrator {
       // Codex reviews with its own review/start against the task's base; the verdict schema still applies.
       const review: ReviewTarget | null = pinned && member.role === "reviewer" && !resumeRef && adapter.capabilities.nativeReview ? { kind: "base_branch", branch: task.base_branch ?? wt!.base_sha } : null;
       if (review) this.nativeReviews.add(runId);
+      const policy = this.policyFor(member.role, config);
       const req: StartRequest = {
         profile: candidate.profile,
         cwd,
         model: target.model,
         prompt: queued.prompt,
-        policy: this.policyFor(member.role, config),
+        policy,
         env: { ...(await this.directory.envFor(target.profileId)), ...(boot?.status === "ready" ? boot.env : {}) },
         outputSchema: outputSchemaFor(member.role),
         nextTurn: () => this.nextTurn(runId),
         ...(review ? { review: { target: review } } : {}),
+        ...(await this.mcpFor(runId, task.id, project.id, policy, adapter)),
       };
       await this.turns.begin(runId);
       const handle = resumeRef ? await adapter.resume(resumeRef, req) : await adapter.start(req);
@@ -1503,6 +1521,8 @@ export class Orchestrator {
     // The runner may expire its own record; ours stays with the task (feature scan A18).
     if (run.native_session_id) this.track(this.copyTranscript(runId));
     settleReservation(this.opts.store.db, runId, this.now());
+    // Its report ticket stops working and its open questions close (docs/adr/0007).
+    this.mcp?.runEnded(runId);
     // A handoff target that ends before it confirmed leaves the source paused and asks you.
     const pendingHandoff = this.confirming.get(runId);
     if (pendingHandoff) {
@@ -1548,15 +1568,17 @@ export class Orchestrator {
     const project = this.db.project(task.project_id);
     const candidate = (await this.candidates(project)).find((c) => c.profile.id === run.profile_id);
     if (!candidate) throw new OrchestratorError("crew.unknown_profile", { profileId: run.profile_id });
+    const policy = this.policyFor(run.role, this.config(project).config);
     const req: StartRequest = {
       profile: candidate.profile,
       cwd: run.cwd,
       model: run.model,
       prompt: queued.prompt,
-      policy: this.policyFor(run.role, this.config(project).config),
+      policy,
       env: { ...(await this.directory.envFor(run.profile_id)), ...this.bootstrapEnv(run, project) },
       outputSchema: outputSchemaFor(run.role),
       nextTurn: () => this.nextTurn(runId),
+      ...(await this.mcpFor(runId, task.id, project.id, policy, adapter)),
     };
     await this.turns.begin(runId);
     const handle = await adapter.resume({ runner: run.runner, sessionId: run.native_session_id }, req);

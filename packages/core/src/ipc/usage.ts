@@ -1,3 +1,4 @@
+import type { CrewReportType } from "../mcp.ts";
 import type { Provenance, RunnerId } from "../events.ts";
 import type { LoopDecisionKind, Reason } from "./tasks.ts";
 
@@ -80,6 +81,8 @@ export type TimelineEvent = {
    * `memberId` is the step the loop works on (the implementer), also for a reviewer's verdict.
    */
   | { kind: "loop"; decision: LoopDecisionKind; memberId: string | null; iteration: number; max: number; reason: Reason }
+  /** A report or follow-up proposal the agent sent through the report server (docs/adr/0007); untrusted text. */
+  | { kind: "report"; reportId: string; report: CrewReportType; text: string; title: string | null }
 );
 
 /** A timeline event without its envelope, per kind. */

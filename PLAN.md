@@ -75,7 +75,7 @@
 ```
 
 - **Process ownership:** every agent process is a child of the daemon. The daemon tracks process trees and kills them with `taskkill /PID <pid> /T /F` on stop, so nothing respawns or lingers. Closing the window hides it to the tray; quitting from the tray asks first and names the running agents.
-- **Ingress:** besides IPC there is one named pipe `\\.\pipe\mission-control-<user-sid>`, restricted to the current user and protected by a token. It is used by Claude Code hooks (to observe sessions you started outside the app) and by a small `mc` CLI. No TCP port is opened.
+- **Ingress:** besides IPC there is one named pipe `\\.\pipe\mission-control-<user-sid>`, restricted to the current user and protected by a token. It is used by Claude Code hooks (to observe sessions you started outside the app), by a small `mc` CLI, and by the report server every run gets (ADR 0007: a PowerShell byte relay the runner starts, one ticket per run process, a random pipe name per daemon start). No TCP port is opened.
 - **Recovery:** on start the daemon reloads facts, marks runs whose process is gone as `interrupted`, and offers native resume (Claude `resume`, Codex `thread/resume`, OpenCode session, ACP `session/load`) instead of silently restarting anything.
 
 ### 4.1 Repository layout
@@ -316,6 +316,11 @@ A run cannot create other runs. If an agent asks for more work, the request beco
 - **Stop rules:** at most `loop.maxIterations` fix attempts per step (default 3), the spend caps, and stop when the worktree did not change since the last failing try. A stopped loop leaves the step failed and waiting for you.
 - **Pinned review:** reviewers read a detached checkout of the exact head; the verdict is stored with that sha, and the merge gate passes only a pass verdict for the PR head. Codex reviewers use its own `review/start`.
 - **Records:** every decision is recorded with its reason and shown in the timeline and the crew graph.
+
+### 9.3 Crew reports and MCP servers (ADR 0007)
+
+- **Report server:** every run gets Crewyard's own stdio MCP server with `report` (checkpoint, needs input, stuck, done) and `propose_followup`. Reports show in the timeline; needs input, stuck and follow-ups are Inbox items. A follow-up becomes a task only when you click, and then only as a draft whose crew waits for your approval. The agent's text is untrusted data, capped and shown as text.
+- **Your servers:** Settings → MCP servers holds stdio servers per project or for all projects, in Crewyard's database, never in the project folder. Secret env values go through DPAPI. Each run gets them through its runner's own config. Read-only roles get only the tools a server marks read-only, or what you chose for that server. Package runners with a floating tag (`npx pkg@latest`) or no exact version are flagged.
 
 ## 10. GitHub
 

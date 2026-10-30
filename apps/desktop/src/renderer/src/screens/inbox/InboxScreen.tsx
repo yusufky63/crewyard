@@ -13,6 +13,7 @@ import { codeKey, profileNames } from "../tasks/model.ts";
 import { ConfirmButton, ErrorLine, useFormat, Who } from "../tasks/parts.tsx";
 import { ApprovalActions } from "./ApprovalActions.tsx";
 import { InboxSplit } from "./InboxSplit.tsx";
+import { ReportList, useReports } from "./Reports.tsx";
 import { StallList, useStalls } from "./Stalls.tsx";
 import { defaultTarget, emptyForm, formAnswer, formReady, handoffChoices, infoNotices, orderRequests, titleKey, type QuestionForm } from "./model.ts";
 import "../tasks/tasks.css";
@@ -306,6 +307,7 @@ export function InboxScreen() {
   const tasks = useWork("tasks.list", { projectId: projectId ?? "" }, { enabled: Boolean(projectId) });
   const profiles = useDaemon("providers.profiles", undefined, { staleTime: 60_000 });
   const stalls = useStalls(projectId ?? "");
+  const reports = useReports(projectId ?? "");
   const errorText = useErrorText();
   const notices = useActivity((s) => s.notices);
   const [picked, setPicked] = useState<string | null>(null);
@@ -336,6 +338,7 @@ export function InboxScreen() {
               <Item key={q.id} q={q} selected={selected?.id === q.id} onSelect={() => setPicked(q.id)} />
             ))}
           </Panel>
+          <ReportList reports={reports.data ?? []} onError={(e) => setStallError(errorText(e))} />
           <StallList alerts={stalled} onOpenRequest={setPicked} onError={(e) => setStallError(errorText(e))} />
           <ErrorLine>{stallError}</ErrorLine>
           {info.length > 0 && (

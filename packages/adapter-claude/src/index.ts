@@ -17,6 +17,8 @@ export const capabilities: AgentCapabilities = {
   usage: true,
   reportedLimits: false,
   readOnlyMode: true,
+  // mcpServers + strictMcpConfig, tools allowed per name (docs/adr/0007).
+  mcp: { toolFilter: true },
   // No documented way to add to a running turn: follow-ups wait for the turn boundary.
   // File checkpoints restore what Write and Edit changed; the conversation keeps the turn (docs: agent-sdk/file-checkpointing).
   undo: { files: true, history: false },

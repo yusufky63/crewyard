@@ -76,6 +76,15 @@ async function play(client, sessionId, text) {
     await say(client, sessionId, { sessionUpdate: "usage_update", used: 1200, size: 200000, cost: { amount: 0.01, currency: "USD" } });
     return "end_turn";
   }
+  if (text.includes("mcptools")) {
+    // Gemini CLI marks MCP tool permissions with _meta["gemini-cli"].mcp (docs/cli/acp-mode.md).
+    const ask = (id, server, tool) => client.request(acp.methods.client.session.requestPermission, { sessionId, toolCall: { toolCallId: id, title: `${server}.${tool}`, _meta: { "gemini-cli": { mcp: { server_name: server, tool_name: tool } } } }, options: OPTIONS });
+    const own = await ask("m1", "crewyard", "report");
+    log({ kind: "permission.outcome", tool: "report", outcome: own.outcome });
+    const user = await ask("m2", "github", "create_issue");
+    log({ kind: "permission.outcome", tool: "create_issue", outcome: user.outcome });
+    return "end_turn";
+  }
   if (text.includes("approve") || text.includes("waitperm")) {
     await say(client, sessionId, { sessionUpdate: "tool_call", toolCallId: "t3", title: "dotnet test", kind: "execute", status: "pending", rawInput: { command: "dotnet test" } });
     const res = await client.request(acp.methods.client.session.requestPermission, { sessionId, toolCall: { toolCallId: "t3", title: "dotnet test" }, options: OPTIONS });

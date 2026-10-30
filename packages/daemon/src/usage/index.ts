@@ -1,5 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
-import { TIMELINE_MAX_EVENTS, TIMELINE_PREVIEW, utf8Length, type LoopDecisionKind, type Provenance, type Reason, type RunnerId, type TaskTimelineData, type TimelineEvent, type TimelineEventBody, type UsageRecord, type UsageReport } from "@crewyard/core";
+import { CREW_REPORT_KINDS, type CrewReportType, TIMELINE_MAX_EVENTS, TIMELINE_PREVIEW, utf8Length, type LoopDecisionKind, type Provenance, type Reason, type RunnerId, type TaskTimelineData, type TimelineEvent, type TimelineEventBody, type UsageRecord, type UsageReport } from "@crewyard/core";
 import { startOfLocalDay } from "../providers/ledger.ts";
 
 // Reads behind the usage view and the task timeline (PLAN.md M5). Read-only: the spend ledger and
@@ -185,6 +185,7 @@ export function usageReport(db: DatabaseSync, days: number, now = new Date()): U
 // ---- timeline
 
 const KINDS = [
+  "mcp.report",
   "run.run.state",
   "run.run.ended",
   "run.tool.call",
@@ -230,6 +231,8 @@ export function readOutput(output: string | undefined): { preview: string | null
 type Payload = Record<string, unknown>;
 const str = (v: unknown): string | null => (typeof v === "string" ? v : null);
 const int = (v: unknown): number | null => (typeof v === "number" && Number.isInteger(v) ? v : null);
+
+const REPORT_TYPES: ReadonlySet<string> = new Set<CrewReportType>([...CREW_REPORT_KINDS, "followup"]);
 
 const DECISIONS: ReadonlySet<string> = new Set<LoopDecisionKind>([
   "tests_passed",
@@ -297,6 +300,12 @@ function project(kind: string, p: Payload): TimelineEventBody | null {
       const max = int(p.max);
       if (!decision || !DECISIONS.has(decision) || !reason || iteration === null || max === null) return null;
       return { kind: "loop", decision: decision as LoopDecisionKind, memberId: str(p.memberId), iteration, max, reason };
+    }
+    case "mcp.report": {
+      // Checked and capped when it arrived (core/mcp.ts); a row of another shape is left out.
+      const type = str(p.type);
+      if (!str(p.reportId) || !type || !REPORT_TYPES.has(type)) return null;
+      return { kind: "report", reportId: str(p.reportId)!, report: type as CrewReportType, text: str(p.text) ?? "", title: str(p.title) };
     }
     default:
       return null;

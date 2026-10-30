@@ -1,4 +1,5 @@
 import type { AgentAdapter, AgentCapabilities, AgentEvent, Answer, NativeSessionRef, Probe, RunHandle, StartRequest, UserInput } from "@crewyard/core";
+import { callMcpTool } from "./mcp-call.ts";
 
 // A scripted runner for tests and UI work. A script is a list of steps; a step either emits an
 // event, waits, or blocks on a request until answer() is called. Nothing is spawned.
@@ -6,7 +7,9 @@ import type { AgentAdapter, AgentCapabilities, AgentEvent, Answer, NativeSession
 export type FakeStep =
   | { emit: DistributiveOmit<AgentEvent, "runId" | "seq" | "at" | "source"> }
   | { wait: number }
-  | { awaitAnswer: string };
+  | { awaitAnswer: string }
+  /** Calls a tool of the run's report server through the daemon's pipe, as a runner would (docs/adr/0007). */
+  | { mcp: { tool: string; arguments: unknown } };
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 
@@ -21,6 +24,7 @@ export const capabilities: AgentCapabilities = {
   usage: true,
   reportedLimits: true,
   readOnlyMode: true,
+  mcp: { toolFilter: true },
 };
 
 interface RunState {
@@ -33,6 +37,9 @@ interface RunState {
   /** Text steered into the running script (steer()). */
   steered: UserInput[];
   nextTurn: StartRequest["nextTurn"];
+  mcpServers: StartRequest["mcpServers"];
+  /** What each mcp step's tool call returned. */
+  mcpResults: Array<{ isError: boolean; text: string }>;
   interrupted: boolean;
 }
 
@@ -50,7 +57,7 @@ export class FakeAdapter implements AgentAdapter {
 
   async start(req: StartRequest): Promise<RunHandle> {
     const runId = `fake-${++this.counter}`;
-    this.runs.set(runId, { script: [...this.script], answers: new Map(), early: new Map(), received: [], inputs: [], steered: [], nextTurn: req.nextTurn, interrupted: false });
+    this.runs.set(runId, { script: [...this.script], answers: new Map(), early: new Map(), received: [], inputs: [], steered: [], nextTurn: req.nextTurn, mcpServers: req.mcpServers, mcpResults: [], interrupted: false });
     return { runId, runner: "fake", pid: null, nativeSession: { runner: "fake", sessionId: runId } };
   }
 
@@ -64,7 +71,10 @@ export class FakeAdapter implements AgentAdapter {
         if (state.early.has(step.awaitAnswer)) state.early.delete(step.awaitAnswer);
         else await new Promise<Answer>((resolve) => state.answers.set(step.awaitAnswer, resolve));
       }
-      else yield { ...step.emit, runId: run.runId, seq: seq++, at: new Date().toISOString(), source: { adapter: "fake", cliVersion: null } } as AgentEvent;
+      else if ("mcp" in step) {
+        const spec = state.mcpServers?.find((m) => m.builtin);
+        state.mcpResults.push(spec ? await callMcpTool(spec, step.mcp.tool, step.mcp.arguments) : { isError: true, text: "no report server in this run" });
+      } else yield { ...step.emit, runId: run.runId, seq: seq++, at: new Date().toISOString(), source: { adapter: "fake", cliVersion: null } } as AgentEvent;
     }
     // Turn boundary, as the real adapters do: queued follow-ups become further (empty) turns.
     while (!state.interrupted && state.nextTurn) {
@@ -112,9 +122,9 @@ export class FakeAdapter implements AgentAdapter {
   }
 
   /** Test helper: what the run received through answer() and send(). */
-  inspect(run: RunHandle): { answers: Answer[]; inputs: UserInput[]; steered: UserInput[] } {
+  inspect(run: RunHandle): { answers: Answer[]; inputs: UserInput[]; steered: UserInput[]; mcpResults: Array<{ isError: boolean; text: string }> } {
     const s = this.mustGet(run);
-    return { answers: [...s.received], inputs: [...s.inputs], steered: [...s.steered] };
+    return { answers: [...s.received], inputs: [...s.inputs], steered: [...s.steered], mcpResults: [...s.mcpResults] };
   }
 
   private mustGet(run: RunHandle): RunState {
