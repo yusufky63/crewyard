@@ -1,5 +1,7 @@
 /* Tasks screen (DESIGN.md §5 Composer, CrewProposal, TaskRow, StatusLabel, LimitBanner). */
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+/* A long project path is cut to the column, so the list never scrolls sideways (the full path is the title). */
+.tk-head-main { min-width: 0; max-width: 100%; }
 .tk-context { margin-top: 6px; max-width: 760px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tk-small { font-size: 12px; }
 .tk-error { margin-top: 10px; font-size: 13px; color: var(--bad); }
@@ -39,6 +41,8 @@
 .tk-role-run { font-size: 13px; }
 .tk-role-acct { font-size: 12px; color: var(--ink-3); overflow-wrap: anywhere; }
 .tk-why { font-size: 12px; color: var(--ink-2); line-height: 1.4; min-height: 34px; }
+.tk-pin-dropped { display: flex; gap: 6px; align-items: flex-start; font-size: 12px; line-height: 1.4; color: var(--warn); }
+.tk-pin-dropped svg { flex: none; margin-top: 2px; }
 .tk-headroom { display: grid; gap: 5px; }
 .tk-headroom .row { display: flex; justify-content: space-between; gap: 8px; }
 .tk-swap { display: grid; gap: 4px; }
@@ -69,6 +73,10 @@
 .tk-expand:hover { color: var(--ink); background: var(--raised); }
 .tk-status { display: flex; align-items: center; gap: 12px; margin-top: 10px; flex-wrap: wrap; }
 .tk-status .end { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+/* A runner's error text can be one long JSON line: cut to the row here, whole in the inspector. */
+.tk-status .st { min-width: 0; max-width: 100%; }
+.tk-status .st > svg, .tk-status .st > .spin { flex: none; }
+.tk-status .st-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .tk-confirm { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
 .tk-diff { display: inline-flex; align-items: center; gap: 8px; font: 500 12px / 1 var(--mono); }
 .tk-diff .add { color: var(--ok); }

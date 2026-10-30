@@ -44,6 +44,31 @@ describe("buildTimeline", () => {
     expect(wait).toMatchObject({ state: "limited", open: false });
   });
 
+  it("matches an answer to the runner's request id per run and stops counting a wait the log never closed", () => {
+    const events = [
+      // The live run: the request event names the runner's id "0", the answer our own id plus that native id.
+      ev(4, "r1", { kind: "request", requestId: "0", request: "approval" }),
+      ev(4, "r1", { kind: "answered", requestId: "a7f3-uuid", by: "user", nativeId: "0" }),
+      // A second process numbers its requests from 0 again; that answer must not close r1's.
+      ev(20, "r2", { kind: "request", requestId: "0", request: "approval" }),
+      ev(25, "r2", { kind: "answered", requestId: "b9c1-uuid", by: "policy", nativeId: "0" }),
+      // An older log without any answer event: the run going back to work ends the wait.
+      ev(30, "r2", { kind: "request", requestId: "1", request: "question" }),
+      ev(31, "r2", { kind: "run.state", state: "waiting_input", detail: null }),
+      ev(33, "r2", { kind: "run.state", state: "running", detail: null }),
+      ev(40, "r3", { kind: "request", requestId: "9", request: "approval" }),
+    ];
+    const tl = buildTimeline([run("r1", 0, 10), run("r2", 15, null), run("r3", 38, 45)], events, ms(60));
+    const asked = tl.entries.filter((e) => e.kind === "request").map((e) => (e.kind === "request" ? [e.runId, e.answeredAt] : null));
+    expect(asked).toEqual([
+      ["r1", ms(4)],
+      ["r2", ms(25)],
+      ["r2", ms(33)],
+      // Never answered on record and the run ended: the wait stops at the run's end, not at now.
+      ["r3", ms(45)],
+    ]);
+  });
+
   it("keeps an open run running until now", () => {
     const tl = buildTimeline([run("r1", 0, null)], [ev(10, "r1", { kind: "run.state", state: "paused", detail: null })], ms(20));
     expect(tl.lanes[0]!.open).toBe(true);

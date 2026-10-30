@@ -111,7 +111,13 @@ function build(projectId: string): { tasks: TaskDetail[]; requests: RequestView[
   });
 
   // 1. Proposed: the crew waits for approval.
-  const p = [member("planner", 1, OPUS, [GLM]), member("implementer", 2, SOL, [OPUS, FLASH], ["planner"], true), member("reviewer", 3, GLM, [ARGON], ["implementer"]), member("tester", 4, FLASH, [SOL], ["implementer"])];
+  // The reviewer was pinned to the implementer's account, so the proposal says why it picked another.
+  const p = [
+    member("planner", 1, OPUS, [GLM]),
+    member("implementer", 2, SOL, [OPUS, FLASH], ["planner"], true),
+    { ...member("reviewer", 3, GLM, [ARGON], ["implementer"]), reasons: [{ code: "pin.dropped" as const, params: { alias: SOL.alias, cause: "independence" } }] },
+    member("tester", 4, FLASH, [SOL], ["implementer"]),
+  ];
   const proposed = detail(summary("t-proposed", "Optimize unit pathfinding for 2,000 units and keep the frame time under 16 ms", { status: "proposed", createdAt: ago(1) }), p, []);
 
   // 2. Running, with the implementer near its 5-hour window.
@@ -171,6 +177,32 @@ function build(projectId: string): { tasks: TaskDetail[]; requests: RequestView[
   const doneRuns = [run("t-done", d[0]!, ARGON, { state: "ended", startedAt: ago(26 * 60), endedAt: ago(25 * 60), endReason: "completed", cwd: "C:\\Projeler\\crewyard", worktreeId: null })];
   const done = detail(summary("t-done", "Research how other tools store API keys on Windows", { kind: "research", size: "S", status: "done", createdAt: ago(26 * 60) }), d, doneRuns, { worktree: null });
 
+  // 7. Failed with a provider's raw error: one long JSON line the row must cut and the inspector show whole.
+  const g = [member("researcher", 1, ARGON, [FLASH])];
+  const creditRun = run("t-credit", g[0]!, ARGON, {
+    state: "ended",
+    startedAt: ago(9),
+    endedAt: ago(8),
+    endReason: "failed",
+    endDetail:
+      'API Error: 402 {"error":{"code":402,"message":"Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing.","status":"FAILED_PRECONDITION","details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"BILLING_NOT_ACTIVE","domain":"generativelanguage.googleapis.com"}]}}',
+    cwd: "C:\\Projeler\\crewyard",
+    worktreeId: null,
+  });
+  const credit = detail(summary("t-credit", "Summarize how the three runners report token usage", { kind: "research", size: "S", status: "failed", resumableRunIds: [creditRun.id], createdAt: ago(10) }), g, [creditRun], { worktree: null });
+
+  // 8. A runner that never started: the daemon keeps why, redacted.
+  const s = [member("implementer", 1, FLASH, [SOL], [], true), member("reviewer", 2, GLM, [ARGON], ["implementer"])];
+  const startRun = run("t-nostart", s[0]!, FLASH, {
+    state: "ended",
+    startedAt: ago(3),
+    endedAt: ago(3),
+    endReason: "failed",
+    endDetail: "adapter.failed: OpenCode needs the model as provider/model, got deepseek-flash",
+    nativeSessionId: null,
+  });
+  const noStart = detail(summary("t-nostart", "Add a retry hint to the 429 response", { size: "S", status: "failed", resumableRunIds: [startRun.id], createdAt: ago(4) }), s, [startRun]);
+
   const requests: RequestView[] = [
     {
       id: "q-approval",
@@ -215,7 +247,8 @@ function build(projectId: string): { tasks: TaskDetail[]; requests: RequestView[
       answeredBy: null,
     },
   ];
-  return { tasks: [proposed, running, approval, capped, unpriced, review, done], requests };
+  // The failed rows first, so a 1280 px shot of the list shows how their errors fit.
+  return { tasks: [noStart, credit, proposed, running, approval, capped, unpriced, review, done], requests };
 }
 
 let cache: { projectId: string; data: ReturnType<typeof build> } | null = null;

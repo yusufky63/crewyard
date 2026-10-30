@@ -219,11 +219,13 @@
       "not_found": "Bu görev artık yok",
       "cancelled": "Görev durduruldu"
     },
+    "crew": { "read_only_profile": "Bu hesap salt okunur, bu adım ise dosya değiştiriyor" },
     "handoff": {
       "same_profile": "Adım zaten bu hesapla çalışıyor",
       "open": "Bu adım zaten devrediliyor",
       "target_not_ready": "Bu hesap hazır değil: anahtar yok, oturum açık değil ya da çalıştırıcı yok",
-      "over_cap": "Bu hesap harcama sınırını aştı"
+      "over_cap": "Bu hesap harcama sınırını aştı",
+      "over_budget": "Bu görev bütçesini aştı. Önce Gelen kutusunda bütçeyi aşmayı onayla"
     }
   },
   "changeAi": {

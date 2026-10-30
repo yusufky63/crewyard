@@ -886,3 +886,154 @@ describe("schema-checked results", () => {
     expect(events.some((e) => e.kind === "result.invalid")).toBe(false);
   });
 });
+
+describe("live run fixes (2026-10-30)", () => {
+  const usageOf = (tokensIn: number): FakeStep => ({
+    emit: { type: "usage.update", tokensIn, tokensOut: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, contextUsed: null, contextSize: null, costUsd: null, costProvenance: "unknown" },
+  });
+  const failWith = (detail: string): FakeStep => ({ emit: { type: "run.ended", reason: "failed", detail } });
+  const SECRET = "s3cr3t-key-value-0042";
+
+  it("B3, B6, B17: a failed handoff leaves the source's question answerable and keeps why the target never started", async () => {
+    let starts = 0;
+    const pick: Picker = () => {
+      const n = starts++;
+      if (n === 0) return [running, ...question("hold")];
+      if (n === 1) throw new Error(`spawn failed: model not found (key ${SECRET}, Authorization: Bearer abcdefgh12345678)`);
+      return [running, say("moved")];
+    };
+    const cands = CANDIDATES();
+    const directory = { candidates: () => cands, envFor: () => ({ OPENAI_API_KEY: SECRET, OPENAI_BASE_URL: "https://api.example.test/v1" }) };
+    const { o, project } = await setup({ pick, candidates: cands, options: { directory } });
+    const t = await o.propose({ projectId: project.id, title: "Research A", pins: { researcher: "anthropic-key" } });
+    await o.approve({ taskId: t.id });
+    await waitFor(() => o.requests({ taskId: t.id })[0]);
+    const source = o.get(t.id).runs[0]!;
+
+    const view = await o.handoff(source.id, "openai-key");
+    // B17: the source's view names the handoff that is now open (its question still shows as waiting).
+    expect(view.handoffId).toBe(o.get(t.id).handoffs[0]!.id);
+
+    const q = await waitFor(() => o.requests({ taskId: t.id }).find((r) => r.kind === "handoff"));
+    expect(q.payload).toMatchObject({ kind: "handoff", trigger: "handoff_failed" });
+    const failed = o.get(t.id).runs.find((r) => r.resumedFrom === source.id)!;
+    // B6: the reason is kept, with the key and the bearer token cut out.
+    expect(failed.endDetail).toMatch(/^adapter\.failed: spawn failed: model not found/);
+    expect(failed.endDetail).not.toContain(SECRET);
+    expect(failed.endDetail).not.toContain("abcdefgh12345678");
+    // The failed target never took the step over: the source is waiting on you, not failed.
+    expect(o.get(t.id).status).toBe("needs_input");
+    expect(o.get(t.id).resumableRunIds).not.toContain(failed.id);
+
+    // B3: the answer the Inbox sends (with the run and session it saw) is accepted.
+    await o.answer(q.id, { kind: "handoff", decision: "hand_off", targetProfileId: "deepseek-key" }, { runId: q.runId, sessionId: q.sessionId });
+    await waitFor(() => o.get(t.id).status === "done");
+    expect(o.get(t.id).runs.at(-1)!.profileId).toBe("deepseek-key");
+  });
+
+  it("B3: cancel and stop work on a source whose handoff target failed", async () => {
+    let starts = 0;
+    const pick: Picker = () => {
+      if (starts++ === 1) throw new Error("spawn failed");
+      return [running, ...question("hold")];
+    };
+    const { o, project } = await setup({ pick });
+    const t = await o.propose({ projectId: project.id, title: "Research A", pins: { researcher: "anthropic-key" } });
+    await o.approve({ taskId: t.id });
+    await waitFor(() => o.requests({ taskId: t.id })[0]);
+    const source = o.get(t.id).runs[0]!;
+    await o.handoff(source.id, "openai-key");
+    const q = await waitFor(() => o.requests({ taskId: t.id }).find((r) => r.kind === "handoff"));
+    await o.answer(q.id, { kind: "cancel" }, { runId: q.runId, sessionId: q.sessionId });
+    await o.stop(source.id, { sessionId: source.nativeSessionId });
+    expect(o.get(t.id).runs.find((r) => r.id === source.id)!.endReason).toBe("stopped");
+  });
+
+  it("B9: a manual handoff after you continued past the task budget goes through and does not ask again", async () => {
+    let fresh = 0;
+    const pick: Picker = (_role, _req, resumed) => (resumed ? [running, ...question("hold")] : fresh++ === 0 ? [running, usageOf(1_000_000), { awaitAnswer: "never" }] : [running, say("moved")]);
+    const cands = CANDIDATES().map((c) => (c.profile.id === "deepseek-key" ? { ...c, credentialId: "cred-ds" } : c));
+    const { o, project } = await setup({ pick, candidates: cands });
+    // deepseek-chat input is $0.27 per million tokens, past this $0.10 budget.
+    const t = await o.propose({ projectId: project.id, title: "Research A", pins: { researcher: "deepseek-key" }, budgetUsd: 0.1 });
+    await o.approve({ taskId: t.id });
+    const q = await waitFor(() => o.requests({ taskId: t.id }).find((r) => r.kind === "handoff"));
+    expect(q.payload).toMatchObject({ trigger: "budget", cap: { kind: "task_budget" } });
+    const source = o.get(t.id).runs[0]!;
+    // Before you continue, the refusal names the cap that stopped it: the task's own budget.
+    await expect(o.handoff(source.id, "openai-key")).rejects.toThrow("handoff.over_budget");
+
+    await o.answer(q.id, { kind: "handoff", decision: "continue" });
+    await waitFor(() => o.requests({ taskId: t.id }).find((r) => r.kind === "question"));
+    await o.handoff(source.id, "openai-key");
+    await waitFor(() => o.get(t.id).status === "done");
+    expect(o.requests({ taskId: t.id })).toEqual([]);
+    expect(o.get(t.id).runs.at(-1)!.profileId).toBe("openai-key");
+  });
+
+  it("B16: an empty prepaid balance stops like a spend limit and offers only other keys, without retrying", async () => {
+    const cands = CANDIDATES().map((c) => ({ ...c, credentialId: c.profile.id === "deepseek-key" ? "cred-d" : "cred-shared" }));
+    const { o, project, adapter } = await setup({ pick: () => [running, failWith('API Error: 402 {"error":{"message":"Your prepayment credits are depleted."}}')], candidates: cands });
+    const t = await o.propose({ projectId: project.id, title: "Research A", pins: { researcher: "anthropic-key" }, fallback: "ask" });
+    await o.approve({ taskId: t.id });
+    const q = await waitFor(() => o.requests({ taskId: t.id }).find((r) => r.kind === "handoff"));
+    expect(q.payload).toMatchObject({ kind: "handoff", trigger: "limit", detail: "credit_depleted", proposedTarget: { profileId: "deepseek-key" } });
+    // openai-key draws on the same empty key.
+    expect(q.payload.kind === "handoff" && q.payload.candidates.map((c) => c.profileId)).toEqual(["deepseek-key"]);
+    await o.settle();
+    expect(adapter.started).toHaveLength(1);
+    expect(o.get(t.id).runs[0]!.resumeAt).toBeNull();
+  });
+
+  it("B13: a crash handoff skips the model that just failed and a profile whose last run could not start", async () => {
+    const cands = [candidate("anthropic-key", "anthropic", model("claude-sonnet")), candidate("anthropic-alt", "bedrock", model("claude-sonnet")), candidate("broken-key", "deepseek", model("deepseek-chat"))];
+    const pick: Picker = (_role, req) => {
+      if (req.profile.id === "broken-key") throw new Error("model must look like provider/model");
+      return [running, failWith("boom")];
+    };
+    const { o, project } = await setup({ pick, candidates: cands });
+    const first = await o.propose({ projectId: project.id, title: "Research A", pins: { researcher: "broken-key" } });
+    await o.approve({ taskId: first.id });
+    await waitFor(() => o.get(first.id).status === "failed");
+
+    const t = await o.propose({ projectId: project.id, title: "Research B", pins: { researcher: "anthropic-key" }, fallback: "ask" });
+    expect(t.crew!.members[0]!.standby.map((s) => s.profileId).sort()).toEqual(["anthropic-alt", "broken-key"]);
+    await o.approve({ taskId: t.id });
+    const q = await waitFor(() => o.requests({ taskId: t.id }).find((r) => r.kind === "handoff"));
+    expect(q.payload).toMatchObject({ trigger: "crashed", candidates: [], proposedTarget: null, detail: "no_target" });
+  });
+
+  it("Extra 1: approve refuses a read-only profile in a writing role, edited in or marked later", async () => {
+    const cands = CANDIDATES();
+    const { o, project } = await setup({ pick: quick, candidates: cands });
+    const t = await o.propose({ projectId: project.id, ...CODE_S });
+    const impl = t.crew!.members.find((m) => m.role === "implementer")!;
+    const rev = t.crew!.members.find((m) => m.role === "reviewer")!;
+    const i = cands.findIndex((c) => c.profile.id !== impl.chosen!.profileId && c.profile.id !== rev.chosen!.profileId);
+    cands[i] = { ...cands[i]!, readOnly: true };
+    await expect(o.approve({ taskId: t.id, edits: [{ memberId: impl.id, profileId: cands[i]!.profile.id }] })).rejects.toThrow("crew.read_only_profile");
+
+    const j = cands.findIndex((c) => c.profile.id === impl.chosen!.profileId);
+    cands[j] = { ...cands[j]!, readOnly: true };
+    await expect(o.approve({ taskId: t.id })).rejects.toThrow("crew.read_only_profile");
+    expect(o.get(t.id).status).toBe("proposed");
+  });
+
+  it("B8: answers and policy decisions are logged with the runner's request id, so the timeline can pair them", async () => {
+    const pick: Picker = () => [running, ...approval("0", "git status"), ...approval("1", "npm install left-pad"), say("done")];
+    const { o, project, store } = await setup({ pick });
+    const t = await o.propose({ projectId: project.id, title: "Research A" });
+    await o.approve({ taskId: t.id });
+    const q = await waitFor(() => o.requests({ taskId: t.id })[0]);
+    await o.answer(q.id, { kind: "approval", decision: "allow_once" });
+    await waitFor(() => o.get(t.id).status === "done");
+    const answered = store
+      .eventsSince(0, 5_000)
+      .filter((e) => e.kind === "request.answered")
+      .map((e) => e.payload as { nativeId: string; by: string });
+    expect(answered.map((a) => [a.nativeId, a.by])).toEqual([
+      ["0", "policy"],
+      ["1", "user"],
+    ]);
+  });
+});

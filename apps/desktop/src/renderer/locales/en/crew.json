@@ -219,11 +219,13 @@
       "not_found": "That task no longer exists",
       "cancelled": "The task was stopped"
     },
+    "crew": { "read_only_profile": "That account is read-only and this step changes files" },
     "handoff": {
       "same_profile": "The step already runs on that account",
       "open": "This step is already being handed off",
       "target_not_ready": "That account is not ready: no key, not signed in, or no runner",
-      "over_cap": "That account is past its spending cap"
+      "over_cap": "That account is past its spending cap",
+      "over_budget": "This task is past its budget. Approve going past it in the Inbox first"
     }
   },
   "changeAi": {

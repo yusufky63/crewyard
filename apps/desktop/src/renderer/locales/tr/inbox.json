@@ -15,6 +15,7 @@
       "request_invalid": "sağlayıcı isteği reddetti",
       "transient": "sağlayıcıda geçici bir hata",
       "auth": "anahtar reddedildi",
+      "credit": "anahtarda kredi kalmadı",
       "other": "aynı hata"
     },
     "openRun": "Çalışmayı aç",
@@ -107,6 +108,7 @@
     "handoff_failed": "Çalışma duraklatılmış olarak kalıyor; hiçbir şey taşınmadı.",
     "git_mismatch": "Hedefin worktree'si kontrol noktasıyla eşleşmedi.",
     "target_ended": "Hedef çalışma onay vermeden sona erdi.",
+    "credit_depleted": "Sağlayıcıya göre bu anahtarda kredi kalmadı. Bakiye yükleyin ya da başka bir anahtardaki hesaba devredin.",
     "adapter_failed": "Çalıştırıcı bir hata bildirdi.",
     "run_resume_unsupported": "Bu çalıştırıcı oturumunu sürdüremiyor."
   },

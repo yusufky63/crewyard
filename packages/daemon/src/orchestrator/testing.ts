@@ -117,8 +117,17 @@ export function tempDir(prefix = "crewyard orch-"): string {
   return d;
 }
 
+/** Removes every temp folder; one that a dying child still holds open does not keep the rest. */
 export function cleanTemps(): void {
-  temps.splice(0).forEach((d) => rmSync(d, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
+  const failed: unknown[] = [];
+  for (const d of temps.splice(0)) {
+    try {
+      rmSync(d, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch (err) {
+      failed.push(err);
+    }
+  }
+  if (failed.length > 0) throw failed[0];
 }
 
 export async function git(cwd: string, ...args: string[]): Promise<string> {

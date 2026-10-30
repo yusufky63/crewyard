@@ -118,13 +118,17 @@ function PushPanel({ projectId }: { projectId: string }) {
   const branches = q.data?.branches ?? [];
   const commits = branches.reduce((n, b) => n + b.commits, 0);
   const shown = all ? branches : branches.slice(0, PUSH_SHOWN);
+  // With a problem (a remote off GitHub, no remote) the queue is not known to be empty, only unread.
+  const problem = q.data?.problem ?? null;
+  const known = Boolean(q.data) && !problem;
   return (
     <Panel className="gh-tile">
       <Label>{t("push.label")}</Label>
       <div className="metric num">
-        {q.data ? branches.length : "—"} <small>{q.data ? `${t("push.branches", { count: branches.length })} · ${t("push.commits", { count: commits })}` : ""}</small>
+        {known ? branches.length : "—"} <small>{known ? `${t("push.branches", { count: branches.length })} · ${t("push.commits", { count: commits })}` : ""}</small>
       </div>
-      {q.data && branches.length === 0 && <span className="gh-note">{t("push.empty")}</span>}
+      {problem && <span className="gh-note">{t(`push.unavailable.${problem}`, { defaultValue: t("push.unavailable.other") })}</span>}
+      {known && branches.length === 0 && <span className="gh-note">{t("push.empty")}</span>}
       {shown.map((b) => (
         <PushRow key={b.branch} projectId={projectId} b={b} primary={branches.length === 1} />
       ))}

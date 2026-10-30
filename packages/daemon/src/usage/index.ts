@@ -252,7 +252,7 @@ function project(kind: string, p: Payload): TimelineEventBody | null {
     case "run.request.approval":
       return str(p.requestId) ? { kind: "request", requestId: str(p.requestId)!, request: kind === "run.request.question" ? "question" : "approval" } : null;
     case "request.answered":
-      return { kind: "answered", requestId: str(p.requestId), by: null };
+      return { kind: "answered", requestId: str(p.requestId), by: str(p.by), nativeId: str(p.nativeId) };
     case "run.message":
       return { kind: "message", queued: p.queued === true };
     case "handoff.opened":

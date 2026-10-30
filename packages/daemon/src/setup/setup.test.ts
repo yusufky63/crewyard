@@ -59,15 +59,18 @@ describe("project type detection", () => {
     expect(detectProjectType(dir)).toMatchObject({ build: null, test: null });
   });
 
-  it("falls back to the packageManager field, and to nothing without one", () => {
+  it("falls back to the packageManager field, and runs scripts with npm without either", () => {
     const withField = files(tempDir(), { "package.json": JSON.stringify({ packageManager: "pnpm@9.15.4", scripts: { build: "x" } }) });
     expect(detectProjectType(withField)).toMatchObject({ packageManager: "pnpm", build: "pnpm build" });
     const both = files(tempDir(), { "package.json": JSON.stringify({ packageManager: "pnpm@9.15.4", scripts: { build: "x" } }), "package-lock.json": "" });
     expect(detectProjectType(both)).toMatchObject({ packageManager: "pnpm", build: "pnpm build" });
     const workspace = files(tempDir(), { "package.json": JSON.stringify({ scripts: { test: "vitest" } }), "pnpm-workspace.yaml": "" });
     expect(detectProjectType(workspace)).toMatchObject({ packageManager: "pnpm", test: "pnpm test" });
-    const bare = files(tempDir(), { "package.json": JSON.stringify({ scripts: { build: "x" } }) });
-    expect(detectProjectType(bare)).toMatchObject({ packageManager: null, build: null, test: null });
+    // The live run: no lockfile, yet scripts.test exists. The manager stays unknown; npm runs the scripts.
+    const bare = files(tempDir(), { "package.json": JSON.stringify({ scripts: { build: "x", test: "node --test" } }) });
+    expect(detectProjectType(bare)).toMatchObject({ packageManager: null, build: "npm run build", test: "npm test" });
+    const placeholder = files(tempDir(), { "package.json": JSON.stringify({ scripts: { test: 'echo "Error: no test specified" && exit 1' } }) });
+    expect(detectProjectType(placeholder)).toMatchObject({ packageManager: null, build: null, test: null });
   });
 
   it("reads Rust and Python", () => {
@@ -221,6 +224,11 @@ describe("CI template", () => {
     expect(ciTemplate({ ...input, kind: "godot-csharp", packageManager: null, dotnetVersion: "8.0", build: "dotnet build", test: null })).toContain('dotnet-version: "8.0.x"');
     expect(ciTemplate({ ...input, kind: "dotnet", packageManager: null, build: "dotnet build" })).not.toContain("setup-dotnet");
     expect(() => ciTemplate({ ...input, build: null, test: " " })).toThrow(/build or test/);
+    // A Node project without a lockfile installs with npm before its npm scripts run.
+    const bare = ciTemplate({ ...input, packageManager: null, build: null, test: "npm test" });
+    expect(bare).toContain("actions/setup-node@v7");
+    expect(bare).toContain("- run: npm install");
+    expect(bare).not.toContain("cache:");
     expect(() => ciTemplate({ ...input, branch: "main; rm" })).toThrow(/branch/);
   });
 

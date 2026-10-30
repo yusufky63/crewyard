@@ -82,12 +82,13 @@ export function StatusLabel({ line }: { line: StatusLine }) {
     role: line.params.role ? f.role(line.params.role) : "",
     time: line.params.time ? f.when.at(line.params.time) : "",
     target: line.params.target ?? "",
-    reason: line.params.reason ? f.t(`endDetail.${line.params.reason}`, { defaultValue: line.params.reason }) : "",
+    reason: line.params.reason ? f.t(`endDetail.${line.params.reason}`, { defaultValue: line.params.reason }) : (line.params.reasonText ?? ""),
   });
+  // A runner's error text can be a long JSON line: the row cuts it, the tooltip and the inspector keep it whole.
   return (
-    <span className={`st ${TONE_CLASS[line.tone]}`}>
+    <span className={`st ${TONE_CLASS[line.tone]}`} title={line.params.reasonText ? text : undefined}>
       {Icon ? <Icon size={14} strokeWidth={1.75} aria-hidden="true" /> : <span className="spin" aria-hidden="true" />}
-      {text}
+      <span className="st-text">{text}</span>
     </span>
   );
 }

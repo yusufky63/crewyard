@@ -49,13 +49,16 @@ function nodeGuess(dir: string, entries: string[]): ProjectTypeGuess {
   const pm = field ?? lock?.[1] ?? null;
   const scripts = (pkg.scripts && typeof pkg.scripts === "object" ? pkg.scripts : {}) as Record<string, unknown>;
   const has = (name: string) => typeof scripts[name] === "string" && !(name === "test" && NPM_PLACEHOLDER_TEST.test(scripts[name] as string));
-  const runCmd = (name: string) => (pm === "npm" ? `npm run ${name}` : `${pm} ${name}`);
+  // No lockfile and no packageManager field: the manager stays unknown, but npm ships with Node
+  // and runs any package.json script, so the commands still have something to run them with.
+  const runner = pm ?? "npm";
+  const runCmd = (name: string) => (runner === "npm" ? `npm run ${name}` : `${runner} ${name}`);
   return {
     kind: "node",
     markers: ["package.json", ...(lock ? [lock[0]] : [])],
     packageManager: pm,
-    build: pm && has("build") ? runCmd("build") : null,
-    test: pm && has("test") ? (pm === "npm" ? "npm test" : `${pm} test`) : null,
+    build: has("build") ? runCmd("build") : null,
+    test: has("test") ? `${runner} test` : null,
   };
 }
 

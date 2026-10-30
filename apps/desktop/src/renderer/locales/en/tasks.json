@@ -74,6 +74,11 @@
     "monthly": "monthly window",
     "unknown": "limit"
   },
+  "pinDropped": {
+    "independence": "Your pin {{alias}} was not used: it runs the same model as the step this role checks.",
+    "read_only": "Your pin {{alias}} was not used: it is marked read-only, and this role changes files.",
+    "unavailable": "Your pin {{alias}} was not used: it is not ready, or it cannot take this role."
+  },
   "reason": {
     "classify_keyword": "“{{keyword}}” reads as {{kind}}",
     "classify_explicit": "Kind and size set by you",
@@ -95,6 +100,7 @@
     "independence_provider": "Different provider than the implementer",
     "independence_model": "Does not share the implementer's {{model}}",
     "pinned": "Pinned by you",
+    "pin_dropped": "Your pin {{alias}} was not used",
     "profile_note": "Your note: {{note}}",
     "only_candidate": "The only account that fits",
     "no_candidate": "No signed-in account fits this role",
@@ -128,6 +134,7 @@
     "cancelled": "Stopped by you"
   },
   "endDetail": {
+    "adapter": { "failed": "the runner could not start" },
     "process_gone": "the process is gone",
     "process_orphaned": "left over from a restart",
     "adapter_error": "runner error",
@@ -212,6 +219,8 @@
     "needYouTitle": "Open requests in the Inbox"
   },
   "inspector": {
+    "endLabel": "How it ended",
+    "endText": "What the runner reported",
     "label": "Run details",
     "close": "Close panel (Esc)",
     "approval": "Waiting for your approval",
@@ -405,6 +414,8 @@
     "sent_other": "Sent {{count}} comments to {{who}}."
   },
   "errors": {
+    "crew_read_only_profile": "That account is marked read-only, so it cannot take a role that changes files. Pick another account, or turn off read-only for it in Providers.",
+    "handoff_over_budget": "This task is past its budget. Approve going past it in the Inbox first.",
     "load": "Tasks could not be loaded from the background service.",
     "other": "Something went wrong: {{message}}",
     "queue_not_found": "That message is no longer in the queue.",
@@ -442,7 +453,7 @@
     "handoff_same_profile": "The run already uses that account.",
     "handoff_open": "This run is already being handed off.",
     "handoff_target_not_ready": "That account is not signed in or has no key.",
-    "handoff_over_cap": "That account's key is past its spend cap.",
+    "handoff_over_cap": "That account's key is past its daily or per-task cap.",
     "git_failed": "A git command failed.",
     "worktree_branch_elsewhere": "The task's branch is checked out in another worktree.",
     "worktree_locked": "The worktree is locked.",

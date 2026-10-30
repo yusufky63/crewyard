@@ -74,6 +74,11 @@
     "monthly": "aylık pencere",
     "unknown": "limit"
   },
+  "pinDropped": {
+    "independence": "Sabitlediğiniz {{alias}} kullanılmadı: bu rolün denetlediği adımla aynı modeli çalıştırıyor.",
+    "read_only": "Sabitlediğiniz {{alias}} kullanılmadı: salt okunur olarak işaretli, bu rol ise dosya değiştiriyor.",
+    "unavailable": "Sabitlediğiniz {{alias}} kullanılmadı: hazır değil ya da bu rolü üstlenemiyor."
+  },
   "reason": {
     "classify_keyword": "“{{keyword}}” ifadesi {{kind}} işi gibi duruyor",
     "classify_explicit": "Tür ve boyutu siz seçtiniz",
@@ -95,6 +100,7 @@
     "independence_provider": "Uygulayıcıdan farklı bir sağlayıcı",
     "independence_model": "Uygulayıcının {{model}} modelini kullanmıyor",
     "pinned": "Sizin sabitlediğiniz hesap",
+    "pin_dropped": "Sabitlediğiniz {{alias}} kullanılmadı",
     "profile_note": "Notunuz: {{note}}",
     "only_candidate": "Uyan tek hesap",
     "no_candidate": "Bu role uyan, oturumu açık bir hesap yok",
@@ -128,6 +134,7 @@
     "cancelled": "Sizin tarafınızdan durduruldu"
   },
   "endDetail": {
+    "adapter": { "failed": "çalıştırıcı başlatılamadı" },
     "process_gone": "süreç artık yok",
     "process_orphaned": "yeniden başlatmadan kalma",
     "adapter_error": "çalıştırıcı hatası",
@@ -212,6 +219,8 @@
     "needYouTitle": "Gelen kutusundaki açık istekler"
   },
   "inspector": {
+    "endLabel": "Nasıl sona erdi",
+    "endText": "Çalıştırıcının bildirdiği",
     "label": "Çalışma ayrıntıları",
     "close": "Paneli kapat (Esc)",
     "approval": "Onayınızı bekliyor",
@@ -405,6 +414,8 @@
     "sent_other": "{{count}} yorum {{who}} adımına gönderildi."
   },
   "errors": {
+    "crew_read_only_profile": "Bu hesap salt okunur olarak işaretli, dosya değiştiren bir rolü üstlenemez. Başka bir hesap seçin ya da Sağlayıcılar'da salt okunur ayarını kapatın.",
+    "handoff_over_budget": "Bu görev bütçesini aştı. Önce Gelen kutusunda bütçeyi aşmayı onaylayın.",
     "load": "Görevler arka plan hizmetinden okunamadı.",
     "other": "Bir şeyler ters gitti: {{message}}",
     "queue_not_found": "Bu mesaj artık kuyrukta değil.",
@@ -442,7 +453,7 @@
     "handoff_same_profile": "Çalışma zaten bu hesabı kullanıyor.",
     "handoff_open": "Bu çalışma zaten devrediliyor.",
     "handoff_target_not_ready": "Bu hesabın oturumu açık değil ya da anahtarı yok.",
-    "handoff_over_cap": "Bu hesabın anahtarı harcama sınırını aştı.",
+    "handoff_over_cap": "Bu hesabın anahtarı günlük ya da görev başına sınırını aştı.",
     "git_failed": "Bir git komutu başarısız oldu.",
     "worktree_branch_elsewhere": "Görevin dalı başka bir worktree'de açık.",
     "worktree_locked": "Worktree kilitli.",

@@ -42,6 +42,12 @@
     "unknown": "Bilinmiyor"
   },
   "push": {
+    "unavailable": {
+      "not_github": "Bu uzak sunucu GitHub'da değil, bu yüzden Crewyard hangi commit'lerin push edildiğini bilemez. Görev dallarını git ile push et.",
+      "no_remote": "Bu deponun henüz uzak sunucusu yok, push edilecek bir yer yok.",
+      "not_a_repo": "Bu klasör bir git deposu değil, push edilecek bir şey yok.",
+      "other": "Push kuyruğu şu an okunamadı. Yeniden denemek için yenile."
+    },
     "label": "Push bekleyenler",
     "branches_one": "dal",
     "branches_other": "dal",
