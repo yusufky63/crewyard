@@ -333,6 +333,29 @@ export const MIGRATIONS: Migration[] = [
      route_feedback integer not null default 0
    );`,
   },
+  // Worktree bootstrap (feature scan A1): setup and cleanup commands approved by the sha256 of
+  // their exact text, and per task worktree its port, setup state, last failure and park record.
+  {
+    id: "worktree-bootstrap",
+    sql: `create table if not exists bootstrap_approvals (
+     project_id text not null references projects(id),
+     hash text not null,
+     phase text not null,
+     command text not null,
+     approved_at text not null,
+     primary key (project_id, hash)
+   );
+   create table if not exists worktree_bootstrap (
+     task_id text primary key references tasks(id),
+     state text not null,
+     port integer,
+     setup_hash text,
+     failure text,
+     parked_at text,
+     parked_sha text,
+     updated_at text not null
+   );`,
+  },
 ];
 
 /** What the positional scheme applied: a database at `user_version` N has the first N of these. */

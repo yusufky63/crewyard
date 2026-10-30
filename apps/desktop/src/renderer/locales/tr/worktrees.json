@@ -1,0 +1,42 @@
+{
+  "total_one": "{{count}} görev worktree'si diskte {{size}} kaplıyor",
+  "total_other": "{{count}} görev worktree'si diskte {{size}} kaplıyor",
+  "measuring": "Görev worktree'leri ölçülüyor…",
+  "noSize": "boyut bilinmiyor",
+  "port": "port {{port}}",
+  "parked": "park edildi, dal duruyor",
+  "park": "Park et",
+  "parkNow": "Commit'le ve park et",
+  "parkConfirm": "{{branch}} dalındaki yarım işi commit'ler, temizliği çalıştırır, sonra klasörü kaldırır. Dal yerinde kalır; devam ettiğinizde kurulum yeniden çalışır.",
+  "unpark": "Devam et",
+  "cancel": "Vazgeç",
+  "runningHint": "Bu görevin bitmemiş bir çalışması var.",
+  "more_one": "{{count}} worktree daha",
+  "more_other": "{{count}} worktree daha",
+  "state": {
+    "failed": "kurulum başarısız",
+    "waiting_approval": "kurulum Gelen kutusunda onay bekliyor"
+  },
+  "failure": {
+    "title": "{{command}} başarısız oldu",
+    "timedOut": "{{command}} zaman aşımına uğradı",
+    "noOutput": "Çıktı yok."
+  },
+  "error": {
+    "load": "Worktree boyutları okunamadı.",
+    "unknown": "Olmadı. Yeniden deneyin.",
+    "worktree": {
+      "running": "Bu görevin açık bir çalışması var, worktree yerinde kalıyor.",
+      "parked": "Bu worktree zaten park edilmiş.",
+      "not_parked": "Worktree klasörü zaten yerinde.",
+      "not_found": "Bu görevin worktree'si yok.",
+      "cleanup_needs_approval": "Bir temizlik komutu Gelen kutusunda onayınızı bekliyor. O zamana kadar worktree yerinde kalır.",
+      "cleanup_failed": "Bir temizlik komutu başarısız oldu, worktree yerinde kaldı. Çıktısı aşağıda.",
+      "branch_elsewhere": "Dal başka bir worktree'de açık.",
+      "path_taken": "Bu yolda zaten başka bir klasör var."
+    },
+    "git": {
+      "failed": "Git reddetti. Worktree'de izlenmeyen ya da değişmiş dosyalar olabilir."
+    }
+  }
+}

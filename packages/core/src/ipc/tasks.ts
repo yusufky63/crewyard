@@ -92,6 +92,14 @@ export type OrchestratorErrorCode =
   | "worktree.branch_elsewhere" // { branch, path }: the task's branch is checked out in another worktree
   | "worktree.locked" // { path }: registered, folder missing, and locked with `git worktree lock`
   | "worktree.path_taken" // { path }: a folder that git does not know is already there; never deleted
+  | "bootstrap.setup_failed" // { command }: a setup step failed; its log tail is on the worktree
+  | "bootstrap.denied" // a setup or cleanup step was denied in the Inbox
+  | "worktree.not_found" // the task has no worktree
+  | "worktree.running" // park refused: a run of the task has not ended
+  | "worktree.parked" // the worktree is parked already
+  | "worktree.not_parked" // unpark on a worktree whose folder is there
+  | "worktree.cleanup_needs_approval" // a cleanup step waits in the Inbox; the worktree stays
+  | "worktree.cleanup_failed" // { command }: a cleanup step failed; the worktree stays
   | "adapter.failed"; // { detail }
 
 export interface CostEstimate {
@@ -271,6 +279,11 @@ export type RequestPayload =
       network: boolean;
       /** Why the policy decided on its own, when it did (e.g. `policy.allowlisted`, `policy.role_read_only`). */
       policy: string | null;
+      /**
+       * Set for a worktree setup or cleanup step from .mission/project.json rather than an agent's
+       * tool call. Allow once approves this exact text (by its sha256) for the project from then on.
+       */
+      bootstrap?: { phase: "setup" | "cleanup"; hash: string } | null;
     }
   | {
       kind: "handoff";

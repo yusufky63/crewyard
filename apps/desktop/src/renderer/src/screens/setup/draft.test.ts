@@ -52,7 +52,36 @@ describe("setup draft", () => {
     const d = seedFromDetection(blank(), detection());
     expect(draftProblems({ ...d, dailyUsd: "-1" }, detection())).toEqual([{ step: 3, problem: "budget" }]);
     expect(draftProblems({ ...d, slots: "2.5" }, detection())).toEqual([{ step: 4, problem: "slots" }]);
-    expect(draftProblems({ ...d, actionsWarnPct: "" }, detection())).toEqual([{ step: 5, problem: "warnPct" }]);
+    expect(draftProblems({ ...d, actionsWarnPct: "" }, detection())).toEqual([{ step: 6, problem: "warnPct" }]);
     expect(draftProblems({ ...d, path: null }, undefined)).toContainEqual({ step: 1, problem: "folder" });
+  });
+
+  it("suggests the lockfile's install as setup and builds the bootstrap block", () => {
+    const node = detection({ type: { kind: "node", markers: ["package.json", "pnpm-lock.yaml"], packageManager: "pnpm", build: "pnpm build", test: "pnpm test" } });
+    const d = seedFromDetection(blank(), node);
+    expect(d.setup).toEqual([{ command: "pnpm install --frozen-lockfile", timeoutSec: "600" }]);
+    const cfg = buildConfig({ ...d, cleanup: [{ command: "  ", timeoutSec: "600" }], include: [".env", "cache dir/"], portOn: true }, null);
+    expect(cfg.bootstrap).toEqual({
+      setup: [{ command: "pnpm install --frozen-lockfile", timeoutSec: 600 }],
+      cleanup: [],
+      include: [".env", "cache dir/"],
+      includeMaxMb: 64,
+      port: { from: 4100, to: 4999, envVar: "PORT" },
+    });
+    expect(ProjectConfig.parse(cfg)).toEqual(cfg);
+    // An existing project.json keeps its own (empty) setup instead of the guess.
+    const kept = seedFromDetection(blank(), detection({ ...node, existingConfig: defaultProjectConfig("x", "D:\\wt") }));
+    expect(kept.setup).toEqual([]);
+  });
+
+  it("blocks create on shell syntax, bad timeouts, unsafe include paths and bad ports", () => {
+    const d = seedFromDetection(blank(), detection());
+    const bad = (patch: Partial<typeof d>) => draftProblems({ ...d, ...patch }, detection());
+    expect(bad({ setup: [{ command: "pnpm i && pnpm build", timeoutSec: "600" }] })).toEqual([{ step: 5, problem: "bootstrap" }]);
+    expect(bad({ cleanup: [{ command: "docker compose down", timeoutSec: "0" }] })).toEqual([{ step: 5, problem: "bootstrap" }]);
+    expect(bad({ include: ["../secrets/.env"] })).toEqual([{ step: 5, problem: "bootstrap" }]);
+    expect(bad({ portOn: true, portFrom: "5000", portTo: "4000" })).toEqual([{ step: 5, problem: "bootstrap" }]);
+    expect(bad({ portOn: true, portEnvVar: "MY-PORT" })).toEqual([{ step: 5, problem: "bootstrap" }]);
+    expect(bad({ setup: [{ command: "", timeoutSec: "" }] })).toEqual([]);
   });
 });

@@ -18,6 +18,8 @@ export interface TaskSource {
   get(taskId: string): TaskDetail;
   message(runId: string, text: string): Promise<RunView>;
   followUp(runId: string, text: string): Promise<RunView>;
+  /** Worktree bootstrap: runs the project's cleanup steps before a task worktree is removed; throws to keep it. */
+  bootstrap?: { cleanupAt(projectId: string, path: string): Promise<void> };
 }
 
 export interface PrFlowDeps {
@@ -378,6 +380,7 @@ export class PrFlow {
     try {
       const verdict = await this.verdict(projectId, path);
       if (!verdict.ok) return { removed: false, verdict };
+      await this.deps.tasks().bootstrap?.cleanupAt(projectId, path);
       const res = await git.removeWorktree(this.deps.projectPath(projectId), path);
       if (!res.ok) throw new Error(res.output || "git worktree remove failed");
       const owners = (this.db.prepare("select w.task_id, w.path from worktrees w join tasks t on t.id = w.task_id where t.project_id = ?").all(projectId) as Array<{ task_id: string; path: string }>).filter((w) => samePath(w.path, path));

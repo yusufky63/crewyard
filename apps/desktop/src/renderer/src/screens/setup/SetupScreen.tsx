@@ -9,6 +9,7 @@ import { buildConfig, draftProblems, seedFromDetection, STEPS, useDraft, type Dr
 import { FolderStep } from "./FolderStep.tsx";
 import { Row, type RowState } from "./parts.tsx";
 import { AgentsStep, BudgetStep, GithubStep, RulesStep } from "./steps.tsx";
+import { WorktreeStep } from "./WorktreeStep.tsx";
 import "./setup.css";
 
 type ActionId = "gitInit" | "createRepo" | "ci" | "config";
@@ -105,7 +106,8 @@ export function SetupScreen() {
     d.reset();
     go("start");
   };
-  const next = () => (d.step === 5 ? void create() : d.set({ step: (d.step + 1) as Step }));
+  const last = STEPS.length as Step;
+  const next = () => (d.step === last ? void create() : d.set({ step: (d.step + 1) as Step }));
   const firstProblem = problems[0];
 
   return (
@@ -147,7 +149,8 @@ export function SetupScreen() {
           {d.step === 2 && <AgentsStep />}
           {d.step === 3 && <BudgetStep />}
           {d.step === 4 && <RulesStep />}
-          {d.step === 5 && <GithubStep det={det.data} />}
+          {d.step === 5 && <WorktreeStep />}
+          {d.step === 6 && <GithubStep det={det.data} />}
         </div>
 
         {progress && (
@@ -170,7 +173,7 @@ export function SetupScreen() {
         )}
 
         <div className="wiz-foot">
-          {d.step === 5 && firstProblem ? (
+          {d.step === last && firstProblem ? (
             <button type="button" className="problem" onClick={() => d.set({ step: firstProblem.step })}>
               {t(`problems.${firstProblem.problem}`, { step: firstProblem.step })}
             </button>
@@ -181,8 +184,8 @@ export function SetupScreen() {
             <Button onClick={() => d.set({ step: (d.step - 1) as Step })} disabled={d.step === 1 || busy}>
               {t("back")}
             </Button>
-            <Button variant="primary" onClick={next} disabled={busy || (d.step === 5 && problems.length > 0)}>
-              {d.step === 5 ? (busy ? t("creating") : t("create.go")) : t("next", { step: t(`steps.${d.step + 1}.name`) })}
+            <Button variant="primary" onClick={next} disabled={busy || (d.step === last && problems.length > 0)}>
+              {d.step === last ? (busy ? t("creating") : t("create.go")) : t("next", { step: t(`steps.${d.step + 1}.name`) })}
             </Button>
           </div>
         </div>

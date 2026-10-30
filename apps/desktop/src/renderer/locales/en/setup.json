@@ -17,7 +17,8 @@
     "2": { "name": "Agents", "sub": "which may work here" },
     "3": { "name": "Accounts & budget", "sub": "profiles and caps" },
     "4": { "name": "Rules", "sub": "fallback, approvals, slots" },
-    "5": { "name": "GitHub", "sub": "remote, pushes, CI" }
+    "5": { "name": "Worktrees", "sub": "setup, files, ports" },
+    "6": { "name": "GitHub", "sub": "remote, pushes, CI" }
   },
   "problems": {
     "folder": "Step {{step}}: choose the project folder first.",
@@ -25,6 +26,7 @@
     "git": "Step {{step}}: agents work in git worktrees, so this folder needs git.",
     "budget": "Step {{step}}: caps must be zero or more dollars.",
     "slots": "Step {{step}}: slots must be a whole number from 1 to 16.",
+    "bootstrap": "Step {{step}}: a worktree command, copy entry, limit or port needs fixing.",
     "warnPct": "Step {{step}}: the Actions warning must be between 1 and 100%."
   },
   "create": {
@@ -74,7 +76,7 @@
     "pathLongOn": "longest path in a worktree: {{count}} characters; Windows long paths are on",
     "pathTruncated": "Stopped after {{count}} files, so a longer path may exist.",
     "remote": "GitHub remote",
-    "noRemote": "none yet, set it up in step 5"
+    "noRemote": "none yet, set it up in step 6"
   },
   "type": {
     "godot-csharp": "Godot · C#",
@@ -163,5 +165,53 @@
     "ciNoCommands": "needs a build or test command (step 1)",
     "actions": "Actions minutes",
     "actionsText": "% of the monthly quota before a warning"
+  },
+  "worktree": {
+    "title": "How should task worktrees start?",
+    "lead": "Each task works in its own git worktree, which starts without node_modules, .env files or caches. Prepare it here.",
+    "setup": "Setup",
+    "setupHint": "Runs in each new worktree before the agent starts. A failed step stops the start and shows its last lines.",
+    "cleanup": "Cleanup",
+    "cleanupHint": "Runs before Crewyard removes or parks a worktree. If a step fails, the worktree stays.",
+    "setupPlaceholder": "e.g. pnpm install --frozen-lockfile",
+    "cleanupPlaceholder": "e.g. docker compose down",
+    "command": "Command {{n}}",
+    "timeout": "Timeout for command {{n}} in seconds",
+    "seconds": "s",
+    "removeStep": "Remove command {{n}}",
+    "addStep": "Add command",
+    "problem": {
+      "command": "One program and its arguments. Pipes, && and redirection need a script file.",
+      "timeout": "Timeout must be a whole number from 1 to 3600 seconds."
+    },
+    "include": "Copy from the main checkout",
+    "includeHint": "Gitignored files or folders, listed by name. They are copied, never linked, and their contents are never logged.",
+    "includePlaceholder": ".env.local",
+    "addInclude": "Add",
+    "removeInclude": "Remove {{path}}",
+    "includeCap": "Copy limit",
+    "includeCapHint": "Entries past this total are skipped.",
+    "includeNone": "Nothing is copied. Add .env or a cache folder if the project needs it to build.",
+    "includeLabel": "Include list",
+    "entry": {
+      "copy": "will be copied",
+      "missing": "not in this folder",
+      "not_ignored": "tracked by git, so the worktree already has it",
+      "link": "a link or junction; never copied",
+      "over_cap": "over the copy limit; skipped"
+    },
+    "files_one": "{{count}} file",
+    "files_other": "{{count}} files",
+    "includeTotal": "Each new worktree",
+    "includeTotalText": "{{files}} files, {{size}} of {{cap}}",
+    "port": "Port per branch",
+    "portHint": "Each branch gets its own port from a range, so dev servers in parallel tasks do not collide.",
+    "portOn": "Give each branch a port",
+    "portRange": "Range",
+    "portFrom": "First port",
+    "portTo": "Last port",
+    "portVar": "Variable",
+    "portVarText": "setup and agents get {{name}} and CREWYARD_PORT",
+    "note": "Setup and cleanup commands are high risk. Each one is approved once in the Inbox; changing its text asks again."
   }
 }
