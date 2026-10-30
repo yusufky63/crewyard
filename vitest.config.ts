@@ -8,7 +8,9 @@ export default defineConfig({
   test: {
     projects: [
       { extends: true, test: { name: "packages", include: ["packages/*/src/**/*.test.ts"], testTimeout } },
-      { extends: true, test: { name: "desktop", root: "apps/desktop", include: ["src/**/*.test.ts"], testTimeout } },
+      // No fsModuleCache: it keys a transformed file by its own content, so an import.meta.glob in it
+      // (locales, screens, the key registry test) kept its old file list and a new file went unseen.
+      { extends: true, test: { name: "desktop", root: "apps/desktop", include: ["src/**/*.test.ts"], testTimeout, fsModuleCache: false } },
     ],
   },
 });
