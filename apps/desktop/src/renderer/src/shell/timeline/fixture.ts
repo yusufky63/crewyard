@@ -65,5 +65,9 @@ export function timelineFixture(detail: TaskDetail): TaskTimelineData {
     if (next && next.memberId === r.memberId) push(end, r.id, { kind: "handoff", phase: "opened", handoffId: "h", trigger: "limit" });
     if (r.endedAt) push(end, r.id, { kind: "run.ended", reason: r.endReason ?? "completed", detail: null });
   });
+  // Loop decisions come from the daemon's audit log; here they are replayed from the fixture task.
+  for (const d of detail.loop.decisions) push(Date.parse(d.at), d.runId, { kind: "loop", decision: d.kind, memberId: d.memberId, iteration: d.iteration, max: d.maxIterations, reason: d.reason });
+  events.sort((a, b) => a.at.localeCompare(b.at) || a.seq - b.seq);
+  events.forEach((e, i) => (e.seq = i + 1));
   return { taskId: detail.id, events, omitted: 0 };
 }

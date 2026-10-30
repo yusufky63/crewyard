@@ -110,7 +110,8 @@
     "target_ended": "The target run ended before it confirmed.",
     "credit_depleted": "The provider says this key has no credit left. Top it up, or hand off to an account on another key.",
     "adapter_failed": "The runner reported an error.",
-    "run_resume_unsupported": "This runner cannot resume its session."
+    "run_resume_unsupported": "This runner cannot resume its session.",
+    "handoff_interrupted": "The app closed during the handoff, so this step stayed with its first AI."
   },
   "action": {
     "approveOnce": "Approve once",

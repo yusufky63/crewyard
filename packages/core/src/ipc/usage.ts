@@ -1,4 +1,5 @@
 import type { Provenance, RunnerId } from "../events.ts";
+import type { LoopDecisionKind, Reason } from "./tasks.ts";
 
 // IPC methods for the usage view and the task timeline (PLAN.md M5). Owned by the usage work.
 // Implementations live in packages/daemon/src/handlers/usage.ts; the pure rules that shape what
@@ -74,6 +75,11 @@ export type TimelineEvent = {
   | { kind: "handoff"; phase: "opened" | "completed" | "failed"; handoffId: string | null; trigger: string | null }
   | { kind: "limit"; window: string | null }
   | { kind: "retry"; detail: string | null }
+  /**
+   * A run-until-green or review loop decision; `iteration` is the step's fix attempts so far.
+   * `memberId` is the step the loop works on (the implementer), also for a reviewer's verdict.
+   */
+  | { kind: "loop"; decision: LoopDecisionKind; memberId: string | null; iteration: number; max: number; reason: Reason }
 );
 
 /** A timeline event without its envelope, per kind. */

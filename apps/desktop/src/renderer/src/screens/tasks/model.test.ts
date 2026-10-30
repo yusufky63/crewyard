@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { NO_RUN_CONTROLS, type CandidateView, type CrewMemberView, type LimitNoticePayload, type RequestView, type RunView, type TaskDetail } from "@crewyard/core";
-import { currentRun, diffTotals, elapsedMs, filterCounts, formatDuration, limitBanner, matchesFilter, resolveTarget, runnersOf, splitTaskText, statusLine, stepState } from "./model.ts";
+import { canChooseHandoffStop, handoffsOf, currentRun, diffTotals, elapsedMs, filterCounts, formatDuration, limitBanner, loopLook, matchesFilter, resolveTarget, runnersOf, splitTaskText, statusLine, stepState } from "./model.ts";
 
 const cand = (profileId: string, runner: CandidateView["runner"] = "codex"): CandidateView => ({
   profileId,
@@ -71,6 +71,7 @@ const task = (over: Partial<TaskDetail>): TaskDetail => ({
   runs: [],
   worktree: null,
   handoffs: [],
+  loop: { maxIterations: 3, decisions: [], tests: [], verdicts: [] },
   ...over,
 });
 const notice = (over: Partial<LimitNoticePayload>): LimitNoticePayload => ({ kind: "warn", profileId: "a", window: "5h", usedPct: 82, resetsAt: "2026-10-30T15:00:00.000Z", provenance: "reported", minutesUntilFull: null, runId: "r2", taskId: "t", observedAt: "2026-10-30T10:05:00.000Z", ...over });
@@ -129,7 +130,7 @@ describe("rows", () => {
     expect(statusLine(task({ status: "needs_input", runs }), [approval])).toMatchObject({ key: "needsApproval", tone: "wait", icon: "terminal" });
     const limited = [runs[0]!, run("r2", "m2", { limitReached: true, state: "rate_limited", resumeAt: "2026-10-30T16:40:00.000Z" })];
     expect(statusLine(task({ status: "limited", runs: limited }), [])).toMatchObject({ key: "limitedResets", tone: "bad", params: { time: "2026-10-30T16:40:00.000Z" } });
-    const handoff = { id: "h", fromRunId: "r2", toRunId: null, targetProfileId: "b", mode: "ask", kind: null, trigger: "limit", phase: "checkpoint", packagePath: null, checkpointSha: null, openedAt: "", closedAt: null, outcome: null, detail: null } as const;
+    const handoff = { id: "h", fromRunId: "r2", toRunId: null, targetProfileId: "b", mode: "ask", kind: null, stop: "interrupt", trigger: "limit", phase: "checkpoint", packagePath: null, checkpointSha: null, openedAt: "", closedAt: null, outcome: null, detail: null } as const;
     expect(statusLine(task({ status: "handing_off", runs, handoffs: [handoff] }), [])).toMatchObject({ key: "handingOffTo", params: { target: "b-alias" } });
     expect(statusLine(task({ status: "review" }), []).key).toBe("review");
     expect(statusLine(task({ status: "failed", runs: [run("r9", "m2", { endedAt: "x", endReason: "failed", endDetail: "stream_closed" })] }), [])).toMatchObject({ key: "failedBecause", params: { reason: "stream_closed" } });
@@ -158,6 +159,30 @@ describe("rows", () => {
     expect(resolveTarget(d, { taskId: "t", memberId: "m1" })).toMatchObject({ run: { id: "r1" }, memberId: "m1" });
     expect(resolveTarget(d, { taskId: "t", runId: "r1" })).toMatchObject({ run: { id: "r1" }, memberId: "m1" });
     expect(resolveTarget(task({}), { taskId: "t" })).toEqual({ run: null, memberId: "m1" });
+  });
+});
+
+describe("handoff stop", () => {
+  it("offers finishing the turn only while a turn is under way", () => {
+    for (const state of ["running", "waiting_input", "waiting_approval"] as const) expect(canChooseHandoffStop({ state })).toBe(true);
+    for (const state of ["starting", "paused", "rate_limited", "handing_off", "ended"] as const) expect(canChooseHandoffStop({ state })).toBe(false);
+  });
+  it("lists a run's handoffs both ways, newest first", () => {
+    const h = (id: string, fromRunId: string, toRunId: string | null, openedAt: string) =>
+      ({ id, fromRunId, toRunId, targetProfileId: "b", mode: "ask", kind: "fork", stop: "drain", trigger: "manual", phase: "closed", packagePath: null, checkpointSha: null, openedAt, closedAt: null, outcome: null, detail: null }) as const;
+    const all = [h("a", "r1", "r2", "2026-10-30T10:00:00.000Z"), h("b", "r2", "r3", "2026-10-30T11:00:00.000Z"), h("c", "r9", null, "2026-10-30T12:00:00.000Z")];
+    expect(handoffsOf(all, "r2").map((x) => x.id)).toEqual(["b", "a"]);
+    expect(handoffsOf(all, "r5")).toEqual([]);
+  });
+});
+
+describe("loop decisions", () => {
+  it("never shows a try sent back or a stop as passed", () => {
+    expect(loopLook("tests_passed")).toEqual({ icon: "check", tone: "ok" });
+    expect(loopLook("review_passed").tone).toBe("ok");
+    expect(loopLook("tests_skipped").tone).toBe("muted");
+    for (const k of ["tests_failed", "review_changes", "review_invalid", "stop_iteration_cap", "stop_no_change", "stop_spend_cap", "stop_no_resume"] as const) expect(loopLook(k).tone).toBe("bad");
+    expect(loopLook("stop_spend_cap").icon).toBe("gauge");
   });
 });
 

@@ -2,7 +2,8 @@ import type { ReactNode } from "react";
 import { ArrowLeftRight, Check, CircleDashed, CircleHelp, Clock, Gauge, GitPullRequest, Pause, RotateCcw, Square, SquareTerminal, Users, X, type LucideIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { RunnerId, TaskStatus } from "@crewyard/core";
-import type { Fact, MemberStatus } from "./model.ts";
+import { useFormat } from "../tasks/parts.tsx";
+import type { Fact, MemberStatus, NodeLoop } from "./model.ts";
 
 // Status labels follow the mapping table in DESIGN.md §5: an icon and text in the state color.
 
@@ -61,8 +62,18 @@ export function TaskStatusLabel({ status }: { status: TaskStatus }) {
 
 export const memberTone = (s: MemberStatus) => MEMBER[s].tone;
 
+export interface LoopLabel {
+  /** Headline on the node's bottom border: the fix attempt or the verdict. */
+  tag: string | null;
+  tone: "wait" | "ok" | "bad";
+  /** Replaces the node's fact line: why the loop last went on or stopped, or the reviewed commit. */
+  fact: string | null;
+  stale: boolean;
+}
+
 export function useFormatters() {
   const { t, i18n } = useTranslation("crew");
+  const tasks = useFormat();
   const compact = new Intl.NumberFormat(i18n.language, { notation: "compact", maximumFractionDigits: 1 });
   const usd = new Intl.NumberFormat(i18n.language, { style: "currency", currency: "USD", maximumFractionDigits: 2, minimumFractionDigits: 2 });
   const time = new Intl.DateTimeFormat(i18n.language, { hour: "2-digit", minute: "2-digit" });
@@ -94,7 +105,15 @@ export function useFormatters() {
     }
   };
 
-  return { fact, cost, time: (iso: string) => time.format(new Date(iso)) };
+  const loop = (l: NodeLoop): LoopLabel =>
+    l.code === "attempts"
+      ? { tag: l.attempt > 0 ? t("loop.attempt", { attempt: l.attempt, max: l.max }) : null, tone: l.tone, fact: l.last ? tasks.reason(l.last) : null, stale: false }
+      : { tag: t(`loop.verdict.${l.verdict}`), tone: l.verdict === "pass" ? "ok" : "wait", fact: l.sha ? t("loop.commit", { sha: l.sha }) : t("loop.noCommit"), stale: l.stale };
+
+  /** The fact line as one string, for the list view and tooltips. */
+  const loopLine = (l: LoopLabel) => [l.tag, l.fact, l.stale ? t("loop.stale") : null].filter(Boolean).join(" · ");
+
+  return { fact, cost, loop, loopLine, time: (iso: string) => time.format(new Date(iso)) };
 }
 
 export function runnerName(t: (k: string) => string, runner: RunnerId | null): string {

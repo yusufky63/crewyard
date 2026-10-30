@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { ArrowLeftRight, Check, CircleHelp, CircleX, Clock, Gauge, GitPullRequest, Square, Terminal, Users } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import type { CandidateView, LimitWindow, Reason, RoleId } from "@crewyard/core";
+import type { CandidateView, HandoffStop, LimitWindow, Reason, RoleId } from "@crewyard/core";
 import { BrandIcon, Button } from "@crewyard/ui";
 import { useMoney, useWhen } from "../providers/shared.tsx";
 import { codeKey, type LimitBannerInfo, type StatusIcon, type StatusLine } from "./model.ts";
@@ -40,9 +40,36 @@ export function useFormat() {
     if (typeof p.capUsd === "number") p.capUsd = usd(p.capUsd);
     if (typeof p.context === "number") p.context = `${Math.round(p.context / 1000)}k`;
     if (typeof p.needed === "number") p.needed = `${Math.round(p.needed / 1000)}k`;
+    // Loop reasons: an exit code below zero means the command never reported one (killed, timed out).
+    if (typeof p.exitCode === "number") p.exitCode = p.exitCode >= 0 ? t("exitCode", { code: p.exitCode }) : t("exitNone");
+    if (typeof p.cap === "string") p.cap = t(`capKind.${p.cap}`, { defaultValue: p.cap });
+    if (typeof p.sha === "string") p.sha = p.sha.slice(0, 7);
+    if (typeof p.comments === "number") p.count = p.comments;
     return t(`reason.${codeKey(r.code)}`, p);
   };
   return { t, money, usd, when, role, runner, window, reason };
+}
+
+/**
+ * How a manual handoff stops the run it leaves: cut the turn in flight (default) or let it end
+ * first. Shown only while a turn is under way (`canChooseHandoffStop`).
+ */
+export function HandoffStopChoice({ name, value, onChange }: { name: string; value: HandoffStop; onChange: (v: HandoffStop) => void }) {
+  const { t } = useTranslation("tasks");
+  return (
+    <fieldset className="ho-stop">
+      <legend className="lbl">{t("handoffStop.label")}</legend>
+      {(["interrupt", "drain"] as const).map((s) => (
+        <label key={s} className="ho-stop-row">
+          <input type="radio" name={name} value={s} checked={value === s} onChange={() => onChange(s)} />
+          <span>
+            {t(`handoffStop.${s}`)}
+            <span className="muted ho-stop-hint">{t(`handoffStop.${s}Hint`)}</span>
+          </span>
+        </label>
+      ))}
+    </fieldset>
+  );
 }
 
 /** Runner mark + "Runner · alias", the way every account is named (DESIGN.md "Vendor marks"). */
@@ -59,7 +86,7 @@ export function Who({ c, model = true }: { c: Pick<CandidateView, "runner" | "al
   );
 }
 
-const ICONS: Record<Exclude<StatusIcon, "spinner">, typeof Check> = {
+export const STATUS_ICONS: Record<Exclude<StatusIcon, "spinner">, typeof Check> = {
   crew: Users,
   clock: Clock,
   question: CircleHelp,
@@ -77,7 +104,7 @@ const TONE_CLASS = { run: "st-run", wait: "st-wait", ok: "st-ok", bad: "st-bad",
 /** DESIGN.md `StatusLabel`: icon plus text in the state color, never color alone. */
 export function StatusLabel({ line }: { line: StatusLine }) {
   const f = useFormat();
-  const Icon = line.icon === "spinner" ? null : ICONS[line.icon];
+  const Icon = line.icon === "spinner" ? null : STATUS_ICONS[line.icon];
   const text = f.t(`status.${line.key}`, {
     role: line.params.role ? f.role(line.params.role) : "",
     time: line.params.time ? f.when.at(line.params.time) : "",

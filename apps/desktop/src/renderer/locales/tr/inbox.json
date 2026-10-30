@@ -110,7 +110,8 @@
     "target_ended": "Hedef çalışma onay vermeden sona erdi.",
     "credit_depleted": "Sağlayıcıya göre bu anahtarda kredi kalmadı. Bakiye yükleyin ya da başka bir anahtardaki hesaba devredin.",
     "adapter_failed": "Çalıştırıcı bir hata bildirdi.",
-    "run_resume_unsupported": "Bu çalıştırıcı oturumunu sürdüremiyor."
+    "run_resume_unsupported": "Bu çalıştırıcı oturumunu sürdüremiyor.",
+    "handoff_interrupted": "Devir sırasında uygulama kapandı; bu adım hâlâ ilk yapay zekada."
   },
   "action": {
     "approveOnce": "Bir kez onayla",

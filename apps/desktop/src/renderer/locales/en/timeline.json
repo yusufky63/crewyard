@@ -79,5 +79,19 @@
     "hideOutput": "Hide output",
     "outputOf": "Output of {{title}}",
     "failed": "Failed"
+  },
+  "loop": {
+    "tests_passed": "Tests passed: {{command}}",
+    "tests_failed": "{{reason}}, sent back to {{role}} for fix attempt {{iteration}} of {{max}}",
+    "tests_skipped": "Tests skipped: the project has no test command",
+    "review_passed": "Review passed at {{sha}}",
+    "review_passed_nosha": "Review passed",
+    "review_changes": "Review asked for changes at {{sha}} ({{reason}}), sent back to {{role}} for fix attempt {{iteration}} of {{max}}",
+    "review_changes_nosha": "Review asked for changes ({{reason}}), sent back to {{role}} for fix attempt {{iteration}} of {{max}}",
+    "review_invalid": "The review result failed its check, so the loop did not go on",
+    "stop_iteration_cap": "Loop stopped: all {{max}} fix attempts used",
+    "stop_no_change": "Loop stopped: nothing changed since the last try",
+    "stop_spend_cap": "Loop stopped: {{cap}} reached",
+    "stop_no_resume": "Loop stopped: {{runner}} cannot resume the session that wrote the code"
   }
 }

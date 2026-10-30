@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { RunView } from "@crewyard/core";
 import { crewFixture } from "./fixture.ts";
-import { buildGraph, defaultLayout, latestRun, memberStatus, mergeLayout, NODE_H, nudge, selectedPath, snap, SNAP, TASK_NODE } from "./model.ts";
+import { buildGraph, defaultLayout, latestRun, memberLoop, memberStatus, mergeLayout, NODE_H, NODE_H_LOOP, nodeHeight, nudge, selectedPath, snap, SNAP, TASK_NODE } from "./model.ts";
 
 describe("buildGraph", () => {
   const model = buildGraph(crewFixture());
@@ -43,6 +43,41 @@ describe("buildGraph", () => {
     expect(proposed.nodes.find((n) => n.id === "m:m-plan")).toMatchObject({ status: "proposed", fact: { code: "estimate", usd: 0.42 } });
     task.crew = null;
     expect(buildGraph(task).nodes.map((n) => n.id)).toEqual([TASK_NODE]);
+  });
+});
+
+describe("crew loop on the nodes", () => {
+  it("shows the implementer's fix attempt and the reviewer's verdict, stale once the code moved on", () => {
+    const byId = Object.fromEntries(buildGraph(crewFixture("loop")).nodes.map((n) => [n.id, n]));
+    expect(byId["m:m-impl"]!.loop).toEqual({ code: "attempts", attempt: 2, max: 3, tone: "wait", last: { code: "loop.review_changes", params: { comments: 2, sha: "9c41e7a2d0f3" } } });
+    expect(byId["m:m-review"]!.loop).toEqual({ code: "verdict", verdict: "changes", sha: "9c41e7a", stale: true });
+    expect(byId["m:m-plan"]!.loop).toBeNull();
+    expect(byId["s:m-impl"]!.loop).toBeNull();
+    // The default fixture: one failed test run sent back to the running implementer.
+    expect(buildGraph(crewFixture()).nodes.find((n) => n.id === "m:m-impl")!.loop).toMatchObject({ attempt: 1, tone: "wait", last: { code: "loop.tests_failed" } });
+  });
+
+  it("colors a stop red, a pass green, and takes the newest verdict", () => {
+    const loop = crewFixture("loop").loop;
+    const stop = { ...loop.decisions[2]!, id: "d-stop", kind: "stop_iteration_cap" as const, iteration: 3, reason: { code: "loop.iteration_cap" as const, params: { max: 3 } }, at: "2026-10-30T10:00:00.000Z" };
+    expect(memberLoop({ ...loop, decisions: [...loop.decisions, stop] }, "m-impl")).toMatchObject({ attempt: 3, tone: "bad" });
+    const passed = { ...loop.decisions[0]!, id: "d-ok", kind: "review_passed" as const, at: "2026-10-30T10:00:00.000Z" };
+    expect(memberLoop({ ...loop, decisions: [...loop.decisions, passed] }, "m-impl")).toMatchObject({ tone: "ok" });
+    const fresh = { ...loop.verdicts[0]!, verdict: "pass" as const, headSha: null, stale: false, at: "2026-10-30T10:00:00.000Z" };
+    expect(memberLoop({ ...loop, verdicts: [...loop.verdicts, fresh] }, "m-review")).toEqual({ code: "verdict", verdict: "pass", sha: null, stale: false });
+    expect(memberLoop({ maxIterations: 3, decisions: [], tests: [], verdicts: [] }, "m-impl")).toBeNull();
+  });
+
+  it("grows a node by one row only when it draws a loop line", () => {
+    const byId = Object.fromEntries(buildGraph(crewFixture("loop")).nodes.map((n) => [n.id, n]));
+    expect(nodeHeight(byId["m:m-impl"]!)).toBe(NODE_H_LOOP);
+    expect(nodeHeight(byId["m:m-review"]!)).toBe(NODE_H_LOOP);
+    expect(nodeHeight(byId["m:m-plan"]!)).toBe(NODE_H);
+    // Tests passed on the first try: a reason on the fact line, no fix attempt to show.
+    expect(nodeHeight({ loop: { code: "attempts", attempt: 0, max: 3, tone: "ok", last: { code: "loop.tests_passed" } } })).toBe(NODE_H);
+    // The standby below still clears a grown node.
+    const layout = defaultLayout(buildGraph(crewFixture("loop")));
+    expect(layout["s:m-impl"]!.y).toBeGreaterThan(layout["m:m-impl"]!.y + NODE_H_LOOP);
   });
 });
 

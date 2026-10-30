@@ -1,4 +1,4 @@
-import { NO_RUN_CONTROLS, type CandidateView, type CrewMemberView, type RunView, type TaskDetail } from "@crewyard/core";
+import { NO_RUN_CONTROLS, type CandidateView, type CrewMemberView, type LoopDecisionView, type RunView, type TaskDetail } from "@crewyard/core";
 
 // Screenshot and test fixture only. CrewScreen loads it solely when the `fixture` query param is
 // present, which the main process passes only in screenshot mode (CREWYARD_SHOT_QUERY). A normal
@@ -68,7 +68,63 @@ function run(id: string, memberId: string, role: RunView["role"], c: CandidateVi
   };
 }
 
-export function crewFixture(): TaskDetail {
+function decision(runId: string, kind: LoopDecisionView["kind"], iteration: number, reason: LoopDecisionView["reason"], min: number): LoopDecisionView {
+  return { id: `d-${runId}-${kind}`, memberId: "m-impl", runId, iteration, maxIterations: 3, kind, reason, at: at(min) };
+}
+
+const TESTS_FAILED = { code: "loop.tests_failed" as const, params: { command: "pnpm vitest run src/terrain", exitCode: 1 } };
+
+/**
+ * `loop` is the run-until-green variant: the tests failed once and then passed, the reviewer asked
+ * for changes at a commit the implementer has moved on from (a stale verdict), and the implementer
+ * is on its second fix attempt. The default variant is a crew mid-way with one step on a limit.
+ */
+export function crewFixture(variant: "default" | "loop" = "default"): TaskDetail {
+  return variant === "loop" ? loopVariant(base()) : base();
+}
+
+function loopVariant(t: TaskDetail): TaskDetail {
+  const [planRun, impl, tester] = t.runs as [RunView, RunView, RunView];
+  const sha = "9c41e7a2d0f3b6c1";
+  const runs = [
+    planRun,
+    { ...impl, startedAt: at(16), resumedFrom: "r-impl-1", nativeSessionId: "thr-impl", tokensIn: 21_000, tokensOut: 3_400 },
+    { ...tester, state: "ended" as const, endedAt: at(10), endReason: "completed" as const, limitReached: false, resumeAt: null },
+    { ...impl, id: "r-impl-1", state: "ended" as const, startedAt: at(4), endedAt: at(12), endReason: "completed" as const, nativeSessionId: "thr-impl", tokensIn: 54_000, tokensOut: 8_100 },
+    { ...impl, id: "r-review", memberId: "m-review", role: "reviewer" as const, profileId: glm.profileId, runner: glm.runner, model: glm.model, state: "ended" as const, startedAt: at(12), endedAt: at(16), endReason: "completed" as const, tokensIn: 30_200, tokensOut: 1_900, cost: { usd: 0, provenance: "reported" as const } },
+  ];
+  return {
+    ...t,
+    status: "running",
+    activeRuns: 1,
+    runs,
+    loop: {
+      maxIterations: 3,
+      decisions: [
+        decision("r-impl-1", "tests_failed", 1, TESTS_FAILED, 8),
+        decision("r-impl-1", "tests_passed", 1, { code: "loop.tests_passed", params: { command: TESTS_FAILED.params.command } }, 12),
+        decision("r-review", "review_changes", 2, { code: "loop.review_changes", params: { comments: 2, sha: sha.slice(0, 12) } }, 16),
+      ],
+      tests: [],
+      verdicts: [
+        {
+          runId: "r-review",
+          memberId: "m-review",
+          verdict: "changes",
+          summary: "The seam fix works on flat tiles but leaves a gap where two LOD levels meet.",
+          comments: [],
+          headSha: sha,
+          native: false,
+          // The implementer has written since the reviewer read 9c41e7a.
+          stale: true,
+          at: at(16),
+        },
+      ],
+    },
+  };
+}
+
+function base(): TaskDetail {
   const members = [
     member("m-plan", "planner", [], opus, [gemini]),
     member("m-impl", "implementer", ["planner"], codex, [sonnet, deepseek]),
@@ -110,5 +166,7 @@ export function crewFixture(): TaskDetail {
     ],
     worktree: { id: "w1", path: "C:\\Projeler\\terrain lab\\.crewyard\\worktrees\\terrain-seams", branch: "agent/terrain-seams", baseSha: "4f1c2aa", ownerRunId: "r-impl", createdAt: at(4) },
     handoffs: [],
+    // The tests failed at the implementer's last turn boundary; the failure went back to the same session.
+    loop: { maxIterations: 3, decisions: [decision("r-impl", "tests_failed", 1, TESTS_FAILED, 11)], tests: [], verdicts: [] },
   };
 }

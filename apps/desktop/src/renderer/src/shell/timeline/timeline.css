@@ -32,6 +32,10 @@
 .tl-e-request > svg, .tl-w-paused > svg, .tl-e-handoff > svg { color: var(--warn); }
 .tl-w-limited > svg { color: var(--bad); }
 .tl-e-ended > svg { color: var(--ink-2); }
+/* Loop decisions carry their status color on the icon; the text stays readable ink. */
+.tl-l-ok > svg { color: var(--ok); }
+.tl-l-bad > svg { color: var(--bad); }
+.tl-l-muted > svg { color: var(--ink-3); }
 .tl-expand { display: flex; gap: 4px; align-items: flex-start; text-align: left; color: var(--ink); min-height: 18px; }
 .tl-expand > svg { margin-top: 2px; flex: none; }
 .tl-kinds { font-size: 12px; }
