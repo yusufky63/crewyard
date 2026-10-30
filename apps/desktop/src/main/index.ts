@@ -7,6 +7,7 @@ import { DaemonHost } from "./daemon-host.ts";
 import { refusedDebugSwitches } from "./debug-switches.ts";
 import { e2eMode } from "./e2e.ts";
 import { pickMainLanguage, translator, type MainLanguage } from "./i18n.ts";
+import { appLogs } from "./logs.ts";
 import { batteryPct, KeepAwake } from "./keep-awake.ts";
 import { Toaster } from "./notify/toaster.ts";
 import { desktopFeatures } from "./platform.ts";
@@ -104,6 +105,9 @@ const keepAwake = new KeepAwake({ blocker: powerSaveBlocker, onChange: (s) => se
 
 // Linux and macOS keep API keys with safeStorage, which only this process has; Windows keeps DPAPI in the daemon.
 const hostSecrets = isWin ? undefined : secretHost(safeStorage, process.platform);
+// Crewyard's own logs, read back in the Activity drawer's Logs tab (logs.ts).
+const logs = appLogs(join(app.getPath("userData"), "logs"));
+logs.main.write("info", `Crewyard ${app.getVersion()} starting on ${process.platform} ${process.arch}`);
 const daemon = new DaemonHost(join(here, "daemon.js"), join(app.getPath("userData"), "data"), (topic, payload) => {
   send(topic, payload);
   if (!interactive) return;
@@ -116,7 +120,7 @@ const daemon = new DaemonHost(join(here, "daemon.js"), join(app.getPath("userDat
     keepAwake.setSettings((payload as AppSettings).keepAwake);
     tray?.render();
   } else if (topic === "tasks.changed" || topic === "requests.changed") scheduleWork();
-}, hostSecrets);
+}, hostSecrets, logs);
 
 const callDaemon = <M extends IpcMethod>(method: M, params: IpcParams<M>) => daemon.call(method, params) as Promise<IpcResult<M>>;
 

@@ -4,4 +4,4 @@ export { BrandIcon, hasBrandIcon, type BrandId } from "./brand.tsx";
 export { ContextMenu, MENU_SEPARATOR, type ContextMenuItem, type ContextMenuEntry } from "./ContextMenu.tsx";
 export { tidySeparators } from "./menu.ts";
 export { Splitter, type SplitterCollapse } from "./Splitter.tsx";
-export { clampSize, dragSize, splitKey, resolveCollapsibleDrag, SPLIT_STEP, type SplitBounds, type SplitEdge, type CollapsibleBounds } from "./split.ts";
+export { clampSize, dragSize, growKeys, splitKey, resolveCollapsibleDrag, SPLIT_STEP, type SplitBounds, type SplitEdge, type SplitOrientation, type CollapsibleBounds } from "./split.ts";

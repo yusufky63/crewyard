@@ -1,0 +1,79 @@
+{
+  "label": "Activity",
+  "tabsLabel": "Activity views",
+  "tab": {
+    "events": "Events",
+    "logs": "Logs"
+  },
+  "closeNote": "Closing this drawer does not stop anything.",
+  "close": "Close the Activity drawer",
+  "closeTitle": "Close ({{keys}} or Esc). Nothing stops.",
+  "resize": "Resize the Activity drawer",
+  "resizeHint": "Drag to resize, or drag down to close. Double-click to reset.",
+  "loading": "Loading…",
+  "toggle": {
+    "label": "Activity",
+    "show": "Show events and logs ({{keys}})",
+    "hide": "Hide events and logs ({{keys}}). Nothing stops."
+  },
+  "events": {
+    "filters": "Event filters",
+    "task": "Task",
+    "allTasks": "All tasks",
+    "run": "Run",
+    "allRuns": "All runs",
+    "runOption": "{{role}} · {{runner}} · {{at}}",
+    "kind": "Kind",
+    "allKinds": "All kinds",
+    "family": "{{family}}* · all ({{count}})",
+    "kindOption": "{{kind}} ({{count}})",
+    "stream": "Streamed text",
+    "clear": "Clear filters",
+    "newer": "Newer",
+    "older": "Older",
+    "page": "Page {{n}}",
+    "newest": "Show newest ({{count}} new)",
+    "newWaiting": "New events arrived. Show newest to see them.",
+    "listLabel": "Events, newest first",
+    "source": "Written by {{source}}",
+    "noText": "No text",
+    "showAll": "Show all · {{size}} chars",
+    "showAllLabel": "Show the whole {{kind}} event",
+    "showLess": "Show less",
+    "fullLabel": "Whole {{kind}} event",
+    "loading": "Loading…",
+    "loadFailed": "Could not load the whole event.",
+    "none": "No events in this project yet.",
+    "noneFiltered": "No events match these filters.",
+    "error": "Could not read the event log."
+  },
+  "logs": {
+    "filters": "Log filters",
+    "source": "Source",
+    "sources": {
+      "all": "All sources",
+      "main": "App",
+      "daemon": "Daemon",
+      "updater": "Updater"
+    },
+    "levelLabel": "Level",
+    "levels": {
+      "all": "All levels",
+      "warn": "Warnings and errors",
+      "error": "Errors only"
+    },
+    "level": {
+      "debug": "Debug",
+      "info": "Info",
+      "warn": "Warning",
+      "error": "Error"
+    },
+    "redacted": "Keys and tokens are hidden before lines are shown.",
+    "openFolder": "Open folder",
+    "older": "Show older",
+    "listLabel": "Log lines, newest first",
+    "none": "No log lines yet.",
+    "noneFiltered": "No log lines match these filters.",
+    "error": "Could not read the log files."
+  }
+}

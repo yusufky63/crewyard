@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clampSize, dragSize, resolveCollapsibleDrag, SPLIT_STEP, splitKey } from "./split.ts";
+import { clampSize, dragSize, growKeys, resolveCollapsibleDrag, SPLIT_STEP, splitKey } from "./split.ts";
 
 const bounds = { min: 184, max: 360 };
 
@@ -36,6 +36,18 @@ describe("splitKey", () => {
     expect(splitKey("ArrowLeft", 224, bounds, "end")).toEqual({ kind: "size", size: 208 });
     expect(splitKey("ArrowLeft", 380, { min: 320, max: 720 }, "start")).toEqual({ kind: "size", size: 396 });
     expect(splitKey("ArrowRight", 380, { min: 320, max: 720 }, "start")).toEqual({ kind: "size", size: 364 });
+  });
+
+  it("uses Up and Down on a horizontal handle, and ignores Left and Right there", () => {
+    const drawer = { min: 160, max: 640 };
+    // On the drawer's top edge, moving the handle up grows the drawer.
+    expect(splitKey("ArrowUp", 280, drawer, "start", { orientation: "horizontal" })).toEqual({ kind: "size", size: 296 });
+    expect(splitKey("ArrowDown", 280, drawer, "start", { orientation: "horizontal" })).toEqual({ kind: "size", size: 264 });
+    expect(splitKey("ArrowDown", 280, drawer, "end", { orientation: "horizontal" })).toEqual({ kind: "size", size: 296 });
+    expect(splitKey("ArrowLeft", 280, drawer, "start", { orientation: "horizontal" })).toBeNull();
+    expect(splitKey("ArrowUp", 280, drawer, "start")).toBeNull();
+    expect(growKeys("start", "horizontal")).toEqual({ grow: "ArrowUp", shrink: "ArrowDown" });
+    expect(growKeys("end")).toEqual({ grow: "ArrowRight", shrink: "ArrowLeft" });
   });
 
   it("stops at the bounds and jumps to them with Home and End", () => {

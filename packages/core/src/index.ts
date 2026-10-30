@@ -21,3 +21,5 @@ export * from "./timeline.ts";
 export * from "./mcp.ts";
 export * from "./ipc/mcp.ts";
 export * from "./host.ts";
+export * from "./ipc/activity.ts";
+export * from "./redact.ts";

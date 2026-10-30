@@ -5,6 +5,7 @@ import { useNav } from "./nav.ts";
 import { usePrefs } from "./prefs.ts";
 import { screens } from "./registry.ts";
 import { useWorkLive } from "./screens/tasks/live.ts";
+import { ActivityDrawer } from "./shell/activity/ActivityDrawer.tsx";
 import { Inspector } from "./shell/Inspector.tsx";
 import { layoutVars, sanitizeLayout } from "./shell/layout.ts";
 import { Sidebar } from "./shell/Sidebar.tsx";
@@ -19,6 +20,7 @@ function applyLayout(): void {
   for (const [k, v] of Object.entries(layoutVars(sanitizeLayout(s)))) root.style.setProperty(k, v);
   root.dataset.sidebar = s.sidebarCollapsed ? "rail" : "full";
   root.dataset.inspector = s.inspectorCollapsed ? "collapsed" : "open";
+  root.dataset.drawer = s.drawerOpen ? "open" : "closed";
 }
 applyLayout();
 usePrefs.subscribe(applyLayout);
@@ -72,7 +74,14 @@ export function App({ systemLanguage, platform }: { systemLanguage: string; plat
       <TitleBar />
       <div className="body">
         {!launch && <Sidebar />}
-        <main className="main">{Screen && <Screen />}</main>
+        {launch ? (
+          <main className="main">{Screen && <Screen />}</main>
+        ) : (
+          <div className="main-col">
+            <main className="main">{Screen && <Screen />}</main>
+            <ActivityDrawer />
+          </div>
+        )}
         {!launch && <Inspector />}
       </div>
       <StatusBar />

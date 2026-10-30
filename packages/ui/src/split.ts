@@ -12,9 +12,22 @@ export interface SplitBounds {
 /**
  * Which edge of its pane the handle sits on. "end" is the right edge (sidebar, list column), so
  * moving the handle right grows the pane; "start" is the left edge (inspector), so moving it left
- * grows the pane.
+ * grows the pane. On a horizontal splitter "start" is the top edge (the Activity drawer under the
+ * main view), so moving it up grows the pane.
  */
 export type SplitEdge = "start" | "end";
+
+/**
+ * "vertical" is a handle between columns, sizing a width with Left and Right; "horizontal" is a
+ * handle between rows, sizing a height with Up and Down (WAI-ARIA window splitter pattern).
+ */
+export type SplitOrientation = "vertical" | "horizontal";
+
+/** The arrow that moves the handle toward a bigger pane, and the one toward a smaller pane. */
+export function growKeys(edge: SplitEdge, orientation: SplitOrientation = "vertical"): { grow: string; shrink: string } {
+  const [back, forward] = orientation === "horizontal" ? ["ArrowUp", "ArrowDown"] : ["ArrowLeft", "ArrowRight"];
+  return edge === "end" ? { grow: forward!, shrink: back! } : { grow: back!, shrink: forward! };
+}
 
 /** A max below the min (a narrow window) collapses the range to the min, never inverts it. */
 export function clampSize(size: number, { min, max }: SplitBounds): number {
@@ -35,14 +48,13 @@ export function dragSize(startSize: number, startX: number, x: number, edge: Spl
 export type SplitKeyResult = { kind: "size"; size: number } | { kind: "toggle" } | null;
 
 /**
- * Keyboard on a vertical splitter, after the WAI-ARIA window splitter pattern: Left and Right move
- * the handle, Home and End give the pane its smallest and largest size, Enter collapses or
+ * Keyboard on a splitter, after the WAI-ARIA window splitter pattern: Left and Right (Up and Down on
+ * a horizontal one) move the handle, Home and End give the pane its smallest and largest size, Enter collapses or
  * restores when the pane can collapse. Anything else is not ours (null).
  */
-export function splitKey(key: string, size: number, bounds: SplitBounds, edge: SplitEdge, opts: { step?: number; canToggle?: boolean } = {}): SplitKeyResult {
+export function splitKey(key: string, size: number, bounds: SplitBounds, edge: SplitEdge, opts: { step?: number; canToggle?: boolean; orientation?: SplitOrientation } = {}): SplitKeyResult {
   const step = opts.step ?? SPLIT_STEP;
-  const grow = edge === "end" ? "ArrowRight" : "ArrowLeft";
-  const shrink = edge === "end" ? "ArrowLeft" : "ArrowRight";
+  const { grow, shrink } = growKeys(edge, opts.orientation);
   if (key === grow) return { kind: "size", size: clampSize(size + step, bounds) };
   if (key === shrink) return { kind: "size", size: clampSize(size - step, bounds) };
   if (key === "Home") return { kind: "size", size: clampSize(bounds.min, bounds) };
