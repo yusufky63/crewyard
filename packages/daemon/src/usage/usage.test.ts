@@ -162,6 +162,23 @@ describe("taskTimeline", () => {
     expect(built.entries.some((e) => e.kind === "request" && e.answeredAt !== null)).toBe(true);
   });
 
+  it("projects account switches with their labels and leaves out rows it cannot read", () => {
+    const s = newStore();
+    seed(s);
+    const add = (kind: string, payload: unknown) => s.appendEvent({ kind, source: "orchestrator", payload, projectId: "pr", taskId: "t1", runId: "r-ds" });
+    const from = { profileId: "p-a", alias: "ds-a" };
+    add("account.switched", { phase: "switched", switchId: "s1", trigger: "spend_cap", providerId: "deepseek", from, to: { profileId: "p-b", alias: "ds-b" }, source: { window: "budget-day", usedPct: 100, provenance: "estimated" }, headroom: { pct: null, window: null, provenance: "unknown" }, estimate: { usd: 0.4, provenance: "estimated" }, skipped: [{ profileId: "p-c", alias: "ds-c", reason: "over_cap" }, { profileId: "p-d", alias: "ds-d", reason: "made_up" }] });
+    add("account.switch_refused", { phase: "refused", switchId: null, trigger: "credit", providerId: "deepseek", from, to: null, source: { window: null, usedPct: null, provenance: "certain" }, headroom: null, estimate: null, skipped: [] });
+    // A switch without a target, or a trigger this build does not know, is left out.
+    add("account.switched", { phase: "switched", trigger: "limit", from, to: null, source: {} });
+    add("account.switched", { phase: "switched", trigger: "rotation", from, to: from, source: {} });
+    expect(taskTimeline(s.db, "t1").events).toMatchObject([
+      { kind: "account_switch", phase: "switched", trigger: "spend_cap", to: { alias: "ds-b" }, source: { usedPct: 100, provenance: "estimated" }, headroom: { pct: null, provenance: "unknown" }, estimate: { usd: 0.4, provenance: "estimated" }, skipped: [{ alias: "ds-c", reason: "over_cap" }] },
+      // A label it does not know reads as Unknown, never as a number's source.
+      { kind: "account_switch", phase: "refused", trigger: "credit", to: null, source: { provenance: "unknown" }, headroom: null, estimate: null },
+    ]);
+  });
+
   it("projects crew reports and leaves out rows of an unknown type", () => {
     const s = newStore();
     seed(s);

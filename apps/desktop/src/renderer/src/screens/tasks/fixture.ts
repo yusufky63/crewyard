@@ -1,5 +1,5 @@
 import { reviewFixture } from "./reviewFixture.ts";
-import { NO_RUN_CONTROLS, type CandidateView, type CrewMemberView, type IpcMethod, type IpcParams, type IpcResult, type LimitNoticePayload, type LoopDecisionView, type RequestView, type RoleId, type RunView, type StallAlertView, type TaskDetail, type TaskSummary, type UndoPreview, type BestOfVariantView, type ScheduleRunView, type ScheduleView } from "@crewyard/core";
+import { NO_RUN_CONTROLS, type AccountSwitchView, type CandidateView, type CrewMemberView, type IpcMethod, type IpcParams, type IpcResult, type LimitNoticePayload, type LoopDecisionView, type RequestView, type RoleId, type RunView, type StallAlertView, type TaskDetail, type TaskSummary, type UndoPreview, type BestOfVariantView, type ScheduleRunView, type ScheduleView } from "@crewyard/core";
 import { fixtureReports, fixtureServers, fixtureUsage } from "../../shell/mcpFixture.ts";
 
 // Screenshot data. Used only when the page URL has `fixture`, which the main process sets only
@@ -28,6 +28,9 @@ const SOL = cand("p-sol", "work", "codex", "openai", "gpt-6.1-sol", 0, 14, [{ co
 const GLM = cand("p-glm", "zai-plan", "claude-code", "zai-coding-plan", "glm-5.3", 0, null, [{ code: "independence.provider" }, { code: "cost.plan" }]);
 const FLASH = cand("p-flash", "ds-primary", "opencode", "deepseek", "deepseek-flash", 0.4, null, [{ code: "cost.estimate", params: { usd: 0.4 } }, { code: "fit.context", params: { context: 128000 } }]);
 const ARGON = cand("p-argon", "google", "gemini-cli", "google", "gemini-4-argon", 0, null, [{ code: "fit.reasoning" }, { code: "headroom.unknown" }]);
+// Second accounts of two providers, for the same-provider account switch (docs/adr/0009).
+const SOL_HOME = cand("p-sol-home", "personal", "codex", "openai", "gpt-6.1-sol", 0, 64, [{ code: "headroom", params: { pct: 64, provenance: "reported", window: "5h" } }]);
+const FLASH_B = cand("p-flash-b", "ds-backup", "opencode", "deepseek", "deepseek-flash", 0.41, null, [{ code: "cost.estimate", params: { usd: 0.41 } }]);
 
 let seq = 0;
 const decision = (m: CrewMemberView, runId: string, kind: LoopDecisionView["kind"], iteration: number, reason: LoopDecisionView["reason"], at: string): LoopDecisionView => ({
@@ -297,6 +300,22 @@ function build(projectId: string): { tasks: TaskDetail[]; requests: RequestView[
   const asleepRun = run("t-asleep", h[0]!, ARGON, { state: "waiting_input", startedAt: ago(95), lastActivityAt: ago(80), pendingRequestId: "q-asleep", hibernatedAt: ago(50), worktreeId: null, cwd: "C:\\Projeler\\crewyard" });
   const asleep = detail(summary("t-asleep", "Compare Redis and an in-process cache for the pricing service", { kind: "research", size: "S", status: "needs_input", openRequests: 1, activeRuns: 1, scheduled: { scheduleId: "s1", title: "Weekly cache review", autoApproved: false }, createdAt: ago(96) }), h, [asleepRun], { worktree: null });
 
+  // 12. Running after two automatic account switches: the implementer moved from Codex · work to
+  // Codex · personal at its 5-hour limit, the tester from one DeepSeek key to the other at its daily cap.
+  const w = [member("planner", 1, OPUS, [GLM]), member("implementer", 2, SOL, [SOL_HOME, OPUS], ["planner"], true), member("tester", 3, FLASH, [FLASH_B], ["implementer"]), member("reviewer", 4, GLM, [ARGON], ["implementer"])];
+  const switchedRuns = [
+    run("t-switched", w[0]!, OPUS, { state: "ended", startedAt: ago(70), endedAt: ago(62), endReason: "completed", tokensIn: 38100, tokensOut: 3600, cost: { usd: 0.29, provenance: "estimated" } }),
+    run("t-switched", w[1]!, SOL, { id: "r-sw-work", state: "ended", startedAt: ago(62), endedAt: ago(41), endReason: "limit", endDetail: "handed_off", limitReached: true, pausedAt: ago(41), handoffId: "h-sw-1", tokensIn: 81200, tokensOut: 9400 }),
+    run("t-switched", w[1]!, SOL_HOME, { id: "r-sw-home", state: "ended", startedAt: ago(41), endedAt: ago(24), endReason: "completed", resumedFrom: "r-sw-work", tokensIn: 40300, tokensOut: 5100, diff: [{ path: "src/billing/invoice.ts", added: 72, removed: 9 }, { path: "src/billing/invoice.test.ts", added: 51, removed: 0 }] }),
+    run("t-switched", w[2]!, FLASH, { id: "r-sw-ds-a", state: "ended", startedAt: ago(24), endedAt: ago(9), endReason: "limit", endDetail: "handed_off", limitReached: true, pausedAt: ago(9), handoffId: "h-sw-2", tokensIn: 7_400_000, tokensOut: 210_000, cost: { usd: 2.03, provenance: "estimated" } }),
+    run("t-switched", w[2]!, FLASH_B, { id: "r-sw-ds-b", startedAt: ago(9), resumedFrom: "r-sw-ds-a", tokensIn: 512_000, tokensOut: 14_000, cost: { usd: 0.14, provenance: "estimated" } }),
+  ];
+  const handoff = (id: string, fromRunId: string, toRunId: string, target: string, trigger: "limit" | "budget", at: string) => ({ id, fromRunId, toRunId, targetProfileId: target, mode: "auto" as const, kind: "fork" as const, stop: "interrupt" as const, trigger, phase: "closed" as const, packagePath: null, checkpointSha: "9b3e2f1", openedAt: at, closedAt: at, outcome: "completed" as const, detail: null });
+  const switched = detail(summary("t-switched", "Split invoices by billing period", { status: "running", activeRuns: 1, spend: { usd: 2.46, provenance: "estimated" }, createdAt: ago(72) }), w, switchedRuns, {
+    handoffs: [handoff("h-sw-1", "r-sw-work", "r-sw-home", SOL_HOME.profileId, "limit", ago(41)), handoff("h-sw-2", "r-sw-ds-a", "r-sw-ds-b", FLASH_B.profileId, "budget", ago(9))],
+    accountSwitch: true,
+  });
+
   const requests: RequestView[] = [
     {
       id: "q-asleep",
@@ -357,7 +376,7 @@ function build(projectId: string): { tasks: TaskDetail[]; requests: RequestView[
   ];
   // The failed rows first, so a 1280 px shot of the list shows how their errors fit.
   // New kinds of rows go last, so earlier shots of the list keep their first rows.
-  return { tasks: [noStart, credit, proposed, running, approval, capped, unpriced, review, done, bestOf, asleep, bestOfProposed], requests };
+  return { tasks: [noStart, credit, proposed, running, approval, capped, unpriced, review, done, bestOf, asleep, bestOfProposed, switched], requests };
 }
 
 let cache: { projectId: string; data: ReturnType<typeof build> } | null = null;
@@ -380,6 +399,8 @@ export function fixtureCall<M extends IpcMethod>(method: M, params: IpcParams<M>
       return task(p.taskId) as IpcResult<M>;
     case "requests.list":
       return d.requests.filter((q) => !p.taskId || q.taskId === p.taskId) as IpcResult<M>;
+    case "switches.list":
+      return fixtureSwitches(p.projectId ?? anyProject()).filter((s) => !p.taskId || s.taskId === p.taskId) as IpcResult<M>;
     case "stalls.list":
       return fixtureStalls(p.projectId ?? anyProject()).filter((a) => !p.taskId || a.taskId === p.taskId) as IpcResult<M>;
     case "mcp.reports.list":
@@ -451,6 +472,51 @@ function fixtureScheduleRuns(id: string): ScheduleRunView[] {
   if (id !== "s1") return [];
   const r = (n: number, over: Partial<ScheduleRunView>): ScheduleRunView => ({ id: `sr${n}`, scheduleId: id, slotAt: ago(n * 7 * 1440), startedAt: ago(n * 7 * 1440), finishedAt: ago(n * 7 * 1440 - 1), outcome: "proposed", precheckExit: 0, precheckTail: null, taskId: null, count: 1, detail: null, manual: false, ...over });
   return [r(0, { outcome: "proposed", taskId: "t-asleep", slotAt: ago(96), startedAt: ago(96) }), r(1, { outcome: "skipped_precheck", precheckExit: 1, precheckTail: "no pull requests match" }), r(2, { outcome: "skipped_missed", count: 2 })];
+}
+
+/** The two switches of the "t-switched" task, newest first, with every kind of label among them. */
+export function fixtureSwitches(projectId: string): AccountSwitchView[] {
+  const base = { taskId: "t-switched", projectId, outcome: "completed" as const, dismissedAt: null };
+  const step = (role: RoleId) => data(projectId).tasks.find((t) => t.id === "t-switched")?.crew?.members.find((m) => m.role === role)?.id ?? role;
+  return [
+    {
+      ...base,
+      id: "sw-2",
+      memberId: step("tester"),
+      fromRunId: "r-sw-ds-a",
+      toRunId: "r-sw-ds-b",
+      handoffId: "h-sw-2",
+      runner: "opencode",
+      providerId: "deepseek",
+      from: { profileId: FLASH.profileId, alias: FLASH.alias },
+      to: { profileId: FLASH_B.profileId, alias: FLASH_B.alias },
+      trigger: "spend_cap",
+      source: { window: "budget-day", usedPct: 100, provenance: "estimated", cap: { kind: "daily_cap", spentUsd: 2.03, capUsd: 2, credentialId: "cred-ds-a" } },
+      headroom: { pct: null, window: null, provenance: "unknown" },
+      estimate: { usd: 0.41, provenance: "estimated" },
+      skipped: [],
+      outcome: "pending",
+      at: ago(9),
+    },
+    {
+      ...base,
+      id: "sw-1",
+      memberId: step("implementer"),
+      fromRunId: "r-sw-work",
+      toRunId: "r-sw-home",
+      handoffId: "h-sw-1",
+      runner: "codex",
+      providerId: "openai",
+      from: { profileId: SOL.profileId, alias: SOL.alias },
+      to: { profileId: SOL_HOME.profileId, alias: SOL_HOME.alias },
+      trigger: "limit",
+      source: { window: "5h", usedPct: 100, provenance: "reported" },
+      headroom: { pct: 64, window: "5h", provenance: "reported" },
+      estimate: { usd: 0, provenance: "estimated" },
+      skipped: [{ profileId: "p-sol-team", alias: "team", reason: "headroom_low" }],
+      at: ago(41),
+    },
+  ];
 }
 
 /** One quiet run and one step that keeps failing, as the stall rules would raise them. */

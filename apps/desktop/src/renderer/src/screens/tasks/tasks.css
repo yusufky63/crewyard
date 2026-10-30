@@ -156,3 +156,14 @@
 .sc-runs { list-style: none; margin: 14px 0 2px; padding: 12px 0 0; border-top: 1px dashed var(--tick); display: grid; gap: 4px; }
 .sc-run { display: grid; grid-template-columns: 150px auto minmax(0, 1fr) auto; gap: 12px; align-items: center; font-size: 13px; }
 .sc-small { font-size: 12px; }
+/* Same-provider account switch (docs/adr/0009): one line per fact, each number with its label. */
+.sw-facts { display: grid; gap: 3px; min-width: 0; font-size: 12px; color: var(--ink-2); }
+/* Text and its badge flow as one line, so a badge never drops to a line of its own after long text. */
+.sw-line { display: block; line-height: 22px; overflow-wrap: anywhere; }
+.sw-line .badge { vertical-align: 1px; }
+.sw-line.muted { color: var(--ink-3); }
+/* The task's own same-provider account switch in the proposal's fallback row, on its own line. */
+.tk-switch { flex-basis: 100%; display: flex; gap: 8px; align-items: flex-start; font-size: 13px; cursor: pointer; }
+.tk-switch input { margin-top: 3px; accent-color: var(--ink); }
+.tk-switch > span { display: grid; gap: 2px; min-width: 0; }
+.tk-switch-hint { font-size: 12px; }

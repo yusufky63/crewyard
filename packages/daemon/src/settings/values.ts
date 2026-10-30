@@ -1,4 +1,4 @@
-import { HIBERNATION_LIMITS, STALL_LIMITS, type AppSettings, type HibernationSettings, type KeepAwakeSettings, type NotificationSettings, type SettingsPatch, type StallSettings } from "@crewyard/core";
+import { HIBERNATION_LIMITS, STALL_LIMITS, type AccountSwitchSettings, type AppSettings, type HibernationSettings, type KeepAwakeSettings, type NotificationSettings, type SettingsPatch, type StallSettings } from "@crewyard/core";
 
 // App settings live in the `settings` table, one JSON value per key, so a damaged or older entry
 // only falls back for that key. Every write goes through `applyPatch`, which refuses anything a
@@ -8,6 +8,7 @@ export const NOTIFICATIONS_KEY = "app.notifications";
 export const KEEP_AWAKE_KEY = "app.keepAwake";
 export const STALLS_KEY = "app.stalls";
 export const HIBERNATION_KEY = "app.hibernation";
+export const ACCOUNT_SWITCH_KEY = "app.accountSwitch";
 
 export const DEFAULT_SETTINGS: AppSettings = {
   notifications: {
@@ -23,6 +24,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   stalls: { noEventsMinutes: 10, sameFailureCount: 3, requestMinutes: 30, cooldownMinutes: 60 },
   // On by default: a stopped process wakes by session id, so nothing is lost, and memory and slots come back.
   hibernation: { enabled: true, idleMinutes: 30 },
+  // Off until you turn it on and accept the provider-terms note (docs/adr/0009).
+  accountSwitch: { enabled: false, termsAcceptedAt: null },
 };
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -50,15 +53,38 @@ const pick = <T>(fn: () => T, fallback: T): T => {
   }
 };
 
-/** Merges a patch into the current value; throws `settings.invalid` on any malformed field. */
-export function applyPatch(current: AppSettings, patch: SettingsPatch): AppSettings {
+/**
+ * Merges a patch into the current value; throws `settings.invalid` on any malformed field and
+ * `settings.terms` when account switching is turned on before its provider-terms note was accepted.
+ */
+export function applyPatch(current: AppSettings, patch: SettingsPatch, now: Date = new Date()): AppSettings {
   if (typeof patch !== "object" || patch === null) return invalid();
   let next = current;
   if (patch.notifications !== undefined) next = { ...next, notifications: patchNotifications(next.notifications, patch.notifications) };
   if (patch.keepAwake !== undefined) next = { ...next, keepAwake: patchKeepAwake(next.keepAwake, patch.keepAwake) };
   if (patch.stalls !== undefined) next = { ...next, stalls: patchStalls(next.stalls, patch.stalls) };
   if (patch.hibernation !== undefined) next = { ...next, hibernation: patchHibernation(next.hibernation, patch.hibernation) };
+  if (patch.accountSwitch !== undefined) next = { ...next, accountSwitch: patchAccountSwitch(next.accountSwitch, patch.accountSwitch, now) };
   return next;
+}
+
+function patchAccountSwitch(cur: AccountSwitchSettings, p: SettingsPatch["accountSwitch"], now: Date): AccountSwitchSettings {
+  if (typeof p !== "object" || p === null) return invalid();
+  const accept = p.acceptTerms === undefined ? false : bool(p.acceptTerms);
+  // The first acceptance is the one kept: it is when you read the note.
+  const termsAcceptedAt = cur.termsAcceptedAt ?? (accept ? now.toISOString() : null);
+  const enabled = p.enabled === undefined ? cur.enabled : bool(p.enabled);
+  if (enabled && termsAcceptedAt === null) throw new Error("settings.terms");
+  return { enabled, termsAcceptedAt };
+}
+
+/** Same leniency as the others; an `enabled` without an accepted note reads as off. */
+export function readAccountSwitch(raw: string | undefined): AccountSwitchSettings {
+  const base = DEFAULT_SETTINGS.accountSwitch;
+  const p = parseObject(raw);
+  if (!p) return base;
+  const termsAcceptedAt = typeof p.termsAcceptedAt === "string" && !Number.isNaN(Date.parse(p.termsAcceptedAt)) ? p.termsAcceptedAt : null;
+  return { enabled: termsAcceptedAt !== null && pick(() => bool(p.enabled), base.enabled), termsAcceptedAt };
 }
 
 const idleMinutes = (v: unknown): number => {

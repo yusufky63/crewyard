@@ -16,6 +16,7 @@ import { ApprovalActions } from "./ApprovalActions.tsx";
 import { InboxSplit } from "./InboxSplit.tsx";
 import { ReportList, useReports } from "./Reports.tsx";
 import { StallList, useStalls } from "./Stalls.tsx";
+import { SwitchList, useSwitches } from "./Switches.tsx";
 import { defaultTarget, emptyForm, formAnswer, formReady, handoffChoices, infoNotices, orderRequests, titleKey, type QuestionForm } from "./model.ts";
 import "../tasks/tasks.css";
 import "./inbox.css";
@@ -315,6 +316,7 @@ export function InboxScreen() {
   const profiles = useDaemon("providers.profiles", undefined, { staleTime: 60_000 });
   const stalls = useStalls(projectId ?? "");
   const reports = useReports(projectId ?? "");
+  const switches = useSwitches(projectId ?? "");
   const errorText = useErrorText();
   const notices = useActivity((s) => s.notices);
   const [picked, setPicked] = useState<string | null>(null);
@@ -334,7 +336,8 @@ export function InboxScreen() {
       <div className="page-head">
         <div>
           <h1>{t("title.page")}</h1>
-          <div className="lbl ib-context">{stalled.length > 0 ? t("contextStalls", { open: open.length, stalls: stalled.length, info: info.length }) : t("context", { open: open.length, info: info.length })}</div>
+          {/* Switches are for your information too: nothing waits on you there. */}
+          <div className="lbl ib-context">{stalled.length > 0 ? t("contextStalls", { open: open.length, stalls: stalled.length, info: info.length + (switches.data?.length ?? 0) }) : t("context", { open: open.length, info: info.length + (switches.data?.length ?? 0) })}</div>
         </div>
       </div>
       {requests.isError && <p className="muted">{t("errors.load")}</p>}
@@ -348,6 +351,7 @@ export function InboxScreen() {
           </Panel>
           <ReportList reports={reports.data ?? []} onError={(e) => setStallError(errorText(e))} />
           <StallList alerts={stalled} onOpenRequest={setPicked} onError={(e) => setStallError(errorText(e))} />
+          <SwitchList switches={switches.data ?? []} onError={(e) => setStallError(errorText(e))} />
           <ErrorLine>{stallError}</ErrorLine>
           {info.length > 0 && (
             <>

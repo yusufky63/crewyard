@@ -83,11 +83,24 @@ export interface HibernationSettings {
 
 export const HIBERNATION_LIMITS = { idleMinutes: { min: 1, max: 1440 } } as const;
 
+/**
+ * Automatic switching between accounts of the same provider (docs/adr/0009). Off by default.
+ * When on, a step stopped by a limit, an empty credit or its key's spend cap continues on the next
+ * account of the same runner and provider that passes preflight, whatever the task's fallback
+ * mode; a task can turn it off for itself. Turning it on needs the provider-terms note accepted
+ * once (`termsAcceptedAt`). Stored under `app.accountSwitch`.
+ */
+export interface AccountSwitchSettings {
+  enabled: boolean;
+  termsAcceptedAt: string | null;
+}
+
 export interface AppSettings {
   notifications: NotificationSettings;
   keepAwake: KeepAwakeSettings;
   stalls: StallSettings;
   hibernation: HibernationSettings;
+  accountSwitch: AccountSwitchSettings;
 }
 
 export interface SettingsPatch {
@@ -95,6 +108,8 @@ export interface SettingsPatch {
   keepAwake?: Partial<KeepAwakeSettings>;
   stalls?: Partial<StallSettings>;
   hibernation?: Partial<HibernationSettings>;
+  /** `acceptTerms` records that you read the provider-terms note; `enabled: true` is refused until then. */
+  accountSwitch?: { enabled?: boolean; acceptTerms?: boolean };
 }
 
 export interface BackupEntry {
@@ -132,10 +147,12 @@ export interface RestoreResult {
  * Error codes thrown as the message of a failed settings call, mapped to text by the renderer:
  * `settings.invalid` (a value failed validation), `data.path` (not an absolute .db path, or the
  * live database itself), `data.exists` (export target is there and overwrite was not asked),
- * `restore.*` (why a file cannot be restored).
+ * `restore.*` (why a file cannot be restored), `settings.terms` (account switching turned on before
+ * the provider-terms note was accepted).
  */
 export type SettingsErrorCode =
   | "settings.invalid"
+  | "settings.terms"
   | "data.path"
   | "data.exists"
   | "restore.agents_running"

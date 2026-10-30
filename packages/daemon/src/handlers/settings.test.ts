@@ -76,6 +76,25 @@ describe("settings values", () => {
     expect((await h["settings.get"]()).keepAwake).toEqual({ enabled: true, minBatteryPct: 30 });
   });
 
+  it("keeps same-provider account switching off by default and turns it on only once the terms note is accepted", async () => {
+    const { h, store } = setup();
+    expect((await h["settings.get"]()).accountSwitch).toEqual({ enabled: false, termsAcceptedAt: null });
+    await expect(attempt(() => h["settings.update"]({ accountSwitch: { enabled: true } }))).rejects.toThrow("settings.terms");
+    expect((await h["settings.get"]()).accountSwitch.enabled).toBe(false);
+    await expect(attempt(() => h["settings.update"]({ accountSwitch: { enabled: "on" as unknown as boolean, acceptTerms: true } }))).rejects.toThrow("settings.invalid");
+
+    const on = await h["settings.update"]({ accountSwitch: { enabled: true, acceptTerms: true } });
+    expect(on.accountSwitch.enabled).toBe(true);
+    const accepted = on.accountSwitch.termsAcceptedAt!;
+    expect(Number.isNaN(Date.parse(accepted))).toBe(false);
+    // Off and on again needs no second note, and keeps the first acceptance.
+    expect((await h["settings.update"]({ accountSwitch: { enabled: false } })).accountSwitch).toEqual({ enabled: false, termsAcceptedAt: accepted });
+    expect((await h["settings.update"]({ accountSwitch: { enabled: true, acceptTerms: true } })).accountSwitch).toEqual({ enabled: true, termsAcceptedAt: accepted });
+    // A stored "on" without an accepted note reads as off.
+    store.db.prepare("update settings set value = ? where key = 'app.accountSwitch'").run(JSON.stringify({ enabled: true, termsAcceptedAt: "not a date" }));
+    expect((await h["settings.get"]()).accountSwitch).toEqual({ enabled: false, termsAcceptedAt: null });
+  });
+
   it("falls back per field when the stored value is damaged", async () => {
     const { h, store } = setup();
     store.db.prepare("insert into settings (key, value) values ('app.notifications', ?)").run(JSON.stringify({ enabled: false, quietHours: { start: "nope" }, approveFromToast: 3 }));

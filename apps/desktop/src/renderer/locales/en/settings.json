@@ -25,7 +25,8 @@
     "startup": "Startup",
     "data": "Data",
     "about": "About",
-    "mcp": "MCP servers"
+    "mcp": "MCP servers",
+    "fallback": "Fallback"
   },
   "on": "On",
   "off": "Off",
@@ -253,5 +254,17 @@
     "hint": "When an agent waits on your answer with nothing running, its process stops after the time below. The run stays open and wakes with its own session when you answer or send a message. Only for runners that can resume a session.",
     "after": "Hibernate after",
     "afterHint": "Idle minutes before the process stops, {{min}} to {{max}}."
+  },
+  "accountSwitch": {
+    "label": "Switch accounts of the same provider",
+    "hint": "When a step stops on a limit, an empty credit or its key's spend cap, the next account of the same runner and provider that passes the checks takes over: the same kind of account (plan or API key), signed in, more than 20% left, budget left, never a Claude subscription. It works whatever the task's fallback mode, and never goes past a task's own budget. Each switch shows in the Inbox and the task timeline.",
+    "perTask": "Per task",
+    "perTaskHint": "On for every task while this is on. Turn it off for one task in its crew proposal or from a switch in the Inbox.",
+    "termsTitle": "Before you turn it on",
+    "terms": "Some providers' terms do not allow using several accounts to get past one account's limits. Check the terms of each provider you add more than one account for. Crewyard never moves sign-ins or keys between accounts; each account keeps its own sign-in and key.",
+    "termsAccept": "I understand, turn it on",
+    "termsCancel": "Cancel",
+    "termsAccepted": "Terms note accepted {{time}}.",
+    "termsRequired": "Accept the provider-terms note before turning account switching on."
   }
 }

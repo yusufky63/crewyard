@@ -16,13 +16,21 @@ const electronExe = createRequire(join(appDir, "package.json"))("electron") as u
 /** Same shape as packages/daemon/src/e2e: the n-th run of a role plays the n-th script. */
 export type Scripts = Record<string, FakeStep[][]>;
 
+/** A fake profile, as packages/daemon/src/e2e takes it; without a list the daemon uses its three defaults. */
+export interface E2eProfile {
+  id: string;
+  alias: string;
+  providerId: string;
+  model: { id: string; name: string; family: null; context: number; output: number; cost: { input: number; output: number; cacheRead: number }; reasoning: boolean; openWeights: boolean; released: null };
+}
+
 export interface Harness {
   app: ElectronApplication;
   page: Page;
   root: string;
   /** A git repository whose path has spaces in it, as the Windows rules ask. */
   repo: string;
-  setScripts(scripts: Scripts): void;
+  setScripts(scripts: Scripts, profiles?: E2eProfile[]): void;
   close(): Promise<void>;
 }
 
@@ -58,7 +66,7 @@ export async function launch(): Promise<Harness> {
   const root = mkdtempSync(join(tmpdir(), "shoot-crewyard-e2e "));
   const profile = join(root, "profile");
   const script = join(root, "script.json");
-  const setScripts = (scripts: Scripts) => writeFileSync(script, JSON.stringify({ scripts }));
+  const setScripts = (scripts: Scripts, profiles?: E2eProfile[]) => writeFileSync(script, JSON.stringify(profiles ? { scripts, profiles } : { scripts }));
   setScripts({});
   const repo = makeRepo(root);
 

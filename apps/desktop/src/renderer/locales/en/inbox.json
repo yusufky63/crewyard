@@ -165,5 +165,13 @@
     "acceptNote": "Creates a draft task with a proposed crew. Nothing starts until you approve it.",
     "openRun": "Open run",
     "dismiss": "Dismiss"
+  },
+  "switch": {
+    "section": "Switched accounts · {{count}}",
+    "title": "{{from}} → {{to}}",
+    "openTask": "Open task",
+    "offForTask": "Off for this task",
+    "offForTaskDone": "Off for this task",
+    "dismiss": "Dismiss"
   }
 }

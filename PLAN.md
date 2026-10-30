@@ -113,6 +113,7 @@ Electron, React 19, TypeScript, Vite, TanStack Router and Query, Zustand, `@xyfl
 | `worktrees` | lease: task, owner run, path, branch, created, last heartbeat, clean/dirty |
 | `pull_requests`, `checks` | number, state, head, mergeable, check runs, ETag |
 | `handoffs` | from run, to run, reason, package path, mode (`native_resume` / `new_session`), outcome |
+| `account_switches` | same-provider account switches (§8.3): from run, from and to profile, trigger, the numbers on both sides with provenance, accounts passed over, handoff |
 | `events` | append-only: seq, at, project, task, run, kind, source, redacted payload, dedupe key |
 
 ## 5. Agent adapters
@@ -181,7 +182,7 @@ Start a run in a temp repo, receive a plan and a tool call, approve once, deny o
 - **What the UI shows:** alias, runner, plan label, last probe time, never a key or token.
 - **Shared settings across accounts:** copied, not symlinked (symlinks need Developer Mode on Windows).
 - **Before sharing the app:** check OpenAI's terms for ChatGPT sign-in through the Codex app-server (its docs describe embedding Codex in other products) and Google's terms for Gemini CLI sign-in in a third-party app. Neither was verified in this plan.
-- **Same-provider account switching** (for example Codex · work → Codex · personal when one hits its limit) is supported manually. Automatic switching between accounts of the same provider is off by default and needs a separate opt-in that shows the provider-terms warning once. Automatic fallback to a *different* agent or provider (§8) does not need this.
+- **Same-provider account switching** (for example Codex · work → Codex · personal when one hits its limit) works by hand from the Inbox, and automatically once you turn it on: Settings → Fallback, off by default, and turning it on shows the provider-terms note once. The rules are in §8.3 and [ADR 0009](docs/adr/0009-same-provider-auto-switch.md). Auto mode alone never moves to another account of the same provider. Automatic fallback to a *different* agent or provider (§8.1) does not need this setting.
 
 ### 6.1 Providers and the catalog
 
@@ -258,7 +259,7 @@ Toasts are deduplicated and batched (at most one per account per window state). 
 
 - **Manual** (default): pause at a turn boundary and ask in the Inbox.
 - **Ask**: same, but the Inbox item already names the proposed target with its headroom and estimate; one click continues.
-- **Auto**: continue on the next target in the chain whose preflight passes, then tell you what happened.
+- **Auto**: continue on the next target in the chain whose preflight passes, then tell you what happened. Another account of the same provider is never such a target; only §8.3 moves there.
 - **Wait for reset**: if the same account resets within a set time (default 20 min), resume there at reset instead of switching. This is agent-orchestrator's auto-resume idea.
 
 ### 8.2 Handoff protocol (adapted from agent-orchestrator's durable handoff)
@@ -273,6 +274,16 @@ Toasts are deduplicated and batched (at most one per account per window state). 
 8. **Report:** an event, a line in the task row, and a toast in Auto mode.
 
 Hardening (ADR 0006): a manual handoff either interrupts the turn or drains it (lets it finish first). A completed handoff moves the step to a new epoch, so late events from the source change nothing and its requests are cancelled. An open handoff found at daemon start is closed with its phase, and the source, which still holds the step, asks you. A session with history is replaced only when the runner says it is gone or locked, and then by a fresh run fed the package.
+
+### 8.3 Same-provider account switch ([ADR 0009](docs/adr/0009-same-provider-auto-switch.md))
+
+- **Opt-in:** Settings → Fallback, off by default. Turning it on the first time shows the provider-terms note and records that you accepted it; the daemon refuses to turn it on before that. While it is on, every task may switch; you hold one task out in its crew proposal or from a switch in the Inbox. The global setting off wins.
+- **When:** a limit reached, an empty prepaid credit, or the key's own daily or per-task cap. Never the task's budget (a second key does not make it bigger), a model without a price, a crash or a transient error. In Wait for reset mode a reset inside the task's wait still wins.
+- **Whatever the mode:** the switch comes before the task's fallback mode. When no account passes, the mode decides as before (Manual and Ask list the other accounts to pick by hand; Auto moves only to another runner or provider).
+- **Same provider:** the same runner and catalog provider, another account. An API key is one account however many profiles use it; a plan sign-in is its profile, which has its own config folder (D4). Local providers never switch.
+- **Which account:** the step's standby chain first, then the other accounts by crew score. The first one that passes the preflight of §8.2 step 2 (signed in, more than 20% headroom with Unknown passing, its key under its caps, the task budget left, the role's rules and independence) takes over. Never a Claude subscription, only the same kind of account (plan sign-in for plan sign-in, API key for API key, so a plan never starts paying per token on its own), and never an account the step already left.
+- **How:** the §8.2 handoff with mode `auto`, a fork of the session where the runner can. Each account keeps its own config folder and key; Crewyard never moves a sign-in or a key.
+- **Records:** each switch is a row with what stopped the source, the target's headroom and the step's estimate there, each with its Reported, Estimated or Unknown label, and the accounts passed over with why. The Inbox lists it under "Switched accounts" until you dismiss it; the timeline shows it, and also a refusal when no account passed.
 
 ## 9. Crew proposal (role suggestion)
 
@@ -455,7 +466,7 @@ Each milestone ends with: typecheck, lint with `--max-warnings=0`, tests, build,
 |---|---|
 | Agent CLIs change their protocols (vibe-kanban #2794, OpenCode V2 rename) | pinned versions, conformance gate, adapters isolated per package |
 | ACP is young (v1 schema 1.27, v2 in alpha) | use it only for Gemini and the generic driver; keep native adapters for the other three |
-| Provider terms on subscriptions | Claude on API keys only; ChatGPT and Google sign-ins only through the official CLIs; no token handling by us; same-provider auto-switch off by default; OpenAI and Google terms checked before sharing |
+| Provider terms on subscriptions | Claude on API keys only; ChatGPT and Google sign-ins only through the official CLIs; no token handling by us; same-provider auto-switch opt-in, off by default, behind a terms note (§8.3); OpenAI and Google terms checked before sharing |
 | Claude on API keys costs money per token | daily and per-task caps, estimate shown in the crew proposal, paid fallbacks only inside the caps, cheaper Anthropic-compatible providers available to Claude Code |
 | Anthropic-compatible endpoints differ in features and behaviour | conformance suite per runner × provider, missing features shown in the profile, nothing offered before it passes |
 | Catalog data is wrong or changes | versioned snapshots, price cross-check against LiteLLM, pinning, the price version stored with every spend record |
@@ -470,8 +481,8 @@ Each milestone ends with: typecheck, lint with `--max-warnings=0`, tests, build,
 - 2026-10-29: the app may be shared later, so Claude Code runs on API keys only, from the first build (§6). M1 starts with Codex, which has the richest reported limits; Claude Code moves to M2.
 - 2026-10-29: runners and providers are separate (D9). Providers are not limited to the four vendors: the catalog (D10, §6.1) brings DeepSeek, Kimi, GLM, Qwen, MiniMax, MiMo, OpenRouter and others, with data from models.dev and cc-switch.
 - 2026-10-30: other projects, whatever their license, are read only to learn how they work; Crewyard's code is our own and nothing is copied or ported (AGENTS.md, D1).
+- 2026-10-30: automatic switching between accounts of the same provider exists, as an opt-in that is off by default. In the owner's words: "evet olsun kullanıcı isterse açık bıraksın ve otomatik geçiş olur" (yes, it should exist; if you want it, you leave it on and the switch happens automatically). Rules in §8.3, decision in [ADR 0009](docs/adr/0009-same-provider-auto-switch.md).
 
 **Open**
-1. Should automatic switching between two accounts of the same provider exist at all, even as an opt-in?
-2. Before sharing: confirm OpenAI's and Google's terms for ChatGPT and Google sign-in through a third-party app (§6).
-3. Name: the project folder and repo are `crewyard` (proposed 2026-10-29; GitHub had one empty repo with that name). "Mission Control" stays the in-app working name until you pick one.
+1. Before sharing: confirm OpenAI's and Google's terms for ChatGPT and Google sign-in through a third-party app (§6).
+2. Name: the project folder and repo are `crewyard` (proposed 2026-10-29; GitHub had one empty repo with that name). "Mission Control" stays the in-app working name until you pick one.

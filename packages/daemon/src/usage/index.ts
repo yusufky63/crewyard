@@ -1,5 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
-import { CREW_REPORT_KINDS, type CrewReportType, TIMELINE_MAX_EVENTS, TIMELINE_PREVIEW, utf8Length, type LoopDecisionKind, type Provenance, type Reason, type RunnerId, type TaskTimelineData, type TimelineEvent, type TimelineEventBody, type UsageRecord, type UsageReport } from "@crewyard/core";
+import { CREW_REPORT_KINDS, type AccountSwitchRefusal, type AccountSwitchSkipped, type AccountSwitchSource, type AccountSwitchTrigger, type CostEstimate, type CrewReportType, type Headroom, type LimitWindow, TIMELINE_MAX_EVENTS, TIMELINE_PREVIEW, utf8Length, type LoopDecisionKind, type Provenance, type Reason, type RunnerId, type TaskTimelineData, type TimelineEvent, type TimelineEventBody, type UsageRecord, type UsageReport } from "@crewyard/core";
 import { startOfLocalDay } from "../providers/ledger.ts";
 
 // Reads behind the usage view and the task timeline (PLAN.md M5). Read-only: the spend ledger and
@@ -204,6 +204,8 @@ const KINDS = [
   "loop.decision",
   "run.hibernated",
   "run.woke",
+  "account.switched",
+  "account.switch_refused",
 ];
 
 const TRUNCATED = /\n?\[truncated, (\d+) bytes(?:; full text in (.+))?\]$/;
@@ -248,6 +250,42 @@ const DECISIONS: ReadonlySet<string> = new Set<LoopDecisionKind>([
   "stop_spend_cap",
   "stop_no_resume",
 ]);
+
+const PROVENANCES: ReadonlySet<string> = new Set<Provenance>(["reported", "estimated", "unknown"]);
+const SWITCH_TRIGGERS: ReadonlySet<string> = new Set<AccountSwitchTrigger>(["limit", "credit", "spend_cap"]);
+const REFUSALS: ReadonlySet<string> = new Set<AccountSwitchRefusal>(["not_ready", "claude_subscription", "other_kind", "role", "independence", "left_before", "over_cap", "over_budget", "headroom_low"]);
+const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+const obj = (v: unknown): Payload | null => (typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Payload) : null);
+const provenance = (v: unknown): Provenance => (typeof v === "string" && PROVENANCES.has(v) ? (v as Provenance) : "unknown");
+
+/** `{ profileId, alias }` with both strings, or null. */
+function who(v: unknown): { profileId: string; alias: string } | null {
+  const o = obj(v);
+  return o && str(o.profileId) && str(o.alias) !== null ? { profileId: str(o.profileId)!, alias: str(o.alias)! } : null;
+}
+
+/** A stored account switch for the timeline; numbers keep their label, anything else falls back to Unknown. */
+function switchOf(p: Payload): TimelineEventBody | null {
+  const phase = str(p.phase);
+  const trigger = str(p.trigger);
+  const from = who(p.from);
+  const source = obj(p.source);
+  if ((phase !== "switched" && phase !== "refused") || !trigger || !SWITCH_TRIGGERS.has(trigger) || !from || !source) return null;
+  const to = who(p.to);
+  if (phase === "switched" && !to) return null;
+  const head = obj(p.headroom);
+  const est = obj(p.estimate);
+  const headroom: Headroom | null = head ? { pct: num(head.pct), window: str(head.window) as LimitWindow | null, provenance: provenance(head.provenance) } : null;
+  const estimate: CostEstimate | null = est ? { usd: num(est.usd), provenance: provenance(est.provenance) } : null;
+  const src: AccountSwitchSource = { window: str(source.window) as LimitWindow | null, usedPct: num(source.usedPct), provenance: provenance(source.provenance) };
+  const skipped: AccountSwitchSkipped[] = (Array.isArray(p.skipped) ? p.skipped : []).flatMap((x: unknown) => {
+    const o = obj(x);
+    const w = who(x);
+    const reason = o ? str(o.reason) : null;
+    return w && reason && REFUSALS.has(reason) ? [{ ...w, reason: reason as AccountSwitchRefusal }] : [];
+  });
+  return { kind: "account_switch", phase, switchId: str(p.switchId), trigger: trigger as AccountSwitchTrigger, providerId: str(p.providerId) ?? "", from, to: phase === "switched" ? to : null, source: src, headroom, estimate, skipped };
+}
 
 /** A stored reason, kept only when its shape is right; params keep only strings and numbers. */
 function reasonOf(v: unknown): Reason | null {
@@ -307,6 +345,9 @@ function project(kind: string, p: Payload): TimelineEventBody | null {
       if (!decision || !DECISIONS.has(decision) || !reason || iteration === null || max === null) return null;
       return { kind: "loop", decision: decision as LoopDecisionKind, memberId: str(p.memberId), iteration, max, reason };
     }
+    case "account.switched":
+    case "account.switch_refused":
+      return switchOf(p);
     case "mcp.report": {
       // Checked and capped when it arrived (core/mcp.ts); a row of another shape is left out.
       const type = str(p.type);

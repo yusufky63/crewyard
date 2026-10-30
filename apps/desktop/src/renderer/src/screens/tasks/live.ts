@@ -102,6 +102,8 @@ export function useWorkLive(): void {
         useActivity.getState().addNotice(n);
         if (n.taskId) queue(n.taskId);
       }),
+      // A switch happens while you look elsewhere; the Inbox must not show a cached list without it.
+      window.crewyard.on("switches.changed", () => void qc.invalidateQueries({ queryKey: ["switches.list"] })),
       window.crewyard.on("app.navigate", (p) => openTarget(p as NavigateTarget)),
       window.crewyard.on("daemon.ready", () => void qc.invalidateQueries({ predicate: (q) => isWorkQuery(q.queryKey[0]) })),
     ];

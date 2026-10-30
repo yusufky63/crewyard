@@ -165,5 +165,13 @@
     "acceptNote": "Önerilen ekiple taslak bir görev oluşturur. Siz onaylamadan hiçbir şey başlamaz.",
     "openRun": "Çalıştırmayı aç",
     "dismiss": "Kapat"
+  },
+  "switch": {
+    "section": "Hesap geçişleri · {{count}}",
+    "title": "{{from}} → {{to}}",
+    "openTask": "Görevi aç",
+    "offForTask": "Bu görevde kapat",
+    "offForTaskDone": "Bu görevde kapalı",
+    "dismiss": "Kapat"
   }
 }

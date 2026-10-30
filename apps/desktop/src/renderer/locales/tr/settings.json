@@ -25,7 +25,8 @@
     "startup": "Başlangıç",
     "data": "Veri",
     "about": "Hakkında",
-    "mcp": "MCP sunucuları"
+    "mcp": "MCP sunucuları",
+    "fallback": "Yedeğe geçiş"
   },
   "on": "Açık",
   "off": "Kapalı",
@@ -253,5 +254,17 @@
     "hint": "Bir ajan hiçbir şey çalıştırmadan yanıtınızı beklerken, aşağıdaki süre dolunca süreci durdurulur. Çalışma açık kalır; siz yanıtlayınca ya da mesaj gönderince kendi oturumuyla uyanır. Yalnızca oturumu sürdürebilen çalıştırıcılarda.",
     "after": "Şu kadar sonra uyut",
     "afterHint": "Süreç durmadan önceki boşta dakika, {{min}} ile {{max}} arası."
+  },
+  "accountSwitch": {
+    "label": "Aynı sağlayıcının hesapları arasında geç",
+    "hint": "Bir adım limit dolduğu, kredisi bittiği ya da anahtarının harcama sınırı dolduğu için durursa, aynı çalıştırıcı ve sağlayıcıdaki, kontrollerden geçen sıradaki hesap devralır: aynı türden (abonelik ya da API anahtarı), oturumu açık, %20'den fazla payı kalmış, bütçesi olan ve asla bir Claude aboneliği olmayan. Görevin yedek modu ne olursa olsun çalışır ve görevin kendi bütçesini asla aşmaz. Her geçiş Gelen kutusunda ve görevin zaman çizelgesinde görünür.",
+    "perTask": "Görev başına",
+    "perTaskHint": "Bu açıkken her görevde açıktır. Tek bir görevde kapatmak için ekip önerisini ya da Gelen kutusundaki geçiş kaydını kullanın.",
+    "termsTitle": "Açmadan önce",
+    "terms": "Bazı sağlayıcıların koşulları, bir hesabın limitlerini aşmak için birden fazla hesap kullanmaya izin vermez. Birden fazla hesap eklediğiniz her sağlayıcının koşullarına bakın. Crewyard oturumları ya da anahtarları hesaplar arasında taşımaz; her hesap kendi oturumunu ve anahtarını tutar.",
+    "termsAccept": "Anladım, aç",
+    "termsCancel": "Vazgeç",
+    "termsAccepted": "Koşul notu {{time}} kabul edildi.",
+    "termsRequired": "Hesap geçişini açmadan önce sağlayıcı koşulları notunu kabul edin."
   }
 }
