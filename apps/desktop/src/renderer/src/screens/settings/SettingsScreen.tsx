@@ -15,6 +15,7 @@ import { McpSection } from "./McpSection.tsx";
 import { backTarget, errorCode, SECTIONS, useSettingsNav, type SectionId } from "./model.ts";
 import { Row, Section, Seg, Toggle } from "./parts.tsx";
 import { StallRules } from "./StallRules.tsx";
+import { UpdatesSection } from "./Updates.tsx";
 import "../providers/providers.css";
 import "./settings.css";
 
@@ -302,6 +303,7 @@ export function SettingsScreen() {
           <Fallback />
           <McpSection index={6} />
           <DataSection />
+          <UpdatesSection index={8} />
           <AboutSection />
         </div>
       </div>

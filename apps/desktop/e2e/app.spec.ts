@@ -340,3 +340,22 @@ test("Settings: theme and language change and the UI follows", async () => {
   await expect(html).toHaveAttribute("lang", "en");
   await expect(main.getByRole("group", { name: "Language" })).toBeVisible();
 });
+
+test("Settings: a development build says it does not update itself, and nothing reaches a feed", async () => {
+  const { page } = h;
+  type Updates = { phase: string; off: string | null; feed: string | null; autoCheck: boolean };
+  const bridge = (action: "updates" | "checkForUpdates" | "downloadUpdate" | "installUpdate") =>
+    page.evaluate((a) => (window as unknown as { crewyard: Record<string, () => Promise<Updates>> }).crewyard[a]!(), action);
+  const updates = page.locator("#settings-updates");
+  await page.getByRole("button", { name: /^\d+\s*Updates$/ }).click();
+  await expect(updates.getByText("Only an installed copy of Crewyard updates itself.", { exact: false })).toBeVisible();
+  await expect(updates.getByText("None in this build")).toBeVisible();
+  await expect(updates.getByRole("button", { name: "Check now" })).toBeDisabled();
+  await expect(updates.getByRole("group", { name: "Check automatically" }).getByRole("button", { name: "On" })).toBeDisabled();
+  // Asking anyway, past the disabled buttons, changes nothing.
+  expect(await bridge("checkForUpdates")).toMatchObject({ phase: "off", off: "development", feed: null, autoCheck: false });
+  await bridge("downloadUpdate");
+  await bridge("installUpdate");
+  expect(await bridge("updates")).toMatchObject({ phase: "off", off: "development" });
+  await expect(page.locator("#settings-about").getByText("Third-party licences")).toBeVisible();
+});

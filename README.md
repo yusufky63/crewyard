@@ -136,20 +136,24 @@ This builds the app and writes `apps/desktop/dist/Crewyard-Setup-<version>-x64.e
 
 - installs per user to `%LOCALAPPDATA%\Programs\crewyard`, without asking for admin;
 - adds Start-menu and desktop shortcuts;
-- keeps your data in `%APPDATA%\Crewyard` when you uninstall.
+- keeps your data in `%APPDATA%\Crewyard` when you uninstall;
+- puts `THIRD-PARTY-LICENSES.txt` (every bundled npm package and its licence) and `NOTICE.txt` next to the exe. Settings → About opens the list.
 
 Install silently with `Crewyard-Setup-<version>-x64.exe /S`. Uninstall from Windows Settings, or silently with `"%LOCALAPPDATA%\Programs\crewyard\Uninstall Crewyard.exe" /S /currentuser`.
 
-Builds are unsigned for now, so SmartScreen warns about an unknown publisher. To sign:
+Without settings the build is unsigned and has no update feed, so SmartScreen warns about an unknown publisher and the app never looks for updates. To sign:
 
-- set `WIN_CSC_LINK` (the `.pfx` path or its base64) and `WIN_CSC_KEY_PASSWORD` in the environment, never in a file in the repo;
-- set `CREWYARD_SIGN=1` before `pnpm package`. A missing certificate then fails the build instead of producing an unsigned installer.
+- set `WIN_CSC_LINK` (the `.pfx` path or its base64) and `WIN_CSC_KEY_PASSWORD` in the environment, never in a file in the repo, or `CREWYARD_SIGN_CERT_SHA1` for a certificate in the Windows store;
+- set `CREWYARD_SIGN_PUBLISHER` to the certificate's full subject DN;
+- set `CREWYARD_SIGN=1` before `pnpm package`. A missing certificate then fails the build instead of producing an unsigned installer. The password reaches PowerShell through its environment, never a command line.
 
-There is no auto-update yet: it needs a release host, which you have not chosen yet.
+To turn on updates, also set `CREWYARD_UPDATE_URL` to an HTTPS folder, and upload `dist\latest.yml`, the installer and its `.blockmap` there for each release. The app checks when you press Check now in Settings → Updates (or on its own if you turn that on), downloads on your click, refuses anything not signed by the publisher, and installs on Restart to install.
+
+`node apps/desktop/e2e/update/update-flow.mjs` (after `pnpm --filter @crewyard/desktop build`) tests signing and the whole update flow on this machine. It uses throwaway certificates, a feed on 127.0.0.1 and a separate test identity, and removes everything afterwards.
 
 The icon is generated from the title-bar mark by `pnpm --filter @crewyard/desktop icon`.
 
-[docs/adr/0004-packaging-and-recovery.md](docs/adr/0004-packaging-and-recovery.md) explains these choices and the crash recovery.
+[docs/adr/0004-packaging-and-recovery.md](docs/adr/0004-packaging-and-recovery.md) explains these choices and the crash recovery. [docs/adr/0011-signing-and-auto-update.md](docs/adr/0011-signing-and-auto-update.md) explains signing, updates and what a real release still needs.
 
 ## Stress test
 

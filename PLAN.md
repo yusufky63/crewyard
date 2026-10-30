@@ -417,7 +417,11 @@ The result is `.crewyard/project.json` in the repo: name, commands, allowed runn
 - UTF-8 for all child IO; never depend on the console code page.
 - Atomic writes with retry for every config file we create.
 - Paths with spaces, long paths (`\\?\` prefix where needed), OneDrive-redirected folders.
-- Signed installer and binaries; per-user install, no admin needed.
+- Signed installer and binaries; per-user install, no admin needed ([ADR 0004](docs/adr/0004-packaging-and-recovery.md), [ADR 0011](docs/adr/0011-signing-and-auto-update.md)):
+  - `CREWYARD_SIGN=1` signs the exe, every dll, the installer and the uninstaller, with a PFX from environment variables or a certificate in the Windows store; the password never reaches a command line;
+  - updates come from a generic HTTPS feed set at build time, are checked on your click (or by an opt-in automatic check), and install only on "Restart to install";
+  - a signed build installs only updates that Windows verifies as signed by its publisher, and refuses when the check cannot run;
+  - the licences of every bundled npm package and NOTICE ship next to the exe.
 - Windows toasts with an AppUserModelID; tray; start with Windows as an opt-in.
 - Keep the PC awake while runs are active, as an opt-in (Settings → Startup): Electron `powerSaveBlocker("prevent-app-suspension")` from the first active run to the last, released on battery at or below a threshold (default 30%) or with an unknown charge; its state shows in the status bar.
 - Detect and refuse WSL paths for Windows-native runs; WSL support is out of scope for v1.
@@ -488,7 +492,7 @@ Each milestone ends with: typecheck, lint with `--max-warnings=0`, tests, build,
 | **M3 Crews, roles, fallback, graph** | role templates and enforcement, crew proposal and approval, deterministic DAG scheduler, standby chains, handoff protocol with Manual/Ask/Auto/Wait, ahead-of-pace warning, Gemini via ACP behind its conformance gate, Crew graph with list view | a limit hit mid-task hands off in Ask mode and in Auto mode, and the target continues in the same worktree |
 | **M4 GitHub** | PR create, review gate, merge, check summaries and logs routed back, push queue, Actions minutes guard, workflow check, worktree cleanup | a task goes from proposal to merged PR with every outward step approved by you |
 | **M5 Usage and polish** | Limits & usage full view, per-model ledger, timeline per task, keyboard map, compact density pass, 200% scaling pass | QA matrix in DESIGN.md §9 passes |
-| **M6 Hardening** | crash and power-loss recovery, 20-run stress test, auto-update, signed installer, backup and export of the database | a week of daily use without manual DB fixes |
+| **M6 Hardening** | crash and power-loss recovery, 20-run stress test, auto-update, signed installer, backup and export of the database. Signing and auto-update are built and tested end to end on this machine with a throwaway certificate and a local feed ([ADR 0011](docs/adr/0011-signing-and-auto-update.md)); a real certificate and a feed host are still to be chosen before the first release | a week of daily use without manual DB fixes; a signed release updates itself from the real feed |
 
 ## 15. Testing
 
@@ -522,7 +526,9 @@ Each milestone ends with: typecheck, lint with `--max-warnings=0`, tests, build,
 - 2026-10-30: automatic switching between accounts of the same provider exists, as an opt-in that is off by default. In the owner's words: "evet olsun kullanıcı isterse açık bıraksın ve otomatik geçiş olur" (yes, it should exist; if you want it, you leave it on and the switch happens automatically). Rules in §8.3, decision in [ADR 0009](docs/adr/0009-same-provider-auto-switch.md).
 - 2026-10-30: the name is Crewyard everywhere (owner: "crewyard olsun her yerde"). The working name Mission Control is gone; a project's config moved from `.mission\project.json` to `.crewyard\project.json` and new worktrees go to `.crewyard\worktrees`. Configs in the old place are still read and move on the next save; existing worktree roots stay where their config puts them.
 - 2026-10-30: the code is kept in a private GitHub repository, pushed when a piece of work is finished rather than after every step; releases come once everything is done. Windows stays first; Linux and macOS are prepared for but not shipped yet (owner: "linux ve mac için hazırlıklar da yapabiliriz ama öncelik windows da"; the platform seams are in [ADR 0010](docs/adr/0010-linux-macos-groundwork.md) and §12.1).
+- 2026-10-30: signing and auto-update are prepared and tested before any release ([ADR 0011](docs/adr/0011-signing-and-auto-update.md)). The feed is electron-updater's generic HTTPS provider, its URL set at build time, so the host can be any static HTTPS server and the private code repository needs no token in the app. "Check automatically" is off by default; downloading and installing always wait for a click. A signed build refuses any update that is not signed by its publisher. Signing goes through our own hook, because electron-builder 26's signtool route puts the PFX password on a command line.
 - 2026-10-30: the Crew graph hides React Flow's attribution link (`proOptions.hideAttribution`); React Flow is MIT and its licence notice ships with the app.
 
 **Open**
-1. Before sharing: confirm OpenAI's and Google's terms for ChatGPT and Google sign-in through a third-party app (§6). The owner will check them (2026-10-30).
+1. Before the first release: which code-signing certificate (OV as a PFX, a hardware-bound one in the Windows store, or Azure Trusted Signing) and which HTTPS host serves the update feed (ADR 0011, "What a real release needs").
+2. Before sharing: confirm OpenAI's and Google's terms for ChatGPT and Google sign-in through a third-party app (§6). The owner will check them (2026-10-30).

@@ -80,3 +80,20 @@
 .st-terms { display: grid; gap: 8px; align-items: start; margin: 4px 0 8px; }
 .st-terms p { color: var(--ink); font-size: 13px; line-height: 1.5; }
 .st-terms-acts { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Updates (docs/adr/0011): the offered version in a framed block under "Check for updates". */
+.settings .up-offer { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 12px; margin: 2px 0 10px; }
+.settings .up-refused { --tk: var(--bad); }
+.settings .up-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.settings .up-version { font-size: var(--font-size-title); font-weight: 500; color: var(--ink); }
+.settings .up-facts { font-size: var(--font-size-meta); }
+.settings .up-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; justify-content: space-between; }
+.settings .up-text { flex: 1; min-width: 240px; font-size: var(--font-size-meta); color: var(--ink-3); line-height: 1.45; }
+.settings .up-verified, .settings .up-error { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; overflow-wrap: anywhere; }
+.settings .up-verified svg, .settings .up-error svg { flex: none; margin-top: 2px; }
+.settings .up-error { flex: 1; min-width: 240px; color: var(--bad); }
+.settings .up-error .st-meta { color: var(--ink-3); }
+.settings .up-progress { flex: 1; min-width: 240px; display: grid; gap: 6px; }
+.settings .up-bar { height: 6px; background: var(--sunken); border: 1px solid var(--line); overflow: hidden; }
+.settings .up-bar > span { display: block; height: 100%; background: var(--accent); }
+.settings .up-meta { font-size: var(--font-size-meta); color: var(--ink-2); }

@@ -39,8 +39,8 @@ export function summarize(tasks: TaskSummary[], requests: RequestView[], project
 }
 
 /** The confirm text names what quitting stops: one line per task, the rest counted. */
-export function quitDetail(w: WorkSummary, t: Translate, max = 6): string {
+export function quitDetail(w: WorkSummary, t: Translate, max = 6, key = "quit.detail"): string {
   const lines = w.runningTasks.slice(0, max).map((x) => `· ${t("quit.taskLine", { task: x.title, project: x.projectName })}`);
   if (w.runningTasks.length > max) lines.push(`· ${t("quit.more", { count: w.runningTasks.length - max })}`);
-  return t("quit.detail", { list: lines.join("\n") });
+  return t(key, { list: lines.join("\n") });
 }

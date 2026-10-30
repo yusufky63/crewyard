@@ -26,7 +26,8 @@
     "data": "Veri",
     "about": "Hakkında",
     "mcp": "MCP sunucuları",
-    "fallback": "Yedeğe geçiş"
+    "fallback": "Yedeğe geçiş",
+    "updates": "Güncellemeler"
   },
   "on": "Açık",
   "off": "Kapalı",
@@ -140,7 +141,11 @@
     "backupsDir": "Yedekler klasörü",
     "secrets": "Gizli anahtarlar klasörü",
     "exe": "Çalıştırılabilir dosya",
-    "unknown": "Bilinmiyor"
+    "unknown": "Bilinmiyor",
+    "licenses": "Üçüncü taraf lisansları",
+    "licensesValue": "Bu sürüme paketlenen her paketin lisansı ve NOTICE",
+    "licensesMissing": "Bulunamadı: bu sürüm lisans dosyaları olmadan derlenmiş",
+    "open": "Aç"
   },
   "status": {
     "settings": "Ayarlar",
@@ -149,7 +154,12 @@
     "quietActive": "Şu an sessiz",
     "awake": "Uyanık",
     "awakeBattery": "Uykuya izin var",
-    "awakeIdle": "Çalışırken uyanık"
+    "awakeIdle": "Çalışırken uyanık",
+    "update": "Güncelleme {{version}}",
+    "updateTitle": "Crewyard {{version}} çıktı. İndirmek için Ayarlar'ı açın.",
+    "updateDownloading": "Güncelleme %{{pct}}",
+    "updateReady": "Güncellemek için yeniden başlat",
+    "updateReadyTitle": "Crewyard {{version}} indirildi ve doğrulandı. Kurmak için Ayarlar'ı açın."
   },
   "keepAwake": {
     "label": "Ajanlar çalışırken bilgisayarı uyanık tut",
@@ -266,5 +276,59 @@
     "termsCancel": "Vazgeç",
     "termsAccepted": "Koşul notu {{time}} kabul edildi.",
     "termsRequired": "Hesap geçişini açmadan önce sağlayıcı koşulları notunu kabul edin."
+  },
+  "updates": {
+    "version": "Bu sürüm",
+    "feed": "Güncelleme kaynağı",
+    "noFeed": "Bu sürümde yok",
+    "publisher": "İmza denetimi",
+    "mustBeSigned": "Güncellemeyi {{publisher}} imzalamış olmalı",
+    "unsignedBuild": "Kapalı: bu imzasız bir deneme sürümü",
+    "check": "Güncellemeleri denetle",
+    "checkNow": "Şimdi denetle",
+    "checking": "Güncelleme kaynağına bakılıyor…",
+    "never": "Henüz denetlenmedi.",
+    "current": "Crewyard güncel. Son denetim: {{time}}.",
+    "found": "Crewyard {{version}} çıktı.",
+    "auto": "Kendiliğinden denetle",
+    "autoHint": "Açılıştan bir dakika sonra ve 6 saatte bir yeni sürüme bakar. Hiçbir şeyi kendiliğinden indirmez ya da kurmaz.",
+    "autoOff": "Kapalı: Crewyard'ın bu kopyası kendini güncellemez.",
+    "off": {
+      "development": "Crewyard yalnızca kurulu bir kopyada kendini günceller. Bu bir geliştirme sürümü.",
+      "platform": "Bu sistemde güncellemeler henüz yok.",
+      "no_feed": "Bu sürümün bir güncelleme kaynağı yok, o yüzden güncellemeye hiç bakmaz.",
+      "not_installed": "Bu kopya açılmış bir klasörden çalışıyor. Kendini yalnızca kurucunun yerleştirdiği kopya güncelleyebilir.",
+      "invalid": "Bu sürümle gelen güncelleme ayarları denetimden geçmedi, bu yüzden Crewyard güncellemeye bakmıyor."
+    },
+    "newVersion": "Yeni sürüm",
+    "offerLabel": "Crewyard {{version}}",
+    "released": "{{date}} tarihinde çıktı",
+    "downloadHint": "Kurulmadan önce indirilen dosyanın yayıncı imzası denetlenir. Yeniden başlatana kadar hiçbir şey kurulmaz.",
+    "downloadHintUnsigned": "Bu deneme sürümü imza denetlemez. Yeniden başlatana kadar hiçbir şey kurulmaz.",
+    "download": "İndir",
+    "downloading": "Güncelleme indiriliyor",
+    "starting": "İndirme başlıyor…",
+    "progress": "%{{pct}} · {{done}} / {{total}} · {{speed}}/sn",
+    "cancel": "Vazgeç",
+    "verified": "İndirildi ve doğrulandı: imzalayan {{signer}}.",
+    "unverified": "İndirildi. İmzası denetlenmedi: bu imzasız bir deneme sürümü.",
+    "installHint": "Crewyard kapanır, güncellemeyi kurar ve yeniden açılır. Çalışan ajan varsa önce size sorulur.",
+    "install": "Yeniden başlat ve kur",
+    "retry": "Yeniden dene",
+    "refused": {
+      "not_signed": "Reddedildi: güncelleme imzalı değil. Hiçbir şey kurulmadı, indirilen dosya silindi.",
+      "tampered": "Reddedildi: güncelleme imzalandıktan sonra değiştirilmiş. Hiçbir şey kurulmadı, indirilen dosya silindi.",
+      "untrusted": "Reddedildi: Windows güncellemenin imzasına güvenmiyor. Hiçbir şey kurulmadı, indirilen dosya silindi.",
+      "wrong_publisher": "Reddedildi: güncellemeyi Crewyard'ın yayıncısından başkası imzalamış. Hiçbir şey kurulmadı, indirilen dosya silindi.",
+      "check_failed": "Reddedildi: güncellemenin imzası denetlenemedi. Hiçbir şey kurulmadı, indirilen dosya silindi."
+    },
+    "error": {
+      "network": "Güncelleme kaynağına ulaşılamadı.",
+      "feed": "Güncelleme kaynağı kullanılabilir bir sürümle yanıt vermedi.",
+      "checksum": "Reddedildi: indirilen dosya kaynağın verdiği sağlama toplamıyla uyuşmuyor. Hiçbir şey kurulmadı.",
+      "signature": "Reddedildi: güncelleme imza denetiminden geçmedi. Hiçbir şey kurulmadı.",
+      "disk": "İndirilen dosya diske yazılamadı.",
+      "unknown": "Güncelleme yapılamadı."
+    }
   }
 }

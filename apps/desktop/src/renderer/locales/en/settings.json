@@ -26,7 +26,8 @@
     "data": "Data",
     "about": "About",
     "mcp": "MCP servers",
-    "fallback": "Fallback"
+    "fallback": "Fallback",
+    "updates": "Updates"
   },
   "on": "On",
   "off": "Off",
@@ -140,7 +141,11 @@
     "backupsDir": "Backups folder",
     "secrets": "Secrets folder",
     "exe": "Executable",
-    "unknown": "Unknown"
+    "unknown": "Unknown",
+    "licenses": "Third-party licences",
+    "licensesValue": "The licences of every package bundled into this build, and NOTICE",
+    "licensesMissing": "Not found: this build was made without them",
+    "open": "Open"
   },
   "status": {
     "settings": "Settings",
@@ -149,7 +154,12 @@
     "quietActive": "Quiet now",
     "awake": "Awake",
     "awakeBattery": "Sleep allowed",
-    "awakeIdle": "Awake when running"
+    "awakeIdle": "Awake when running",
+    "update": "Update {{version}}",
+    "updateTitle": "Crewyard {{version}} is available. Open Settings to download it.",
+    "updateDownloading": "Update {{pct}}%",
+    "updateReady": "Restart to update",
+    "updateReadyTitle": "Crewyard {{version}} is downloaded and verified. Open Settings to install it."
   },
   "keepAwake": {
     "label": "Keep the PC awake while agents run",
@@ -266,5 +276,59 @@
     "termsCancel": "Cancel",
     "termsAccepted": "Terms note accepted {{time}}.",
     "termsRequired": "Accept the provider-terms note before turning account switching on."
+  },
+  "updates": {
+    "version": "This version",
+    "feed": "Update feed",
+    "noFeed": "None in this build",
+    "publisher": "Signature check",
+    "mustBeSigned": "Updates must be signed by {{publisher}}",
+    "unsignedBuild": "Off: this is an unsigned test build",
+    "check": "Check for updates",
+    "checkNow": "Check now",
+    "checking": "Checking the update feed…",
+    "never": "Not checked yet.",
+    "current": "Crewyard is up to date. Checked {{time}}.",
+    "found": "Crewyard {{version}} is available.",
+    "auto": "Check automatically",
+    "autoHint": "Looks for a new version a minute after start and every 6 hours. It never downloads or installs on its own.",
+    "autoOff": "Off: this copy of Crewyard does not update itself.",
+    "off": {
+      "development": "Only an installed copy of Crewyard updates itself. This one is a development build.",
+      "platform": "Updates are not available on this system yet.",
+      "no_feed": "This build has no update feed, so it never looks for updates.",
+      "not_installed": "This copy runs from an unpacked folder. Only the copy the installer put down can update itself.",
+      "invalid": "The update settings this build came with did not pass their checks, so Crewyard does not look for updates."
+    },
+    "newVersion": "New version",
+    "offerLabel": "Crewyard {{version}}",
+    "released": "released {{date}}",
+    "downloadHint": "Before it can be installed, the download is checked against the publisher's signature. Nothing is installed until you restart.",
+    "downloadHintUnsigned": "This test build does not check signatures. Nothing is installed until you restart.",
+    "download": "Download",
+    "downloading": "Downloading the update",
+    "starting": "Starting the download…",
+    "progress": "{{pct}}% · {{done}} of {{total}} · {{speed}}/s",
+    "cancel": "Cancel",
+    "verified": "Downloaded and verified: signed by {{signer}}.",
+    "unverified": "Downloaded. Not signature-checked: this is an unsigned test build.",
+    "installHint": "Crewyard closes, installs the update and opens again. If agents are running, you are asked first.",
+    "install": "Restart to install",
+    "retry": "Try again",
+    "refused": {
+      "not_signed": "Refused: the update is not signed. Nothing was installed, and the download was deleted.",
+      "tampered": "Refused: the update was changed after it was signed. Nothing was installed, and the download was deleted.",
+      "untrusted": "Refused: Windows does not trust the update's signature. Nothing was installed, and the download was deleted.",
+      "wrong_publisher": "Refused: the update is signed by someone other than Crewyard's publisher. Nothing was installed, and the download was deleted.",
+      "check_failed": "Refused: the update's signature could not be checked. Nothing was installed, and the download was deleted."
+    },
+    "error": {
+      "network": "Could not reach the update feed.",
+      "feed": "The update feed did not answer with a usable release.",
+      "checksum": "Refused: the download does not match the checksum the feed lists. Nothing was installed.",
+      "signature": "Refused: the update did not pass the signature check. Nothing was installed.",
+      "disk": "Could not write the download to disk.",
+      "unknown": "The update did not work."
+    }
   }
 }

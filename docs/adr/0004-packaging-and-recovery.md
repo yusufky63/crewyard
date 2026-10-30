@@ -82,7 +82,7 @@ Kills are bounded, because each `taskkill /T` walks the whole process table and 
   - Nothing needs Electron as plain Node: the daemon is a utility process, and Claude runs from its own installed binary.
   - `grantFileProtocolExtraPrivileges` stays on, because the renderer loads its ES modules from `file://`. Moving the renderer to a custom protocol would let us turn it off.
 
-**Code signing** is a documented hook, not a fake certificate.
+**Code signing** is a documented hook, not a fake certificate. (Later the same day, [ADR 0011](0011-signing-and-auto-update.md) replaced electron-builder's signtool route with our own hook and added auto-update.)
 
 - Today's builds are unsigned.
 - To sign, set `WIN_CSC_LINK` (path to the `.pfx`, or its base64) and `WIN_CSC_KEY_PASSWORD` as environment variables, and set `CREWYARD_SIGN=1`.
