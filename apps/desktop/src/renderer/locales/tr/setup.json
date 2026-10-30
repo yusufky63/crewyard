@@ -17,7 +17,8 @@
     "2": { "name": "Ajanlar", "sub": "burada kimler çalışabilir" },
     "3": { "name": "Hesaplar ve bütçe", "sub": "profiller ve limitler" },
     "4": { "name": "Kurallar", "sub": "yedek, onaylar, slotlar" },
-    "5": { "name": "GitHub", "sub": "remote, push, CI" }
+    "5": { "name": "Worktree'ler", "sub": "kurulum, dosyalar, portlar" },
+    "6": { "name": "GitHub", "sub": "remote, push, CI" }
   },
   "problems": {
     "folder": "Adım {{step}}: önce proje klasörünü seçin.",
@@ -25,6 +26,7 @@
     "git": "Adım {{step}}: ajanlar git worktree'lerinde çalışır, bu klasörde git olmalı.",
     "budget": "Adım {{step}}: limitler sıfır ya da daha fazla dolar olmalı.",
     "slots": "Adım {{step}}: slot sayısı 1 ile 16 arasında bir tam sayı olmalı.",
+    "bootstrap": "Adım {{step}}: bir worktree komutu, kopyalama öğesi, sınır ya da port düzeltilmeli.",
     "warnPct": "Adım {{step}}: Actions uyarısı %1 ile %100 arasında olmalı."
   },
   "create": {
@@ -74,7 +76,7 @@
     "pathLongOn": "worktree'deki en uzun yol: {{count}} karakter; Windows uzun yolları açık",
     "pathTruncated": "{{count}} dosyadan sonra durdu; daha uzun bir yol olabilir.",
     "remote": "GitHub remote",
-    "noRemote": "henüz yok, 5. adımda ayarlayabilirsiniz"
+    "noRemote": "henüz yok, 6. adımda ayarlayabilirsiniz"
   },
   "type": {
     "godot-csharp": "Godot · C#",
@@ -163,5 +165,53 @@
     "ciNoCommands": "bir derleme ya da test komutu gerekir (1. adım)",
     "actions": "Actions dakikaları",
     "actionsText": "aylık kotanın yüzde kaçında uyarılsın"
+  },
+  "worktree": {
+    "title": "Görev worktree'leri nasıl başlasın?",
+    "lead": "Her görev kendi git worktree'sinde çalışır; bu klasör node_modules, .env dosyaları ve önbellekler olmadan açılır. Hazırlığını burada tanımlayın.",
+    "setup": "Kurulum",
+    "setupHint": "Her yeni worktree'de ajan başlamadan önce çalışır. Bir adım başarısız olursa ajan başlamaz ve çıktının son satırları gösterilir.",
+    "cleanup": "Temizlik",
+    "cleanupHint": "Crewyard bir worktree'yi kaldırmadan ya da park etmeden önce çalışır. Bir adım başarısız olursa worktree yerinde kalır.",
+    "setupPlaceholder": "ör. pnpm install --frozen-lockfile",
+    "cleanupPlaceholder": "ör. docker compose down",
+    "command": "{{n}}. komut",
+    "timeout": "{{n}}. komutun zaman aşımı (saniye)",
+    "seconds": "sn",
+    "removeStep": "{{n}}. komutu kaldır",
+    "addStep": "Komut ekle",
+    "problem": {
+      "command": "Tek bir program ve argümanları yazın. Boru, && ve yönlendirme için bir betik dosyası kullanın.",
+      "timeout": "Zaman aşımı 1 ile 3600 arasında tam sayı (saniye) olmalı."
+    },
+    "include": "Ana klasörden kopyalanacaklar",
+    "includeHint": "Git'in yok saydığı dosya ya da klasörler, adıyla. Bağlantı değil kopya oluşturulur; içerikleri hiçbir kayda yazılmaz.",
+    "includePlaceholder": ".env.local",
+    "addInclude": "Ekle",
+    "removeInclude": "{{path}} öğesini kaldır",
+    "includeCap": "Kopyalama sınırı",
+    "includeCapHint": "Bu toplamı aşan öğeler atlanır.",
+    "includeNone": "Hiçbir şey kopyalanmıyor. Proje derlenmek için .env ya da bir önbellek klasörüne ihtiyaç duyuyorsa ekleyin.",
+    "includeLabel": "Kopyalama listesi",
+    "entry": {
+      "copy": "kopyalanacak",
+      "missing": "bu klasörde yok",
+      "not_ignored": "git takip ediyor, worktree'de zaten var",
+      "link": "bağlantı ya da junction; kopyalanmaz",
+      "over_cap": "kopyalama sınırını aşıyor; atlanır"
+    },
+    "files_one": "{{count}} dosya",
+    "files_other": "{{count}} dosya",
+    "includeTotal": "Her yeni worktree",
+    "includeTotalText": "{{files}} dosya, {{size}} / {{cap}}",
+    "port": "Dala özel port",
+    "portHint": "Her dal bir aralıktan kendi portunu alır; paralel görevlerdeki geliştirme sunucuları çakışmaz.",
+    "portOn": "Her dala bir port ver",
+    "portRange": "Aralık",
+    "portFrom": "İlk port",
+    "portTo": "Son port",
+    "portVar": "Değişken",
+    "portVarText": "kurulum ve ajanlar {{name}} ile CREWYARD_PORT değişkenlerini alır",
+    "note": "Kurulum ve temizlik komutları yüksek risklidir. Her biri Gelen kutusunda bir kez onaylanır; metni değişirse yeniden sorulur."
   }
 }

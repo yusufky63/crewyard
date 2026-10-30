@@ -8,6 +8,7 @@ import { call, useDaemon } from "../../ipc.ts";
 import { useNav } from "../../nav.ts";
 import { useGithubLive, useMinuteTick, useNumber, useRelative } from "./live.ts";
 import { TaskPullsPanel } from "./TaskPull.tsx";
+import { WorktreeDisk } from "./WorktreeDisk.tsx";
 import "./github.css";
 
 const ICON = { size: 14, strokeWidth: 1.75 } as const;
@@ -195,6 +196,7 @@ function WorktreesPanel({ projectId }: { projectId: string }) {
       ))}
       {w && stale.length === 0 && <span className="gh-note">{t("worktrees.clean")}</span>}
       {dirty > 0 && <span className="gh-note">{t("worktrees.dirtyLine", { count: dirty })}</span>}
+      <WorktreeDisk projectId={projectId} />
     </Panel>
   );
 }

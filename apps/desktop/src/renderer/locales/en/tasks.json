@@ -133,7 +133,8 @@
     "task_cancelled": "task cancelled",
     "handed_off": "handed off",
     "handoff_failed": "handoff failed",
-    "no_adapter": "runner not available"
+    "no_adapter": "runner not available",
+    "bootstrap": { "setup_failed": "worktree setup failed", "denied": "worktree setup was denied" }
   },
   "endReason": {
     "completed": "Completed",

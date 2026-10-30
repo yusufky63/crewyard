@@ -38,6 +38,7 @@ import {
   type TasksTopics,
 } from "@crewyard/core";
 import type { Store } from "../store.ts";
+import { Bootstrapper } from "../worktrees/bootstrap.ts";
 import { admit, DEFAULT_LIMITS, type AdmissionLimits } from "./admission.ts";
 import { AdapterRegistry } from "./adapters.ts";
 import { classifyTask } from "./classify.ts";
@@ -111,6 +112,8 @@ const sameDir = (a: string, b: string) => resolve(a).toLowerCase() === resolve(b
 export class Orchestrator {
   readonly db: OrchestratorDb;
   readonly limits: LimitMonitor;
+  /** Worktree setup, cleanup, include list, port and park (packages/daemon/src/worktrees). */
+  readonly bootstrap: Bootstrapper;
   private directory: ProfileDirectory;
   private readonly adapters: AdapterRegistry;
   private readonly now: () => Date;
@@ -136,6 +139,15 @@ export class Orchestrator {
     this.directory = opts.directory ?? EMPTY_DIRECTORY;
     this.now = opts.now ?? (() => new Date());
     this.limits = new LimitMonitor(this.db, (n) => this.emit("limits.notice", n), this.now);
+    this.bootstrap = new Bootstrapper({
+      store: opts.store,
+      now: this.now,
+      gitBin: opts.gitBin,
+      emit: opts.emit,
+      requestApproval: (taskId, runId, payload) => this.insertRequest(taskId, runId, null, "high", payload),
+      audit: (taskId, runId, kind, payload) => this.audit(taskId, runId, kind, payload),
+      config: (projectId) => this.config(this.db.project(projectId)).config,
+    });
   }
 
   /** Recovers from the last session, then starts scheduling. */
@@ -505,7 +517,9 @@ export class Orchestrator {
     const live = run ? this.live.get(run.id) : undefined;
 
     if (answer.kind === "approval" && answer.decision === "allow_always" && q.risk === "high") throw new OrchestratorError("request.always_high_risk");
-    if ((answer.kind === "approval" || answer.kind === "question") && !live) throw new OrchestratorError("run.not_live");
+    // A worktree bootstrap step is answered by the daemon itself, so its run need not be live (it is held).
+    const boot = payload.kind === "approval" ? (payload.bootstrap ?? null) : null;
+    if ((answer.kind === "approval" || answer.kind === "question") && !live && !boot) throw new OrchestratorError("run.not_live");
     let target: CandidateView | null = null;
     if (answer.kind === "handoff" && payload.kind === "handoff") {
       if (answer.decision === "hand_off") {
@@ -526,6 +540,11 @@ export class Orchestrator {
     if (answer.kind === "approval" && answer.decision === "allow_always" && payload.kind === "approval" && payload.command) {
       const task = this.db.task(q.task_id);
       this.db.exec("insert or ignore into allow_rules (project_id, command, added_at) values (?, ?, ?)", task.project_id, payload.command.trim(), this.iso());
+    }
+    if (boot && (answer.kind === "approval" || answer.kind === "cancel")) {
+      const next = this.bootstrap.answered(q.id, answer.kind === "approval" ? answer.decision : "cancel");
+      for (const id of next.ready) if (this.held.has(id) && !this.live.has(id)) this.track(this.proceed(id, ""));
+      if (next.denied && !this.db.run(next.denied).ended_at) this.endRun(next.denied, "failed", "bootstrap.denied");
     }
     if (answer.kind === "handoff" && run && payload.kind === "handoff") {
       if (answer.decision === "hand_off" && target) this.track(this.performHandoff(run.id, target, payload.trigger === "handoff_failed" ? "limit" : payload.trigger));
@@ -673,6 +692,12 @@ export class Orchestrator {
         await this.pauseForCap(runId, cap, this.iso());
         return;
       }
+      // Worktree bootstrap: setup steps wait for their Inbox approval (the run is held, like a cap) and must pass.
+      const boot = wt && worktreeId ? await this.bootstrap.prepare({ taskId: task.id, projectId: project.id, repoPath: wt.repo_path, path: wt.path, branch: wt.branch }, runId, config) : null;
+      if (boot?.status === "waiting") {
+        this.held.set(runId, spec);
+        return;
+      }
       this.held.delete(runId);
       const req: StartRequest = {
         profile: candidate.profile,
@@ -680,7 +705,7 @@ export class Orchestrator {
         model: target.model,
         prompt: spec.prompt ?? rolePrompt(member.role, task, { plan: this.latestPlan(task.id), branch: worktreeId ? (wt?.branch ?? null) : null }),
         policy: this.policyFor(member.role, config),
-        env: await this.directory.envFor(target.profileId),
+        env: { ...(await this.directory.envFor(target.profileId)), ...(boot?.status === "ready" ? boot.env : {}) },
       };
       const handle = spec.resumeRef ? await adapter.resume(spec.resumeRef, req) : await adapter.start(req);
       this.db.exec("update runs set native_session_id = ?, pid = ? where id = ?", handle.nativeSession?.sessionId ?? null, handle.pid, runId);
@@ -866,7 +891,7 @@ export class Orchestrator {
       model: run.model,
       prompt: text,
       policy: this.policyFor(run.role, this.config(project).config),
-      env: await this.directory.envFor(run.profile_id),
+      env: { ...(await this.directory.envFor(run.profile_id)), ...this.bootstrapEnv(run, project) },
     };
     const handle = await adapter.resume({ runner: run.runner, sessionId: run.native_session_id }, req);
     this.db.exec("update runs set native_session_id = ?, pid = ? where id = ?", handle.nativeSession?.sessionId ?? run.native_session_id, handle.pid, runId);
@@ -1403,6 +1428,13 @@ export class Orchestrator {
   }
 
   // ---------------------------------------------------------------- helpers
+
+  /** Port and worktree variables for a run continuing in its task worktree (worktree bootstrap). */
+  private bootstrapEnv(run: RunRow, project: ProjectRow): Record<string, string> {
+    const wt = run.worktree_id ? this.db.worktree(run.task_id) : null;
+    if (!wt || wt.id !== run.worktree_id) return {};
+    return this.bootstrap.env({ taskId: run.task_id, projectId: project.id, repoPath: wt.repo_path, path: wt.path, branch: wt.branch }, this.config(project).config);
+  }
 
   private config(project: ProjectRow): { config: ProjectConfig; fromFile: boolean } {
     const file = join(project.path, ".mission", "project.json");

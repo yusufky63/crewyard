@@ -133,7 +133,8 @@
     "task_cancelled": "görev iptal edildi",
     "handed_off": "devredildi",
     "handoff_failed": "devir başarısız",
-    "no_adapter": "çalıştırıcı yok"
+    "no_adapter": "çalıştırıcı yok",
+    "bootstrap": { "setup_failed": "worktree kurulumu başarısız", "denied": "worktree kurulumu reddedildi" }
   },
   "endReason": {
     "completed": "Tamamlandı",

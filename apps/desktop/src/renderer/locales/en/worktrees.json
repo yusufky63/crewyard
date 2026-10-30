@@ -1,0 +1,42 @@
+{
+  "total_one": "{{size}} on disk in {{count}} task worktree",
+  "total_other": "{{size}} on disk in {{count}} task worktrees",
+  "measuring": "Measuring task worktrees…",
+  "noSize": "size unknown",
+  "port": "port {{port}}",
+  "parked": "parked, branch kept",
+  "park": "Park",
+  "parkNow": "Commit and park",
+  "parkConfirm": "Commits work in progress on {{branch}}, runs cleanup, then removes the folder. The branch stays; setup runs again when you resume.",
+  "unpark": "Resume",
+  "cancel": "Cancel",
+  "runningHint": "A run of this task has not ended yet.",
+  "more_one": "{{count}} more worktree",
+  "more_other": "{{count}} more worktrees",
+  "state": {
+    "failed": "setup failed",
+    "waiting_approval": "setup waits in the Inbox"
+  },
+  "failure": {
+    "title": "{{command}} failed",
+    "timedOut": "{{command}} timed out",
+    "noOutput": "No output."
+  },
+  "error": {
+    "load": "Could not read worktree sizes.",
+    "unknown": "That did not work. Try again.",
+    "worktree": {
+      "running": "A run of this task is still open, so the worktree stays.",
+      "parked": "This worktree is already parked.",
+      "not_parked": "The worktree folder is already there.",
+      "not_found": "This task has no worktree.",
+      "cleanup_needs_approval": "A cleanup command waits for your approval in the Inbox. The worktree stays until then.",
+      "cleanup_failed": "A cleanup command failed, so the worktree stays. Its output is below.",
+      "branch_elsewhere": "The branch is checked out in another worktree.",
+      "path_taken": "Another folder is already at this path."
+    },
+    "git": {
+      "failed": "Git refused. The worktree may have untracked or changed files."
+    }
+  }
+}

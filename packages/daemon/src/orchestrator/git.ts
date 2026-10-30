@@ -4,7 +4,8 @@ import { run } from "@crewyard/proc";
 import { OrchestratorError } from "./errors.ts";
 
 // Git through @crewyard/proc only. Worktrees live under `<projects parent>\.mc\worktrees\<repo>\<task>`
-// (PLAN.md §10) and are never deleted here: cleanup is the GitHub work's job, after merge and a click.
+// (PLAN.md §10) and are never deleted as a side effect: removal is the GitHub work's job after merge
+// and a click, or a confirmed park, which keeps the branch.
 
 const GIT_ENV = { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" };
 
@@ -101,7 +102,15 @@ export async function checkpoint(cwd: string, message: string, bin = "git"): Pro
   return { sha: await headSha(cwd, bin), committed: dirty };
 }
 
-export const diffStat = async (cwd: string, baseSha: string, bin = "git") => (await git(cwd, ["diff", "--stat", baseSha, "HEAD"], bin)).trim();
+/**
+ * Removes one task worktree folder and its registration; the branch stays. No --force, so git
+ * itself refuses a worktree that still has changes or untracked files.
+ */
+export async function removeWorktreeKeepBranch(repoPath: string, path: string, bin = "git"): Promise<void> {
+  await git(repoPath, ["worktree", "remove", path], bin);
+}
+
+export const diffStat =async (cwd: string, baseSha: string, bin = "git") => (await git(cwd, ["diff", "--stat", baseSha, "HEAD"], bin)).trim();
 
 export const isClean = async (cwd: string, bin = "git") => (await git(cwd, ["status", "--porcelain"], bin)).trim().length === 0;
 

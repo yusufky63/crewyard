@@ -12,3 +12,4 @@ export * from "./ipc/github.ts";
 export * from "./ipc/setup.ts";
 export * from "./ipc/crew.ts";
 export * from "./ipc/settings.ts";
+export * from "./ipc/worktrees.ts";
