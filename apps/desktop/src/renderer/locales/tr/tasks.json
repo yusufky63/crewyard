@@ -207,13 +207,6 @@
     "needYou": "{{count}} sizi bekliyor",
     "needYouTitle": "Gelen kutusundaki açık istekler"
   },
-  "toast": {
-    "requestTitle": "Crewyard sizi bekliyor",
-    "requestBody": "“{{task}}” görevinde bir ajan sizi bekliyor.",
-    "warnTitle": "Limite yaklaşılıyor",
-    "criticalTitle": "Limit dolmak üzere",
-    "limitBody": "{{window}}: %{{pct}} kullanıldı."
-  },
   "inspector": {
     "label": "Çalışma ayrıntıları",
     "close": "Paneli kapat (Esc)",

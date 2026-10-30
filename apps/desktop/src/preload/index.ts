@@ -14,6 +14,12 @@ const api: CrewyardApi = {
   appInfo: () => ipcRenderer.invoke("crewyard:app-info"),
   pickFolder: () => ipcRenderer.invoke("crewyard:pick-folder"),
   setTitleBar: (colors) => ipcRenderer.send("crewyard:titlebar", colors),
+  startup: () => ipcRenderer.invoke("crewyard:startup"),
+  setStartup: (next) => ipcRenderer.invoke("crewyard:set-startup", next),
+  pickDatabase: (mode, defaultName) => ipcRenderer.invoke("crewyard:pick-database", mode, defaultName),
+  revealPath: (path) => ipcRenderer.send("crewyard:reveal", path),
+  setLanguage: (language) => ipcRenderer.send("crewyard:language", language),
+  testToast: () => ipcRenderer.send("crewyard:test-toast"),
 };
 
 contextBridge.exposeInMainWorld("crewyard", api);

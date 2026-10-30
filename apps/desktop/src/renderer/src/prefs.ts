@@ -16,6 +16,7 @@ interface Prefs {
   setTheme(theme: ThemePref): void;
   setDensity(density: Density): void;
   setLanguage(language: Language | null): void;
+  setScanRoot(scanRoot: string): void;
 }
 
 // localStorage can be missing or throw (private profiles, blocked storage); fall back to memory.
@@ -54,6 +55,7 @@ export const usePrefs = create<Prefs>()(
       setTheme: (theme) => set({ theme }),
       setDensity: (density) => set({ density }),
       setLanguage: (language) => set({ language }),
+      setScanRoot: (scanRoot) => set({ scanRoot }),
     }),
     { name: "crewyard:prefs", storage: createJSONStorage(() => safeStorage), version: 1 },
   ),

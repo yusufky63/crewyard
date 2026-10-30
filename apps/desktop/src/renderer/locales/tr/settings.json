@@ -1,0 +1,135 @@
+{
+  "nav": "Ayarlar",
+  "title": "Ayarlar",
+  "context": "Bu bilgisayarda tutulur · {{path}}",
+  "back": "Geri",
+  "sectionsLabel": "Ayar bölümleri",
+  "sections": {
+    "general": "Genel",
+    "projects": "Projeler",
+    "notifications": "Bildirimler",
+    "startup": "Başlangıç",
+    "data": "Veri",
+    "about": "Hakkında"
+  },
+  "on": "Açık",
+  "off": "Kapalı",
+  "saveFailed": "Kaydedilemedi: {{error}}",
+  "general": {
+    "language": "Dil",
+    "languageHint": "Sistem, Windows'un görüntüleme dilini izler.",
+    "system": "Sistem",
+    "theme": "Tema",
+    "themeHint": "Sistem, Windows'un uygulama modunu izler.",
+    "dark": "Koyu",
+    "light": "Açık",
+    "density": "Yoğunluk",
+    "densityHint": "Sıkı görünüm bir ekrana daha çok satır sığdırır.",
+    "comfortable": "Rahat",
+    "compact": "Sıkı",
+    "scope": "Dil, tema ve yoğunluk veritabanında değil, bu pencere profilinde saklanır."
+  },
+  "projects": {
+    "root": "Projeler klasörü",
+    "rootHint": "Başlangıç ekranı içe aktarılacak depoları burada arar, yeni projeler de burada oluşturulur.",
+    "change": "Değiştir",
+    "added": "Eklenen proje: {{count}}"
+  },
+  "notifications": {
+    "enabled": "Windows bildirimleri",
+    "enabledHint": "Sorular, onaylar ve limitler. Gelen kutusu ve bildirim alanındaki sayı her şeyi her zaman gösterir.",
+    "quiet": "Sessiz saatler",
+    "quietHint": "Bu saatler arasında bildirim gösterilmez. Sonradan da gösterilmez; gelen kutusunda bekler.",
+    "from": "Başlangıç",
+    "to": "Bitiş",
+    "quietEmpty": "Başlangıç ve bitiş aynı saat olduğu için sessiz saatler hiç uygulanmaz.",
+    "quietNow": "Şu an sessiz, bitiş {{time}}.",
+    "approve": "Bildirimden bir kez onayla",
+    "approveHint": "Yalnızca düşük riskli onaylar: salt okunur komutlar ve çalışma ağacındaki izinli derleme ya da test komutları. Orta ve yüksek risk her zaman gelen kutusunu açar.",
+    "limit": "Bildirimlerde limit eylemleri",
+    "limitHint": "Limit doldu bildiriminde Devret ve Sıfırlanmayı bekle düğmeleri. Devret yalnızca önerilen yedeğe gider ve onun harcama sınırlarına uyar.",
+    "muted": "Sessize alınan projeler",
+    "mutedHint": "Sessize alınan proje bildirim göstermez. Hesap genelindeki limit uyarıları yine görünür.",
+    "noProjects": "Henüz proje eklenmedi.",
+    "notify": "Bildir",
+    "mute": "Sessiz",
+    "test": "Deneme gönder",
+    "testLabel": "Deneme bildirimi",
+    "testHint": "Sessiz saatlerde bile hemen bir bildirim gösterir.",
+    "unsupported": "Bu çalıştırmada Windows bildirimleri kullanılamıyor."
+  },
+  "startup": {
+    "login": "Windows ile başlat",
+    "loginHint": "Windows'ta oturum açtığınızda Crewyard başlar. Siz açmadıkça kapalıdır.",
+    "hidden": "Bildirim alanında başlat",
+    "hiddenHint": "Pencereyi açmadan başlar. Pencereyi bildirim alanındaki simgeden açabilirsiniz.",
+    "dev": "Geliştirme sürümü: Windows, electron.exe'yi {{path}} ile başlatacak.",
+    "unsupported": "Bu çalıştırmada kullanılamıyor.",
+    "close": "Pencereyi kapatmak",
+    "closeHint": "Ajanlar çalışırken pencereyi kapatmak onları durdurmaz; Crewyard bildirim alanında kalır. Çalışan bir şey yoksa kapatmak uygulamadan çıkar. Bildirim alanından çıkarken önce sorulur ve neyin duracağı yazılır."
+  },
+  "data": {
+    "db": "Veritabanı",
+    "dbMeta": "{{size}} · WAL {{wal}} · şema {{version}}",
+    "backup": "Şimdi yedekle",
+    "export": "Dışa aktar",
+    "restore": "Dosyadan geri yükle",
+    "backupHint": "Tutarlı bir anlık görüntü; ajanlar çalışırken de güvenlidir. API anahtarları dahil değildir: bu Windows hesabına göre şifrelenir ve gizli anahtarlar klasöründe kalır.",
+    "backups": "Yedekler",
+    "noBackups": "Henüz yedek yok.",
+    "origin": {
+      "manual": "Elle",
+      "safety": "Geri yükleme öncesi",
+      "export": "Dışa aktarma"
+    },
+    "restoreRow": "Geri yükle",
+    "reveal": "Klasörde göster",
+    "blocked": "Ajanlar çalışırken geri yükleme yapılamaz. Açık çalışma: {{count}}. Önce bunları durdurun ya da bitmelerini bekleyin.",
+    "working": "Çalışıyor…",
+    "restarting": "Geri yükleniyor. Arka plan hizmeti yeniden başlıyor.",
+    "done": {
+      "backup": "{{name}} olarak yedeklendi.",
+      "export": "{{path}} konumuna aktarıldı.",
+      "restore": "{{name}} geri yüklendi. Yerine geçtiği veritabanı {{safety}} olarak saklandı."
+    },
+    "confirm": {
+      "title": "Bu veritabanı geri yüklensin mi?",
+      "body": "Crewyard veritabanını {{name}} ile değiştirir ve arka plan hizmetini yeniden başlatır.",
+      "safety": "Önce geçerli veritabanının bir kopyası Yedekler'e kaydedilir; bu işlem geri alınabilir.",
+      "keys": "API anahtarları yedeğe dahil değildir. Anahtarlar gizli anahtarlar klasöründe kalır; geri yüklenen veritabanında olmayan profiller onları kullanmaz.",
+      "cancel": "Vazgeç",
+      "ok": "Geri yükle ve yeniden başlat"
+    },
+    "errors": {
+      "settings.invalid": "Bu değer geçerli değil.",
+      "data.path": "Crewyard'ın kullandığı veritabanı dışında bir .db dosyası seçin.",
+      "data.exists": "Bu adla bir dosya zaten var.",
+      "restore.agents_running": "Ajanlar çalışıyor. Geri yüklemeden önce durdurun ya da bitmelerini bekleyin.",
+      "restore.not_database": "Bu dosya bir SQLite veritabanı değil.",
+      "restore.integrity": "Bu veritabanı bozuk: bütünlük denetimi başarısız oldu.",
+      "restore.not_crewyard": "Bu veritabanı Crewyard'a ait değil.",
+      "restore.newer_schema": "Bu veritabanı Crewyard'ın daha yeni bir sürümünden. Önce uygulamayı güncelleyin.",
+      "unknown": "Bir sorun oluştu: {{error}}"
+    }
+  },
+  "about": {
+    "version": "Sürüm",
+    "packaged": "Kurulu sürüm",
+    "development": "Geliştirme sürümü",
+    "runtime": "Çalışma ortamı",
+    "runtimeValue": "Electron {{electron}} · Chromium {{chrome}} · Node {{node}} · SQLite {{sqlite}}",
+    "profile": "Profil klasörü",
+    "data": "Veri klasörü",
+    "database": "Veritabanı",
+    "backupsDir": "Yedekler klasörü",
+    "secrets": "Gizli anahtarlar klasörü",
+    "exe": "Çalıştırılabilir dosya",
+    "unknown": "Bilinmiyor"
+  },
+  "status": {
+    "settings": "Ayarlar",
+    "quiet": "Sessiz {{from}}–{{to}}",
+    "quietTitle": "Sessiz saatler. Bildirimler gösterilmez; gelen kutusu yine dolar.",
+    "quietActive": "Şu an sessiz"
+  }
+}

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CandidateView, CrewMemberView, LimitNoticePayload, RequestView, RunView, TaskDetail } from "@crewyard/core";
 import { currentRun, diffTotals, elapsedMs, filterCounts, formatDuration, limitBanner, matchesFilter, resolveTarget, runnersOf, splitTaskText, statusLine, stepState } from "./model.ts";
-import { emptyToastState, limitToast, requestToast } from "./toasts.ts";
 
 const cand = (profileId: string, runner: CandidateView["runner"] = "codex"): CandidateView => ({
   profileId,
@@ -166,30 +165,5 @@ describe("limit banner", () => {
     // An account-wide notice (no run) still applies to the open run on that account.
     expect(limitBanner(task({ runs: live }), [notice({ runId: null })])).toMatchObject({ runId: "r2" });
     expect(limitBanner(task({ runs: live }), [])).toBeNull();
-  });
-});
-
-describe("toasts", () => {
-  it("raises one toast per crossing and re-arms only after the window resets or drops under 70%", () => {
-    const s = emptyToastState();
-    expect(limitToast(s, notice({ usedPct: 82 }))).toBe("warn");
-    expect(limitToast(s, notice({ usedPct: 85 }))).toBeNull();
-    expect(limitToast(s, notice({ kind: "critical", usedPct: 96 }))).toBe("critical");
-    expect(limitToast(s, notice({ kind: "critical", usedPct: 97 }))).toBeNull();
-    // A new window instance re-arms.
-    expect(limitToast(s, notice({ usedPct: 81, resetsAt: "2026-10-30T20:00:00.000Z" }))).toBe("warn");
-    expect(limitToast(s, notice({ kind: "ahead_of_pace" }))).toBeNull();
-    expect(limitToast(s, notice({ kind: "reached", usedPct: 100 }))).toBeNull();
-    // Context windows belong to one run each.
-    expect(limitToast(s, notice({ window: "context", runId: "x", resetsAt: null }))).toBe("warn");
-    expect(limitToast(s, notice({ window: "context", runId: "y", resetsAt: null }))).toBe("warn");
-  });
-
-  it("toasts a request once, when it opens", () => {
-    const s = emptyToastState();
-    const ev = { requestId: "q", taskId: "t", projectId: "p", open: true };
-    expect(requestToast(s, ev)).toBe(true);
-    expect(requestToast(s, ev)).toBe(false);
-    expect(requestToast(s, { ...ev, requestId: "q2", open: false })).toBe(false);
   });
 });

@@ -1,0 +1,135 @@
+{
+  "nav": "Settings",
+  "title": "Settings",
+  "context": "Kept on this PC · {{path}}",
+  "back": "Back",
+  "sectionsLabel": "Settings sections",
+  "sections": {
+    "general": "General",
+    "projects": "Projects",
+    "notifications": "Notifications",
+    "startup": "Startup",
+    "data": "Data",
+    "about": "About"
+  },
+  "on": "On",
+  "off": "Off",
+  "saveFailed": "Could not save: {{error}}",
+  "general": {
+    "language": "Language",
+    "languageHint": "System follows the Windows display language.",
+    "system": "System",
+    "theme": "Theme",
+    "themeHint": "System follows the Windows app mode.",
+    "dark": "Dark",
+    "light": "Light",
+    "density": "Density",
+    "densityHint": "Compact fits more rows on a screen.",
+    "comfortable": "Comfortable",
+    "compact": "Compact",
+    "scope": "Language, theme and density belong to this window profile, not to the database."
+  },
+  "projects": {
+    "root": "Projects folder",
+    "rootHint": "Start looks here for repositories to import, and new projects are created here.",
+    "change": "Change",
+    "added": "Projects added: {{count}}"
+  },
+  "notifications": {
+    "enabled": "Windows notifications",
+    "enabledHint": "Questions, approvals and limits. The Inbox and the tray count always show everything.",
+    "quiet": "Quiet hours",
+    "quietHint": "No notifications between these times. Nothing is shown afterwards; it waits in the Inbox.",
+    "from": "From",
+    "to": "To",
+    "quietEmpty": "Start and end are the same time, so quiet hours never apply.",
+    "quietNow": "Quiet now, until {{time}}.",
+    "approve": "Approve once from a notification",
+    "approveHint": "Only low-risk approvals: read-only commands and allowlisted build or test commands inside the worktree. Medium and high risk always open the Inbox.",
+    "limit": "Limit actions in notifications",
+    "limitHint": "Hand off and Wait for reset on a limit-reached notification. Hand off goes only to the proposed standby and still respects its spend caps.",
+    "muted": "Muted projects",
+    "mutedHint": "A muted project raises no notifications. Account-wide limit warnings still show.",
+    "noProjects": "No projects added yet.",
+    "notify": "Notify",
+    "mute": "Muted",
+    "test": "Send test",
+    "testLabel": "Test notification",
+    "testHint": "Shows one notification now, even during quiet hours.",
+    "unsupported": "Windows notifications are not available in this run."
+  },
+  "startup": {
+    "login": "Start with Windows",
+    "loginHint": "Crewyard starts when you sign in to Windows. Off unless you turn it on.",
+    "hidden": "Start in the tray",
+    "hiddenHint": "Starts without opening the window. Open it from the tray icon.",
+    "dev": "Development build: Windows will start electron.exe with {{path}}.",
+    "unsupported": "Not available in this run.",
+    "close": "Closing the window",
+    "closeHint": "While agents run, closing the window keeps them running and Crewyard stays in the tray. With nothing running, closing quits. Quitting from the tray asks first and names what it stops."
+  },
+  "data": {
+    "db": "Database",
+    "dbMeta": "{{size}} · WAL {{wal}} · schema {{version}}",
+    "backup": "Back up now",
+    "export": "Export",
+    "restore": "Restore from file",
+    "backupHint": "A consistent snapshot, safe while agents run. API keys are not included: they are encrypted for this Windows account and stay in the secrets folder.",
+    "backups": "Backups",
+    "noBackups": "No backups yet.",
+    "origin": {
+      "manual": "Manual",
+      "safety": "Before restore",
+      "export": "Export"
+    },
+    "restoreRow": "Restore",
+    "reveal": "Show in folder",
+    "blocked": "Restore is unavailable while agents run. Open runs: {{count}}. Stop or finish them first.",
+    "working": "Working…",
+    "restarting": "Restoring. The background service is restarting.",
+    "done": {
+      "backup": "Backed up to {{name}}.",
+      "export": "Exported to {{path}}.",
+      "restore": "Restored from {{name}}. The database it replaced is saved as {{safety}}."
+    },
+    "confirm": {
+      "title": "Restore this database?",
+      "body": "Crewyard replaces its database with {{name}} and restarts its background service.",
+      "safety": "A copy of the current database is saved to Backups first, so this can be undone.",
+      "keys": "API keys are not part of a backup. Keys stay in the secrets folder; profiles that do not exist in the restored database will not use them.",
+      "cancel": "Cancel",
+      "ok": "Restore and restart"
+    },
+    "errors": {
+      "settings.invalid": "That value is not valid.",
+      "data.path": "Choose a .db file that is not Crewyard's live database.",
+      "data.exists": "A file with that name already exists.",
+      "restore.agents_running": "Agents are running. Stop or finish them before restoring.",
+      "restore.not_database": "That file is not a SQLite database.",
+      "restore.integrity": "That database is damaged: its integrity check failed.",
+      "restore.not_crewyard": "That database was not made by Crewyard.",
+      "restore.newer_schema": "That database comes from a newer Crewyard. Update the app first.",
+      "unknown": "Something went wrong: {{error}}"
+    }
+  },
+  "about": {
+    "version": "Version",
+    "packaged": "Installed build",
+    "development": "Development build",
+    "runtime": "Runtime",
+    "runtimeValue": "Electron {{electron}} · Chromium {{chrome}} · Node {{node}} · SQLite {{sqlite}}",
+    "profile": "Profile folder",
+    "data": "Data folder",
+    "database": "Database",
+    "backupsDir": "Backups folder",
+    "secrets": "Secrets folder",
+    "exe": "Executable",
+    "unknown": "Unknown"
+  },
+  "status": {
+    "settings": "Settings",
+    "quiet": "Quiet {{from}}–{{to}}",
+    "quietTitle": "Quiet hours. Notifications are held back; the Inbox still fills.",
+    "quietActive": "Quiet now"
+  }
+}

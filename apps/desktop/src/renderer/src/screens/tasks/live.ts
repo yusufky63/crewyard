@@ -3,10 +3,9 @@ import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import i18n from "i18next";
 import { create } from "zustand";
 import type { AgentEvent, LimitNoticePayload, TasksTopics } from "@crewyard/core";
-import { call } from "../../ipc.ts";
+import type { NavigateTarget } from "../../../../shared/api.ts";
 import { useNav } from "../../nav.ts";
 import { FIXTURE, fixtureNotices } from "./fixture.ts";
-import { emptyToastState, limitToast, requestToast } from "./toasts.ts";
 
 // Live state from the daemon's push topics. Facts stay in the daemon and are re-read with
 // tasks.get; this store only keeps what exists nowhere else: the latest limit notices and what
@@ -52,23 +51,24 @@ function invalidateTask(qc: QueryClient, taskId: string): void {
 
 const isWorkQuery = (key: unknown) => typeof key === "string" && (key.startsWith("tasks.") || key.startsWith("requests."));
 
-function toast(title: string, body: string, onClick: () => void, tag: string): void {
-  if (FIXTURE || typeof Notification === "undefined" || Notification.permission === "denied") return;
-  const n = new Notification(title, { body, tag });
-  n.onclick = () => {
-    window.focus();
-    onClick();
-  };
+/** Where a toast or the tray sends the user; ids are only used to pick what to show. */
+export function openTarget(target: NavigateTarget): void {
+  const nav = useNav.getState();
+  if (target.screen === "settings") return nav.go("settings");
+  if (target.projectId && target.projectId !== nav.projectId) nav.openProject(target.projectId);
+  if (!useNav.getState().projectId) return;
+  if (target.taskId) nav.selectTask(target.taskId);
+  nav.go(target.screen);
 }
 
 /**
- * Mounted once by the shell: keeps every tasks.* and requests.* query fresh, feeds the activity
- * store and raises Windows toasts through the renderer Notification API (no main-process work).
+ * Mounted once by the shell: keeps every tasks.* and requests.* query fresh and feeds the activity
+ * store. Windows toasts come from the main process (src/main/notify), which also sends
+ * `app.navigate` when one is clicked; the language report below tells it the renderer listens.
  */
 export function useWorkLive(): void {
   const qc = useQueryClient();
   useEffect(() => {
-    const toasts = emptyToastState();
     const pending = new Set<string>();
     let timer: ReturnType<typeof setTimeout> | null = null;
     // Runs stream many events a second; refetch each task at most every 750 ms.
@@ -80,8 +80,6 @@ export function useWorkLive(): void {
         pending.clear();
       }, 750);
     };
-    const t = (key: string, opts?: Record<string, unknown>) => i18n.t(key, { ns: "tasks", ...opts });
-
     const offs = [
       window.crewyard.on("tasks.changed", (p) => {
         const ev = p as TasksTopics["tasks.changed"];
@@ -93,20 +91,6 @@ export function useWorkLive(): void {
         void qc.invalidateQueries({ queryKey: ["requests.list"] });
         void qc.invalidateQueries({ queryKey: ["tasks.list"] });
         invalidateTask(qc, ev.taskId);
-        if (!requestToast(toasts, ev)) return;
-        void call("tasks.get", { taskId: ev.taskId })
-          .then((task) =>
-            toast(
-              t("toast.requestTitle"),
-              t("toast.requestBody", { task: task.title }),
-              () => {
-                useNav.getState().selectTask(ev.taskId);
-                useNav.getState().go("inbox");
-              },
-              `request-${ev.requestId}`,
-            ),
-          )
-          .catch(() => undefined);
       }),
       window.crewyard.on("runs.event", (p) => {
         const ev = p as TasksTopics["runs.event"];
@@ -117,23 +101,17 @@ export function useWorkLive(): void {
         const n = p as LimitNoticePayload;
         useActivity.getState().addNotice(n);
         if (n.taskId) queue(n.taskId);
-        const level = limitToast(toasts, n);
-        if (!level) return;
-        const pct = n.usedPct === null ? "" : Math.round(n.usedPct);
-        toast(
-          t(`toast.${level}Title`),
-          t("toast.limitBody", { window: t(`window.${n.window}`), pct }),
-          () => {
-            if (n.taskId) useNav.getState().selectTask(n.taskId);
-            useNav.getState().go(n.taskId ? "tasks" : "limits");
-          },
-          `limit-${n.profileId}-${n.window}-${level}`,
-        );
       }),
+      window.crewyard.on("app.navigate", (p) => openTarget(p as NavigateTarget)),
       window.crewyard.on("daemon.ready", () => void qc.invalidateQueries({ predicate: (q) => isWorkQuery(q.queryKey[0]) })),
     ];
+    // Tray, toasts and dialogs speak the language the window shows.
+    const report = (lng: string) => window.crewyard.setLanguage(lng);
+    report(i18n.language);
+    i18n.on("languageChanged", report);
     return () => {
       offs.forEach((off) => off());
+      i18n.off("languageChanged", report);
       if (timer) clearTimeout(timer);
     };
   }, [qc]);

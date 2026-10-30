@@ -3,6 +3,7 @@ import type { DaemonStatus, IpcMessage, IpcMethods, IpcResponse } from "@crewyar
 import { createCrewHandlers } from "./handlers/crew.ts";
 import { createGithubHandlers } from "./handlers/github.ts";
 import { createProvidersHandlers } from "./handlers/providers.ts";
+import { createSettingsHandlers } from "./handlers/settings.ts";
 import { createSetupHandlers } from "./handlers/setup.ts";
 import { createTasksHandlers } from "./handlers/tasks.ts";
 import type { HandlerContext, HandlerMap } from "./handlers/types.ts";
@@ -40,6 +41,7 @@ export function createHandlers(ctx: HandlerContext): Handlers {
     ...createGithubHandlers(ctx),
     ...createSetupHandlers(ctx),
     ...createCrewHandlers(ctx),
+    ...createSettingsHandlers(ctx),
   };
 }
 

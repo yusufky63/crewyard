@@ -1,0 +1,67 @@
+{
+  "tray": {
+    "tooltip": "Crewyard",
+    "tooltipWork": "Crewyard · {{running}} çalışıyor · {{needYou}} sizi bekliyor",
+    "open": "Crewyard'ı aç",
+    "running": "Çalışan ajan: {{count}}",
+    "needYou": "Sizi bekleyen: {{count}}",
+    "openInbox": "Gelen kutusunu aç",
+    "quiet": "Sessiz saatler · bitiş {{time}}",
+    "quit": "Crewyard'dan çık…"
+  },
+  "quit": {
+    "title": "Crewyard'dan çık",
+    "message": "Çıkılsın ve {{count}} ajan durdurulsun mu?",
+    "detail": "Şunlar şimdi durur:\n{{list}}\n\nHer çalışma yarıda kalmış olarak işaretlenir ve görevinden devam ettirilebilir. Çalışma ağaçları ve commit'ler yerinde kalır.",
+    "more": "ve {{count}} tane daha",
+    "taskLine": "{{task}} · {{project}}",
+    "confirm": "Çık ve ajanları durdur",
+    "cancel": "Çalışmaya devam etsin"
+  },
+  "hidden": {
+    "title": "Crewyard hâlâ çalışıyor",
+    "body": "Pencereyi kapatmak ajanları durdurmaz. Crewyard'ı bildirim alanındaki simgeden yeniden açabilirsiniz."
+  },
+  "toast": {
+    "approvalTitle": {
+      "low": "Düşük riskli onay",
+      "medium": "Orta riskli onay",
+      "high": "Yüksek riskli onay",
+      "unknown": "Onay gerekiyor"
+    },
+    "network": "Ağ erişimi",
+    "paths": "{{path}} konumuna yazacak",
+    "questionTitle": "Bir ajanın sorusu var",
+    "limitTitle": "Limit doldu",
+    "limitResets": "{{window}} · sıfırlanma {{time}}",
+    "limitNoReset": "{{window}} · sıfırlanma saati bildirilmedi",
+    "budgetTitle": "Harcama sınırına ulaşıldı",
+    "budgetBody": "Siz karar verene kadar duraklatıldı.",
+    "handoffTitle": "Bir devir sizi bekliyor",
+    "warnTitle": "Limite yaklaşılıyor",
+    "criticalTitle": "Limit dolmak üzere",
+    "limitPct": "{{window}}: %{{pct}} kullanıldı",
+    "limitUnknown": "{{window}}: kullanım bilinmiyor",
+    "test": "Deneme bildirimi",
+    "testBody": "Crewyard bildirimleri böyle görünür."
+  },
+  "button": {
+    "approve": "Bir kez onayla",
+    "open": "Gelen kutusunda aç",
+    "handoff": "Devret",
+    "wait": "Sıfırlanmayı bekle"
+  },
+  "window": {
+    "5h": "5 saatlik pencere",
+    "weekly": "Haftalık pencere",
+    "daily": "Günlük pencere",
+    "context": "Bağlam penceresi",
+    "budget-day": "Günlük harcama sınırı",
+    "budget-task": "Görev bütçesi"
+  },
+  "dialog": {
+    "exportTitle": "Crewyard veritabanını dışa aktar",
+    "restoreTitle": "Geri yüklenecek veritabanını seçin",
+    "dbFilter": "SQLite veritabanı"
+  }
+}
