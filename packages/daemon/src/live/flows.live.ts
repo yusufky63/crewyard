@@ -477,6 +477,8 @@ describe.runIf(live)("crewyard live", () => {
   for (const [key, runner] of [
     ["cc-ds", "claude-code/deepseek"],
     ["oc-ds", "opencode/deepseek"],
+    // Codex reaches MCP through `mcp_servers.<name>` in the thread config (ADR 0007); untried live until 2026-10-30.
+    ["cx-ds", "codex/deepseek"],
   ] as const) {
     const flow = `mcp report on ${runner}`;
     it(flow, { timeout: 10 * MIN }, async () => {
