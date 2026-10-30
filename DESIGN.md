@@ -110,7 +110,7 @@ Icons inside buttons are 14 px.
   - Every item that has a screen opens it on click. Below 1180 px the lower-priority items (RAM, GitHub sync, Actions) hide.
 - **Sidebar** is two framed blocks:
   - **Nav:** six destinations, counters only on Inbox. The active item gets bright corner ticks.
-  - **Accounts:** pinned to the bottom. One 28 px line per account (vendor mark, name, 8-tick meter, value: % for plan windows, $ for API keys, `—` for unknown), sorted most urgent first. It scrolls on its own above about 236 px (34% of the window height), so many accounts never push the nav away. `ALL LIMITS` opens Limits.
+  - **Accounts:** pinned to the bottom, sorted most urgent first. Each account is a 28 px name line (vendor mark, name, value: the fullest plan window's %, today's $ for an API key, an action such as `Sign in`, or `—`), then one full-width row per window or bucket it has reported: short label (`5 h`, `weekly`, `monthly`, a bucket name), 24-tick meter, %, and a line with provenance and reset time. An API key with a daily cap gets one `cap` row; a key without a cap shows its spend as text only. A plan with nothing reported yet gets a single Unknown row (dashed meter), never one per possible window; a profile that must sign in or update shows no meter. With no accounts at all the block is not drawn (the Start checklist points to Providers). It scrolls on its own above about 236 px (34% of the window height), so many accounts never push the nav away. `ALL LIMITS` opens Limits.
 - **Breakpoints:** below 1280 px the inspector overlays the main view; below 1180 px the sidebar becomes a 56 px icon rail (the accounts block hides; the status bar still shows near-limit counts). 960 px is the minimum supported width.
 
 ## 5. Components
@@ -120,7 +120,7 @@ Icons inside buttons are 14 px.
 | `TitleBar` | brand, project switcher, command search, notifications | notifications popover | `-webkit-app-region: drag` except on controls |
 | `StatusBar` | daemon, slots, need you, near limit, RAM, GitHub sync, Actions, quiet hours, theme, density | each item opens its screen | mono 11 px, items separated by hairlines |
 | `Sidebar` | framed nav block (6 items, Inbox count) | rail mode | active item marked by bright corner ticks |
-| `AccountsBlock` | pinned to the sidebar bottom, one line per account, most urgent first | scrolls on its own; tooltip with source and reset | value shows % (plan window), $ (API key today vs cap) or `—` (unknown) |
+| `AccountsBlock` | pinned to the sidebar bottom, most urgent first; per account a name line and one meter row per reported window, bucket or cap | scrolls on its own; tooltip with every window, source and age | hidden with no accounts; value shows % (plan window), $ (API key today) or `—`; 80/95% colours and a provenance label on every meter row; a key without a cap has no meter |
 | `BrandIcon` | the vendor's mark for a catalog provider id, a runner id or `git` / `github` | `label` turns it into a named image; otherwise it is decorative next to the visible name | `packages/ui`; data in `brand-icons.gen.ts`, never edited by hand |
 | `ProjectTile` | index, line-art type glyph, name, path (ellipsized, full path in tooltip), state line, last opened | opens the project | dashed variant for `Import from C:\Projeler` |
 | `Stepper` | numbered spec tiles, current one with accent ticks, finished ones labelled `Done` | any step is clickable | `Back` / `Next: <step>` / `Create project` in the pane footer |

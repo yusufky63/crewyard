@@ -6,6 +6,8 @@ import { DEFAULT_THRESHOLDS } from "@crewyard/core";
 // a normal run never reads anything from this file. Methods not listed here go to the real daemon.
 
 export const FIXTURE = typeof location !== "undefined" && new URLSearchParams(location.search).has("fixture");
+/** `fixture=empty`: nothing added yet, for the hidden accounts block. `fixture=keys`: the key and Unknown rows first. */
+const VARIANT = FIXTURE ? new URLSearchParams(location.search).get("fixture") : null;
 
 const T0 = Date.now();
 const ago = (min: number) => new Date(T0 - min * 60_000).toISOString();
@@ -32,11 +34,12 @@ const PROFILES: ProfileSummary[] = [
   profile("p-ds", "ds-primary", "opencode", "deepseek", "c-ds", null),
   profile("p-zai", "zai", "claude-code", "zai-coding-plan", "c-zai", null),
   profile("p-ocg", "zen", "opencode", "opencode-go", "c-ocg", null),
+  profile("p-kimi", "kimi", "claude-code", "kimi-code-plan-global", "c-kimi", null),
 ];
 
 const credential = (id: string, alias: string, providerId: string, dailyUsd: number | null): CredentialSummary => ({ id, alias, providerId, kind: "api_key", isSet: true, caps: { dailyUsd, taskUsd: dailyUsd === null ? null : 2 }, createdAt: ago(60 * 24 * 3) });
 
-const CREDENTIALS: CredentialSummary[] = [credential("c-ds", "ds-primary", "deepseek", 5), credential("c-zai", "zai", "zai-coding-plan", null), credential("c-ocg", "zen", "opencode-go", null)];
+const CREDENTIALS: CredentialSummary[] = [credential("c-ds", "ds-primary", "deepseek", 5), credential("c-zai", "zai", "zai-coding-plan", null), credential("c-ocg", "zen", "opencode-go", null), credential("c-kimi", "kimi", "kimi-code-plan-global", null)];
 
 const STATUS: SignInStatus[] = [
   { profileId: "p-work", kind: "chatgpt", state: "signed_in", plan: "plus", cliVersion: "0.147.0", update: null, problem: null, probedAt: ago(3) },
@@ -85,6 +88,7 @@ const LIMITS: LimitsOverview = {
   plans: [
     { credentialId: "c-zai", providerId: "zai-coding-plan", endpoint: "https://api.z.ai/api/monitor/usage/quota/limit", state: "ok", problem: null, checkedAt: ago(4) },
     { credentialId: "c-ocg", providerId: "opencode-go", endpoint: "https://opencode.ai/zen/go/v1/usage", state: "no_plan", problem: null, checkedAt: ago(11) },
+    { credentialId: "c-kimi", providerId: "kimi-code-plan-global", endpoint: "https://api.kimi.ai/coding/v1/usages", state: "unchecked", problem: null, checkedAt: null },
   ],
 };
 
@@ -106,6 +110,7 @@ const ACCOUNTS: AccountRow[] = [
   { key: "credential:c-zai", label: "zai", providerId: "zai-coding-plan", runner: "claude-code", kind: "plan", pct: 84, value: { kind: "pct", pct: 84 }, provenance: "reported", window: "5h", resetsAt: ahead(95), meters: meters("p-zai"), plan: "ok", signIn: null },
   { key: "profile:p-work", label: "work", providerId: "openai", runner: "codex", kind: "plan", pct: 62, value: { kind: "pct", pct: 62 }, provenance: "reported", window: "5h", resetsAt: ahead(140), meters: meters("p-work"), signIn: { state: "signed_in", plan: "plus", probedAt: signIn("p-work").probedAt } },
   { key: "credential:c-ds", label: "ds-primary", providerId: "deepseek", runner: "opencode", kind: "api_key", pct: 22.4, value: { kind: "usd", usd: 1.12, capUsd: 5 }, provenance: "estimated", window: "budget-day", resetsAt: null, signIn: null },
+  { key: "credential:c-kimi", label: "kimi", providerId: "kimi-code-plan-global", runner: "claude-code", kind: "plan", pct: null, value: { kind: "none" }, provenance: "unknown", window: null, resetsAt: null, meters: [], plan: "unchecked", signIn: null },
   { key: "credential:c-ocg", label: "zen", providerId: "opencode-go", runner: "opencode", kind: "api_key", pct: null, value: { kind: "usd", usd: 0, capUsd: null }, provenance: "estimated", window: "budget-day", resetsAt: null, plan: "no_plan", signIn: null },
   ...(["p-google", "p-personal", "p-team"] as const).map((id): AccountRow => {
     const p = PROFILES.find((x) => x.id === id)!;
@@ -120,7 +125,7 @@ const DATA: Partial<{ [M in IpcMethod]: (params: IpcParams<M>) => IpcResult<M> }
   "providers.signInStatus": () => STATUS,
   "providers.signInSessions": () => SESSIONS,
   "providers.limits": () => LIMITS,
-  "providers.accounts": () => ACCOUNTS,
+  "providers.accounts": () => (VARIANT === "empty" ? [] : VARIANT === "keys" ? ACCOUNTS.filter((a) => ["credential:c-ds", "credential:c-ocg", "credential:c-kimi"].includes(a.key)) : ACCOUNTS),
   "providers.balances": () => [{ credentialId: "c-ds", providerId: "deepseek", wallets: [{ amount: 18.4, currency: "USD" }], provenance: "reported", fetchedAt: ago(9), error: null }],
   "providers.spend": () => SPEND,
 };

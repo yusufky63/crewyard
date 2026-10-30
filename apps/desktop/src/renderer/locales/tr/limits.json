@@ -106,7 +106,6 @@
     "title": "Hesaplar · {{count}}",
     "all": "Limitler",
     "list": "Hesaplar, en acil olan önce",
-    "empty": "Henüz hesap yok. Bir sağlayıcı ekle.",
     "local": "yerel",
     "tipLocal": "{{name}} bu makinede: limit yok",
     "tipKey": "{{name}}: bugün {{spent}}, günlük sınır {{cap}} ({{provenance}})",
@@ -120,6 +119,19 @@
     "tipChecked": "{{time}} denetlendi",
     "tipMeters": "{{name}}: {{meters}} ({{provenance}}, {{time}} görüldü)",
     "tipMeter": "{{window}} %{{pct}}",
-    "tipMeterUnknown": "{{window}} bilinmiyor"
+    "tipMeterUnknown": "{{window}} bilinmiyor",
+    "short": {
+      "5h": "5 sa",
+      "daily": "günlük",
+      "weekly": "haftalık",
+      "monthly": "aylık",
+      "quota": "kota",
+      "cap": "sınır"
+    },
+    "bucketShort": {
+      "mcp": "MCP"
+    },
+    "meta": "{{provenance}} · {{time}} sıfırlanır",
+    "capMeta": "{{provenance}} · sınır {{cap}}"
   }
 }

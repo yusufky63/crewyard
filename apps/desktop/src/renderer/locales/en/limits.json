@@ -106,7 +106,6 @@
     "title": "Accounts · {{count}}",
     "all": "All limits",
     "list": "Accounts, most urgent first",
-    "empty": "No accounts yet. Add a provider.",
     "local": "local",
     "tipLocal": "{{name}} on this machine: no limit",
     "tipKey": "{{name}}: {{spent}} today of the {{cap}} daily cap ({{provenance}})",
@@ -120,6 +119,19 @@
     "tipChecked": "checked {{time}}",
     "tipMeters": "{{name}}: {{meters}} ({{provenance}}, seen {{time}})",
     "tipMeter": "{{window}} {{pct}}%",
-    "tipMeterUnknown": "{{window}} unknown"
+    "tipMeterUnknown": "{{window}} unknown",
+    "short": {
+      "5h": "5 h",
+      "daily": "daily",
+      "weekly": "weekly",
+      "monthly": "monthly",
+      "quota": "quota",
+      "cap": "cap"
+    },
+    "bucketShort": {
+      "mcp": "MCP"
+    },
+    "meta": "{{provenance}} · resets {{time}}",
+    "capMeta": "{{provenance}} · cap {{cap}}"
   }
 }

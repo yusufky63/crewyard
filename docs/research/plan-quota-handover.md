@@ -44,3 +44,15 @@ third-party tools (web search, 2026-10-30), which agree with cc-switch. No code 
 - Inbox and title-bar notices dedupe by `profileId|window`; two buckets with the same window can
   share one entry there. `LimitNoticePayload.bucket` is set, so those screens can key on it.
 - Only the global hosts are mapped (the catalog has no cn coding-plan entries).
+
+## Sidebar accounts block, two-part rows (follow-up)
+
+- Each account: a 28 px name line (mark, name, value), then one full-width row per reported window
+  or bucket: short label, 24-tick meter, %, and provenance with reset time underneath (it wraps to
+  a second line where the language needs it, Turkish at 224 px).
+- Hide rules in `shell/sidebar/accounts-model.ts`, tested in `accounts-model.test.ts`: no block
+  without accounts; a key without a cap shows its spend as text only; a key with a cap gets one
+  `cap` row; a plan shows only reported windows, or one Unknown row when nothing is known; a profile
+  that must sign in or update and a local server show no meter.
+- Shots: `sidebar-*` (plan with two buckets, Codex), `sidebar-keys-*` (key with cap, Unknown, key
+  without cap), `sidebar-empty-*` (no block). `fixture=keys` and `fixture=empty` select the variants.

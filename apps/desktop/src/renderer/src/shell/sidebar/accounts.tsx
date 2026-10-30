@@ -4,11 +4,13 @@ import { DEFAULT_THRESHOLDS, type AccountMeter, type AccountRow, type Thresholds
 import { useProvidersQuery as useDaemon } from "../../screens/providers/data.ts";
 import { useNav } from "../../nav.ts";
 import type { SidebarBlockDef } from "../../registry.ts";
+import { meterLines, showAccounts } from "./accounts-model.ts";
 import { providerColor, RUNNER_COLOR, useMoney, useProvidersLive, useWhen } from "../../screens/providers/shared.tsx";
 import "./accounts.css";
 
-// Pinned under the sidebar nav (DESIGN.md §4): one 28 px line per account, most urgent first,
-// scrolling on its own so many accounts never push the nav away.
+// Pinned under the sidebar nav (DESIGN.md §4): per account a name line, then one meter row per
+// window or bucket it has reported (or a cap), most urgent first, scrolling on its own so many
+// accounts never push the nav away. accounts-model.ts decides what is drawn.
 
 function Row({ row, thresholds }: { row: AccountRow; thresholds: Thresholds }) {
   const { t } = useTranslation("limits");
@@ -51,29 +53,50 @@ function Row({ row, thresholds }: { row: AccountRow; thresholds: Thresholds }) {
     value = "—";
     title = t("accounts.tipUnknown", { name: label, provenance: prov });
   }
-  const tone = pct === null ? (row.signIn?.state === "blocked" ? " bad" : row.signIn?.state === "signed_out" ? " warn" : "") : pct >= thresholds.critical ? " bad" : pct >= thresholds.warn ? " warn" : "";
+  const tone = pct === null ? (row.signIn?.state === "blocked" ? " bad" : row.signIn?.state === "signed_out" ? " warn" : "") : levelTone(pct, thresholds);
   if (row.signIn?.state === "signed_in" && row.signIn.plan) title = `${title} · ${t(`providers:signIn.plan.${row.signIn.plan}`, { defaultValue: row.signIn.plan })}`;
   if (row.signIn?.probedAt) title = `${title} · ${t("accounts.tipChecked", { time: when.ago(row.signIn.probedAt) })}`;
   return (
     <button className="acct" title={title} onClick={() => go(row.kind === "local" || row.signIn?.state === "blocked" ? "providers" : "limits")}>
-      <BrandIcon id={row.kind === "plan" && row.runner && !codingPlan ? row.runner : row.providerId} size={14} />
-      <span className="n">{label}</span>
-      {row.kind === "local" ? (
-        <span />
-      ) : meters.length > 1 ? (
-        // One 8-tick meter per window and bucket, stacked so the line stays 28 px.
-        <span className="mstack" aria-label={title} role="group">
-          {meters.slice(0, 3).map((m) => (
-            <TickMeter key={`${m.bucket ?? ""}|${m.window}`} value={m.pct} ticks={8} size="xs" color={color} label={`${label} · ${meterText(m)}`} />
-          ))}
-        </span>
-      ) : (
-        <TickMeter value={pct} ticks={8} size="xs" color={color} label={title} />
-      )}
-      <span className={`v${(value === "—" || row.kind === "local") && !tone ? " muted" : ""}${tone}`}>{value}</span>
+      <span className="acct-top">
+        <BrandIcon id={row.kind === "plan" && row.runner && !codingPlan ? row.runner : row.providerId} size={14} />
+        <span className="n">{label}</span>
+        <span className={`v${(value === "—" || row.kind === "local") && !tone ? " muted" : ""}${tone}`}>{value}</span>
+      </span>
+      {meterLines(row).map((l) => {
+        const lineProv = t(`provenance.${l.provenance}`);
+        if (l.kind === "cap") {
+          return (
+            <span className="acct-m" key={l.key}>
+              <span className="k">{t("accounts.short.cap")}</span>
+              <TickMeter value={l.pct} ticks={24} size="xs" color={color} label={t("caps.meter", { name: label, pct: Math.round(l.pct) })} />
+              <span className={`mv${levelTone(l.pct, thresholds)}`}>{Math.round(l.pct)}%</span>
+              <span className="meta">{t("accounts.capMeta", { provenance: lineProv, cap: money(l.capUsd) })}</span>
+            </span>
+          );
+        }
+        const bucket = l.bucket ? t(`accounts.bucketShort.${l.bucket}`, { defaultValue: l.bucketLabel ?? l.bucket }) : null;
+        const short = l.pct === null && l.window === null ? t("accounts.short.quota") : t(`accounts.short.${l.window ?? "quota"}`);
+        // A bucket's row is named by the bucket; its window goes to the line below.
+        const k = bucket ?? short;
+        const meta = l.resetsAt && l.pct !== null ? t("accounts.meta", { provenance: lineProv, time: when.at(l.resetsAt) }) : lineProv;
+        const full = `${bucket ? `${bucket} ` : ""}${l.window ? t(`plans.window.${l.window}`) : t("plans.quota")}`;
+        return (
+          <span className="acct-m" key={l.key}>
+            <span className="k" title={full}>
+              {k}
+            </span>
+            <TickMeter value={l.pct} ticks={24} size="xs" color={color} label={`${label} · ${l.pct === null ? t("accounts.tipMeterUnknown", { window: full }) : t("accounts.tipMeter", { window: full, pct: Math.round(l.pct) })}`} />
+            <span className={`mv${l.pct === null ? " muted" : levelTone(l.pct, thresholds)}`}>{l.pct === null ? "—" : `${Math.round(l.pct)}%`}</span>
+            <span className="meta">{bucket ? `${short} · ${meta}` : meta}</span>
+          </span>
+        );
+      })}
     </button>
   );
 }
+
+const levelTone = (pct: number, t: Thresholds) => (pct >= t.critical ? " bad" : pct >= t.warn ? " warn" : "");
 
 function AccountsBlock() {
   const { t } = useTranslation("limits");
@@ -81,24 +104,20 @@ function AccountsBlock() {
   useProvidersLive();
   const accounts = useDaemon("providers.accounts", undefined, { refetchInterval: 60_000 });
   const limits = useDaemon("providers.limits", undefined);
-  const rows = accounts.data ?? [];
+  // Nothing added yet: no block at all; the Start screen's checklist already points to Providers.
+  if (!showAccounts(accounts.data)) return null;
+  const rows = accounts.data;
   return (
     <section className="accts" aria-label={t("accounts.label")}>
       <div className="accts-head">
         <span className="lbl">{t("accounts.title", { count: rows.length })}</span>
         <button onClick={() => go("limits")}>{t("accounts.all")}</button>
       </div>
-      {rows.length > 0 ? (
-        <div className="accts-list" tabIndex={0} aria-label={t("accounts.list")}>
-          {rows.map((r) => (
-            <Row key={r.key} row={r} thresholds={limits.data?.thresholds ?? DEFAULT_THRESHOLDS} />
-          ))}
-        </div>
-      ) : (
-        <button className="accts-empty" onClick={() => go("providers")}>
-          {accounts.isSuccess ? t("accounts.empty") : " "}
-        </button>
-      )}
+      <div className="accts-list" tabIndex={0} aria-label={t("accounts.list")}>
+        {rows.map((r) => (
+          <Row key={r.key} row={r} thresholds={limits.data?.thresholds ?? DEFAULT_THRESHOLDS} />
+        ))}
+      </div>
     </section>
   );
 }
