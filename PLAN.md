@@ -145,19 +145,19 @@ interface AgentAdapter {
 
 Unsupported operations are visible in the UI as disabled controls with a reason, never hidden.
 
-### 5.2 Per agent (verified against official sources on 2026-10-29)
+### 5.2 Per agent (verified against official sources on 2026-10-29; OpenCode 2.x on 2026-10-31)
 
 | | Claude Code | Codex | Gemini CLI | OpenCode |
 |---|---|---|---|---|
-| Transport | Agent SDK `query()` (TypeScript), runs the installed `claude` binary; `ANTHROPIC_BASE_URL` points it at Anthropic or an Anthropic-compatible provider | `codex app-server`, JSON-RPC over stdio | `gemini --acp` (ACP over stdio) | `opencode serve --hostname 127.0.0.1 --port 0`, HTTP + SSE, Basic auth with a random password per launch |
-| Events | `SDKMessage` stream (assistant, result, tool, hook, task, `rate_limit_event`) | `turn/*`, `item/*`, `thread/tokenUsage/updated`, `turn/diff/updated`, `turn/plan/updated` | `session/update` (message, tool call, plan, `usage_update`) | `GET /api/event` (live only; we re-read session state after reconnects) |
-| Questions | `AskUserQuestion` via `canUseTool` | `item/tool/requestUserInput` (experimental) | `ask_user`; ACP mapping unverified, conformance test required | forms: `/api/session/{id}/form` + reply |
-| Approvals | `canUseTool` allow/deny + `PreToolUse` hook | `item/commandExecution/requestApproval`, `item/fileChange/requestApproval` | `session/request_permission` | `permission.asked` → reply `once` / `always` / `reject` |
-| Interrupt, resume | `interrupt()`, `resume` / `forkSession` | `turn/interrupt`, `thread/resume` / `thread/fork` | `session/cancel`, `session/load` | `POST .../interrupt`, sessions persist |
-| Model switch | `setModel()` | per `turn/start` | `unstable_setSessionModel` | `POST .../model` |
-| Usage | `usage`, `modelUsage`, `total_cost_usd` (local estimate) | `thread/tokenUsage/updated` incl. context window | `usage_update{used,size}` | per-session tokens and cost |
+| Transport | Agent SDK `query()` (TypeScript), runs the installed `claude` binary; `ANTHROPIC_BASE_URL` points it at Anthropic or an Anthropic-compatible provider | `codex app-server`, JSON-RPC over stdio | `gemini --acp` (ACP over stdio) | `opencode serve --hostname 127.0.0.1 --port 0`, HTTP + SSE, Basic auth as `opencode` with a random password per launch. Crewyard drives exactly 1.19.5 (`@opencode-ai/sdk` 1.19.5). 2.x (`/api/...` routes, `OPENCODE_PASSWORD`) has its own client written against 2.2.4 and is detected at probe; it is not offered to crews until it passes its conformance and live runs (docs/adr/0012) |
+| Events | `SDKMessage` stream (assistant, result, tool, hook, task, `rate_limit_event`) | `turn/*`, `item/*`, `thread/tokenUsage/updated`, `turn/diff/updated`, `turn/plan/updated` | `session/update` (message, tool call, plan, `usage_update`) | 1.19.5: `GET /event`; 2.x: `GET /api/event`, turns end with `session.execution.*`. Live only; we re-read session state after reconnects |
+| Questions | `AskUserQuestion` via `canUseTool` | `item/tool/requestUserInput` (experimental) | `ask_user`; ACP mapping unverified, conformance test required | 1.19.5: `question.asked` + `/question/{id}/reply`; 2.x: forms, `/api/session/{id}/form/{id}/reply` with one value per field |
+| Approvals | `canUseTool` allow/deny + `PreToolUse` hook | `item/commandExecution/requestApproval`, `item/fileChange/requestApproval` | `session/request_permission` | `permission.asked` → `once` / `always` / `reject`. Session rules: 1.19.5 `permission` list; 2.x an ordered `permissions` list of `{ action, resource, effect }` (`bash` is `shell`, `task` is `subagent`), last match wins in both |
+| Interrupt, resume | `interrupt()`, `resume` / `forkSession` | `turn/interrupt`, `thread/resume` / `thread/fork` | `session/cancel`, `session/load` | 1.19.5 `POST /session/{id}/abort`; 2.x `POST /api/session/{id}/interrupt`; sessions persist |
+| Model switch | `setModel()` | per `turn/start` | `unstable_setSessionModel` | 1.19.5: per prompt; 2.x: `POST /api/session/{id}/model` |
+| Usage | `usage`, `modelUsage`, `total_cost_usd` (local estimate) | `thread/tokenUsage/updated` incl. context window | `usage_update{used,size}` | per-session tokens and cost (2.x: `session.usage.updated`) |
 | Subscription limits | **Not used**: Claude runs on API keys (§6); we track spend against caps and back off on API rate-limit errors (`Retry-After`) | **Reported**: `account/rateLimits/updated` (primary/secondary window, used %, resets at) | **Not exposed**: shown as Unknown | Only OpenCode's own plans; third-party providers via balance endpoints (§7.2) |
-| Account folder | `CLAUDE_CONFIG_DIR` per profile for settings and history, `ANTHROPIC_API_KEY` from the secret store | `CODEX_HOME` (keyring entry keyed by folder hash) | `GEMINI_CLI_HOME` + `GEMINI_FORCE_FILE_STORAGE=true` (its OAuth keychain entry is otherwise shared) | `OPENCODE_CONFIG_DIR`, `OPENCODE_DB`; isolation to be proven by a test |
+| Account folder | `CLAUDE_CONFIG_DIR` per profile for settings and history, `ANTHROPIC_API_KEY` from the secret store | `CODEX_HOME` (keyring entry keyed by folder hash) | `GEMINI_CLI_HOME` + `GEMINI_FORCE_FILE_STORAGE=true` (its OAuth keychain entry is otherwise shared) | `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_STATE_HOME` and `XDG_CACHE_HOME` under the profile folder (proven on 1.19.5, 2026-10-30; unverified on 2.x) |
 | Windows notes | native; no sandbox on native Windows | `windowsSandbox/*` readiness methods | PowerShell example for home override in docs | default service port differs on Windows; we always pass `--port 0` |
 
 ### 5.3 Internal event model
@@ -184,6 +184,7 @@ Start a run in a temp repo, receive a plan and a tool call, approve once, deny o
     - Logs written before this fix are deleted once per data folder.
     - Backups and exports copy only Crewyard's database, never profile folders.
   - **OpenCode:** it has no scrub setting. Its shell tool, `!` commands and terminal run with the server's environment plus whatever `shell.env` plugin hooks return. A plugin we write into the profile's config folder sets the key variables and the server password to empty there. A hook can only add or override, so the agent sees the name with an empty value.
+    - 1.x plugins do not run in OpenCode 2.x. There the guard is a 2.x plugin on `ctx.shell.hook("create.before")`, named in the launch's inline config, and the adapter checks through `GET /api/plugin` that it is active before a run starts; a server without it runs nothing (docs/adr/0012). Whether the hook also covers `!` commands and terminals on 2.x is part of its live run.
   - **Gemini CLI:** `security.environmentVariableRedaction.enabled` in the profile's settings.json (Gemini CLI 0.24 and later) drops credential-named variables from its shell tool.
   - **Not covered:** a runner process necessarily holds its own key. An agent that can read that process's memory, or that runs a tool which talks to the provider through the runner, is outside what environment rules can stop.
 - **What the UI shows:** alias, runner, plan label, last probe time, never a key or token.

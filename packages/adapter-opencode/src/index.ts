@@ -32,6 +32,6 @@ export function createAdapter(opts: OpenCodeAdapterOptions = {}): AgentAdapter {
   return new OpenCodeAdapter(capabilities, opts);
 }
 
-export { OpenCodeAdapter, openCodeModel, TESTED_VERSION, type OpenCodeAdapterOptions } from "./adapter.ts";
+export { OpenCodeAdapter, openCodeModel, TESTED_VERSION, TESTED_V2_VERSION, V2_API_VERSION, majorOf, v2Pending, type OpenCodeAdapterOptions } from "./adapter.ts";
 export { permissionRules, mustReject } from "./policy.ts";
 export { providerConfigEnv } from "./server.ts";

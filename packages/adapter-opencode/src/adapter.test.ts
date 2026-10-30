@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { AgentEvent, REVIEW_VERDICT_OUTPUT, sessionProblemOf, type AgentAdapter, type ForkRequest, type Profile, type RolePolicy, type RunHandle, type StartRequest } from "@crewyard/core";
 import { WINDOWS_SYSTEM_VARS } from "@crewyard/proc";
 import { childEnv } from "./server.ts";
-import { unsupportedVersion } from "./adapter.ts";
+import { v2Pending } from "./adapter.ts";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createAdapter } from "./index.ts";
 
@@ -90,15 +90,17 @@ describe("OpenCode adapter against a fake opencode serve", () => {
     expect(probe).toMatchObject({ installed: true, version: "1.19.5", problems: [] });
   });
 
-  it("refuses OpenCode 2.x at probe and at start, with the reason", async () => {
+  it("does not offer OpenCode 2.x before its conformance run, at probe and at start, with the reason", async () => {
     process.env.FAKE_OPENCODE_VERSION = "2.2.2";
     try {
       const { adapter, req } = await setup("v2", "basic");
       const probe = await adapter.probe(req.profile);
       expect(probe.version).toBe("2.2.2");
-      expect(probe.capabilities.launch).toBe(false);
-      expect(probe.problems).toEqual([expect.stringContaining("OpenCode 2.2.2 is not supported yet")]);
-      await expect(adapter.start(req)).rejects.toThrow(/changed the server API/);
+      expect(probe.capabilities).toMatchObject({ launch: false, undo: { files: true, history: true } });
+      expect(probe.capabilities.fork).toBeUndefined();
+      expect(probe.capabilities.transcript).toBeUndefined();
+      expect(probe.problems).toEqual([expect.stringContaining("OpenCode 2.2.2 runs through Crewyard's OpenCode 2.x client, which has not passed")]);
+      await expect(adapter.start(req)).rejects.toThrow(/has not passed its conformance and live runs/);
     } finally {
       delete process.env.FAKE_OPENCODE_VERSION;
     }
@@ -352,11 +354,11 @@ describe("OpenCode child environment", () => {
     expect(env.OPENCODE_SERVER_PASSWORD).toBe("pw");
   });
 
-  it("knows which versions it refuses", () => {
-    expect(unsupportedVersion("1.19.5")).toBeNull();
-    expect(unsupportedVersion("1.25.0")).toBeNull();
-    expect(unsupportedVersion(null)).toBeNull();
-    expect(unsupportedVersion("2.0.0")).toMatch(/not supported yet/);
+  it("knows which versions wait for the 2.x conformance run", () => {
+    expect(v2Pending("1.19.5")).toBeNull();
+    expect(v2Pending("1.25.0")).toBeNull();
+    expect(v2Pending(null)).toBeNull();
+    expect(v2Pending("2.0.0")).toMatch(/has not passed its conformance and live runs/);
   });
 });
 
