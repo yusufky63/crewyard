@@ -152,6 +152,8 @@ export function scoreCandidate(c: Candidate, role: RoleId, ctx: ScoringContext, 
     headroom,
     estimate,
     reasons,
+    // Only when the runner cannot take a kind, so the proposal can say what it gets as a path.
+    ...(c.capabilities.attachments?.images && c.capabilities.attachments.files ? {} : { attachments: { images: c.capabilities.attachments?.images === true, files: c.capabilities.attachments?.files === true } }),
   };
 }
 

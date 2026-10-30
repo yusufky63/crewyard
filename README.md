@@ -24,6 +24,7 @@ Status: pre-release. It is built and tested on Windows 11. Linux and macOS are p
 - **GitHub under your control.** A push queue, pull requests, merge gates and cleanup; every outward step waits for your click.
 - **More:**
   - turn control (queue, steer, undo);
+  - images and files on a task or a queued message (paste, drop or pick), passed to each runner its own way;
   - Best of N;
   - scheduled tasks;
   - idle agents that sleep and wake with your answer;

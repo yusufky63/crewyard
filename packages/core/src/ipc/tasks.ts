@@ -1,3 +1,4 @@
+import type { AttachmentView } from "../attachments.ts";
 import type { AgentEvent, EndReason, LimitWindow, Provenance, RiskLevel, RunnerId, RunState } from "../events.ts";
 import type { VerdictComment } from "../results.ts";
 import type { TaskStatus } from "../state.ts";
@@ -126,6 +127,13 @@ export type OrchestratorErrorCode =
   | "worktree.cleanup_needs_approval" // a cleanup step waits in the Inbox; the worktree stays
   | "worktree.cleanup_failed" // { command }: a cleanup step failed; the worktree stays
   | "adapter.failed" // { detail }
+  // Attachments: what an upload was refused for, or why an id cannot be used
+  | "attachment.type" // not a supported image, PDF or text file
+  | "attachment.too_large" // { kind, max } bytes
+  | "attachment.empty"
+  | "attachment.too_many" // { max } per task or message
+  | "attachment.not_found" // { attachmentId }
+  | "attachment.claimed" // { attachmentId }: already belongs to a task or a message
   // Follow-up queue, steer, undo and stall alerts (turn control)
   | "queue.not_found" // { messageId }: no such queued message for this step
   | "queue.delivered" // { messageId }: already handed to the agent; it can no longer change
@@ -176,6 +184,8 @@ export interface CandidateView {
   headroom: Headroom;
   estimate: CostEstimate;
   reasons: Reason[];
+  /** Set only when the runner cannot take a kind of attachment; it gets those as paths in the text. */
+  attachments?: { images: boolean; files: boolean };
 }
 
 export interface CrewMemberView {
@@ -265,6 +275,8 @@ export interface QueuedMessageView {
   editedAt: string | null;
   /** `note`: written by Crewyard after an undo the runner's conversation could not forget. */
   kind: "user" | "note";
+  /** Images and files that go with the message; absent or empty when it has none. */
+  attachments?: AttachmentView[];
 }
 
 /**
@@ -282,7 +294,9 @@ export type ControlReason =
   | "undo.no_turn" // no turn with a checkpoint, or the last one was already undone
   | "undo.other_run" // another run is working in the same worktree
   | "undo.superseded" // a later run continues the step; undo that one
-  | "undo.cancelled";
+  | "undo.cancelled"
+  | "attach.image_unsupported" // the runner has no documented image input
+  | "attach.file_unsupported"; // the runner has no documented file input; it would get the path as text
 
 export interface ControlState {
   ok: boolean;
@@ -293,6 +307,8 @@ export interface RunControls {
   steer: ControlState;
   /** `turnId` is the turn an undo would remove. */
   undo: ControlState & { turnId: string | null };
+  /** Attaching each kind to a message for this run's runner. Absent: both allowed. */
+  attach?: { image: ControlState; file: ControlState };
 }
 
 /** A run nobody can steer or undo; what a view shows before the daemon says otherwise. */
@@ -624,6 +640,8 @@ export interface TaskDetail extends TaskSummary {
    * acts while Settings has it on; absent means on.
    */
   accountSwitch?: boolean;
+  /** Images and files attached to the description; every step's first prompt carries them. */
+  attachments?: AttachmentView[];
 }
 
 export type RequestKind = "question" | "approval" | "handoff";
@@ -864,6 +882,8 @@ export interface TasksIpc {
       exclude?: string[];
       /** 2 to 4: the implement step runs on that many profiles in parallel, each in its own worktree. */
       bestOf?: number;
+      /** Ids from attachments.add; they move into the task's folder. */
+      attachments?: string[];
     };
     result: TaskDetail;
   };
@@ -896,8 +916,20 @@ export interface TasksIpc {
    * Sends a message to a live run. While the step has no live process (paused, limited, handing
    * off, interrupted) the message waits in the step's outbox and goes to whichever run continues
    * the step: a resume, a reset or a handoff target. Fails with `run.ended` for a completed run.
+   * `attachments` are ids from attachments.add; with them, `text` may be empty.
    */
-  "runs.message": { params: { runId: string; text: string } & SessionSeen; result: RunView };
+  "runs.message": { params: { runId: string; text: string; attachments?: string[] } & SessionSeen; result: RunView };
+  /**
+   * Stores an image or file (base64 `data`) for a task description or a message, before either
+   * exists: a paste, a drop, the file picker, or a screenshot from Crewyard itself. Refused with
+   * `attachment.type`, `attachment.too_large` or `attachment.empty`. Unused uploads are removed
+   * after a day.
+   */
+  "attachments.add": { params: { name: string; data: string }; result: AttachmentView };
+  /** Removes an upload that no task or message uses yet (you took it out of the composer). */
+  "attachments.discard": { params: { id: string }; result: { id: string } };
+  /** An image's bytes as a data URL, for its thumbnail; files have none (`attachment.type`). */
+  "attachments.preview": { params: { id: string }; result: { dataUrl: string } };
   /**
    * Moves the step to another profile now (the Crew graph's "Change AI"), through the same durable
    * handoff as a limit, with trigger `manual`: stop at a turn boundary, checkpoint, package, start

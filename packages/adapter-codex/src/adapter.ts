@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { checkOutput, outputRetryPrompt, parseOutputText, sessionError } from "@crewyard/core";
+import { checkOutput, outputRetryPrompt, parseOutputText, sessionError, toUserInput } from "@crewyard/core";
 import type {
+  Attachment,
   AgentAdapter,
   AgentCapabilities,
   AgentEvent,
@@ -29,6 +30,7 @@ import type {
 import { exitCodeWithin, isShutdownExit, resolveBin } from "@crewyard/proc";
 import { AppServer, withAppServer, type Launcher } from "./appserver.ts";
 import { innerCommand, isAllowedCommand } from "./commands.ts";
+import { codexInput } from "./input.ts";
 import { mcpPlan, mcpToolApproval } from "./mcp.ts";
 import {
   commandApproval,
@@ -66,7 +68,6 @@ import type {
   ToolRequestUserInputParams,
   TurnStartParams,
   TurnStartResponse,
-  UserInput as CodexUserInput,
   WindowsSandboxReadinessResponse,
 } from "./protocol/index.ts";
 import { METHOD_NOT_FOUND, RpcError, type RpcId } from "./rpc.ts";
@@ -103,6 +104,8 @@ export const capabilities: AgentCapabilities = {
   fork: { compact: true },
   // review/start with a baseBranch or commit target (ReviewTarget in codex-cli 0.147.0).
   nativeReview: true,
+  // `localImage` turn input by path; no input item for other files (input.ts).
+  attachments: { images: true, files: false },
 };
 
 /** Oldest codex-cli this adapter was checked against. */
@@ -176,7 +179,7 @@ interface Run {
   /** The StartRequest prompt, context for the verdict turn. */
   context: string;
   /** StartRequest.nextTurn: the step's queued follow-ups at each turn boundary. */
-  nextTurn: (() => Promise<string | null>) | null;
+  nextTurn: StartRequest["nextTurn"] | null;
   /** A turn ended and nextTurn is being asked; the end is held until it answers. */
   pulling: boolean;
   /** The one in-session retry for a result that did not fit has been sent. */
@@ -244,7 +247,7 @@ export class CodexAdapter implements AgentAdapter {
       const res = await run.server.rpc.request<ThreadStartResponse>("thread/start", this.threadParams(req), { timeoutMs: 60_000 });
       this.attachThread(run, res.thread.id);
       if (run.review) await this.startReview(run, run.review);
-      else if (req.prompt.trim()) await this.startTurn(run, req.prompt);
+      else if (req.prompt.trim()) await this.startTurn(run, req.prompt, req.attachments);
       return run.handle;
     } catch (err) {
       await this.abandon(run);
@@ -270,7 +273,7 @@ export class CodexAdapter implements AgentAdapter {
       const reviews = new ReviewUsage(run.codexHome, run.threadId, threadCreatedAt(run.threadId));
       run.mapper.subagentUsage = await reviews.total().catch(() => NO_USAGE);
       run.mapper.subagentRequests = reviews.requests();
-      if (req.prompt.trim()) await this.startTurn(run, req.prompt);
+      if (req.prompt.trim()) await this.startTurn(run, req.prompt, req.attachments);
       return run.handle;
     } catch (err) {
       await this.abandon(run);
@@ -288,9 +291,9 @@ export class CodexAdapter implements AgentAdapter {
     const turnId = run.mapper.turnId;
     if (turnId) {
       // Adds the text to the turn in flight instead of queueing a new one.
-      await run.server.rpc.request("turn/steer", { threadId: run.threadId, input: [textInput(input.text)], expectedTurnId: turnId }, { timeoutMs: 30_000 });
+      await run.server.rpc.request("turn/steer", { threadId: run.threadId, input: codexInput(input.text, input.attachments), expectedTurnId: turnId }, { timeoutMs: 30_000 });
     } else {
-      await this.startTurn(run, input.text);
+      await this.startTurn(run, input.text, input.attachments);
     }
   }
 
@@ -299,7 +302,7 @@ export class CodexAdapter implements AgentAdapter {
     const run = this.mustGet(handle);
     const turnId = run.mapper.turnId;
     if (run.ended || !turnId) throw new Error("no turn is running to steer");
-    await run.server.rpc.request("turn/steer", { threadId: run.threadId, input: [textInput(input.text)], expectedTurnId: turnId }, { timeoutMs: 30_000 });
+    await run.server.rpc.request("turn/steer", { threadId: run.threadId, input: codexInput(input.text, input.attachments), expectedTurnId: turnId }, { timeoutMs: 30_000 });
   }
 
   /**
@@ -510,8 +513,8 @@ export class CodexAdapter implements AgentAdapter {
     return params;
   }
 
-  private async startTurn(run: Run, text: string): Promise<void> {
-    const params: TurnStartParams = { threadId: run.threadId, input: [textInput(text)] };
+  private async startTurn(run: Run, text: string, attachments?: Attachment[]): Promise<void> {
+    const params: TurnStartParams = { threadId: run.threadId, input: codexInput(text, attachments) };
     if (run.model) params.model = run.model;
     if (run.effort) params.effort = run.effort;
     // Every turn: the run's result is the final message of whichever turn ends it.
@@ -609,8 +612,9 @@ export class CodexAdapter implements AgentAdapter {
     const next = await run.nextTurn!().catch(() => null);
     run.pulling = false;
     if (next && !run.ended && !run.stopping) {
+      const input = toUserInput(next);
       try {
-        await this.startTurn(run, next);
+        await this.startTurn(run, input.text, input.attachments);
         return;
       } catch {
         // The thread would not take another turn; the run ends as the last turn did.
@@ -822,10 +826,6 @@ const GONE = /no rollout found for thread id|failed to resolve rollout path/i;
 
 function goneOr(err: unknown): unknown {
   return err instanceof RpcError && GONE.test(err.message) ? sessionError("gone", err.message) : err;
-}
-
-function textInput(text: string): CodexUserInput {
-  return { type: "text", text, text_elements: [] };
 }
 
 function message(err: unknown): string {

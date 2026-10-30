@@ -14,6 +14,7 @@ import {
   requestCost,
   type AgentAdapter,
   type AgentEvent,
+  type Attachment,
   type Answer,
   type CandidateView,
   type CrewEdit,
@@ -51,7 +52,9 @@ import {
   type TasksTopics,
   type UnpricedSpend,
   sessionProblemOf,
+  type UserInput,
   utf8Length,
+  withAttachments,
 } from "@crewyard/core";
 import type { McpHook } from "../mcp/service.ts";
 import type { Store } from "../store.ts";
@@ -59,6 +62,7 @@ import { Bootstrapper } from "../worktrees/bootstrap.ts";
 import { admit, admitGroup, DEFAULT_LIMITS, type AdmissionLimits } from "./admission.ts";
 import { BEST_OF_MAX, BEST_OF_MIN, BestOfStore, groupFact, groupPhase, pickVariants, worktreeDiff, type DiffStat, type GroupRow } from "./best-of.ts";
 import { AdapterRegistry } from "./adapters.ts";
+import { AttachmentStore } from "./attachments.ts";
 import { accountOf, AccountSwitches, isClaudeSubscription, refusalOf, sameProviderAccounts, sourceOf, switchOrder, switchTrigger } from "./account-switch.ts";
 import { classifyTask } from "./classify.ts";
 import { eligible, estimateFor, MIN_HEADROOM, modelKey, proposeCrew, rankForRole, readOnlyConflict, sameModel, scoreCandidate, sumEstimates, type ScoringContext } from "./crew.ts";
@@ -198,6 +202,8 @@ export class Orchestrator {
   readonly hibernation: HibernationStore;
   /** Same-provider account switches and the tasks held out of them (account-switch.ts, docs/adr/0009). */
   readonly switches: AccountSwitches;
+  /** Images and files on task descriptions and queued messages (attachments.ts). */
+  readonly attachments: AttachmentStore;
   private hibernateTimer: NodeJS.Timeout | null = null;
   /** Runs whose process is being stopped for hibernation: the stream's end must not end the run. */
   private readonly hibernating = new Set<string>();
@@ -267,8 +273,17 @@ export class Orchestrator {
       audit: (taskId, runId, kind, payload) => this.audit(taskId, runId, kind, payload),
     });
     this.stalls = new StallMonitor({ store: opts.store, db: this.db, now: this.now, inTurn: (runId) => Boolean(this.live.get(runId)?.inTurn && !this.live.get(runId)?.testing), emit: (topic, payload) => this.emit(topic, payload) });
+    this.attachments = new AttachmentStore(opts.store.db, opts.dataDir, this.now);
+    try {
+      this.attachments.sweep();
+    } catch {
+      // A locked staging folder is swept on the next start.
+    }
     this.db.runExtras = (r) => ({
-      queue: this.turns.queue.pending(r.member_id),
+      queue: this.turns.queue.pending(r.member_id).map((m) => {
+        const attachments = this.attachments.messageViews(m.id);
+        return attachments.length > 0 ? { ...m, attachments } : m;
+      }),
       controls: this.turns.controls(r),
       transcriptPath: transcriptPath(opts.store, r.id),
     });
@@ -384,7 +399,8 @@ export class Orchestrator {
 
   get(taskId: string): TaskDetail {
     const task = this.db.task(taskId);
-    return { ...this.db.detail(task, this.blocked), bestOfGroup: this.groupView(task), accountSwitch: this.switches.taskEnabled(task.id) };
+    const attachments = this.attachments.taskViews(task.id);
+    return { ...this.db.detail(task, this.blocked), bestOfGroup: this.groupView(task), accountSwitch: this.switches.taskEnabled(task.id), ...(attachments.length > 0 ? { attachments } : {}) };
   }
 
   /** Classifies the task and stores a draft crew. No process, worktree or network call. */
@@ -392,6 +408,8 @@ export class Orchestrator {
     const project = this.db.project(p.projectId);
     const { config, fromFile } = this.config(project);
     const description = p.description ?? "";
+    const attachmentIds = p.attachments ?? [];
+    this.attachments.check(attachmentIds);
     const cls = classifyTask(p.title, description, { kind: p.kind, size: p.size });
     const budgetUsd = p.budgetUsd ?? (fromFile ? config.budget.perTaskUsd : null);
     const candidates = await this.candidates(project);
@@ -440,7 +458,8 @@ export class Orchestrator {
       );
       if (group) this.bestOf.create(taskId, memberIds[group.index]!, group.candidates);
     });
-    this.audit(taskId, null, "task.proposed", { kind: cls.kind, size: cls.size, members: crew.members.map((m) => ({ role: m.role, profileId: m.chosen?.profileId ?? null })), bestOf: group?.candidates.map((c) => c.profileId) ?? null });
+    if (attachmentIds.length > 0) this.attachments.claim(attachmentIds, taskId, null);
+    this.audit(taskId, null, "task.proposed", { kind: cls.kind, size: cls.size, members: crew.members.map((m) => ({ role: m.role, profileId: m.chosen?.profileId ?? null })), bestOf: group?.candidates.map((c) => c.profileId) ?? null, ...(attachmentIds.length > 0 ? { attachments: attachmentIds } : {}) });
     this.emitTask(taskId, "proposed");
     return this.get(taskId);
   }
@@ -1136,16 +1155,18 @@ export class Orchestrator {
     return this.db.runView(this.db.run(run.id));
   }
 
-  async message(runId: string, text: string, seen?: SessionSeen): Promise<RunView> {
+  async message(runId: string, text: string, seen?: SessionSeen, attachmentIds: string[] = []): Promise<RunView> {
     const run = this.db.run(runId);
     this.checkSeen(run, seen);
     if (run.end_reason === "completed" || this.db.task(run.task_id).cancelled_at) throw new OrchestratorError("run.ended");
+    this.attachments.check(attachmentIds);
     // Every message joins the step's queue first (feature scan A13): it belongs to the step, not to
     // this process, and stays queued and editable until a run takes it. A running turn takes it at
     // its boundary, a paused run on resume, and whichever run continues the step otherwise.
-    this.turns.queue.add(run.task_id, run.member_id, text);
+    const messageId = this.turns.queue.add(run.task_id, run.member_id, text);
+    if (attachmentIds.length > 0) this.attachments.claim(attachmentIds, run.task_id, messageId);
     const live = this.live.get(runId);
-    this.audit(run.task_id, runId, "run.message", { chars: text.length, queued: !live || Boolean(run.paused_at) || live.inTurn });
+    this.audit(run.task_id, runId, "run.message", { chars: text.length, queued: !live || Boolean(run.paused_at) || live.inTurn, ...(attachmentIds.length > 0 ? { attachments: attachmentIds } : {}) });
     // A hibernated run wakes for your message; the queue goes with its resume.
     if (!live && !run.paused_at && this.hibernation.asleep(runId)) await this.wakeRun(runId, "message");
     await this.flushOutbox(run.task_id, run.member_id);
@@ -1166,6 +1187,7 @@ export class Orchestrator {
   queueDelete(runId: string, messageId: string): RunView {
     const run = this.db.run(runId);
     this.turns.queue.remove(run.member_id, messageId);
+    this.attachments.removeForMessage(messageId);
     this.audit(run.task_id, runId, "queue.deleted", { messageId });
     this.emitTask(run.task_id, "queue");
     return this.db.runView(this.db.run(runId));
@@ -1187,7 +1209,7 @@ export class Orchestrator {
     if (!state.ok) throw new OrchestratorError("run.not_steerable", { reason: state.reason ?? "" });
     const live = this.live.get(runId)!;
     try {
-      await live.adapter.steer!(live.handle, { kind: "text", text: message.text });
+      await live.adapter.steer!(live.handle, withAttachments(message.text, this.attachments.forMessage(messageId), live.adapter.capabilities));
     } catch (err) {
       // The turn ended between the check and the call; the message stays queued for the boundary.
       throw new OrchestratorError("run.not_steerable", { reason: "steer.no_turn", detail: err instanceof Error ? err.message.slice(0, 200) : "" });
@@ -1258,7 +1280,7 @@ export class Orchestrator {
     live.turnBegun = false;
     try {
       await this.turns.begin(target.id);
-      await live.adapter.send(live.handle, { kind: "text", text: joinMessages(queued.map((m) => m.text)) });
+      await live.adapter.send(live.handle, withAttachments(joinMessages(queued.map((m) => m.text)), this.attachments.forMessages(queued.map((m) => m.id)), live.adapter.capabilities));
     } catch {
       // The process is finishing; the messages stay queued for whichever run continues the step.
       live.inTurn = false;
@@ -1273,7 +1295,7 @@ export class Orchestrator {
    * follow-ups as the next turn's text, or null to let the run finish (nothing queued, or the run
    * was paused, stopped, limited or cancelled meanwhile).
    */
-  private async nextTurn(runId: string): Promise<string | null> {
+  private async nextTurn(runId: string): Promise<string | UserInput | null> {
     this.turns.end(runId);
     // A one-time grant from a hibernated approval covers only the turn it woke into.
     this.hibernation.dropGrant(runId);
@@ -1309,17 +1331,17 @@ export class Orchestrator {
     for (const m of queued) this.turns.queue.deliver(m.id, runId);
     this.audit(run.task_id, runId, "queue.flushed", { count: queued.length });
     this.emitTask(run.task_id, "queue");
-    return joinMessages(queued.map((m) => m.text));
+    return withAttachments(joinMessages(queued.map((m) => m.text)), this.attachments.forMessages(queued.map((m) => m.id)), live.adapter.capabilities);
   }
 
   /**
    * The prompt a run starts or resumes with, plus the step's queued messages. A note left by an
    * undo only makes sense to the same conversation, so a new session drops it.
    */
-  private withQueued(memberId: string, prompt: string, sameSession: boolean): { prompt: string; ids: string[] } {
+  private withQueued(memberId: string, prompt: string, sameSession: boolean): { prompt: string; ids: string[]; attachments: Attachment[] } {
     const queued = this.turns.queue.pending(memberId);
-    const texts = queued.filter((m) => sameSession || m.kind !== "note").map((m) => m.text);
-    return { prompt: joinMessages([prompt, ...texts]), ids: queued.map((m) => m.id) };
+    const sent = queued.filter((m) => sameSession || m.kind !== "note");
+    return { prompt: joinMessages([prompt, ...sent.map((m) => m.text)]), ids: queued.map((m) => m.id), attachments: this.attachments.forMessages(sent.map((m) => m.id)) };
   }
 
   // ---------------------------------------------------------------- crew loops (feature scan A9)
@@ -1814,6 +1836,8 @@ export class Orchestrator {
       let base = forked && spec.fork ? spec.fork.prompt : (spec.prompt ?? rolePrompt(member.role, task, { plan: this.latestPlan(task.id), branch: worktreeId ? (wt?.branch ?? null) : null }));
       if (pinned && !spec.prompt) base += reviewContext({ sha: pinned.sha, baseSha: wt?.base_sha ?? null, branch: wt?.branch ?? null, test: this.loops.lastTaskTest(task.id), previous: this.loops.previousVerdict(member.id, null) });
       const queued = this.withQueued(member.id, base, Boolean(resumeRef));
+      // A new session has not seen the description's attachments; a resumed or forked one has.
+      const first = withAttachments(queued.prompt, [...(resumeRef ? [] : this.attachments.forTask(task.id)), ...queued.attachments], adapter.capabilities);
       // Codex reviews with its own review/start against the task's base; the verdict schema still applies.
       const review: ReviewTarget | null = pinned && member.role === "reviewer" && !resumeRef && adapter.capabilities.nativeReview ? { kind: "base_branch", branch: task.base_branch ?? wt!.base_sha } : null;
       if (review) this.nativeReviews.add(runId);
@@ -1822,7 +1846,8 @@ export class Orchestrator {
         profile: candidate.profile,
         cwd,
         model: target.model,
-        prompt: queued.prompt,
+        prompt: first.text,
+        ...(first.attachments ? { attachments: first.attachments } : {}),
         policy,
         env: { ...(await this.directory.envFor(target.profileId)), ...(boot?.status === "ready" ? boot.env : {}) },
         outputSchema: outputSchemaFor(member.role),
@@ -2167,7 +2192,7 @@ export class Orchestrator {
     if (live) {
       live.inTurn = true;
       await this.turns.begin(runId);
-      await live.adapter.send(live.handle, { kind: "text", text: queued.prompt });
+      await live.adapter.send(live.handle, withAttachments(queued.prompt, queued.attachments, live.adapter.capabilities));
       for (const id of queued.ids) this.turns.queue.deliver(id, runId);
       return;
     }
@@ -2178,11 +2203,13 @@ export class Orchestrator {
     const candidate = (await this.candidates(project)).find((c) => c.profile.id === run.profile_id);
     if (!candidate) throw new OrchestratorError("crew.unknown_profile", { profileId: run.profile_id });
     const policy = this.policyFor(run.role, this.config(project).config);
+    const input = withAttachments(queued.prompt, queued.attachments, adapter.capabilities);
     const req: StartRequest = {
       profile: candidate.profile,
       cwd: run.cwd,
       model: run.model,
-      prompt: queued.prompt,
+      prompt: input.text,
+      ...(input.attachments ? { attachments: input.attachments } : {}),
       policy,
       env: { ...(await this.directory.envFor(run.profile_id)), ...this.bootstrapEnv(run, project) },
       outputSchema: outputSchemaFor(run.role),
@@ -2929,6 +2956,7 @@ export class Orchestrator {
         .requests({ taskId: task.id })
         .filter((q) => q.kind === "question")
         .flatMap((q) => (JSON.parse(q.payload) as Extract<RequestPayload, { kind: "question" }>).questions.map((x) => x.prompt)),
+      attachments: [...this.attachments.forTask(task.id), ...this.attachments.forMessages(this.turns.queue.pending(source.member_id).map((m) => m.id))],
       transcript: transcript ? `${transcript} (copy of the ${source.runner} session record; the event log of run ${source.id} is in the Crewyard database)` : `Event log of run ${source.id} in the Crewyard database.`,
     });
     const path = join(this.opts.dataDir, "tasks", task.id, `${name}.md`);

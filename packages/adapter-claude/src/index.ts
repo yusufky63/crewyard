@@ -26,6 +26,8 @@ export const capabilities: AgentCapabilities = {
   // SDK forkSession() into the target profile's folder, then `/compact` under the target's key
   // (agent-sdk/sessions, agent-sdk/slash-commands; checked live on DeepSeek 2026-10-30, scripts/live-fork.mjs).
   fork: { compact: true },
+  // Image blocks and document blocks (PDF, plain text) in the streamed user message (input.ts).
+  attachments: { images: true, files: true },
 };
 
 /** `deps` exists for the replay tests; the app always calls this without arguments. */

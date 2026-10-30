@@ -16,7 +16,13 @@ export function createTasksHandlers(ctx: HandlerContext, overrides?: Partial<Orc
     "runs.pause": ({ runId, sessionId }) => o.pause(runId, { sessionId }),
     "runs.resume": ({ runId }) => o.resume(runId),
     "runs.stop": ({ runId, sessionId }) => o.stop(runId, { sessionId }),
-    "runs.message": ({ runId, text, sessionId }) => o.message(runId, text, { sessionId }),
+    "runs.message": ({ runId, text, sessionId, attachments }) => o.message(runId, text, { sessionId }, attachments),
+    "attachments.add": ({ name, data }) => o.attachments.add(name, data),
+    "attachments.discard": ({ id }) => {
+      o.attachments.discard(id);
+      return { id };
+    },
+    "attachments.preview": ({ id }) => ({ dataUrl: o.attachments.preview(id) }),
     "runs.handoff": ({ runId, targetProfileId, stop }) => o.handoff(runId, targetProfileId, stop),
     "runs.retry": ({ runId }) => o.retry(runId),
     "requests.list": (params) => o.requests(params),

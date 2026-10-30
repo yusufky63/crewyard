@@ -782,6 +782,25 @@ export const MIGRATIONS: Migration[] = [
      updated_at text not null
    );`,
   },
+  // Images and files attached to a task description or a queued message. The bytes live under the
+  // data folder (`file` is relative to it); a row with no task is an upload not used yet.
+  {
+    id: "attachments",
+    sql: `create table if not exists attachments (
+     id text primary key,
+     task_id text references tasks(id),
+     outbox_id text,
+     name text not null,
+     kind text not null,
+     mime text not null,
+     bytes integer not null,
+     file text not null,
+     created_at text not null,
+     claimed_at text
+   );
+   create index if not exists attachments_task on attachments(task_id);
+   create index if not exists attachments_outbox on attachments(outbox_id);`,
+  },
 ];
 
 /** What the positional scheme applied: a database at `user_version` N has the first N of these. */

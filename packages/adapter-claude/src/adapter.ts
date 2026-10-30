@@ -2,11 +2,12 @@ import type { ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { forkSession as sdkForkSession, query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
 import type { CanUseTool, HookCallback, Options, Query, SDKMessage, SDKResultMessage, SDKUserMessage, SpawnedProcess } from "@anthropic-ai/claude-agent-sdk";
-import { checkOutput, outputRetryPrompt, sessionError } from "@crewyard/core";
+import { checkOutput, outputRetryPrompt, sessionError, toUserInput } from "@crewyard/core";
 import { join } from "node:path";
-import type { AgentAdapter, AgentCapabilities, AgentEvent, Answer, ForkRequest, ForkResult, ForkUsage, NativeSessionRef, Probe, Profile, RewindRequest, RewindResult, RunHandle, RunOutput, StartRequest, TranscriptRequest, TranscriptSource, UserInput } from "@crewyard/core";
+import type { AgentAdapter, AgentCapabilities, Attachment, AgentEvent, Answer, ForkRequest, ForkResult, ForkUsage, NativeSessionRef, Probe, Profile, RewindRequest, RewindResult, RunHandle, RunOutput, StartRequest, TranscriptRequest, TranscriptSource, UserInput } from "@crewyard/core";
 import { exitCodeWithin, isShutdownExit, killTree, parseVersion, resolveBin, run, start as spawnChild } from "@crewyard/proc";
 import { buildEnv, redact } from "./env.ts";
+import { claudeContent } from "./input.ts";
 import { EventMapper, type EventBody, type TurnOutcome } from "./mapper.ts";
 import { AsyncQueue } from "./queue.ts";
 import { crossProfileStore, findSession, isSessionProblem, removeFiles, sessionProblemDetail } from "./sessions.ts";
@@ -131,7 +132,7 @@ export class ClaudeAdapter implements AgentAdapter {
 
   async send(run: RunHandle, input: UserInput): Promise<void> {
     const ctx = this.mustGet(run);
-    if (!this.pushInput(ctx, input.text)) throw new Error("This run has finished; resume the session to continue.");
+    if (!this.pushInput(ctx, input.text, input.attachments)) throw new Error("This run has finished; resume the session to continue.");
   }
 
   async answer(run: RunHandle, requestId: string, answer: Answer): Promise<void> {
@@ -408,7 +409,7 @@ export class ClaudeAdapter implements AgentAdapter {
     };
 
     this.emit(ctx, { type: "run.state", state: "starting" });
-    if (req.prompt.trim()) this.pushInput(ctx, req.prompt);
+    if (req.prompt.trim()) this.pushInput(ctx, req.prompt, req.attachments);
     ctx.q = this.deps.query({ prompt: input, options });
     this.runs.set(handle.runId, ctx);
     ctx.done = this.pump(ctx);
@@ -467,7 +468,8 @@ export class ClaudeAdapter implements AgentAdapter {
     const idle = () => (msg.queued_turn_count ?? 0) === 0 && ctx.outstanding.size === 0;
     if (!ctx.forced && idle() && ctx.outcome.reason === "completed" && ctx.req.nextTurn) {
       const next = await ctx.req.nextTurn().catch(() => null);
-      if (next && !ctx.forced && this.pushInput(ctx, next)) return;
+      const input = next ? toUserInput(next) : null;
+      if (input && !ctx.forced && this.pushInput(ctx, input.text, input.attachments)) return;
     }
     if (!ctx.forced && idle()) this.checkOutput(ctx, msg);
     if (ctx.forced || idle()) ctx.input.end();
@@ -556,9 +558,9 @@ export class ClaudeAdapter implements AgentAdapter {
   }
 
   /** Each message we send starts a turn, and its uuid is that turn's file checkpoint id. */
-  private pushInput(ctx: RunCtx, text: string): boolean {
+  private pushInput(ctx: RunCtx, text: string, attachments?: Attachment[]): boolean {
     const uuid = randomUUID();
-    const ok = ctx.input.push({ type: "user", message: { role: "user", content: text }, parent_tool_use_id: null, uuid });
+    const ok = ctx.input.push({ type: "user", message: { role: "user", content: claudeContent(text, attachments) }, parent_tool_use_id: null, uuid });
     if (ok) {
       ctx.outstanding.add(uuid);
       this.emit(ctx, { type: "turn.started", turnRef: uuid });

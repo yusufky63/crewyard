@@ -145,6 +145,17 @@ interface AgentAdapter {
 
 Unsupported operations are visible in the UI as disabled controls with a reason, never hidden.
 
+**Attachments.** `UserInput` and `StartRequest` carry `attachments` (images and files) next to the text, and `capabilities.attachments` says which kinds a runner takes. Each runner gets them through its own documented input:
+
+| Runner | Images | Files (PDF, text) |
+|---|---|---|
+| Claude Code | `image` blocks (base64) in the streamed user message (agent-sdk/streaming-vs-single-mode) | `document` blocks: base64 for a PDF, a text source for text files |
+| Codex | `localImage` items by path in `turn/start` and `turn/steer` | none documented: the file reaches it as a path in the text |
+| OpenCode | `file` parts with a `file://` URL to our copy (`FilePartInput`, @opencode-ai/sdk 1.19.5) | same; text files as `text/plain`, which OpenCode reads through its Read tool |
+| ACP (Gemini CLI) | an `image` block when initialize said `promptCapabilities.image` | an embedded `resource` when it said `embeddedContext`; otherwise a `resource_link`, which every agent must accept |
+
+The daemon lists every attachment with the path of its copy in the turn's text, so a kind a runner cannot take still reaches it as a file to read (the way omux turns a pasted image into a path). Where a runner cannot take a kind, attaching that kind to its queue is disabled with the reason, and the crew proposal names the steps that will get a path instead.
+
 ### 5.2 Per agent (verified against official sources on 2026-10-29)
 
 | | Claude Code | Codex | Gemini CLI | OpenCode |
@@ -167,6 +178,8 @@ ACP's `session/update` kinds plus our own fields:
 `message.delta`, `thought.delta`, `tool.call`, `tool.update`, `plan.update`, `diff.update`, `request.question`, `request.approval`, `usage.update`, `limit.update`, `run.state`, `run.ended`.
 
 Every event carries `runId`, `seq`, `at`, `source` (adapter + CLI version) and a redacted payload. Adapters keep raw protocol frames in a rolling debug log, off by default.
+
+Attachments never go into events: the bytes would blow past `MAX_EVENT_JSON` (`packages/core/src/event-caps.ts`). An upload (paste, drop, file picker, or a screenshot Crewyard takes itself) is checked by the daemon (PNG, JPEG, GIF or WebP by signature, up to 5 MB; PDF by signature or a text file whose content is text, up to 10 MB; 8 per task or message), written atomically to `<data>\attachments\staged\<id>\<name>`, and moved to `<data>\tasks\<task>\attachments\<id>\<name>` when the task is proposed or the message is queued. Events and audit entries carry only the ids; uploads nothing took are removed after a day, and deleting a queued message deletes its files. The handoff package lists the task's attachments and those of messages still queued, with their paths.
 
 ### 5.4 Conformance suite (per adapter, gate for every CLI upgrade)
 

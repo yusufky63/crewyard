@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
-import { ArrowDown, ArrowUp, CornerDownRight, Pencil, Trash2, Undo2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ArrowDown, ArrowUp, CornerDownRight, Pencil, Send, Trash2, Undo2 } from "lucide-react";
 import type { ControlState, QueuedMessageView, RunView, UndoPreview } from "@crewyard/core";
 import { Button, Label } from "@crewyard/ui";
+import { AttachButton, AttachmentList, DraftAttachments, useAttachmentDraft, useDiscardOnUnmount } from "../screens/tasks/Attachments.tsx";
 import { act } from "../screens/tasks/data.ts";
 import { FIXTURE } from "../screens/tasks/fixture.ts";
 import { codeKey } from "../screens/tasks/model.ts";
@@ -33,7 +34,10 @@ function QueueItem({ run, m, index, count, onError }: { run: RunView; m: QueuedM
       <span className="num muted">{String(index + 1).padStart(2, "0")}</span>
       <div className="ins-q-body">
         {draft === null ? (
-          <p className="ins-q-text">{m.text}</p>
+          <>
+            {m.text && <p className="ins-q-text">{m.text}</p>}
+            <AttachmentList items={m.attachments} compact />
+          </>
         ) : (
           <textarea className="ins-q-edit" rows={3} value={draft} autoFocus aria-label={f.t("inspector.queue.editLabel", { index: index + 1 })} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => e.key === "Escape" && setDraft(null)} />
         )}
@@ -97,14 +101,66 @@ function QueueItem({ run, m, index, count, onError }: { run: RunView; m: QueuedM
   );
 }
 
+/**
+ * A message to the step, with images and files pasted, dropped or picked. It joins the queue
+ * first; a kind this run's runner cannot take is disabled with the reason (PLAN.md §5.1).
+ */
+export function MessageForm({ run, onError }: { run: RunView; onError: OnError }) {
+  const f = useFormat();
+  const [text, setText] = useState("");
+  const allowed = run.controls.attach ?? { image: { ok: true, reason: null }, file: { ok: true, reason: null } };
+  const attach = useAttachmentDraft(allowed);
+  useDiscardOnUnmount(attach);
+  const live = run.endedAt === null && !run.pausedAt;
+  const ready = (text.trim().length > 0 || attach.ids.length > 0) && !attach.busy;
+  return (
+    <form
+      className="ins-message"
+      onDragOver={attach.handlers.onDragOver}
+      onDrop={attach.handlers.onDrop}
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!ready) return;
+        void (async () => {
+          try {
+            await act("runs.message", { runId: run.id, text: text.trim(), sessionId: run.nativeSessionId, ...(attach.ids.length > 0 ? { attachments: attach.ids } : {}) });
+            setText("");
+            attach.clear();
+          } catch (err) {
+            onError(err);
+          }
+        })();
+      }}
+    >
+      <label className="lbl" htmlFor="ins-msg">
+        {f.t("inspector.message")}
+      </label>
+      <textarea id="ins-msg" rows={2} value={text} onChange={(e) => setText(e.target.value)} onPaste={attach.handlers.onPaste} placeholder={live ? f.t("inspector.messageLive") : f.t("inspector.messageQueued")} />
+      <DraftAttachments draft={attach} />
+      <div className="ins-message-row">
+        <AttachButton draft={attach} allowed={allowed} />
+        <Button type="submit" variant="primary" disabled={!ready}>
+          <Send aria-hidden="true" />
+          {f.t("inspector.send")}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
 /** Messages for this step that the agent does not have yet. Shown as queued, never as sent. */
 export function QueueSection({ run, onError }: { run: RunView; onError: OnError }) {
   const f = useFormat();
   const reason = useReason();
+  const section = useRef<HTMLDivElement>(null);
+  // Screenshot mode only: `queue=open` scrolls the inspector to the queue and the message form.
+  useEffect(() => {
+    if (FIXTURE && new URLSearchParams(location.search).get("queue") === "open") section.current?.scrollIntoView({ block: "start" });
+  }, []);
   if (run.queue.length === 0) return null;
   const steer = run.controls.steer;
   return (
-    <div className="ins-sec" aria-live="polite">
+    <div className="ins-sec" aria-live="polite" ref={section}>
       <Label>{f.t("inspector.queue.title", { count: run.queue.length })}</Label>
       <p className="muted ins-small">{run.endedAt === null && !run.pausedAt ? f.t("inspector.queue.waitTurn") : f.t("inspector.queue.waitRun")}</p>
       <ol className="ins-q">

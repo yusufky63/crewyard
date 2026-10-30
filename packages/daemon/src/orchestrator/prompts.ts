@@ -1,4 +1,4 @@
-import type { RoleId } from "@crewyard/core";
+import type { Attachment, RoleId } from "@crewyard/core";
 import type { RunRow, TaskRow } from "./db.ts";
 import { ROLES } from "./roles.ts";
 
@@ -32,6 +32,8 @@ export interface HandoffPackageInput {
   diffStat: string | null;
   checkpointSha: string | null;
   openQuestions: string[];
+  /** Images and files you attached to the task and to messages the target still has to read. */
+  attachments?: Attachment[];
   transcript: string;
 }
 
@@ -80,6 +82,7 @@ export function handoffPackage(p: HandoffPackageInput): string {
     "## Open questions",
     ...(p.openQuestions.length ? p.openQuestions.map((q) => `- ${q}`) : ["(none)"]),
     "",
+    ...(p.attachments?.length ? ["## Attachments", "Files the user attached; read them from these paths.", ...p.attachments.map((a) => `- ${a.name} (${a.mime}, ${a.bytes} bytes): ${a.path}`), ""] : []),
     "## Transcript",
     p.transcript,
     "",

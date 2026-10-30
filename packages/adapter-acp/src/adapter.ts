@@ -4,10 +4,11 @@ import { mkdir } from "node:fs/promises";
 import { Readable, Writable } from "node:stream";
 import type { ChildProcess } from "node:child_process";
 import * as acp from "@agentclientprotocol/sdk";
-import { checkOutput, outputInstruction, outputRetryPrompt, parseOutputText } from "@crewyard/core";
-import type { AgentAdapter, AgentCapabilities, AgentEvent, Answer, EndReason, NativeSessionRef, OutputSchema, Probe, Profile, RunHandle, RunOutput, RunState, StartRequest, UserInput } from "@crewyard/core";
+import { checkOutput, outputInstruction, outputRetryPrompt, parseOutputText, toUserInput } from "@crewyard/core";
+import type { AgentAdapter, AgentCapabilities, Attachment, AgentEvent, Answer, EndReason, NativeSessionRef, OutputSchema, Probe, Profile, RunHandle, RunOutput, RunState, StartRequest, UserInput } from "@crewyard/core";
 import { ensureSystemEnv, exitCodeWithin, isShutdownExit, killTree, parseVersion, resolveBin, run as runCommand, start } from "@crewyard/proc";
 import { AGENTS, type AgentSpec } from "./agents.ts";
+import { acpPrompt } from "./input.ts";
 import { AcpMapper, chooseOutcome, mustReject, type EventBody } from "./mapper.ts";
 import { EventQueue } from "./queue.ts";
 import { acpMcpServers, mcpServerOf } from "./mcp.ts";
@@ -60,13 +61,15 @@ interface Run {
   conn: acp.ClientConnection;
   /** The agent advertised loadSession in initialize. */
   canLoad: boolean;
+  /** What initialize said the agent takes in a prompt besides text and resource links. */
+  promptCaps: acp.PromptCapabilities | null;
   sessionId: string;
   mapper: AcpMapper;
   queue: EventQueue<AgentEvent>;
   cliVersion: string | null;
   seq: number;
   state: RunState | null;
-  inbox: string[];
+  inbox: UserInput[];
   busy: boolean;
   /** session/load replays history as session/update; that history is already in our log. */
   loading: boolean;
@@ -204,7 +207,7 @@ export class AcpAdapter implements AgentAdapter {
     try {
       run.sessionId = await this.newSession(run);
       run.handle.nativeSession = { runner: "acp", sessionId: run.sessionId };
-      this.enqueue(run, withOutputInstruction(req.prompt, req.outputSchema));
+      this.enqueue(run, withOutputInstruction(req.prompt, req.outputSchema), req.attachments);
       return run.handle;
     } catch (err) {
       await this.discard(run);
@@ -221,7 +224,7 @@ export class AcpAdapter implements AgentAdapter {
       run.loading = false;
       run.sessionId = ref.sessionId;
       run.handle.nativeSession = { runner: "acp", sessionId: ref.sessionId };
-      if (req.prompt.trim()) this.enqueue(run, withOutputInstruction(req.prompt, req.outputSchema));
+      if (req.prompt.trim()) this.enqueue(run, withOutputInstruction(req.prompt, req.outputSchema), req.attachments);
       else this.setState(run, "waiting_input");
       return run.handle;
     } catch (err) {
@@ -235,7 +238,7 @@ export class AcpAdapter implements AgentAdapter {
   }
 
   async send(handle: RunHandle, input: UserInput): Promise<void> {
-    this.enqueue(this.live(handle), input.text);
+    this.enqueue(this.live(handle), input.text, input.attachments);
   }
 
   async answer(handle: RunHandle, requestId: string, answer: Answer): Promise<void> {
@@ -343,6 +346,7 @@ export class AcpAdapter implements AgentAdapter {
       seq: 0,
       state: null,
       inbox: [],
+      promptCaps: null,
       busy: false,
       loading: false,
       interrupted: false,
@@ -367,6 +371,7 @@ export class AcpAdapter implements AgentAdapter {
     try {
       const init = await opened.init;
       current.canLoad = init.agentCapabilities?.loadSession === true;
+      current.promptCaps = init.agentCapabilities?.promptCapabilities ?? null;
     } catch (err) {
       await this.discard(current);
       throw new Error(`${spec.label} did not complete the ACP handshake: ${message(err)}${current.stderr ? ` (${lastLine(current.stderr)})` : ""}`, { cause: err });
@@ -425,8 +430,8 @@ export class AcpAdapter implements AgentAdapter {
     }
   }
 
-  private enqueue(run: Run, text: string): void {
-    run.inbox.push(text);
+  private enqueue(run: Run, text: string, attachments?: Attachment[]): void {
+    run.inbox.push({ kind: "text", text, ...(attachments?.length ? { attachments } : {}) });
     if (!run.busy) void this.turns(run);
   }
 
@@ -438,11 +443,11 @@ export class AcpAdapter implements AgentAdapter {
     run.busy = true;
     let stop: acp.StopReason = "end_turn";
     while (run.inbox.length > 0 && !run.ended) {
-      const text = run.inbox.shift() as string;
+      const input = run.inbox.shift() as UserInput;
       this.setState(run, "running");
       run.turnText = "";
       try {
-        const res = await run.conn.agent.request(acp.methods.agent.session.prompt, { sessionId: run.sessionId, prompt: [{ type: "text", text }] });
+        const res = await run.conn.agent.request(acp.methods.agent.session.prompt, { sessionId: run.sessionId, prompt: acpPrompt(input.text, input.attachments, run.promptCaps) });
         stop = res.stopReason;
       } catch (err) {
         run.busy = false;
@@ -457,7 +462,7 @@ export class AcpAdapter implements AgentAdapter {
       if (run.inbox.length === 0 && stop === "end_turn" && run.req.nextTurn) {
         const next = await run.req.nextTurn().catch(() => null);
         if (next && !run.ended && !run.interrupted) {
-          run.inbox.push(next);
+          run.inbox.push(toUserInput(next));
           continue;
         }
       }
@@ -480,7 +485,7 @@ export class AcpAdapter implements AgentAdapter {
     run.output = output;
     if (output.ok || run.outputRetried) return;
     run.outputRetried = true;
-    run.inbox.push(outputRetryPrompt(schema, output.error));
+    run.inbox.push({ kind: "text", text: outputRetryPrompt(schema, output.error) });
   }
 
   private onPermission(run: Run, params: acp.RequestPermissionRequest, signal: AbortSignal): Promise<acp.RequestPermissionResponse> {

@@ -1,4 +1,4 @@
-import type { AgentAdapter, AgentCapabilities, AgentEvent, Answer, NativeSessionRef, Probe, RunHandle, StartRequest, UserInput } from "@crewyard/core";
+import { toUserInput, type AgentAdapter, type AgentCapabilities, type AgentEvent, type Answer, type Attachment, type NativeSessionRef, type Probe, type RunHandle, type StartRequest, type UserInput } from "@crewyard/core";
 import { callMcpTool } from "./mcp-call.ts";
 
 // A scripted runner for tests and UI work. A script is a list of steps; a step either emits an
@@ -25,6 +25,8 @@ export const capabilities: AgentCapabilities = {
   reportedLimits: true,
   readOnlyMode: true,
   mcp: { toolFilter: true },
+  // Records what it was given (inspect().started and inputs) instead of reading the files.
+  attachments: { images: true, files: true },
 };
 
 interface RunState {
@@ -34,6 +36,8 @@ interface RunState {
   early: Map<string, Answer>;
   received: Answer[];
   inputs: UserInput[];
+  /** The start or resume prompt and the attachments that came with it. */
+  started: { prompt: string; attachments: Attachment[] };
   /** Text steered into the running script (steer()). */
   steered: UserInput[];
   nextTurn: StartRequest["nextTurn"];
@@ -57,7 +61,7 @@ export class FakeAdapter implements AgentAdapter {
 
   async start(req: StartRequest): Promise<RunHandle> {
     const runId = `fake-${++this.counter}`;
-    this.runs.set(runId, { script: [...this.script], answers: new Map(), early: new Map(), received: [], inputs: [], steered: [], nextTurn: req.nextTurn, mcpServers: req.mcpServers, mcpResults: [], interrupted: false });
+    this.runs.set(runId, { script: [...this.script], answers: new Map(), early: new Map(), received: [], inputs: [], started: { prompt: req.prompt, attachments: req.attachments ?? [] }, steered: [], nextTurn: req.nextTurn, mcpServers: req.mcpServers, mcpResults: [], interrupted: false });
     return { runId, runner: "fake", pid: null, nativeSession: { runner: "fake", sessionId: runId } };
   }
 
@@ -80,7 +84,7 @@ export class FakeAdapter implements AgentAdapter {
     while (!state.interrupted && state.nextTurn) {
       const next = await state.nextTurn();
       if (!next) break;
-      state.inputs.push({ kind: "text", text: next });
+      state.inputs.push(toUserInput(next));
     }
     yield { type: "run.ended", reason: state.interrupted ? "stopped" : "completed", runId: run.runId, seq, at: new Date().toISOString(), source: { adapter: "fake", cliVersion: null } };
   }
@@ -122,9 +126,9 @@ export class FakeAdapter implements AgentAdapter {
   }
 
   /** Test helper: what the run received through answer() and send(). */
-  inspect(run: RunHandle): { answers: Answer[]; inputs: UserInput[]; steered: UserInput[]; mcpResults: Array<{ isError: boolean; text: string }> } {
+  inspect(run: RunHandle): { answers: Answer[]; inputs: UserInput[]; steered: UserInput[]; mcpResults: Array<{ isError: boolean; text: string }>; started: { prompt: string; attachments: Attachment[] } } {
     const s = this.mustGet(run);
-    return { answers: [...s.received], inputs: [...s.inputs], steered: [...s.steered], mcpResults: [...s.mcpResults] };
+    return { answers: [...s.received], inputs: [...s.inputs], steered: [...s.steered], mcpResults: [...s.mcpResults], started: s.started };
   }
 
   private mustGet(run: RunHandle): RunState {
