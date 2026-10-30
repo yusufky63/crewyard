@@ -106,6 +106,8 @@ interface Live {
   done: Promise<void>;
   /** A turn is running: follow-ups wait in the step's queue for its boundary (StartRequest.nextTurn). */
   inTurn: boolean;
+  /** The Test step runs the project tests at this run's turn boundary; the agent is idle meanwhile. */
+  testing?: boolean;
 }
 
 type ProposeParams = TasksIpc["tasks.propose"]["params"];
@@ -227,7 +229,7 @@ export class Orchestrator {
       session: (run) => this.sessionFor(run),
       audit: (taskId, runId, kind, payload) => this.audit(taskId, runId, kind, payload),
     });
-    this.stalls = new StallMonitor({ store: opts.store, db: this.db, now: this.now, inTurn: (runId) => this.live.get(runId)?.inTurn ?? false, emit: (topic, payload) => this.emit(topic, payload) });
+    this.stalls = new StallMonitor({ store: opts.store, db: this.db, now: this.now, inTurn: (runId) => Boolean(this.live.get(runId)?.inTurn && !this.live.get(runId)?.testing), emit: (topic, payload) => this.emit(topic, payload) });
     this.db.runExtras = (r) => ({
       queue: this.turns.queue.pending(r.member_id),
       controls: this.turns.controls(r),
@@ -773,8 +775,17 @@ export class Orchestrator {
       return null;
     }
     const live = this.live.get(runId);
-    // The agent is idle while its tests run; the stall rules must not read that as a hung turn.
-    if (live) live.inTurn = false;
+    // The agent is idle while its tests run: the stall rules must not read that as a hung turn,
+    // and the turn boundary stays held, so a queued message waits for it instead of racing the tests.
+    if (live) live.testing = true;
+    try {
+      return await this.runTests(runId, run, task, member, project, command, attempts, max, live);
+    } finally {
+      if (live) live.testing = false;
+    }
+  }
+
+  private async runTests(runId: string, run: RunRow, task: TaskRow, member: MemberRow, project: ProjectRow, command: string, attempts: number, max: number, live: Live | undefined): Promise<string | null> {
     const tree = await snapshot(run.cwd, null, this.opts.gitBin).then((s) => s.tree).catch(() => null);
     const started = this.now().getTime();
     const res = await runSteps([{ command, timeoutSec: TEST_TIMEOUT_SEC }], run.cwd, { ...process.env, ...this.bootstrapEnv(run, project) });

@@ -145,13 +145,18 @@ describe("taskTimeline", () => {
     add("run.request.approval", { requestId: "q1", command: "pnpm test" });
     add("request.answered", { requestId: "q1", kind: "approval", decision: "allow_once" });
     add("handoff.opened", { handoffId: "h1", target: "p-work", trigger: "limit" });
+    add("loop.decision", { decisionId: "d1", memberId: "m1", kind: "tests_failed", reason: { code: "loop.tests_failed", params: { command: "pnpm test", exitCode: 1, nested: { no: 1 } } }, iteration: 1, max: 3 });
+    // A kind this build does not know, or a broken reason, is left out rather than guessed.
+    add("loop.decision", { decisionId: "d2", memberId: "m1", kind: "tests_exploded", reason: { code: "loop.tests_failed" }, iteration: 1, max: 3 });
+    add("loop.decision", { decisionId: "d3", memberId: "m1", kind: "tests_passed", reason: "pnpm test", iteration: 1, max: 3 });
     const tl = taskTimeline(s.db, "t1");
-    expect(tl.events.map((e) => e.kind)).toEqual(["run.state", "tool.call", "tool.update", "request", "answered", "handoff"]);
+    expect(tl.events.map((e) => e.kind)).toEqual(["run.state", "tool.call", "tool.update", "request", "answered", "handoff", "loop"]);
+    expect(tl.events[6]).toMatchObject({ kind: "loop", decision: "tests_failed", memberId: "m1", iteration: 1, max: 3, reason: { code: "loop.tests_failed", params: { command: "pnpm test", exitCode: 1 } } });
     expect(tl.events[2]).toMatchObject({ preview: "ok", truncatedBytes: 80_000 });
     expect(tl.omitted).toBe(0);
-    const capped = taskTimeline(s.db, "t1", 2);
-    expect(capped.events.map((e) => e.kind)).toEqual(["answered", "handoff"]);
-    expect(capped.omitted).toBe(5);
+    const capped = taskTimeline(s.db, "t1", 4);
+    expect(capped.events.map((e) => e.kind)).toEqual(["handoff", "loop"]);
+    expect(capped.omitted).toBe(6);
     // The core builder takes it from here.
     const built = buildTimeline([{ id: "r-ds", memberId: "m1", role: "implementer", runner: "opencode", profileId: "p-ds", startedAt: daysAgo(1).toISOString(), endedAt: null, endReason: null }], tl.events, Date.now() + 1000);
     expect(built.entries.some((e) => e.kind === "request" && e.answeredAt !== null)).toBe(true);

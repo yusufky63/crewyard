@@ -268,9 +268,11 @@ Toasts are deduplicated and batched (at most one per account per window state). 
 3. **Stop the source at a turn boundary.** If a tool call is in flight, wait for it or interrupt it; never replay a half-finished tool call.
 4. **Checkpoint:** commit work in progress in the worktree as a local commit (`wip: handoff from <run>`). Nothing is pushed.
 5. **Build the handoff package:** task goal and acceptance criteria, approved plan, completed steps, `git diff --stat` and the WIP commit, failing tests, open questions, the reason for the handoff, the transcript path. Stored under the task folder and shown in the UI.
-6. **Start the target:** native resume if it is the same runner and account; otherwise a new session in the same worktree with the package as its first message. Cross-provider handoff never claims to carry hidden model state.
+6. **Start the target:** native resume if it is the same runner and account; a fork of the source session (compacted with the target model where the runner can) if it is the same runner and provider and the role has no independence rule; otherwise a new session in the same worktree with the package as its first message. The package is written in every case and is the fork's fallback. Cross-provider handoff never claims to carry hidden model state.
 7. **Commit or roll back:** the handoff record flips only after the target confirms it read the package and `git status` matches. On failure the source run stays paused and you get an Inbox item.
 8. **Report:** an event, a line in the task row, and a toast in Auto mode.
+
+Hardening (ADR 0006): a manual handoff either interrupts the turn or drains it (lets it finish first). A completed handoff moves the step to a new epoch, so late events from the source change nothing and its requests are cancelled. An open handoff found at daemon start is closed with its phase, and the source, which still holds the step, asks you. A session with history is replaced only when the runner says it is gone or locked, and then by a fresh run fed the package.
 
 ## 9. Crew proposal (role suggestion)
 
@@ -306,6 +308,14 @@ Roles are Markdown files with YAML front matter (`.mission/roles/*.md` in a repo
 | Security | read-only | findings with severity and evidence |
 
 A run cannot create other runs. If an agent asks for more work, the request becomes an Inbox item.
+
+### 9.2 Crew loops (ADR 0006)
+
+- **Run until green:** before an implementer of a code task finishes, the daemon runs the project's test command in its worktree; a failure goes back to the same session as the next turn.
+- **Review loop:** a reviewer's `changes` verdict returns its comments to the same implementer session (native resume), then Test and Review run again.
+- **Stop rules:** at most `loop.maxIterations` fix attempts per step (default 3), the spend caps, and stop when the worktree did not change since the last failing try. A stopped loop leaves the step failed and waiting for you.
+- **Pinned review:** reviewers read a detached checkout of the exact head; the verdict is stored with that sha, and the merge gate passes only a pass verdict for the PR head. Codex reviewers use its own `review/start`.
+- **Records:** every decision is recorded with its reason and shown in the timeline and the crew graph.
 
 ## 10. GitHub
 
