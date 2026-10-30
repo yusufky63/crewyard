@@ -158,6 +158,11 @@ export class EventMapper {
    * total_cost_usd is the CLI's own price estimate. For a model missing from its price table
    * (costBasis "unknown", e.g. every DeepSeek model) that estimate uses a Claude rate and was ~40x
    * too high, so the cost becomes Unknown and the daemon prices the tokens from the catalog.
+   *
+   * webSearchRequests counts the WebSearch tool's server-side searches, which DeepSeek bills as
+   * Search requests; result.usage.server_tool_use leaves out the tool's own request (seen live on
+   * DeepSeek on 2026-10-30: 0 there, 1 in modelUsage). WebFetch downloads the page on this machine
+   * and has the model read it, so no fetch request is reported.
    */
   private usage(msg: SDKResultMessage): EventBody {
     const models = Object.values(msg.modelUsage ?? {});
@@ -176,6 +181,7 @@ export class EventMapper {
       contextSize,
       costUsd: !unpriced && Number.isFinite(msg.total_cost_usd) && msg.total_cost_usd >= 0 ? msg.total_cost_usd : null,
       costProvenance: unpriced ? "unknown" : "estimated",
+      webSearchRequests: fromModels ? sum((m) => m.webSearchRequests) : (msg.usage.server_tool_use?.web_search_requests ?? 0),
     };
   }
 

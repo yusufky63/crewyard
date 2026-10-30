@@ -2,10 +2,10 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { peakFactor, type CatalogProvider } from "@crewyard/core";
+import { peakFactor, requestCost, type CatalogProvider } from "@crewyard/core";
 import { Store } from "../store.ts";
 import { balanceKind, fetchBalance, parseBalance } from "./balances.ts";
-import { buildCatalog, CatalogService, curated, peakPricingFor } from "./catalog.ts";
+import { buildCatalog, CatalogService, curated, peakPricingFor, requestPricingFor } from "./catalog.ts";
 import { dpapi, type Protector } from "./dpapi.ts";
 import { checkBudget, recordSpend, setThresholds, spendSummary, usageSamplesAvailable } from "./ledger.ts";
 import { SecretStore } from "./secrets.ts";
@@ -75,6 +75,16 @@ describe("catalog", () => {
     expect(peakPricingFor("deepseek")).toMatchObject({ factor: 2, days: [1, 2, 3, 4, 5], windows: ["01:00-04:00", "06:00-10:00"] });
     expect(peakPricingFor("openai")).toBeNull();
     expect(peakFactor(peakPricingFor("deepseek"), new Date("2026-10-30T07:59:00Z"))).toBe(2);
+  });
+
+  it("reads DeepSeek's Search and Fetch prices from curated.json, billed from 16:00 UTC on 2026-10-31", () => {
+    const pricing = requestPricingFor("deepseek");
+    expect(pricing).toMatchObject({ searchPer1k: 0.75, fetchPer1k: 0.75 });
+    expect(requestPricingFor("openai")).toBeNull();
+    expect(requestCost(pricing, 1, 1, new Date("2026-10-31T15:59:59Z"))).toBe(0);
+    expect(requestCost(pricing, 1, 1, new Date("2026-10-31T16:00:00Z"))).toBeCloseTo(0.0015, 10);
+    // No other curated provider bills web requests apart from tokens yet.
+    expect(curated.providers.filter((c) => c.requests !== undefined).map((c) => c.id)).toEqual(["deepseek"]);
   });
 
   it("seeds the bundled snapshot, refreshes with ETag at most daily and keeps the last good one offline", async () => {

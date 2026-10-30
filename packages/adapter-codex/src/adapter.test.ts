@@ -296,6 +296,22 @@ describe("CodexAdapter against a fake app-server", () => {
     expect(events.find((e) => e.type === "usage.update")).toMatchObject({ tokensIn: 14_000, tokensOut: 5_000, cacheRead: 48_000, reasoning: 1_700 });
   });
 
+  it("starts a resumed thread's web requests from its rollout and its reviews', so they never drop", async () => {
+    const dir = home({ scenario: "basic" });
+    const at = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const day = join(dir, "sessions", String(at.getFullYear()), pad(at.getMonth() + 1), pad(at.getDate()));
+    mkdirSync(day, { recursive: true });
+    const stamp = `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}T${pad(at.getHours())}-${pad(at.getMinutes())}-${pad(at.getSeconds())}`;
+    const web = (action: string) => JSON.stringify({ type: "response_item", payload: { type: "web_search_call", id: `c-${action}`, status: "completed", action: { type: action } } });
+    // Earlier turns of thr-old searched twice and opened a page; its review searched once.
+    writeFileSync(join(day, `rollout-${stamp}-thr-old.jsonl`), [JSON.stringify({ type: "session_meta", payload: { id: "thr-old", source: "vscode" } }), web("search"), web("open_page"), web("search"), ""].join("\n"));
+    writeFileSync(join(day, `rollout-${stamp}-rv-1.jsonl`), [JSON.stringify({ type: "session_meta", payload: { id: "rv-1", parent_thread_id: "thr-old", source: { subagent: "review" } } }), web("search"), ""].join("\n"));
+    const adapter = new CodexAdapter(launcher);
+    const events = await collect(adapter, await adapter.resume({ runner: "codex", sessionId: "thr-old" }, request(dir, { prompt: "Continue" })));
+    expect(events.find((e) => e.type === "usage.update")).toMatchObject({ webSearchRequests: 3, webFetchRequests: 1 });
+  });
+
   it("refuses to resume another runner's session", async () => {
     await expect(new CodexAdapter(launcher).resume({ runner: "opencode", sessionId: "x" }, request(home()))).rejects.toThrow(/opencode/);
   });
@@ -444,7 +460,9 @@ describe("native review and fork", () => {
     const source = home();
     const rollout = join(source, "sessions", "2026", "10", "30");
     mkdirSync(rollout, { recursive: true });
-    writeFileSync(join(rollout, "rollout-2026-10-30T10-00-00-thr-src.jsonl"), "{}\n");
+    // The source searched once and opened a page: the fork's history holds both.
+    const web = (action: string) => JSON.stringify({ type: "response_item", payload: { type: "web_search_call", id: `c-${action}`, status: "completed", action: { type: action } } });
+    writeFileSync(join(rollout, "rollout-2026-10-30T10-00-00-thr-src.jsonl"), `{}\n${web("search")}\n${web("open_page")}\n`);
     const target = home();
     const adapter = new CodexAdapter(launcher);
     const res = await adapter.fork({
@@ -458,7 +476,7 @@ describe("native review and fork", () => {
       compacted: true,
       summary: null,
       usage: { tokensIn: 600, tokensOut: 120, cacheRead: 0, costUsd: null },
-      totals: { tokensIn: 1600, tokensOut: 120, cacheRead: 0, costUsd: null },
+      totals: { tokensIn: 1600, tokensOut: 120, cacheRead: 0, costUsd: null, webSearchRequests: 1, webFetchRequests: 1 },
     });
     const log = received(target);
     expect(sentBy(log, "thread/fork")[0]).toMatchObject({ threadId: "thr-src", path: join(rollout, "rollout-2026-10-30T10-00-00-thr-src.jsonl"), model: "deepseek-pro", config: { "agents.enabled": false } });

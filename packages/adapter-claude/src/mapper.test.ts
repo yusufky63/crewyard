@@ -72,6 +72,22 @@ describe("EventMapper", () => {
     const out = new EventMapper().map(result({ modelUsage: {} }))[0];
     expect(out).toMatchObject({ type: "usage.update", tokensIn: 1500, tokensOut: 200, cacheRead: 6000, cacheWrite: 400, contextSize: null, contextUsed: null, costUsd: 0.0151, costProvenance: "estimated" });
   });
+
+  it("counts WebSearch's server-side searches from modelUsage, and reports no fetches", () => {
+    // As Claude Code 2.1.312 on DeepSeek reported one WebSearch and one WebFetch on 2026-10-30:
+    // the search only in modelUsage, the fetch nowhere (it ran on this machine).
+    const flash = { inputTokens: 27387, outputTokens: 1439, thinkingTokens: 0, cacheReadInputTokens: 48256, cacheCreationInputTokens: 0, webSearchRequests: 1, costUSD: 0.207038, contextWindow: 200000, maxOutputTokens: 32000, canonicalModel: "deepseek-flash", provider: "firstParty", costBasis: "unknown" as const };
+    const usage = { input_tokens: 17053, output_tokens: 269, cache_creation_input_tokens: 0, cache_read_input_tokens: 47872, server_tool_use: { web_search_requests: 0, web_fetch_requests: 0 } };
+    const out = new EventMapper().map(result({ total_cost_usd: 0.207038, usage: usage as never, modelUsage: { "deepseek-flash": flash, "deepseek-v4-pro": { ...flash, webSearchRequests: 2 } } }))[0];
+    expect(out).toMatchObject({ type: "usage.update", webSearchRequests: 3 });
+    expect(out).not.toHaveProperty("webFetchRequests");
+  });
+
+  it("reads searches from the result's own usage when there is no per-model breakdown", () => {
+    const out = new EventMapper().map(result({ modelUsage: {}, usage: { input_tokens: 1, output_tokens: 1, server_tool_use: { web_search_requests: 2, web_fetch_requests: 0 } } as never }))[0];
+    expect(out).toMatchObject({ webSearchRequests: 2 });
+    expect(new EventMapper().map(result({ modelUsage: {} }))[0]).toMatchObject({ webSearchRequests: 0 });
+  });
 });
 
 describe("tool helpers", () => {

@@ -454,6 +454,65 @@ describe("usage and cost", () => {
     expect(o.get(tasks["ds-opencode"]!).runs[0]!.cost).toEqual({ usd: 0.2, provenance: "estimated" });
     expect(o.get(tasks["ds-billed"]!).runs[0]!.cost).toEqual({ usd: 0.1, provenance: "reported" });
   });
+
+  describe("DeepSeek's Search and Fetch requests", () => {
+    // $0.75 per 1,000 of each, billed from 00:00 Beijing time on 2026-11-01 (16:00 UTC the day before).
+    const requests = { searchPer1k: 0.75, fetchPer1k: 0.75, from: "2026-11-01T00:00:00+08:00", ref: "https://api-docs.deepseek.com/quick_start/pricing", checked: "2026-10-30" };
+    type Report = { search?: number; fetch?: number; costUsd?: number; costProvenance?: "estimated" | "reported" | "unknown" };
+    const report = (r: Report): FakeStep => ({
+      emit: {
+        type: "usage.update",
+        tokensIn: 1_000_000,
+        tokensOut: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        reasoning: 0,
+        contextUsed: null,
+        contextSize: null,
+        costUsd: r.costUsd ?? null,
+        costProvenance: r.costProvenance ?? "unknown",
+        ...(r.search !== undefined ? { webSearchRequests: r.search } : {}),
+        ...(r.fetch !== undefined ? { webFetchRequests: r.fetch } : {}),
+      },
+    });
+    const run = async (at: string, steps: Record<string, FakeStep[]>, kind: "api_key" | "plan_signin" = "api_key") => {
+      const cands = Object.keys(steps).map((id) => ({ ...candidate(id, "deepseek", model(id, { cost: { input: 0.27, output: 1.1, cacheRead: 0.07 } }), kind), requests }));
+      const pick: Picker = (_role, req) => [running, ...steps[req.model ?? ""]!, say("done")];
+      const { o, project, store } = await setup({ pick, candidates: cands.map((c) => ({ ...c, credentialId: `cred-${c.profile.id}` })), options: { now: () => new Date(Date.parse(at)) } });
+      const tasks: Record<string, string> = {};
+      for (const id of Object.keys(steps)) {
+        const t = await o.propose({ projectId: project.id, title: `Research ${id}`, pins: { researcher: id } });
+        await o.approve({ taskId: t.id });
+        tasks[id] = t.id;
+      }
+      await waitFor(() => Object.values(tasks).every((id) => o.get(id).status === "done"));
+      return { cost: (id: string) => o.get(tasks[id]!).runs[0]!.cost, ledger: (id: string) => (store.db.prepare("select sum(cost_usd) as usd from spend where task_id = ?").get(tasks[id]!) as { usd: number }).usd };
+    };
+
+    it("adds the growth of each total to the estimate, once billing has started", async () => {
+      // Monday 10:45 UTC, off-peak: the tokens cost 0.27 at the listed rate.
+      const { cost, ledger } = await run("2026-11-02T10:45:00Z", {
+        // 2 + 4 searches and 1 fetch; a report without totals adds none; a total that went down
+        // restarted (a resumed thread whose rollout was unreadable) and counts in full: 1 + 1 more.
+        catalog: [report({ search: 2, fetch: 1 }), report({ search: 6, fetch: 1 }), report({}), report({ search: 1, fetch: 0 }), report({ search: 2 })],
+        // OpenCode's own estimate leaves requests out; a provider's bill already has them.
+        own: [report({ search: 4, costUsd: 0.1, costProvenance: "estimated" })],
+        billed: [report({ search: 4, costUsd: 0.1, costProvenance: "reported" })],
+      });
+      expect(cost("catalog").usd).toBeCloseTo(0.27 + (8 + 1) * 0.00075, 6);
+      expect(ledger("catalog")).toBeCloseTo(0.27 + (8 + 1) * 0.00075, 6);
+      expect(cost("own")).toMatchObject({ provenance: "estimated" });
+      expect(cost("own").usd).toBeCloseTo(0.1 + 4 * 0.00075, 6);
+      expect(cost("billed")).toEqual({ usd: 0.1, provenance: "reported" });
+    });
+
+    it("is free before 16:00 UTC on 2026-10-31 and on keys that do not bill per request", async () => {
+      const before = await run("2026-10-31T15:59:00Z", { early: [report({ search: 40, fetch: 40 })] });
+      expect(before.cost("early").usd).toBeCloseTo(0.27, 6);
+      const plan = await run("2026-11-02T10:45:00Z", { plan: [report({ search: 40, fetch: 40 })] }, "plan_signin");
+      expect(plan.cost("plan")).toEqual({ usd: 0, provenance: "estimated" });
+    });
+  });
 });
 
 describe("recovery", () => {

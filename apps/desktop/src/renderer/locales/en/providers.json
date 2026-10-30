@@ -28,7 +28,7 @@
   },
   "supportShort": { "native": "native", "direct": "direct", "config": "through config", "conversion": "needs a converter" },
   "legend": { "direct": "Works directly", "config": "Through the profile's config", "conversion": "Needs a format converter, not offered yet" },
-  "sources": "Models, prices and context limits come from models.dev; Anthropic-compatible and balance endpoints come from cc-switch. DeepSeek bills twice the listed price in its weekday peak hours (01:00–04:00 and 06:00–10:00 UTC), and estimates follow that, from its own pricing page. Relays that resell other providers' subscriptions are not listed.",
+  "sources": "Models, prices and context limits come from models.dev; Anthropic-compatible and balance endpoints come from cc-switch. DeepSeek bills twice the listed price in its weekday peak hours (01:00–04:00 and 06:00–10:00 UTC), and from 16:00 UTC on 31 October 2026 $0.75 per 1,000 web searches and page fetches its server runs for Claude Code and Codex; estimates follow both, from its own pricing page. Relays that resell other providers' subscriptions are not listed.",
   "notConnected": "Not connected",
   "connectAction": "Connect",
   "connectNamed": "Connect {{name}}",

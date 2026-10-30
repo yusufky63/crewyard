@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
-import { Catalog, PeakPricing, type CatalogInfo, type CatalogModel, type CatalogProvider, type RunnerSupport } from "@crewyard/core";
+import { Catalog, PeakPricing, RequestPricing, type CatalogInfo, type CatalogModel, type CatalogProvider, type RunnerSupport } from "@crewyard/core";
 import bundledJson from "../../../../catalog/providers.json" with { type: "json" };
 import curatedJson from "../../../../catalog/curated.json" with { type: "json" };
 
@@ -21,6 +21,7 @@ export interface CuratedEntry {
   balance?: string;
   quota?: string;
   peak?: unknown;
+  requests?: unknown;
   ref?: string;
   note?: string;
 }
@@ -62,6 +63,11 @@ const PEAK = new Map(curated.providers.filter((c) => c.peak !== undefined).map((
 
 /** The provider's time-of-use pricing, or null when it bills one rate all day. */
 export const peakPricingFor = (providerId: string): PeakPricing | null => PEAK.get(providerId) ?? null;
+
+const REQUESTS = new Map(curated.providers.filter((c) => c.requests !== undefined).map((c) => [c.id, RequestPricing.parse(c.requests)]));
+
+/** The provider's price for server-side web search and fetch requests, or null when it bills none apart from tokens. */
+export const requestPricingFor = (providerId: string): RequestPricing | null => REQUESTS.get(providerId) ?? null;
 
 // Codex reaches non-OpenAI providers through `model_providers` in a per-profile config.toml.
 // These bases are not in models.dev; they come from cc-switch src/config/codexProviderPresets.ts.

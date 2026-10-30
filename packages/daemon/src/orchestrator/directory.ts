@@ -1,4 +1,4 @@
-import type { AgentCapabilities, CatalogModel, PeakPricing, Profile } from "@crewyard/core";
+import type { AgentCapabilities, CatalogModel, PeakPricing, Profile, RequestPricing } from "@crewyard/core";
 
 // Where crew proposals get their candidates from. The providers work owns profiles, credentials
 // and the catalog; it plugs in by calling `orchestratorFor(ctx).setDirectory(...)`. Until then the
@@ -18,6 +18,8 @@ export interface Candidate {
   catalogVersion?: string | null;
   /** The provider's peak-hour pricing; estimates multiply `model` prices by its factor inside a window. */
   peak?: PeakPricing | null;
+  /** The provider's price for the web searches and page fetches its server runs, billed apart from tokens. */
+  requests?: RequestPricing | null;
   /** The profile's "when to use" note for the crew proposal's reason; never sent to an agent. */
   note?: string | null;
   /** Profile preset: offered only for roles that never write. */

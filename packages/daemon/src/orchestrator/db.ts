@@ -399,18 +399,30 @@ export class OrchestratorDb {
   }
 
   /** Last running totals a runner reported for one native session (they survive resume). */
-  nativeUsage(runner: RunnerId, sessionId: string): { tokensIn: number; tokensOut: number; cacheRead: number; reasoning: number; costUsd: number | null } | null {
-    const r = this.one<{ tokens_in: number; tokens_out: number; cache_read: number; reasoning: number | null; cost_usd: number | null }>(
-      `select n.tokens_in, n.tokens_out, n.cache_read, r.reasoning, n.cost_usd from native_usage n
+  nativeUsage(
+    runner: RunnerId,
+    sessionId: string,
+  ): { tokensIn: number; tokensOut: number; cacheRead: number; reasoning: number; costUsd: number | null; webSearchRequests: number; webFetchRequests: number } | null {
+    const r = this.one<{ tokens_in: number; tokens_out: number; cache_read: number; reasoning: number | null; cost_usd: number | null; web_search: number | null; web_fetch: number | null }>(
+      `select n.tokens_in, n.tokens_out, n.cache_read, r.reasoning, n.cost_usd, q.web_search, q.web_fetch from native_usage n
        left join native_usage_reasoning r on r.runner = n.runner and r.session_id = n.session_id
+       left join native_usage_requests q on q.runner = n.runner and q.session_id = n.session_id
        where n.runner = ? and n.session_id = ?`,
       runner,
       sessionId,
     );
-    return r ? { tokensIn: r.tokens_in, tokensOut: r.tokens_out, cacheRead: r.cache_read, reasoning: r.reasoning ?? 0, costUsd: r.cost_usd } : null;
+    return r
+      ? { tokensIn: r.tokens_in, tokensOut: r.tokens_out, cacheRead: r.cache_read, reasoning: r.reasoning ?? 0, costUsd: r.cost_usd, webSearchRequests: r.web_search ?? 0, webFetchRequests: r.web_fetch ?? 0 }
+      : null;
   }
 
-  setNativeUsage(runner: RunnerId, sessionId: string, u: { tokensIn: number; tokensOut: number; cacheRead: number; reasoning?: number; costUsd: number | null }, at: string): void {
+  /** Request totals are stored only when given: a runner that cannot see them leaves the last ones in place. */
+  setNativeUsage(
+    runner: RunnerId,
+    sessionId: string,
+    u: { tokensIn: number; tokensOut: number; cacheRead: number; reasoning?: number; costUsd: number | null; webSearchRequests?: number; webFetchRequests?: number },
+    at: string,
+  ): void {
     this.exec(
       `insert into native_usage (runner, session_id, tokens_in, tokens_out, cache_read, cost_usd, updated_at) values (?, ?, ?, ?, ?, ?, ?)
        on conflict (runner, session_id) do update set tokens_in = excluded.tokens_in, tokens_out = excluded.tokens_out, cache_read = excluded.cache_read, cost_usd = excluded.cost_usd, updated_at = excluded.updated_at`,
@@ -428,6 +440,15 @@ export class OrchestratorDb {
       runner,
       sessionId,
       u.reasoning ?? 0,
+    );
+    if (u.webSearchRequests === undefined && u.webFetchRequests === undefined) return;
+    this.exec(
+      `insert into native_usage_requests (runner, session_id, web_search, web_fetch) values (?, ?, ?, ?)
+       on conflict (runner, session_id) do update set web_search = excluded.web_search, web_fetch = excluded.web_fetch`,
+      runner,
+      sessionId,
+      u.webSearchRequests ?? 0,
+      u.webFetchRequests ?? 0,
     );
   }
 

@@ -32,6 +32,7 @@ function rollout(codexHome: string, at: Date, id: string, meta: Record<string, u
 const review = (parent: string) => ({ parent_thread_id: parent, source: { subagent: "review" } });
 const tokens = (input: number, cached: number, output: number, reasoning = 0) =>
   `${JSON.stringify({ type: "event_msg", payload: { type: "token_count", info: { total_token_usage: { input_tokens: input, cached_input_tokens: cached, cache_write_input_tokens: 0, output_tokens: output, reasoning_output_tokens: reasoning, total_tokens: input + output } } } })}\n`;
+const webCall = (action: string) => `${JSON.stringify({ type: "response_item", payload: { type: "web_search_call", id: `c-${action}`, status: "completed", action: { type: action } } })}\n`;
 const usage = (input: number, cached: number, output: number, reasoning = 0) => ({ ...NO_USAGE, totalTokens: input + output, inputTokens: input, cachedInputTokens: cached, outputTokens: output, reasoningOutputTokens: reasoning });
 
 describe("ReviewUsage", () => {
@@ -84,6 +85,25 @@ describe("ReviewUsage", () => {
 
   it("is zero for a profile that never ran codex", async () => {
     expect(await new ReviewUsage(home(), "thr-1", now).total()).toEqual(NO_USAGE);
+  });
+
+  it("counts each web request a review made once, however often the file is read", async () => {
+    const h = home();
+    const file = rollout(h, now, "rv-a", review("thr-1"));
+    appendFileSync(rollout(h, now, "rv-c", review("thr-2")), webCall("search"));
+    const reader = new ReviewUsage(h, "thr-1", now);
+    appendFileSync(file, `${webCall("search")}${tokens(1_000, 0, 10)}`);
+    await reader.total();
+    expect(reader.requests()).toEqual({ search: 1, fetch: 0 });
+    // A call codex is still writing counts once it is whole.
+    appendFileSync(file, webCall("open_page").slice(0, 50));
+    await reader.total();
+    expect(reader.requests()).toEqual({ search: 1, fetch: 0 });
+    appendFileSync(file, `${webCall("open_page").slice(50)}${tokens(2_000, 0, 20)}`);
+    expect(await reader.total()).toEqual(usage(2_000, 0, 20));
+    expect(reader.requests()).toEqual({ search: 1, fetch: 1 });
+    await reader.total();
+    expect(reader.requests()).toEqual({ search: 1, fetch: 1 });
   });
 });
 

@@ -76,6 +76,9 @@ export interface ForkUsage {
   tokensOut: number;
   cacheRead: number;
   costUsd: number | null;
+  /** usage.update's server-side request totals; a fork that copies a thread's history copies its searches too. */
+  webSearchRequests?: number;
+  webFetchRequests?: number;
 }
 
 /** What a native review compares against (Codex ReviewTarget `baseBranch` / `commit`). */
