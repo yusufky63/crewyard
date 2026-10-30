@@ -127,7 +127,8 @@ describe("sign-in per profile", () => {
     expect(await signIn.start(p.id)).toMatchObject({ state: "failed", error: expect.stringMatching(/0\.6\.1/) });
     expect(svc.signInStatus(p.id)).toMatchObject({ state: "blocked", update: { min: "0.25.0", command: "npm install -g @google/gemini-cli@latest" } });
     // The crew proposal does not pick a profile that cannot run.
-    expect(providersDirectory(svc).candidates().find((c) => c.profile.id === p.id)?.ready).toBe(false);
+    const candidates = await providersDirectory(svc).candidates("project");
+    expect(candidates.find((c) => c.profile.id === p.id)?.ready).toBe(false);
   });
 
   it("signs out through the CLI, then empties only that profile's folder", async () => {

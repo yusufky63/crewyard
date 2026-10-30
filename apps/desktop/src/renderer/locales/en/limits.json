@@ -6,7 +6,8 @@
   "plans": {
     "title": "Plan windows",
     "notify": "Notify {{warn}}% · critical {{critical}}%",
-    "none": "No sign-in accounts yet. Codex, Gemini CLI and OpenCode accounts that sign in through their own CLI show their windows here.",
+    "none": "No sign-in accounts yet. Codex accounts that sign in with ChatGPT and Gemini CLI accounts that sign in with Google show their windows here.",
+    "signInChecked": "sign-in checked {{time}}",
     "quota": "Plan quota",
     "unknownMeter": "{{name}}: quota unknown",
     "meter": "{{name}}: {{window}} {{pct}} percent used",
@@ -69,6 +70,11 @@
     "tipKey": "{{name}}: {{spent}} today of the {{cap}} daily cap ({{provenance}})",
     "tipKeyNoCap": "{{name}}: {{spent}} today, no daily cap ({{provenance}})",
     "tipPlan": "{{name}}: {{window}} {{pct}}% used ({{provenance}})",
-    "tipUnknown": "{{name}}: no limit data ({{provenance}})"
+    "tipUnknown": "{{name}}: no limit data ({{provenance}})",
+    "signIn": "Sign in",
+    "update": "Update",
+    "tipSignedOut": "{{name}} is not signed in",
+    "tipBlocked": "{{name}}: its CLI needs an update before it can sign in",
+    "tipChecked": "checked {{time}}"
   }
 }

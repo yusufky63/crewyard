@@ -86,7 +86,7 @@ export class IdleLimits {
 
   /** Only reported windows are stored: an Unknown reading would hide the last real one. */
   private async read(profile: Profile): Promise<boolean> {
-    let samples: LimitSample[] = [];
+    let samples: LimitSample[];
     try {
       samples = (await this.deps.fetch(profile)).filter((s) => s.provenance === "reported" && s.usedPct !== null);
     } catch {

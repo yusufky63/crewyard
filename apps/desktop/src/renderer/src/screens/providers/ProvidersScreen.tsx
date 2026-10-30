@@ -3,10 +3,13 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { BrandIcon, Button, Label, Panel } from "@crewyard/ui";
-import { PROFILE_RUNNERS, runnerSupport, type BalanceView, type CatalogProvider, type CredentialSummary, type ProfileSummary, type SpendSlice } from "@crewyard/core";
-import { call, useDaemon } from "../../ipc.ts";
+import { PROFILE_RUNNERS, runnerSupport, type BalanceView, type CatalogProvider, type CredentialSummary, type ProfileSummary, type SignInStatus, type SpendSlice } from "@crewyard/core";
+import { call } from "../../ipc.ts";
+import { useProvidersQuery as useDaemon } from "./data.ts";
+import { FIXTURE } from "./fixture.ts";
 import { AddProviderDialog, ManageDialog } from "./Dialogs.tsx";
 import { newestModels, ProvBadge, useMoney, usePrice, useProvidersLive, useWhen } from "./shared.tsx";
+import { SignInBadge, useSignIn } from "./SignIn.tsx";
 import "./providers.css";
 
 type Filter = "all" | "connected" | CatalogProvider["group"];
@@ -50,10 +53,31 @@ function ModelsCell({ provider }: { provider: CatalogProvider }) {
   );
 }
 
-function CredentialCell({ provider, creds, profiles, balances, today }: { provider: CatalogProvider; creds: CredentialSummary[]; profiles: ProfileSummary[]; balances: BalanceView[]; today: SpendSlice[] }) {
+function CredentialCell({
+  provider,
+  creds,
+  profiles,
+  balances,
+  today,
+  signIns,
+}: {
+  provider: CatalogProvider;
+  creds: CredentialSummary[];
+  profiles: ProfileSummary[];
+  balances: BalanceView[];
+  today: SpendSlice[];
+  signIns: SignInStatus[];
+}) {
   const { t } = useTranslation("providers");
   const money = useMoney();
+  const when = useWhen();
   const signIn = profiles.filter((p) => p.credentialId === null);
+  // Sign-in profiles show where each one stands; local providers keep their one summary line.
+  const withStatus = signIn.flatMap((p) => {
+    const s = signIns.find((x) => x.profileId === p.id);
+    return s ? [{ p, s }] : [];
+  });
+  const rest = signIn.filter((p) => !withStatus.some((w) => w.p.id === p.id));
   if (!creds.length && !signIn.length) return <span className="muted">{t("notConnected")}</span>;
   return (
     <div className="pv-creds">
@@ -79,9 +103,18 @@ function CredentialCell({ provider, creds, profiles, balances, today }: { provid
           </div>
         );
       })}
-      {signIn.length > 0 && (
+      {withStatus.map(({ p, s }) => (
+        <div key={p.id}>
+          <div>{t("signInAlias", { runner: t(`runner.${p.runner}`), alias: p.alias })}</div>
+          <div className="pv-sub">
+            <SignInBadge status={s} />
+            <span>{s.probedAt ? t("signIn.checked", { time: when.ago(s.probedAt) }) : t("signIn.neverChecked")}</span>
+          </div>
+        </div>
+      ))}
+      {rest.length > 0 && (
         <div>
-          <div>{t("ownSignIn", { aliases: signIn.map((p) => p.alias).join(", ") })}</div>
+          <div>{t("ownSignIn", { aliases: rest.map((p) => p.alias).join(", ") })}</div>
           <div className="pv-sub">
             {provider.group === "local" ? t("noLimit") : t("windowsOnLimits")} {provider.group !== "local" && <ProvBadge value="unknown" />}
           </div>
@@ -101,10 +134,12 @@ export function ProvidersScreen() {
   const profiles = useDaemon("providers.profiles", undefined);
   const balances = useDaemon("providers.balances", undefined);
   const spend = useDaemon("providers.spend", { days: 1 });
+  const signIn = useSignIn();
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState<{ id: string | null } | null>(null);
-  const [managing, setManaging] = useState<string | null>(null);
+  // Screenshot mode can open one provider's dialog with `manage=<id>`.
+  const [managing, setManaging] = useState<string | null>(() => (FIXTURE ? new URLSearchParams(location.search).get("manage") : null));
 
   const refresh = useMutation({
     mutationFn: () => call("providers.catalogRefresh", { force: true }),
@@ -231,6 +266,7 @@ export function ProvidersScreen() {
                       profiles={profList.filter((x) => x.providerId === p.id)}
                       balances={balances.data ?? []}
                       today={spend.data?.todayByCredential ?? []}
+                      signIns={signIn.status}
                     />
                   </td>
                   <td className="pv-act">

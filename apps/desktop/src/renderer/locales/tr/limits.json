@@ -6,7 +6,8 @@
   "plans": {
     "title": "Plan pencereleri",
     "notify": "Uyarı %{{warn}} · kritik %{{critical}}",
-    "none": "Henüz oturumla bağlanan hesap yok. Kendi CLI'ı üzerinden oturum açan Codex, Gemini CLI ve OpenCode hesaplarının pencereleri burada görünür.",
+    "none": "Henüz oturumla bağlanan hesap yok. ChatGPT ile oturum açan Codex ve Google ile oturum açan Gemini CLI hesaplarının pencereleri burada görünür.",
+    "signInChecked": "oturum {{time}} denetlendi",
     "quota": "Plan kotası",
     "unknownMeter": "{{name}}: kota bilinmiyor",
     "meter": "{{name}}: {{window}} yüzde {{pct}} kullanıldı",
@@ -69,6 +70,11 @@
     "tipKey": "{{name}}: bugün {{spent}}, günlük sınır {{cap}} ({{provenance}})",
     "tipKeyNoCap": "{{name}}: bugün {{spent}}, günlük sınır yok ({{provenance}})",
     "tipPlan": "{{name}}: {{window}} %{{pct}} kullanıldı ({{provenance}})",
-    "tipUnknown": "{{name}}: limit verisi yok ({{provenance}})"
+    "tipUnknown": "{{name}}: limit verisi yok ({{provenance}})",
+    "signIn": "Giriş",
+    "update": "Güncelle",
+    "tipSignedOut": "{{name}} için oturum açılmamış",
+    "tipBlocked": "{{name}}: oturum açabilmesi için CLI'ın güncellenmesi gerekiyor",
+    "tipChecked": "{{time}} denetlendi"
   }
 }

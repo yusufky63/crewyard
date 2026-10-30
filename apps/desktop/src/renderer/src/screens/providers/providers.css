@@ -70,6 +70,19 @@ tr.dim .prov-name { color: var(--ink-2); }
 .pv-add-profile .pv-input { flex: 1 1 140px; }
 .pv-add-profile .pv-error { flex-basis: 100%; }
 
+/* Sign-in for profiles that use the runner's own login. */
+.si { display: grid; gap: 8px; }
+.si-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12px; }
+.si-line .st { font-size: 12px; }
+.si-line .end { margin-left: auto; display: flex; gap: 4px; flex-wrap: wrap; }
+.si-box { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); background: var(--raised); font-size: 12px; }
+.si-cmd { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.si-cmd code { flex: 1; min-width: 0; padding: 6px 8px; border: 1px solid var(--line); background: var(--canvas); font-size: 12px; overflow-x: auto; white-space: nowrap; }
+.si-code { font-size: 14px; letter-spacing: 0.08em; }
+.si-actions { display: flex; gap: 4px; flex-wrap: wrap; }
+.si-note { font-size: 12px; }
+.pv-signins { display: grid; gap: 4px; }
+
 @media (max-width: 1180px) {
   .pv-search { margin-left: 0; width: 100%; }
   .pv-table td:first-child, .pv-table td:nth-child(2) { width: auto; }
