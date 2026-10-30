@@ -241,21 +241,25 @@ describe.runIf(live)("crewyard live", () => {
       }
       return defaultDecide(r);
     };
-    const description = "In src/math.js add and export a function multiply(a, b) that returns the product. Add a test for it in src/math.test.js next to the existing one. Run the tests with `npm test`, then commit. Keep the change small.";
+    // The github flow merges this change into the test repo, so every run asks for a function that
+    // is not there yet; a fixed name finds the previous run's merge and leaves nothing to commit.
+    const fn = `times${Date.now().toString(36).slice(-5)}`;
+    const title = `Add a ${fn} function and its test`;
+    const description = `In src/math.js add and export a function ${fn}(a, b) that returns the product of a and b. Add a test for it in src/math.test.js next to the existing ones. Run the tests with \`npm test\`, then commit. Keep the change small.`;
 
     // What the app picks on its own, for the record; it is cancelled before anything runs.
-    const auto = await d.call("tasks.propose", { projectId, title: "Add a multiply function and its test", description });
+    const auto = await d.call("tasks.propose", { projectId, title, description });
     d.log("auto proposal", auto.kind, auto.size, auto.classification.map((c) => c.code).join(","), "|", crewLine(auto), "| estimate", auto.crew?.estimate.usd ?? "?", auto.crew?.estimate.provenance);
     await d.call("tasks.cancel", { taskId: auto.id });
     // A reviewer pinned to the implementer's model breaks the independence rule: what does the proposal do with the pin?
     if (profiles["cx-ds"]) {
-      const clash = await d.call("tasks.propose", { projectId, title: "Add a multiply function and its test", description, kind: "code", size: "S", pins: { implementer: profiles["cc-ds"], reviewer: profiles["cx-ds"] } });
+      const clash = await d.call("tasks.propose", { projectId, title, description, kind: "code", size: "S", pins: { implementer: profiles["cc-ds"], reviewer: profiles["cx-ds"] } });
       const r = clash.crew?.members.find((m) => m.role === "reviewer");
       d.log("pinned same-model reviewer", crewLine(clash), "| reviewer member reasons", r?.reasons.map((x) => x.code).join(",") ?? "-");
       await d.call("tasks.cancel", { taskId: clash.id });
     }
 
-    const t = await d.call("tasks.propose", { projectId, title: "Add a multiply function and its test", description, kind: "code", size: "S", budgetUsd: 0.5, pins: { implementer: profiles["cc-ds"], reviewer } });
+    const t = await d.call("tasks.propose", { projectId, title, description, kind: "code", size: "S", budgetUsd: 0.5, pins: { implementer: profiles["cc-ds"], reviewer } });
     taskId = t.id;
     d.log("proposal", crewLine(t), "| estimate", t.crew?.estimate.usd ?? "?", t.crew?.estimate.provenance);
     const impl = t.crew?.members.find((m) => m.role === "implementer");
