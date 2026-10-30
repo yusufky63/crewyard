@@ -88,6 +88,10 @@ interface RestCheckRun {
 
 const PASSING = new Set(["success", "neutral", "skipped"]);
 const FEEDBACK_SHOWN = 50;
+/** Job logs downloaded per PR per refresh; further failing jobs are routed with their check summary only. */
+const LOG_TAILS = 5;
+const THREADS_QUERY =
+  "query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){nodes{isResolved isOutdated comments(first:100){nodes{databaseId}}}}}}}";
 
 const toPull = (r: PullRow): TaskPull => ({
   taskId: r.task_id,
@@ -514,6 +518,7 @@ export class PrFlow {
   private async checkFeedback(ref: RepoRef, sha: string, seen: Set<string>): Promise<FeedbackDraft[]> {
     const base = `/repos/${ref.owner}/${ref.repo}`;
     const out: FeedbackDraft[] = [];
+    let tails = 0;
     try {
       const { data } = await this.deps.client.get<{ check_runs: RestCheckRun[] }>(`${base}/commits/${sha}/check-runs?per_page=100`);
       for (const run of data.check_runs ?? []) {
@@ -522,7 +527,8 @@ export class PrFlow {
         // Seen failures are skipped before their log is downloaded again.
         if (seen.has(key) || out.some((d) => d.key === key)) continue;
         const parts = [run.output?.title, run.output?.summary].filter((s): s is string => Boolean(s?.trim())).map((s) => clip(s, 800));
-        if (run.app?.slug === "github-actions") {
+        if (run.app?.slug === "github-actions" && tails < LOG_TAILS) {
+          tails++;
           try {
             const log = logExcerpt(await this.deps.client.text(`${base}/actions/jobs/${run.id}/logs`));
             if (log) parts.push(log);
@@ -546,20 +552,39 @@ export class PrFlow {
     return out;
   }
 
+  /**
+   * Inline comments in resolved or outdated review threads (GraphQL; REST has neither flag). null
+   * when GraphQL fails, and then REST's own sign of an outdated comment (no current line) is used.
+   */
+  private async settledComments(ref: RepoRef, number: number): Promise<Set<number> | null> {
+    try {
+      const data = await this.deps.client.graphql<{
+        repository: { pullRequest: { reviewThreads: { nodes: Array<{ isResolved: boolean; isOutdated: boolean; comments: { nodes: Array<{ databaseId: number | null }> } }> } } | null } | null;
+      }>(THREADS_QUERY, { owner: ref.owner, name: ref.repo, number });
+      const threads = data.repository?.pullRequest?.reviewThreads.nodes ?? [];
+      return new Set(threads.filter((t) => t.isResolved || t.isOutdated).flatMap((t) => t.comments.nodes.map((c) => c.databaseId ?? -1)));
+    } catch {
+      return null;
+    }
+  }
+
   private async reviewFeedback(ref: RepoRef, number: number): Promise<FeedbackDraft[]> {
     const base = `/repos/${ref.owner}/${ref.repo}/pulls/${number}`;
     const out: FeedbackDraft[] = [];
     try {
       const [reviews, comments] = await Promise.all([
         this.deps.client.get<Array<{ id: number; state: string; body?: string | null; html_url?: string; user?: { login?: string } | null }>>(`${base}/reviews?per_page=100`),
-        this.deps.client.get<Array<{ id: number; body: string; path?: string; line?: number | null; original_line?: number | null; html_url?: string; user?: { login?: string } | null }>>(`${base}/comments?per_page=100`),
+        this.deps.client.get<Array<{ id: number; body: string; path?: string; line?: number | null; original_line?: number | null; subject_type?: string; html_url?: string; user?: { login?: string } | null }>>(`${base}/comments?per_page=100`),
       ]);
+      const settled = await this.settledComments(ref, number);
       for (const r of reviews.data ?? []) {
         if (!r.body?.trim() || (r.state !== "CHANGES_REQUESTED" && r.state !== "COMMENTED")) continue;
         out.push({ key: feedbackKey.review(r.id), kind: "review", source: r.user?.login ?? "unknown", excerpt: clip(r.body, 1500), url: r.html_url ?? null, path: null, line: null });
       }
       for (const c of comments.data ?? []) {
         if (!c.body?.trim()) continue;
+        // Resolved threads are done; an outdated comment points at code the branch no longer has.
+        if (settled ? settled.has(c.id) : c.line == null && c.subject_type !== "file") continue;
         out.push({ key: feedbackKey.comment(c.id), kind: "review_comment", source: c.user?.login ?? "unknown", excerpt: clip(c.body, 1500), url: c.html_url ?? null, path: c.path ?? null, line: c.line ?? c.original_line ?? null });
       }
     } catch {
