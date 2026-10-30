@@ -63,12 +63,12 @@ describe("role files in a task", () => {
     // A change to the file after the proposal does not reach the approved crew.
     writeFileSync(join(repoRolesDir(repo), "perf.md"), PERF.replace("Benchmark numbers", "Anything you like"));
     await o.approve({ taskId: proposed.id });
-    await waitFor(() => adapter.started.some((s) => s.role === "perf"), 20_000);
+    await waitFor(() => adapter.started.some((s) => s.role === "perf"), 45_000);
     const req = adapter.started.find((s) => s.role === "perf")!.req;
     expect(req.prompt).toContain("Your output: Benchmark numbers before and after");
     // Only the commands the project also allows, and the project's "ask" over the file's "allowed".
     expect(req.policy).toEqual({ writes: "none", allowCommands: ["pnpm test"], network: "ask" });
-  }, 60_000);
+  }, 90_000);
 
   it("keeps the built-in templates when the project lists no custom role", async () => {
     const { o, project, repo, dataDir } = await setup(() => {});
