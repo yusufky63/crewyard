@@ -46,7 +46,7 @@ for (const theme of ["dark", "light"] as const) {
       await page.waitForLoadState("domcontentloaded");
       await page.evaluate((t) => localStorage.setItem("crewyard:prefs", JSON.stringify({ state: { language: "en", theme: t }, version: 1 })), theme);
       await page.reload();
-      await page.getByRole("region", { name: "Start" }).locator("button.ptile", { hasText: "e2e sample repo" }).click();
+      await page.getByRole("region", { name: "Start" }).locator("button.ptile", { hasText: /e2e[ -]sample[ -]repo/ }).click();
       const nav = page.locator("#app-sidebar");
       for (const [w, h] of SIZES) {
         await app.evaluate(({ BrowserWindow }, [width, height]) => BrowserWindow.getAllWindows()[0]?.setContentSize(width, height), [w, h] as const);
