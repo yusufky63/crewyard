@@ -1,4 +1,4 @@
-import type { AgentEvent, Answer, RolePolicy } from "@crewyard/core";
+import { SHELL_SYNTAX, type AgentEvent, type Answer, type RolePolicy } from "@crewyard/core";
 import type { PermissionResult, PermissionUpdate } from "@anthropic-ai/claude-agent-sdk";
 import type { AskUserQuestionInput } from "@anthropic-ai/claude-agent-sdk/sdk-tools";
 
@@ -107,6 +107,19 @@ export function disallowedFor(policy: RolePolicy): string[] {
  * run. They pre-approve the role's allowlisted commands (the project's test and build commands),
  * which in "default" mode the daemon would have approved through the Inbox.
  */
+/**
+ * A read-only role's shell call that starts like one of its allowlisted commands but carries shell
+ * syntax (`pnpm test && curl ...`, or a newline). The allow rules above would match its prefix, so
+ * the PreToolUse hook refuses it instead of relying on the engine's own operator handling alone.
+ */
+export function chainedOnAllowlisted(name: string, input: unknown, policy: RolePolicy): boolean {
+  if (policy.writes !== "none" || !SHELL_TOOLS.includes(name)) return false;
+  const command = typeof input === "object" && input !== null ? (input as { command?: unknown }).command : undefined;
+  if (typeof command !== "string" || !SHELL_SYNTAX.test(command)) return false;
+  const head = command.trimStart();
+  return policy.allowCommands.some((a) => a.trim() !== "" && head.startsWith(a.trim()));
+}
+
 export function readOnlyAllowRules(policy: RolePolicy): string[] {
   return policy.allowCommands.flatMap((cmd) => SHELL_TOOLS.flatMap((tool) => [`${tool}(${cmd})`, `${tool}(${cmd} *)`]));
 }

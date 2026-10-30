@@ -326,6 +326,7 @@ A run cannot create other runs. If an agent asks for more work, the request beco
   - Medium: network access, writes outside the worktree but inside the project.
   - High: destructive git (`reset --hard`, `push --force`, branch delete), anything outside the project, credential or `.env` paths, package installs.
 - Toasts offer `Approve once` only for Low. Medium and High open the Inbox. `Always allow in this project` adds a scoped allowlist entry and is never the default button.
+- An allowlist entry matches one command with plain arguments only. Anything with shell syntax (chaining, pipes, redirection, substitution, `%VAR%`, a newline) never matches, in the daemon's risk classes and in every runner's own rules (`matchesAllowlist`, `SHELL_SYNTAX` in `packages/core/src/risk.ts`), so `pnpm test && curl …` is never approved on `pnpm test`.
 - Unanswered requests keep the run paused, never time out into an approval.
 - **Turn control** ([ADR 0005](docs/adr/0005-turn-control.md)):
   - Messages typed while an agent works wait in the step's persisted queue, shown as queued, editable, reorderable and deletable; the next turn boundary takes them as one turn, or `Steer now` adds one to the running turn where the runner documents a way (Codex), otherwise the button is disabled with the reason.

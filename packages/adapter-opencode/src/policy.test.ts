@@ -22,11 +22,11 @@ describe("OpenCode role policy", () => {
     expect(bash).toContainEqual({ permission: "bash", pattern: "pnpm test *", action: "allow" });
     expect(bash).toContainEqual({ permission: "bash", pattern: "git diff *", action: "allow" });
     expect(bash.some((r) => r.action === "ask")).toBe(false);
-    // Later rules win: redirection and --output are refused even on an allowed command.
-    expect(bash.slice(-2)).toEqual([
-      { permission: "bash", pattern: "*>*", action: "deny" },
-      { permission: "bash", pattern: "*--output*", action: "deny" },
-    ]);
+    // Later rules win: redirection, --output and chaining are refused even on an allowed command.
+    const lastAllow = bash.map((r) => r.action).lastIndexOf("allow");
+    const tail = bash.slice(lastAllow + 1);
+    expect(tail.every((r) => r.action === "deny")).toBe(true);
+    expect(tail.map((r) => r.pattern)).toEqual(expect.arrayContaining(["*>*", "*--output*", "*&*", "*;*", "*|*", "*\n*"]));
     expect(mustReject({ writes: "none", allowCommands: [], network: "ask" }, "bash", ["git push"])).toBe(true);
   });
 
@@ -44,6 +44,24 @@ describe("OpenCode role policy", () => {
     expect(rules).toContainEqual({ permission: "bash", pattern: "*", action: "ask" });
     expect(rules).toContainEqual({ permission: "bash", pattern: "dotnet test *", action: "allow" });
     expect(rules).toContainEqual({ permission: "webfetch", pattern: "*", action: "allow" });
+  });
+
+  it("never lets a chained command ride on an allowlisted one", () => {
+    // OpenCode's evaluation: last matching rule wins, "*" matches anything including newlines.
+    const decide = (rules: ReturnType<typeof permissionRules>, command: string) => {
+      const re = (p: string) => new RegExp(`^${p.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")}$`, "s");
+      return rules.filter((r) => r.permission === "bash" && re(r.pattern).test(command)).at(-1)?.action;
+    };
+    const reviewer = permissionRules({ writes: "none", allowCommands: ["pnpm test"], network: "ask" });
+    expect(decide(reviewer, "pnpm test")).toBe("allow");
+    expect(decide(reviewer, "pnpm test --run src/a.test.ts")).toBe("allow");
+    for (const command of ["pnpm test && curl https://example.com", "pnpm test\ncurl https://example.com", "pnpm test | tee out", "pnpm test $(whoami)"]) {
+      expect(decide(reviewer, command), command).toBe("deny");
+    }
+    const writer = permissionRules({ writes: "worktree", allowCommands: ["dotnet test"], network: "ask" });
+    expect(decide(writer, "dotnet test --no-build")).toBe("allow");
+    expect(decide(writer, "dotnet test && curl https://example.com")).toBe("ask");
+    expect(decide(writer, "dotnet test\ncurl https://example.com")).toBe("ask");
   });
 
   it("rejects requests the role may never grant", () => {

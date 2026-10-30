@@ -10,7 +10,7 @@ import { exitCodeWithin, isShutdownExit, killTree, parseVersion, resolveBin, run
 import { buildEnv, redact } from "./env.ts";
 import { EventMapper, type EventBody, type TurnOutcome } from "./mapper.ts";
 import { AsyncQueue } from "./queue.ts";
-import { PLAN_TOOLS, approvalResult, approvalScope, disallowedFor, permissionModeFor, policyDecision, questionResult, questionsFrom, readOnlyAllowRules } from "./tools.ts";
+import { PLAN_TOOLS, approvalResult, approvalScope, chainedOnAllowlisted, disallowedFor, permissionModeFor, policyDecision, questionResult, questionsFrom, readOnlyAllowRules } from "./tools.ts";
 
 /** The CLI version the installed SDK was built against (package.json "claudeCodeVersion"). */
 export const SDK_CLI_VERSION = "2.1.312";
@@ -395,6 +395,10 @@ export class ClaudeAdapter implements AgentAdapter {
       const denied = policyDecision(input.tool_name, req.policy);
       if (denied?.behavior === "deny") {
         return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: denied.message } };
+      }
+      if (chainedOnAllowlisted(input.tool_name, input.tool_input, req.policy)) {
+        const reason = "Run the project's command on its own: chaining, redirection and substitution are not allowed for this read-only role.";
+        return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: reason } };
       }
       return {};
     };

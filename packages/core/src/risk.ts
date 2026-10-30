@@ -34,6 +34,25 @@ const HIGH_PATTERNS = [
 
 const SECRET_PATH = /(^|[\\/])(\.env(\..*)?|\.dev\.vars|id_rsa|id_ed25519|\.ssh|\.aws|\.secrets|credentials\.json|\.credentials\.json)([\\/]|$)/i;
 
+/**
+ * Anything that could run a second command, write a file or expand into one, in POSIX shells,
+ * cmd.exe (`&`, `%VAR%`) and PowerShell. An allowlist entry names one command with plain
+ * arguments, so `npm test && curl ...` must never ride on an allowlisted `npm test`.
+ */
+export const SHELL_SYNTAX = /[;&|<>`$(){}%\r\n]/;
+
+/** True when `command` is one of `allowlist` (or starts with it) and carries no shell syntax. */
+export function matchesAllowlist(command: string, allowlist: readonly string[]): boolean {
+  // Checked before whitespace is folded: a newline is a command separator, not a space.
+  if (SHELL_SYNTAX.test(command)) return false;
+  const cmd = command.trim().replace(/\s+/g, " ");
+  if (cmd === "") return false;
+  return allowlist.some((a) => {
+    const want = a.trim().replace(/\s+/g, " ");
+    return want !== "" && (cmd === want || cmd.startsWith(`${want} `));
+  });
+}
+
 const norm = (p: string) => p.replace(/\//g, "\\").replace(/\\+$/, "").toLowerCase();
 const inside = (path: string, root: string) => {
   const p = norm(path);
@@ -52,6 +71,6 @@ export function classifyRisk(input: RiskInput): RiskLevel {
   if (input.network) return "medium";
   if (touched.some((p) => !inside(p, input.worktreeRoot))) return "medium";
 
-  const allowed = cmd === "" || input.allowlist.some((a) => cmd === a || cmd.startsWith(a + " "));
+  const allowed = cmd === "" || matchesAllowlist(cmd, input.allowlist);
   return allowed ? "low" : "medium";
 }

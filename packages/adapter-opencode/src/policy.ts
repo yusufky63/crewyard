@@ -19,6 +19,13 @@ export const READ_ONLY_COMMANDS = ["git diff", "git log", "git show", "git statu
 /** Command shapes that write even when the command itself only reads: redirection and `--output`. */
 const WRITING_SHAPES = ["*>*", "*--output*"];
 
+/**
+ * Shapes that chain a second command or expand into one (the characters of core's SHELL_SYNTAX).
+ * An allow rule is a prefix glob ("pnpm test *"), so without these "pnpm test && curl ..." would
+ * ride on it. OpenCode evaluates rules with findLast, so they go after the allow rules.
+ */
+export const CHAIN_SHAPES = [";", "&", "|", "<", ">", "`", "$", "(", ")", "{", "}", "%", "\n", "\r"].map((c) => `*${c}*`);
+
 export function permissionRules(policy: RolePolicy): PermissionRuleset {
   const rules: PermissionRuleset = [];
   // The task tool starts OpenCode's own subagents, whose work would bypass the crew's DAG; never.
@@ -31,11 +38,13 @@ export function permissionRules(policy: RolePolicy): PermissionRuleset {
     // build commands) and plain inspection; nothing reaches the Inbox.
     rules.push({ permission: "bash", pattern: "*", action: "deny" });
     for (const cmd of [...policy.allowCommands, ...READ_ONLY_COMMANDS]) allow(cmd);
-    for (const pattern of WRITING_SHAPES) rules.push({ permission: "bash", pattern, action: "deny" });
+    for (const pattern of [...WRITING_SHAPES, ...CHAIN_SHAPES]) rules.push({ permission: "bash", pattern, action: "deny" });
   } else {
     // Every command goes through our approval layer (risk classes, Inbox) unless the role allowlists it.
     rules.push({ permission: "bash", pattern: "*", action: "ask" });
     for (const cmd of policy.allowCommands) allow(cmd);
+    // A chained command is never allowlisted: it goes to the approval layer, which rates it medium or high.
+    for (const pattern of CHAIN_SHAPES) rules.push({ permission: "bash", pattern, action: "ask" });
   }
   const network = policy.network === "allowed" ? "allow" : policy.network === "denied" ? "deny" : "ask";
   for (const permission of NETWORK_TOOLS) rules.push({ permission, pattern: "*", action: network });

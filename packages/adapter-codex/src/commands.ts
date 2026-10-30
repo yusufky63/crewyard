@@ -4,6 +4,8 @@
 // usual shells, then accept only a plain command that is one of the role's allowed commands,
 // optionally followed by arguments: no chaining, redirection, pipes or substitution.
 
+import { matchesAllowlist } from "@crewyard/core";
+
 /** Splits a POSIX shell-quoted string the way shlex quoted it; null when the quoting is broken. */
 export function shellSplit(text: string): string[] | null {
   const out: string[] = [];
@@ -72,16 +74,13 @@ export function innerCommand(command: string): string | null {
   return argv.join(" ");
 }
 
-// Anything that could run a second command, write a file or expand into one.
-const SHELL_SYNTAX = /[;&|<>`$(){}%\r\n]/;
-
-/** True when the command is one of `allowed` (the project's test and build commands) with plain arguments. */
+/**
+ * True when the command is one of `allowed` (the project's test and build commands) with plain
+ * arguments. Same matcher as the daemon's risk classes, so a newline or an operator in the
+ * unwrapped script never rides on an allowed command.
+ */
 export function isAllowedCommand(command: string | null | undefined, allowed: readonly string[]): boolean {
   if (!command) return false;
-  const inner = innerCommand(command)?.trim().replace(/\s+/g, " ");
-  if (!inner || SHELL_SYNTAX.test(inner)) return false;
-  return allowed.some((a) => {
-    const want = a.trim().replace(/\s+/g, " ");
-    return want !== "" && (inner === want || inner.startsWith(`${want} `));
-  });
+  const inner = innerCommand(command);
+  return inner !== null && matchesAllowlist(inner, allowed);
 }

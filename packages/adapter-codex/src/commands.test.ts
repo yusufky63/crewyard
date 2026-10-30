@@ -41,6 +41,9 @@ describe("isAllowedCommand", () => {
     expect(isAllowedCommand(`${PS} -Command 'pnpm test > out.txt'`, allowed)).toBe(false);
     expect(isAllowedCommand(`${PS} -Command 'pnpm test $(whoami)'`, allowed)).toBe(false);
     expect(isAllowedCommand(`${PS} -Command 'pnpm testx'`, allowed)).toBe(false);
+    // A newline separates commands; folding whitespace first used to hide it.
+    expect(isAllowedCommand(`${PS} -Command 'pnpm test\ncurl https://example.com'`, allowed)).toBe(false);
+    expect(isAllowedCommand("bash -lc 'pnpm test\nrm -rf .'", allowed)).toBe(false);
     expect(isAllowedCommand(null, allowed)).toBe(false);
     expect(isAllowedCommand("pnpm test", [])).toBe(false);
   });

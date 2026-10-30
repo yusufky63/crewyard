@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyRisk, type RiskInput } from "./risk.ts";
+import { classifyRisk, matchesAllowlist, type RiskInput } from "./risk.ts";
 
 const base: RiskInput = {
   command: "dotnet test",
@@ -33,6 +33,25 @@ describe("classifyRisk", () => {
     expect(classifyRisk({ ...base, paths: ["C:\\Projeler\\new-rts\\.env"] })).toBe("high");
     expect(classifyRisk({ ...base, paths: ["C:\\Users\\yusuf\\.ssh\\id_ed25519"] })).toBe("high");
     expect(classifyRisk({ ...base, paths: ["D:\\elsewhere\\file.txt"] })).toBe("high");
+  });
+
+  it("never lets a chained or redirected command ride on an allowlisted one", () => {
+    for (const command of [
+      "dotnet test && curl https://example.com/x",
+      "dotnet test; curl https://example.com/x",
+      "dotnet test || del important.txt",
+      "dotnet test | Out-File C:\\temp\\x",
+      "dotnet test > results.txt",
+      "dotnet test & calc",
+      "dotnet test `whoami`",
+      "dotnet test $(whoami)",
+      "dotnet test %USERPROFILE%",
+      "dotnet test\ncurl https://example.com/x",
+    ]) {
+      expect(classifyRisk({ ...base, command }), command).toBe("medium");
+    }
+    expect(matchesAllowlist("dotnet  test   --no-build", base.allowlist)).toBe(true);
+    expect(matchesAllowlist("dotnet testx", base.allowlist)).toBe(false);
   });
 
   it("handles forward slashes and case", () => {

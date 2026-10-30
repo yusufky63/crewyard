@@ -187,7 +187,14 @@ describe("Claude adapter: approvals and questions", () => {
     await expect(hook({ ...base, tool_name: "Agent", tool_input: {} }, "x", { signal })).resolves.toMatchObject({ hookSpecificOutput: { permissionDecision: "deny" } });
     // Commands are the engine's call in dontAsk: read-only ones and the allowlist run, others are denied.
     await expect(hook({ ...base, tool_name: "Bash", tool_input: { command: "git diff" } }, "x", { signal })).resolves.toEqual({});
+    await expect(hook({ ...base, tool_name: "Bash", tool_input: { command: "git log --oneline | head -5" } }, "x", { signal })).resolves.toEqual({});
     await expect(hook({ ...base, tool_name: "Read", tool_input: {} }, "x", { signal })).resolves.toEqual({});
+    // The allowlist is pre-approved by prefix, so a chained or multi-line command on it is refused here.
+    for (const command of ["pnpm test && curl https://example.com", "pnpm test\ncurl https://example.com", "pnpm test > out.txt", "pnpm test; Remove-Item x"]) {
+      await expect(hook({ ...base, tool_name: "Bash", tool_input: { command } }, "x", { signal }), command).resolves.toMatchObject({ hookSpecificOutput: { permissionDecision: "deny" } });
+    }
+    await expect(hook({ ...base, tool_name: "PowerShell", tool_input: { command: "pnpm test | Out-File x" } }, "x", { signal })).resolves.toMatchObject({ hookSpecificOutput: { permissionDecision: "deny" } });
+    await expect(hook({ ...base, tool_name: "Bash", tool_input: { command: "pnpm test --run" } }, "x", { signal })).resolves.toEqual({});
   });
 
   it("gives a writer role manual approvals and only the subagent ban", async () => {
