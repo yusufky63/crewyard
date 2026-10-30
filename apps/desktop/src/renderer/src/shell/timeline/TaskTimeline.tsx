@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeftRight, ChevronDown, ChevronRight, CircleHelp, Flag, MessageSquare, Play, RotateCw, ShieldQuestion, Timer, Wrench } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -15,6 +15,8 @@ import "./timeline.css";
 // it was and where its full text is, so a long task stays readable and a huge one stays fast.
 
 const PAGE = 40;
+/** Screenshot mode only: `timeline=open` scrolls the inspector to the timeline and opens the first burst. */
+const SHOT = FIXTURE ? new URLSearchParams(location.search).get("timeline") : null;
 const STEP_PAGE = 50;
 const ICON = { size: 14, strokeWidth: 1.75, "aria-hidden": true } as const;
 const STATES: LaneState[] = ["work", "input", "approval", "limited", "paused", "handoff"];
@@ -127,9 +129,9 @@ function StepRow({ step, locale }: { step: ToolStep; locale: string }) {
   );
 }
 
-function ToolsEntry({ entry, locale }: { entry: Extract<TimelineEntry, { kind: "tools" }>; locale: string }) {
+function ToolsEntry({ entry, locale, first }: { entry: Extract<TimelineEntry, { kind: "tools" }>; locale: string; first: boolean }) {
   const { t } = useTranslation("timeline");
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(SHOT === "open" && first);
   const [shown, setShown] = useState(STEP_PAGE);
   const cut = entry.steps.filter((s) => s.truncatedBytes !== null).length;
   const kinds = entry.counts.map(([k, n]) => `${t(`tool.${k}`, { defaultValue: k })} ${n}`).join(" · ");
@@ -140,7 +142,12 @@ function ToolsEntry({ entry, locale }: { entry: Extract<TimelineEntry, { kind: "
         <span>
           {t("entry.tools", { count: entry.steps.length })}
           <span className="muted tl-kinds"> · {kinds}</span>
-          {cut > 0 && <span className="tl-chip tl-chip-inline">{t("entry.cut", { count: cut })}</span>}
+          {cut > 0 && (
+            <>
+              <br />
+              <span className="tl-chip tl-chip-inline">{t("entry.cut", { count: cut })}</span>
+            </>
+          )}
         </span>
       </button>
       {open && (
@@ -172,13 +179,13 @@ const ENTRY_ICON: Record<TimelineEntry["kind"], typeof Play> = {
   ended: Flag,
 };
 
-function EntryText({ e, who, now, locale }: { e: TimelineEntry; who: (runId: string | null) => string; now: number; locale: string }) {
+function EntryText({ e, who, now, locale, first }: { e: TimelineEntry; who: (runId: string | null) => string; now: number; locale: string; first: boolean }) {
   const { t } = useTranslation("timeline");
   switch (e.kind) {
     case "started":
       return <span>{t("entry.started", { who: who(e.runId) })}</span>;
     case "tools":
-      return <ToolsEntry entry={e} locale={locale} />;
+      return <ToolsEntry entry={e} locale={locale} first={first} />;
     case "wait":
       return <span>{t(`entry.wait.${e.state}`, { who: who(e.runId) })}</span>;
     case "request":
@@ -209,6 +216,10 @@ export function TaskTimeline({ detail }: { detail: TaskDetail }) {
   const live = detail.runs.some((r) => !r.endedAt);
   const now = useClock(live);
   const [shown, setShown] = useState(PAGE);
+  const ref = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (SHOT) ref.current?.scrollIntoView({ block: "start" });
+  }, []);
   const runs = useMemo(() => detail.runs.map((r) => ({ id: r.id, memberId: r.memberId, role: r.role, runner: r.runner, profileId: r.profileId, startedAt: r.startedAt, endedAt: r.endedAt, endReason: r.endReason })), [detail.runs]);
   const tl = useMemo(() => buildTimeline(runs, q.data?.events ?? [], now), [runs, q.data, now]);
   if (detail.runs.length === 0) return null;
@@ -225,7 +236,7 @@ export function TaskTimeline({ detail }: { detail: TaskDetail }) {
   const visible = entries.slice(0, shown);
 
   return (
-    <section className="ins-sec tl" aria-label={t("title")}>
+    <section ref={ref} className="ins-sec tl" aria-label={t("title")}>
       <div className="tl-head">
         <Label>{t("title")}</Label>
         <span className="num muted">{t("span", { time: formatDuration(tl.end - tl.start) })}</span>
@@ -262,7 +273,7 @@ export function TaskTimeline({ detail }: { detail: TaskDetail }) {
               </time>
               <Icon {...ICON} />
               <div className="tl-text">
-                <EntryText e={e} who={whoOf} now={now} locale={i18n.language} />
+                <EntryText e={e} who={whoOf} now={now} locale={i18n.language} first={visible.findIndex((x) => x.kind === "tools") === i} />
               </div>
               <span className="num muted tl-dur">{d === null ? "" : formatDuration(Math.max(0, d))}</span>
             </li>

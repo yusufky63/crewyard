@@ -29,6 +29,8 @@ import { compact, LEDGER_ROWS, metricOf, OTHER, slices, type UsageMetric } from 
 // and a sentence for screen readers.
 
 const DIMENSIONS: UsageDimension[] = ["day", "model", "provider", "task"];
+/** Screenshot mode only: `by=model` and `metric=usd` pick the starting view. */
+const SHOT = FIXTURE ? new URLSearchParams(location.search) : null;
 
 function useUsage(days: number) {
   // Runs add spend as they go; a minute is fresh enough for a ledger and costs one small query.
@@ -65,8 +67,8 @@ export function UsagePanel({ days, providers }: { days: number; providers: Catal
   const { t, i18n } = useTranslation("limits");
   const money = useMoney();
   const usage = useUsage(days);
-  const [by, setBy] = useState<UsageDimension>("day");
-  const [metric, setMetric] = useState<UsageMetric>("tokens");
+  const [by, setBy] = useState<UsageDimension>(() => DIMENSIONS.find((d) => d === SHOT?.get("by")) ?? "day");
+  const [metric, setMetric] = useState<UsageMetric>(SHOT?.get("metric") === "usd" ? "usd" : "tokens");
   const [all, setAll] = useState(false);
   const [saved, setSaved] = useState<{ ok: boolean; text: string } | null>(null);
   const lang = i18n.language;
@@ -229,19 +231,19 @@ export function UsagePanel({ days, providers }: { days: number; providers: Catal
                   <th scope="col" className="us-c-share">
                     <span className="sr-only">{t("usage.col.share")}</span>
                   </th>
-                  <th scope="col" className="num">
+                  <th scope="col" className="num us-c-num">
                     {t("usage.col.in")}
                   </th>
-                  <th scope="col" className="num">
+                  <th scope="col" className="num us-c-num">
                     {t("usage.col.out")}
                   </th>
-                  <th scope="col" className="num us-c-cache">
+                  <th scope="col" className="num us-c-num us-c-cache">
                     {t("usage.col.cache")}
                   </th>
                   <th scope="col" className="us-c-src">
                     {t("usage.col.source")}
                   </th>
-                  <th scope="col" className="num">
+                  <th scope="col" className="num us-c-usd">
                     {t("usage.col.usd")}
                   </th>
                 </tr>
@@ -268,7 +270,7 @@ export function UsagePanel({ days, providers }: { days: number; providers: Catal
                       <td className="num">{quiet ? "—" : compact(g.tokensOut, lang)}</td>
                       <td className="num us-c-cache">{quiet ? "—" : g.cacheUnknown && g.cacheRead === 0 ? <span className="muted">{t("usage.unknown")}</span> : `${compact(g.cacheRead, lang)}${g.cacheUnknown ? "+" : ""}`}</td>
                       <td className="us-c-src">{!quiet && <ProvBadge value={g.tokensProvenance} />}</td>
-                      <td className="num">
+                      <td className="num us-c-usd">
                         {g.usd === null ? (
                           <span className="muted" title={quiet ? undefined : t("usage.noDollarsHint")}>
                             {quiet ? "—" : t("usage.noDollars")}

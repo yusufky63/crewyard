@@ -34,6 +34,9 @@ if (shotProfile) {
     }
   }
   app.setPath("userData", shotProfile);
+  // CREWYARD_SHOT_SCALE=2 renders like 200% Windows scaling: same layout size in DIPs, twice the pixels.
+  const scale = Number(process.env.CREWYARD_SHOT_SCALE);
+  if (scale >= 1 && scale <= 3) app.commandLine.appendSwitch("force-device-scale-factor", String(scale));
   // A headless run must never wait on a modal error box nobody is there to close.
   process.on("uncaughtException", (err) => {
     console.error(err);
