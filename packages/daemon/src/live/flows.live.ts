@@ -13,7 +13,9 @@ import { commandLineLeaks, defaultDecide, describeRequest, hasKey, keyFor, killT
 //                                   without it the project is a local clone of CREWYARD_LIVE_SEED
 //                                   and the GitHub flow only reads what the app says about it.
 // CREWYARD_LIVE_GEMINI_BIN=<folder> a current Gemini CLI, put first on PATH for the daemon.
-// CREWYARD_LIVE_FLOWS=a,b           run only these flows (setup always runs).
+// CREWYARD_LIVE_FLOWS=a,b           run only these flows (setup always runs): crew, github, fallback,
+//                                   research, keyenv, turns, stall.
+// CREWYARD_LIVE_KEYENV=impl:rev,...  implementer:reviewer pairs for the key exposure probe.
 // CREWYARD_LIVE_RESEARCH=gm,cx-ds   only these profiles in the research flows.
 // CREWYARD_LIVE_KEEP=1              keep the temp folder for the Electron capture.
 // CREWYARD_LIVE_REVIEWER=cx-dsp     profile key of the crew flow's reviewer.
@@ -323,14 +325,31 @@ describe.runIf(live)("crewyard live", () => {
     d.log("merge gate", JSON.stringify(gated.live?.gate));
     const merged = await d.attempt("github.merge", { projectId, number: pr.number, headSha: gated.live!.headSha });
     d.log("merge", merged.ok ? JSON.stringify(merged.result) : merged.error);
-    await d.call("github.refresh", { projectId });
+    // A repository without CI never passes the checks item, so the app offers no merge. The user
+    // then merges on GitHub; the app must notice that and allow the cleanup.
+    let outside = false;
+    if (!merged.ok && gated.live?.gate?.items.find((i) => i.id === "checks")?.status === "unknown" && gated.live.checks.total === 0) {
+      execFileSync("gh", ["pr", "merge", String(pr.number), "--repo", REMOTE, "--merge"], { windowsHide: true, stdio: "pipe" });
+      outside = true;
+      d.log("merged on GitHub with gh pr merge (outside the app)");
+    }
+    const task = await d.waitFor(
+      "task merged",
+      async () => {
+        await d.call("github.refresh", { projectId });
+        const x = await d.call("tasks.get", { taskId: t.id });
+        return x.status === "merged" ? x : null;
+      },
+      3 * MIN,
+      5_000,
+    ).catch(() => d.call("tasks.get", { taskId: t.id }));
     const after = await d.call("github.taskPull", { taskId: t.id });
-    const task = await d.call("tasks.get", { taskId: t.id });
     d.log("after merge", task.status, JSON.stringify(after.cleanup));
     const removed = await d.attempt("github.removeWorktree", { projectId, path: t.worktree.path });
     d.log("remove worktree", removed.ok ? JSON.stringify(removed.result) : removed.error, "folder still there:", existsSync(t.worktree.path));
-    const ok = merged.ok && merged.result.merged && task.status === "merged" && removed.ok && removed.result.removed;
-    d.row({ flow: "github push/PR/merge/cleanup", runner: "-", result: ok ? "pass" : "fail", costUsd: 0, notes: `PR #${pr.number}; task ${task.status}; worktree removed ${removed.ok && removed.result.removed}` });
+    const appMerged = merged.ok && merged.result.merged;
+    const cleaned = task.status === "merged" && removed.ok && removed.result.removed;
+    d.row({ flow: "github push/PR/merge/cleanup", runner: "-", result: appMerged && cleaned ? "pass" : cleaned ? "partial" : "fail", costUsd: 0, notes: `PR #${pr.number}; app merge ${appMerged ? "ok" : (merged.ok ? "not merged" : merged.error)}${outside ? "; merged on GitHub instead" : ""}; task ${task.status}; worktree removed ${removed.ok && removed.result.removed}` });
   });
 
   it("fallback: budget pause and continue", { timeout: 15 * MIN }, async () => {
@@ -539,12 +558,6 @@ Then create a new file ENV_CHECK.md that holds its single output line, and commi
     }
   });
 
-  /**
-   * Feature scan A9 live: the project's test command is a check the task text does not mention,
-   * so the implementer's first try fails it; the failure goes back to the same session and the
-   * second try passes. The reviewer is Codex, which reviews through its own review/start (A12),
-   * pinned to the head the tests passed on.
-   */
   // A cancelled OpenCode run must take its `opencode serve` with it (AGENTS.md: agent processes
   // are killed as a tree on stop). An orphan has left that tree, so it is looked for by name.
   it("stop: a cancelled OpenCode run leaves no opencode serve behind", { timeout: 10 * MIN }, async () => {
@@ -572,6 +585,12 @@ Then create a new file ENV_CHECK.md that holds its single output line, and commi
     expect(left).toEqual([]);
   });
 
+  /**
+   * Feature scan A9 live: the project's test command is a check the task text does not mention,
+   * so the implementer's first try fails it; the failure goes back to the same session and the
+   * second try passes. The reviewer is Codex, which reviews through its own review/start (A12),
+   * pinned to the head the tests passed on.
+   */
   it("loop: implement, tests fail, fix, tests pass", { timeout: 20 * MIN }, async () => {
     if (!want("loop-tests") || (await overBudget("loop-tests"))) return;
     const reviewer = profiles[REVIEWER];
@@ -774,10 +793,153 @@ Then create a new file ENV_CHECK.md that holds its single output line, and commi
     }
   });
 
-  it("turn control and stall alerts", async () => {
-    if (!want("turns")) return;
-    const has = (m: string) => m in d.handlers;
-    const present = ["queue.edit", "queue.steer", "runs.undo", "stalls.list"].filter(has);
-    d.row({ flow: "turn control / stalls", runner: "-", result: present.length ? "partial" : "skipped", costUsd: null, notes: present.length ? `handlers present: ${present.join(", ")}` : "not merged into this base (turn-control branch still open)" });
+  // Turn control on Claude Code: a follow-up typed while a turn runs waits in the step's queue and
+  // becomes the next turn of the same session; then "Undo last turn" takes that turn back. The
+  // reviewer is held on the tiny task budget meanwhile, so nothing else works in the worktree.
+  it("turn control: queue, flush at the turn boundary, undo (Claude Code)", { timeout: 20 * MIN }, async () => {
+    if (!want("turns") || (await overBudget("turn control"))) return;
+    const impl = profiles["cc-ds"];
+    const reviewer = profiles[REVIEWER];
+    if (!impl || !reviewer) throw new Error("turn control needs cc-ds and the reviewer profile");
+    let taskId = "";
+    const held: RequestView[] = [];
+    const roleOf = (runId: string | null) => (runId ? (d.store.db.prepare("select m.role from runs r join crew_members m on m.id = r.member_id where r.id = ?").get(runId) as { role: string } | undefined)?.role : undefined);
+    d.decide = (r): ReturnType<Decide> => {
+      if (r.taskId === taskId && r.payload.kind === "handoff" && r.payload.trigger === "budget") {
+        if (roleOf(r.runId) === "reviewer") {
+          if (!held.some((h) => h.id === r.id)) held.push(r);
+          return null;
+        }
+        return { kind: "handoff", decision: "continue" };
+      }
+      return defaultDecide(r);
+    };
+    const t = await d.call("tasks.propose", {
+      projectId,
+      title: "Add notes a and b",
+      description: "Create the file notes/a.txt containing the word alpha and commit it. Then stop and report; do nothing else.",
+      kind: "code",
+      size: "S",
+      budgetUsd: 0.0005,
+      fallback: "manual",
+      pins: { implementer: impl, reviewer },
+    });
+    taskId = t.id;
+    await d.call("tasks.approve", { taskId: t.id });
+    const live = await watch(t.id, (x) => x.runs.some((r) => r.role === "implementer" && r.state === "running") || ENDED.has(x.status), 8 * MIN, 300);
+    const run = live.runs.find((r) => r.role === "implementer") as RunView;
+    const follow = "Next, create the file notes/b.txt containing the word beta and commit it.";
+    const queued = await d.attempt("runs.message", { runId: run.id, text: follow, sessionId: run.nativeSessionId });
+    const queueLen = queued.ok ? queued.result.queue.length : -1;
+    let edited = "not tried";
+    if (queued.ok && queued.result.queue[0]) {
+      const e = await d.attempt("queue.edit", { runId: run.id, messageId: queued.result.queue[0].id, text: `${follow} Use a one-line commit message.` });
+      edited = e.ok ? `ok (${e.result.queue.length} queued)` : e.error;
+    }
+    d.log("queued while running:", queued.ok ? `${queueLen} in queue, steer ${JSON.stringify(queued.result.controls.steer)}` : queued.error, "| edit:", edited);
+    // The implementer ends after the queued turn; the reviewer then waits on its budget request.
+    const parked = await watch(t.id, (x) => (held.length > 0 && Boolean(x.runs.find((r) => r.id === run.id)?.endedAt)) || ENDED.has(x.status), 10 * MIN, 1_000);
+    const wt = parked.worktree?.path ?? "";
+    const before = { a: existsSync(join(wt, "notes", "a.txt")), b: existsSync(join(wt, "notes", "b.txt")) };
+    const implRun = parked.runs.find((r) => r.id === run.id) as RunView;
+    const turns = d.events.filter((e) => {
+      const p = e.payload as { runId?: string; event?: { type?: string } };
+      return e.topic === "runs.event" && p.runId === run.id && p.event?.type === "turn.started";
+    }).length;
+    d.log("after flush:", JSON.stringify(before), "turns", turns, "queue", implRun.queue.length, "undo control", JSON.stringify(implRun.controls.undo));
+    let undo: string;
+    let after = before;
+    const preview = await d.attempt("runs.undoPreview", { runId: run.id });
+    if (preview.ok) {
+      d.log("undo preview", JSON.stringify({ files: preview.result.files, commits: preview.result.commits, native: preview.result.native, noteQueued: preview.result.noteQueued }));
+      const u = await d.attempt("runs.undo", { runId: run.id, turnId: preview.result.turnId });
+      undo = u.ok ? "ok" : u.error;
+      after = { a: existsSync(join(wt, "notes", "a.txt")), b: existsSync(join(wt, "notes", "b.txt")) };
+      d.log("undo", undo, JSON.stringify(after), "log", git(wt, "log", "--format=%s", `${parked.worktree?.baseSha}..HEAD`).replace(/\n/g, " | "));
+    } else {
+      undo = `preview refused: ${preview.error}`;
+      d.log("undo preview refused", preview.error);
+    }
+    // Let the reviewer go on.
+    for (const r of held) await d.attempt("requests.answer", { requestId: r.id, answer: { kind: "handoff", decision: "continue" }, runId: r.runId, sessionId: r.sessionId });
+    d.decide = defaultDecide;
+    const end = await watch(t.id, settled, 10 * MIN);
+    const flushed = queued.ok && queueLen === 1 && before.a && before.b && implRun.queue.length === 0;
+    d.row({ flow: "queue + flush at turn boundary", runner: "cc-ds", result: flushed ? "pass" : "fail", costUsd: null, notes: `queued ${queueLen}, edit ${edited}; turns ${turns}; a ${before.a} b ${before.b}` });
+    d.row({ flow: "undo last turn", runner: "cc-ds", result: undo === "ok" && after.a && !after.b ? "pass" : "fail", costUsd: end.spend.usd, notes: `${undo}; after undo a ${after.a} b ${after.b}; task ${end.status}` });
+  });
+
+  // "Steer now" on Codex: a queued message goes into the turn in flight through turn/steer.
+  it("turn control: steer now (Codex)", { timeout: 15 * MIN }, async () => {
+    if (!want("turns") || (await overBudget("steer"))) return;
+    const impl = profiles["cx-ds"];
+    const reviewer = profiles[REVIEWER];
+    if (!impl || !reviewer) throw new Error("steer needs cx-ds and the reviewer profile");
+    const t = await d.call("tasks.propose", {
+      projectId,
+      title: "Add statistics helpers",
+      description: "Create src/stats.js exporting mean(values) and median(values), and src/stats.test.js with one node:test test for each. Run `npm test` after writing each function. Commit at the end.",
+      kind: "code",
+      size: "S",
+      budgetUsd: 0.5,
+      pins: { implementer: impl, reviewer },
+    });
+    await d.call("tasks.approve", { taskId: t.id });
+    const live = await watch(t.id, (x) => x.runs.some((r) => r.role === "implementer" && r.controls.steer.ok) || ENDED.has(x.status), 8 * MIN, 300);
+    const run = live.runs.find((r) => r.role === "implementer") as RunView;
+    let steer = `never steerable (${run.controls.steer.reason ?? "-"})`;
+    if (run.controls.steer.ok) {
+      const q = await d.attempt("runs.message", { runId: run.id, text: "Also export range(values), the largest value minus the smallest, from src/stats.js with one test.", sessionId: run.nativeSessionId });
+      const id = q.ok ? q.result.queue[0]?.id : undefined;
+      const s = id ? await d.attempt("queue.steer", { runId: run.id, messageId: id, sessionId: run.nativeSessionId }) : null;
+      steer = !q.ok ? `message refused: ${q.error}` : !id ? "message went straight in (no queue item)" : s?.ok ? `ok (queue ${s.result.queue.length})` : `refused: ${s?.error ?? "-"}`;
+    }
+    d.log("steer", steer);
+    const end = await watch(t.id, settled, 10 * MIN);
+    const file = end.worktree ? join(end.worktree.path, "src", "stats.js") : "";
+    const src = file && existsSync(file) ? readFileSync(file, "utf8") : "";
+    const pass = end.worktree ? testsPass(end.worktree.path) : false;
+    d.row({ flow: "steer now", runner: "cx-ds", result: steer.startsWith("ok") && /range/.test(src) ? "pass" : "fail", costUsd: end.spend.usd, notes: `${steer}; range in stats.js ${/range/.test(src)}; tests ${pass}; task ${end.status}` });
+  });
+
+  // One stall alert: the no-events rule at its lowest setting, and a command that stays quiet longer.
+  it("stall alert: no events", { timeout: 15 * MIN }, async () => {
+    if (!want("stall") || (await overBudget("stall"))) return;
+    const impl = profiles["cc-ds"];
+    const reviewer = profiles[REVIEWER];
+    if (!impl || !reviewer) throw new Error("the stall flow needs cc-ds and the reviewer profile");
+    const saved = (await d.call("settings.get", undefined)).stalls;
+    await d.call("settings.update", { stalls: { noEventsMinutes: 1, cooldownMinutes: 1 } });
+    try {
+      const t = await d.call("tasks.propose", {
+        projectId,
+        title: "Wait for a slow command",
+        description: "Run exactly this command once and wait for it to finish: node -e \"setTimeout(() => console.log('slept'), 100000)\"\nThen create notes/stall.txt containing the word done and commit it. Do nothing else.",
+        kind: "code",
+        size: "S",
+        budgetUsd: 0.5,
+        pins: { implementer: impl, reviewer },
+      });
+      await d.call("tasks.approve", { taskId: t.id });
+      const alerts = await d
+        .waitFor(
+          "stall alert",
+          async () => {
+            const a = await d.call("stalls.list", { taskId: t.id, includeClosed: true });
+            return a.length ? a : null;
+          },
+          5 * MIN,
+          5_000,
+        )
+        .catch(() => []);
+      const notices = d.events.filter((e) => e.topic === "stall.notice" && (e.payload as { taskId?: string }).taskId === t.id).length;
+      d.log("stall alerts", JSON.stringify(alerts.map((a) => ({ rule: a.rule, minutes: a.minutes, cleared: a.clearedAt !== null }))), "notices", notices);
+      const end = await watch(t.id, settled, 8 * MIN);
+      const closed = await d.call("stalls.list", { taskId: t.id, includeClosed: true });
+      const cleared = closed.filter((a) => a.clearedAt !== null).length;
+      d.row({ flow: "stall alert (no events, 1 min)", runner: "cc-ds", result: alerts.some((a) => a.rule === "no_events") && notices > 0 ? "pass" : "fail", costUsd: end.spend.usd, notes: `${alerts.length} alerts (${alerts.map((a) => `${a.rule} ${a.minutes ?? "-"}m`).join(", ")}); ${notices} stall.notice; ${cleared} cleared after the run moved on; task ${end.status}` });
+    } finally {
+      await d.call("settings.update", { stalls: saved });
+    }
   });
 });
