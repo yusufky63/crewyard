@@ -47,6 +47,30 @@ export type Catalog = z.infer<typeof Catalog>;
 /** "conversion" and "none" are not offered in v1 (PLAN.md §6.1). */
 export const usableWith = (support: RunnerSupport) => support === "native" || support === "direct" || support === "config";
 
+/**
+ * Time-of-use pricing from curated.json. models.dev lists the standard rate; inside a peak window
+ * the provider bills `factor` times that. Days and windows are UTC, windows end exclusive.
+ */
+export const PeakPricing = z.object({
+  factor: z.number().positive(),
+  /** 0 is Sunday, as Date.getUTCDay(). */
+  days: z.array(z.number().int().min(0).max(6)),
+  windows: z.array(z.string().regex(/^\d{2}:\d{2}-\d{2}:\d{2}$/)),
+  ref: z.string(),
+  checked: z.string(),
+});
+export type PeakPricing = z.infer<typeof PeakPricing>;
+
+const minuteOf = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
+
+/** The multiplier on catalog prices for tokens used at `at`: the peak factor inside a window, else 1. */
+export function peakFactor(peak: PeakPricing | null | undefined, at: Date): number {
+  if (!peak || !peak.days.includes(at.getUTCDay())) return 1;
+  const minute = at.getUTCHours() * 60 + at.getUTCMinutes();
+  const inside = peak.windows.some((w) => minute >= minuteOf(w.slice(0, 5)) && minute < minuteOf(w.slice(6)));
+  return inside ? peak.factor : 1;
+}
+
 /** Estimated cost in USD for a token count; models.dev prices are per million tokens. */
 export function estimateCost(model: CatalogModel, tokensIn: number, tokensOut: number, cacheRead = 0): number | null {
   if (!model.cost || model.cost.input === null || model.cost.output === null) return null;

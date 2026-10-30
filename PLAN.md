@@ -228,7 +228,7 @@ The first snapshot, `catalog/providers.json`, was built on 2026-10-29 from model
 | Label | Meaning | Examples |
 |---|---|---|
 | **Reported** | the agent or provider said it through an official channel | Codex `account/rateLimits/*`; balances from DeepSeek, OpenRouter, Novita, StepFun, SiliconFlow; coding-plan quota (Kimi Code, Z.ai, MiniMax, OpenCode Go); Anthropic's usage and cost reporting if you add an admin key (to be confirmed in M2) |
-| **Estimated** | computed by us | tokens × catalog price (versioned) for every API key, context fill from token counts and the catalog's context limit |
+| **Estimated** | computed by us | tokens × catalog price (versioned) for every API key, times the provider's peak factor inside its peak hours (curated.json `peak`: DeepSeek bills twice the listed price on weekdays 01:00–04:00 and 06:00–10:00 UTC), context fill from token counts and the catalog's context limit |
 | **Unknown** | no trustworthy source | Gemini CLI quota, Codex in API-key mode, absolute token caps behind percentages |
 
 Every value shows its label and age. Unknown never becomes a percentage.

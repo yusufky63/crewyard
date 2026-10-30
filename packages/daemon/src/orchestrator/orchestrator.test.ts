@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createHandlers, handleMessage } from "../server.ts";
 import { Store } from "../store.ts";
 import { AdapterRegistry } from "./adapters.ts";
+import { estimateFor } from "./crew.ts";
 import type { Candidate } from "./directory.ts";
 import { orchestratorFor } from "./index.ts";
 import { Orchestrator, type OrchestratorOptions } from "./orchestrator.ts";
@@ -410,6 +411,34 @@ describe("usage and cost", () => {
     expect(o.get(priced.id).runs[0]!.cost).toEqual({ usd: 0.54, provenance: "estimated" });
     expect(o.get(unpriced.id).runs[0]!.cost).toEqual({ usd: null, provenance: "unknown" });
     expect(o.get(unpriced.id).spend.provenance).toBe("unknown");
+  });
+
+  it("prices estimated tokens at the provider's peak rate in its peak hours, and never touches billed cost", async () => {
+    // DeepSeek's weekday windows. Friday 2026-10-30 07:59 UTC is inside one, as the overnight live run was.
+    const peak = { factor: 2, days: [1, 2, 3, 4, 5], windows: ["01:00-04:00", "06:00-10:00"], ref: "https://api-docs.deepseek.com/quick_start/pricing", checked: "2026-10-30" };
+    const shift = Date.parse("2026-10-30T07:59:00Z") - Date.now();
+    const report = (costUsd: number | null, costProvenance: "estimated" | "reported" | "unknown"): FakeStep => ({
+      emit: { type: "usage.update", tokensIn: 1_000_000, tokensOut: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, contextUsed: null, contextSize: null, costUsd, costProvenance },
+    });
+    // Claude Code on DeepSeek reports no price, OpenCode its own models.dev estimate, a billing API the bill.
+    const steps: Record<string, FakeStep> = { "ds-catalog": report(null, "unknown"), "ds-opencode": report(0.1, "estimated"), "ds-billed": report(0.1, "reported") };
+    const cands = Object.keys(steps).map((id) => ({ ...candidate(id, "deepseek", model(id, { cost: { input: 0.27, output: 1.1, cacheRead: 0.07 } })), peak }));
+    const pick: Picker = (_role, req) => [running, steps[req.model ?? ""]!, say("done")];
+    const { o, project } = await setup({ pick, candidates: cands, options: { now: () => new Date(Date.now() + shift) } });
+    const tasks: Record<string, string> = {};
+    for (const id of Object.keys(steps)) {
+      const t = await o.propose({ projectId: project.id, title: `Research ${id}`, pins: { researcher: id } });
+      // The proposal is priced at the peak rate too, so a cap check before the run is not off by half.
+      const offPeak = estimateFor(cands[0]!, "researcher", t.size, new Date("2026-10-30T10:45:00Z")).usd!;
+      expect(offPeak).toBeGreaterThan(0);
+      expect(t.crew?.members[0]?.chosen?.estimate.usd).toBeCloseTo(offPeak * 2, 3);
+      await o.approve({ taskId: t.id });
+      tasks[id] = t.id;
+    }
+    await waitFor(() => Object.values(tasks).every((id) => o.get(id).status === "done"));
+    expect(o.get(tasks["ds-catalog"]!).runs[0]!.cost).toEqual({ usd: 0.54, provenance: "estimated" });
+    expect(o.get(tasks["ds-opencode"]!).runs[0]!.cost).toEqual({ usd: 0.2, provenance: "estimated" });
+    expect(o.get(tasks["ds-billed"]!).runs[0]!.cost).toEqual({ usd: 0.1, provenance: "reported" });
   });
 });
 

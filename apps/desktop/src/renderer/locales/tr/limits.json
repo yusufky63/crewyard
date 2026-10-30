@@ -188,6 +188,6 @@
     "noDollarsHint": "Abonelik planları, kodlama planları, yerel modeller ve fiyatı bilinmeyen modeller token başına faturalanmaz",
     "showAll": "{{count}} satırın hepsini göster",
     "showFewer": "Daha az göster",
-    "note": "Toplam {{tokens}} girdi ve çıktı tokenı. Dolarlar token başına ücretli anahtarların harcama defterinden gelir: katalog fiyat tablosuyla hesaplananlar Tahmini, sağlayıcının faturaladıkları Bildirilen olarak işaretlenir. Önbellekten okunanlar girdiden ayrı sayılır."
+    "note": "Toplam {{tokens}} girdi ve çıktı tokenı. Dolarlar token başına ücretli anahtarların harcama defterinden gelir: katalog fiyat tablosuyla hesaplananlar (DeepSeek'in hafta içi yoğun saatleri gibi dönemlerde yoğun saat fiyatıyla) Tahmini, sağlayıcının faturaladıkları Bildirilen olarak işaretlenir. Önbellekten okunanlar girdiden ayrı sayılır."
   }
 }

@@ -8,6 +8,7 @@ import {
   defaultProjectConfig,
   estimateCost,
   EVENT_LIMITS,
+  peakFactor,
   ProjectConfig,
   type AgentAdapter,
   type AgentEvent,
@@ -734,7 +735,7 @@ export class Orchestrator {
       this.bestOf.start(group.id, created);
       for (const spec of specs) {
         const c = candidates.find((x) => x.profile.id === spec.target.profileId);
-        if (c?.profile.credential.kind === "api_key") reserveSpend(this.opts.store.db, { runId: spec.runId!, taskId: task.id, credentialId: spendCredential(c), amountUsd: estimateFor(c, m.role, task.size).usd ?? 0 }, this.now());
+        if (c?.profile.credential.kind === "api_key") reserveSpend(this.opts.store.db, { runId: spec.runId!, taskId: task.id, credentialId: spendCredential(c), amountUsd: estimateFor(c, m.role, task.size, this.now()).usd ?? 0 }, this.now());
       }
     });
     for (const spec of specs) this.insertRun(spec);
@@ -774,7 +775,7 @@ export class Orchestrator {
     for (const v of views) {
       const c = candidates.find((x) => x.profile.id === v.profileId);
       if (c?.profile.credential.kind !== "api_key") continue;
-      const usd = estimateFor(c, m.role, task.size).usd ?? 0;
+      const usd = estimateFor(c, m.role, task.size, this.now()).usd ?? 0;
       total += usd;
       const key = spendCredential(c) ?? `profile:${c.profile.id}`;
       const cur = byCredential.get(key);
@@ -1675,7 +1676,7 @@ export class Orchestrator {
 
   /** What a paid step holds before it starts: its estimate less what earlier runs of the step already spent. */
   private reservationFor(task: TaskRow, m: MemberRow, candidate: Candidate): number {
-    const usd = estimateFor(candidate, m.role, task.size).usd ?? 0;
+    const usd = estimateFor(candidate, m.role, task.size, this.now()).usd ?? 0;
     const spent = this.db.runs(task.id).filter((r) => r.member_id === m.id).reduce((n, r) => n + (r.cost_usd ?? 0), 0);
     return Math.max(0, usd - spent);
   }
@@ -1760,7 +1761,7 @@ export class Orchestrator {
       const adapter = this.adapters.get(target.runner);
       if (!adapter) throw new OrchestratorError("adapter.failed", { detail: "no_adapter" });
       // A capped task never starts on a model nobody can price without your click (feature scan F4).
-      const unpriced = this.unpricedFor(task, runId, candidate, target.model, estimateFor(candidate, member.role, task.size).usd === null);
+      const unpriced = this.unpricedFor(task, runId, candidate, target.model, estimateFor(candidate, member.role, task.size, this.now()).usd === null);
       if (unpriced) {
         this.held.set(runId, spec);
         await this.onLimitReached(runId, { trigger: "unpriced", window: null, resetsAt: null, unpriced });
@@ -2263,16 +2264,21 @@ export class Orchestrator {
 
     const live = this.live.get(run.id);
     const model = live?.candidate.model ?? null;
+    // Catalog prices, and OpenCode's own estimate (it prices from models.dev too), are the standard
+    // rate; DeepSeek bills twice that in its weekday peak hours.
+    const peak = peakFactor(live?.candidate.peak, this.now());
     let dCost: number | null;
     let provenance: Provenance;
     if (ev.costUsd !== null) {
       dCost = restarted ? ev.costUsd : Math.max(0, ev.costUsd - (seen.costUsd ?? 0));
       provenance = ev.costProvenance;
+      if (provenance === "estimated") dCost *= peak;
     } else if (live && live.candidate.profile.credential.kind !== "api_key") {
       [dCost, provenance] = [0, "estimated"];
     } else {
       // The runner could not price these tokens (e.g. Claude Code on DeepSeek): price them from the catalog.
-      dCost = model ? estimateCost(model, dIn, dOut, dCache) : null;
+      const usd = model ? estimateCost(model, dIn, dOut, dCache) : null;
+      dCost = usd === null ? null : usd * peak;
       provenance = dCost === null ? "unknown" : "estimated";
     }
     if (live && dCost !== null) {
@@ -2970,6 +2976,7 @@ export class Orchestrator {
       preference: (role, id) => this.db.preference(projectId, role, id),
       pins,
       exclude,
+      now: this.now(),
     };
   }
 

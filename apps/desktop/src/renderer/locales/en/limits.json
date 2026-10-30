@@ -188,6 +188,6 @@
     "noDollarsHint": "Subscription plans, coding plans, local models and unpriced models have no per-token bill",
     "showAll": "Show all {{count}}",
     "showFewer": "Show fewer",
-    "note": "{{tokens}} tokens in and out. Dollars are the spend ledger of per-token keys: Estimated from the catalog price table, Reported when the provider billed them. Cache reads are counted apart from input."
+    "note": "{{tokens}} tokens in and out. Dollars are the spend ledger of per-token keys: Estimated from the catalog price table (at the peak rate during a provider's peak hours, such as DeepSeek's on weekdays), Reported when the provider billed them. Cache reads are counted apart from input."
   }
 }

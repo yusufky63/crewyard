@@ -28,7 +28,7 @@
   },
   "supportShort": { "native": "yerleşik", "direct": "doğrudan", "config": "yapılandırmayla", "conversion": "dönüştürücü gerekir" },
   "legend": { "direct": "Doğrudan çalışır", "config": "Profil yapılandırmasıyla", "conversion": "Biçim dönüştürücüsü gerekir, henüz yok" },
-  "sources": "Modeller, fiyatlar ve bağlam sınırları models.dev'den; Anthropic uyumlu ve bakiye uç noktaları cc-switch'ten gelir. Başka sağlayıcıların aboneliklerini yeniden satan aracılar listede yok.",
+  "sources": "Modeller, fiyatlar ve bağlam sınırları models.dev'den; Anthropic uyumlu ve bakiye uç noktaları cc-switch'ten gelir. DeepSeek hafta içi yoğun saatlerde (UTC 01.00–04.00 ve 06.00–10.00) listedeki fiyatın iki katını alır; tahminler de bunu, DeepSeek'in kendi fiyat sayfasına göre hesaba katar. Başka sağlayıcıların aboneliklerini yeniden satan aracılar listede yok.",
   "notConnected": "Bağlı değil",
   "connectAction": "Bağla",
   "connectNamed": "{{name}} bağla",

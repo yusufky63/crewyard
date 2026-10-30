@@ -12,11 +12,12 @@
     "conversion": "needs an API format converter (cc-switch marks it apiFormat openai_chat, openai_responses or gemini_native); not offered in v1, use OpenCode or Codex instead",
     "none": "no known route"
   },
+  "peakValues": "Time-of-use pricing read from the provider's own pricing page: models.dev lists the standard rate, and inside a window (UTC, end exclusive, days 0 = Sunday) the provider bills factor times that. Read at run time, never copied into providers.json, so a refreshed models.dev snapshot keeps it. DeepSeek's off-peak public holidays are not modelled, so those hours are estimated high, never low.",
   "providers": [
     { "id": "anthropic", "group": "first-party", "claudeCode": "native" },
     { "id": "openai", "group": "first-party", "claudeCode": "conversion", "codex": "native" },
     { "id": "google", "group": "first-party", "claudeCode": "conversion", "geminiCli": "native", "note": "cc-switch preset 'Gemini Native' uses apiFormat gemini_native" },
-    { "id": "deepseek", "group": "first-party", "claudeCode": "direct", "anthropicBase": "https://api.deepseek.com/anthropic", "ref": "claudeProviderPresets.ts:1257", "balance": "https://api.deepseek.com/user/balance" },
+    { "id": "deepseek", "group": "first-party", "claudeCode": "direct", "anthropicBase": "https://api.deepseek.com/anthropic", "ref": "claudeProviderPresets.ts:1257", "balance": "https://api.deepseek.com/user/balance", "peak": { "factor": 2, "days": [1, 2, 3, 4, 5], "windows": ["01:00-04:00", "06:00-10:00"], "ref": "https://api-docs.deepseek.com/quick_start/pricing", "checked": "2026-10-30" } },
     { "id": "moonshotai", "group": "first-party", "claudeCode": "direct", "anthropicBase": "https://api.moonshot.ai/anthropic", "ref": "claudeProviderPresets.ts:128" },
     { "id": "moonshotai-cn", "group": "first-party", "claudeCode": "direct", "anthropicBase": "https://api.moonshot.cn/anthropic", "ref": "claudeProviderPresets.ts:105" },
     { "id": "zai", "group": "first-party", "claudeCode": "direct", "anthropicBase": "https://api.z.ai/api/anthropic", "ref": "claudeProviderPresets.ts:1535" },

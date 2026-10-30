@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
-import { Catalog, type CatalogInfo, type CatalogModel, type CatalogProvider, type RunnerSupport } from "@crewyard/core";
+import { Catalog, PeakPricing, type CatalogInfo, type CatalogModel, type CatalogProvider, type RunnerSupport } from "@crewyard/core";
 import bundledJson from "../../../../catalog/providers.json" with { type: "json" };
 import curatedJson from "../../../../catalog/curated.json" with { type: "json" };
 
@@ -20,6 +20,7 @@ export interface CuratedEntry {
   anthropicBase?: string;
   balance?: string;
   quota?: string;
+  peak?: unknown;
   ref?: string;
   note?: string;
 }
@@ -54,6 +55,13 @@ interface DevProvider {
 
 export const curated = curatedJson as unknown as Curated;
 export const MODELS_DEV_URL = curated.sources.modelsDev.url;
+
+// Read from curated.json at run time rather than from the snapshot, so a models.dev refresh
+// stored before this field existed still prices DeepSeek's peak hours.
+const PEAK = new Map(curated.providers.filter((c) => c.peak !== undefined).map((c) => [c.id, PeakPricing.parse(c.peak)]));
+
+/** The provider's time-of-use pricing, or null when it bills one rate all day. */
+export const peakPricingFor = (providerId: string): PeakPricing | null => PEAK.get(providerId) ?? null;
 
 // Codex reaches non-OpenAI providers through `model_providers` in a per-profile config.toml.
 // These bases are not in models.dev; they come from cc-switch src/config/codexProviderPresets.ts.

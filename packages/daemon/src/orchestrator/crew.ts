@@ -1,4 +1,4 @@
-import { estimateCost, type CandidateView, type CostEstimate, type Headroom, type Reason, type RoleId, type RunnerId, type TaskKind, type TaskSize } from "@crewyard/core";
+import { estimateCost, peakFactor, type CandidateView, type CostEstimate, type Headroom, type Reason, type RoleId, type RunnerId, type TaskKind, type TaskSize } from "@crewyard/core";
 import type { Candidate } from "./directory.ts";
 import { planFor, ROLES, TOKENS_BY_SIZE, TURN_OVERHEAD_TOKENS } from "./roles.ts";
 
@@ -23,6 +23,8 @@ export interface ScoringContext {
   preference(role: RoleId, profileId: string): number;
   pins?: Partial<Record<RoleId, string>>;
   exclude?: string[];
+  /** When the proposal is made, for peak-hour prices; the wall clock when left out. */
+  now?: Date;
 }
 
 export interface ProposedMember {
@@ -52,7 +54,8 @@ export function eligible(c: Candidate, role: RoleId, ctx: Pick<ScoringContext, "
   return !tpl.needsReadOnly || c.capabilities.readOnlyMode;
 }
 
-export function estimateFor(c: Candidate, role: RoleId, size: TaskSize): CostEstimate {
+/** `at` is when the run would start: a step proposed in a provider's peak hours is priced at its peak rate. */
+export function estimateFor(c: Candidate, role: RoleId, size: TaskSize, at: Date = new Date()): CostEstimate {
   if (c.profile.credential.kind !== "api_key") return { usd: 0, provenance: "estimated" };
   if (!c.model) return { usd: null, provenance: "unknown" };
   const t = TOKENS_BY_SIZE[size];
@@ -60,7 +63,7 @@ export function estimateFor(c: Candidate, role: RoleId, size: TaskSize): CostEst
   const turns = Math.max(1, Math.round(t.turns * share));
   const overhead = (TURN_OVERHEAD_TOKENS[c.profile.runner] ?? 0) * turns;
   const usd = estimateCost(c.model, Math.round(t.tokensIn * share) + overhead, Math.round(t.tokensOut * share));
-  return usd === null ? { usd: null, provenance: "unknown" } : { usd: Math.round(usd * 10_000) / 10_000, provenance: "estimated" };
+  return usd === null ? { usd: null, provenance: "unknown" } : { usd: Math.round(usd * peakFactor(c.peak, at) * 10_000) / 10_000, provenance: "estimated" };
 }
 
 /** Scores one candidate for one role; `avoid` holds the implementer's models and providers. */
@@ -102,7 +105,7 @@ export function scoreCandidate(c: Candidate, role: RoleId, ctx: ScoringContext, 
     reasons.push({ code: "headroom", params: { pct: Math.round(headroom.pct), provenance: headroom.provenance, window: headroom.window ?? "" } });
   }
 
-  const estimate = estimateFor(c, role, ctx.size);
+  const estimate = estimateFor(c, role, ctx.size, ctx.now);
   let cost: number;
   if (estimate.usd === null) {
     cost = 50;

@@ -2,10 +2,10 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { CatalogProvider } from "@crewyard/core";
+import { peakFactor, type CatalogProvider } from "@crewyard/core";
 import { Store } from "../store.ts";
 import { balanceKind, fetchBalance, parseBalance } from "./balances.ts";
-import { buildCatalog, CatalogService, curated } from "./catalog.ts";
+import { buildCatalog, CatalogService, curated, peakPricingFor } from "./catalog.ts";
 import { dpapi, type Protector } from "./dpapi.ts";
 import { checkBudget, recordSpend, setThresholds, spendSummary, usageSamplesAvailable } from "./ledger.ts";
 import { SecretStore } from "./secrets.ts";
@@ -68,6 +68,13 @@ describe("catalog", () => {
     expect(ds?.balance).toBe("https://api.deepseek.com/user/balance");
     expect(catalog.providers.find((p) => p.id === "groq")?.openaiBase).toBe("https://api.groq.com/openai/v1");
     expect(catalog.providers.find((p) => p.id === "ollama-local")?.runners.opencode).toBe("config");
+  });
+
+  it("reads peak-hour pricing from curated.json, not from the snapshot", () => {
+    // A snapshot refreshed before the field existed still gets it: the lookup never reads providers.json.
+    expect(peakPricingFor("deepseek")).toMatchObject({ factor: 2, days: [1, 2, 3, 4, 5], windows: ["01:00-04:00", "06:00-10:00"] });
+    expect(peakPricingFor("openai")).toBeNull();
+    expect(peakFactor(peakPricingFor("deepseek"), new Date("2026-10-30T07:59:00Z"))).toBe(2);
   });
 
   it("seeds the bundled snapshot, refreshes with ETag at most daily and keeps the last good one offline", async () => {
