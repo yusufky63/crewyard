@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -196,6 +196,8 @@ describe.runIf(live)("crewyard live", () => {
     if (REMOTE) {
       const repos = await d.call("setup.listRepos", undefined);
       d.log("gh login", repos.login, "repos listed", repos.repos.length, "test repo listed", repos.repos.some((r) => r.nameWithOwner === REMOTE));
+      // Clone refuses a parent that does not exist, as the wizard does.
+      mkdirSync(parent, { recursive: true });
       projectPath = (await d.call("setup.clone", { repo: REMOTE, parent, name: "e2e sample repo" })).path;
     } else {
       if (!SEED) throw new Error("CREWYARD_LIVE_SEED or CREWYARD_LIVE_REMOTE is required");
