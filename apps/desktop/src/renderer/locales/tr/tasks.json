@@ -241,8 +241,12 @@
     "filter": "Bu süzgece uyan görev yok."
   },
   "statusbar": {
-    "running": "{{running}} çalışıyor · {{queued}} sırada",
-    "runningTitle": "Bu projede çalışan ajanlar ve sıradaki görevler",
+    "work": "{{agents}} · {{queued}}",
+    "agents_one": "{{count}} ajan çalışıyor",
+    "agents_other": "{{count}} ajan çalışıyor",
+    "queued_one": "{{count}} görev sırada",
+    "queued_other": "{{count}} görev sırada",
+    "runningTitle": "Bu projede şu an çalışan ajanlar (bir görev aynı anda birkaçını çalıştırabilir) ve sırada bekleyen görevler. Görevler ekranını açar.",
     "needYou": "{{count}} sizi bekliyor",
     "needYouTitle": "Gelen kutusundaki açık istekler"
   },

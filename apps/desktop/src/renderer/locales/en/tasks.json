@@ -241,8 +241,12 @@
     "filter": "No tasks match this filter."
   },
   "statusbar": {
-    "running": "{{running}} running · {{queued}} queued",
-    "runningTitle": "Running agents and queued tasks in this project",
+    "work": "{{agents}} · {{queued}}",
+    "agents_one": "{{count}} agent running",
+    "agents_other": "{{count}} agents running",
+    "queued_one": "{{count}} task queued",
+    "queued_other": "{{count}} tasks queued",
+    "runningTitle": "Agents running now (one task can run several at once) and tasks waiting in the queue in this project. Opens Tasks.",
     "needYou": "{{count}} need you",
     "needYouTitle": "Open requests in the Inbox"
   },

@@ -1,4 +1,4 @@
-import { splitEndDetail, STATUS_FILTER, type CandidateView, type HandoffView, type LoopDecisionKind, type CrewMemberView, type LimitNoticePayload, type LimitWindow, type RequestView, type RunView, type TaskDetail, type TaskStatus, type TaskSummary } from "@crewyard/core";
+import { providerErrorLine, providerErrorRaw, splitEndDetail, STATUS_FILTER, type CandidateView, type HandoffView, type LoopDecisionKind, type CrewMemberView, type LimitNoticePayload, type LimitWindow, type RequestView, type RunView, type TaskDetail, type TaskStatus, type TaskSummary } from "@crewyard/core";
 import type { InspectorTarget } from "../../inspector.ts";
 
 // Pure view logic for the Tasks screen, the Inbox and the inspector. The app has no DOM test
@@ -119,8 +119,11 @@ export interface StatusLine {
   tone: Tone;
   icon: StatusIcon;
   /** Raw values; the component translates roles and formats times. */
-  /** `reason` is a code to translate; `reasonText` is a runner's own error text, shown as written. */
-  params: { role?: string; time?: string; target?: string; reason?: string; reasonText?: string; count?: number };
+  /**
+   * `reason` is a code to translate; `reasonText` is a runner's own error made readable (status and
+   * the provider's message), `reasonRaw` the text as the runner wrote it, for the tooltip.
+   */
+  params: { role?: string; time?: string; target?: string; reason?: string; reasonText?: string; reasonRaw?: string; count?: number };
 }
 
 /** DESIGN.md §5 "Status labels": one line per canonical state, with the detail that makes it useful. */
@@ -165,8 +168,9 @@ export function statusLine(detail: TaskDetail, requests: RequestView[]): StatusL
       if (detail.bestOf?.phase === "failed") return { ...base, key: "bestOfFailed", tone: "bad", icon: "x" };
       const failed = [...detail.runs].reverse().find((r) => r.endReason === "failed");
       const why = splitEndDetail(failed?.endDetail ?? null);
-      // A code says it in our words; the runner's full text is in the inspector.
-      const params = why.code ? { reason: why.code } : why.text ? { reasonText: why.text } : {};
+      // A code says it in our words; a provider's raw error is cut to its status and message, and
+      // the runner's full text stays one hover (or the inspector) away.
+      const params = why.code ? { reason: why.code } : why.text ? { reasonText: providerErrorLine(why.text), reasonRaw: providerErrorRaw(why.text) } : {};
       return { ...base, key: why.code || why.text ? "failedBecause" : "failed", tone: "bad", icon: "x", params };
     }
     case "cancelled":

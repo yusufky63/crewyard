@@ -100,12 +100,12 @@ Icons inside buttons are 14 px.
 │ │ one line   ││  terminal                                           │                         │
 │ └ each, scroll┘│                                                    │                         │
 │ Settings      │                                                     │                         │
-├ Status bar 28 ┴ daemon · running/queued/slots · need you · near limit · RAM ··· GitHub sync · Actions · quiet · theme · density ┤
+├ Status bar 28 ┴ daemon · agents running/tasks queued · need you · near limit · RAM ··· GitHub sync · Actions · quiet · theme · density ┤
 ```
 
 - **Title bar** stays short: brand, project switcher, command search, notifications and native-sized Windows caption buttons (46 px wide, close turns `#C42B1C` on hover). It is custom (frameless window).
 - **Status bar** holds system state, so the title bar never fills up:
-  - left: daemon state, running / queued / slots, need you, near limit, RAM;
+  - left: daemon state, agents running and tasks queued, need you, near limit, RAM. The work item names its units (`6 agents running · 0 tasks queued`): it counts running agents, because one task can run several steps at once, while the Tasks filter counts running tasks; its tooltip says so;
   - right: last GitHub sync, Actions minutes, keep awake (only while that setting is on), quiet hours, theme, density.
   - Every item that has a screen opens it on click. Below 1180 px the lower-priority items (RAM, GitHub sync, Actions) hide.
 - **Sidebar** is two framed blocks:
@@ -161,6 +161,8 @@ Icons inside buttons are 14 px.
 | `done` | Done (work without code) | success | check |
 | `failed` | Failed · reason | danger | x |
 | `cancelled` | Stopped by you | muted | square |
+
+A failure's reason is our code in words, or for a provider's error its HTTP status and the provider's own message (`Failed · 402 · Your prepayment credits are depleted…`), read from the Anthropic, OpenAI, Google, DeepSeek and OpenRouter error bodies. The runner's raw text is untrusted: it is capped, shown as plain text (never HTML, its URLs never become links), whole in the tooltip and in the inspector, and stored as the runner wrote it.
 
 "Ready for review" and "Merged" are different filters. A code task is never shown as Done before it is merged.
 

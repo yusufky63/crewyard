@@ -140,8 +140,11 @@ describe("rows", () => {
     const failedWith = (endDetail: string) => statusLine(task({ status: "failed", runs: [run("r9", "m2", { endedAt: "x", endReason: "failed", endDetail })] }), []).params;
     // A start failure keeps its code for the row; the redacted reason after it is for the inspector.
     expect(failedWith("adapter.failed: spawn opencode ENOENT")).toEqual({ reason: "adapter.failed" });
-    // The live run's 402 blob has no code: it goes on as text for the row to cut.
-    expect(failedWith('API Error: 402 {"error":{"code":402}}')).toEqual({ reasonText: 'API Error: 402 {"error":{"code":402}}' });
+    // The live run's 402 blob has no code: the row gets its status and message, the tooltip the raw text.
+    const raw = 'API Error: 402 {"error":{"code":402,"message":"Your prepayment credits are depleted.","status":"FAILED_PRECONDITION"}}';
+    expect(failedWith(raw)).toEqual({ reasonText: "402 · Your prepayment credits are depleted.", reasonRaw: raw });
+    // Text with no body we can read goes on as written.
+    expect(failedWith("socket hang up")).toEqual({ reasonText: "socket hang up", reasonRaw: "socket hang up" });
   });
 
   it("names each step's state", () => {

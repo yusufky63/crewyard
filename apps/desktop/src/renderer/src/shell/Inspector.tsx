@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ArrowLeftRight, PanelRightClose, PanelRightOpen, Pause, Play, RotateCw, Send, X } from "lucide-react";
-import { splitEndDetail, type CandidateView, type HandoffStop, type RequestAnswer, type RunView, type TaskDetail } from "@crewyard/core";
+import { readProviderError, providerErrorLine, splitEndDetail, type CandidateView, type HandoffStop, type RequestAnswer, type RunView, type TaskDetail } from "@crewyard/core";
 import { BrandIcon, Button, Label, Splitter, TickMeter } from "@crewyard/ui";
 import { useInspector, type InspectorTarget } from "../inspector.ts";
 import { useNav } from "../nav.ts";
@@ -187,7 +187,7 @@ function EndDetail({ run }: { run: RunView }) {
   return (
     <div className="ins-sec">
       <Label>{f.t("inspector.endLabel")}</Label>
-      <div className="ins-now">{code ? `${reason} · ${f.t(`endDetail.${code}`, { defaultValue: code })}` : reason}</div>
+      <div className="ins-now">{code ? `${reason} · ${f.t(`endDetail.${code}`, { defaultValue: code })}` : text && readProviderError(text) ? `${reason} · ${providerErrorLine(text)}` : reason}</div>
       {text && (
         <>
           <span className="muted ins-small">{f.t("inspector.endText")}</span>
