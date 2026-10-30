@@ -110,6 +110,12 @@ export function step(rows: Row[], from: number, delta: number): number {
   return focusable(rows[last] ?? rows[0]!) ? last : first(rows);
 }
 
+/** The first added line of a diff, if any. */
+export function firstAdded(files: DiffFile[]): CommentTarget | null {
+  for (const f of files) for (const h of f.hunks) for (const l of h.lines) if (l.kind === "add") return { path: f.path, line: l.new!, side: "new" };
+  return null;
+}
+
 export const first = (rows: Row[]) => Math.max(0, rows.findIndex(focusable));
 
 /** First line of the next (dir 1) or previous (dir -1) file. */

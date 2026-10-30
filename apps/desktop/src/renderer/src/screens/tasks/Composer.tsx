@@ -1,11 +1,12 @@
 import { useId, useState, type FormEvent, type KeyboardEvent } from "react";
 import { Folder, GitBranch } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import type { FallbackMode, TaskKind } from "@crewyard/core";
+import type { FallbackMode, IssueDetail, TaskKind } from "@crewyard/core";
 import { Button, Label, Panel } from "@crewyard/ui";
-import { useDaemon } from "../../ipc.ts";
 import { useNav } from "../../nav.ts";
-import { act, useErrorText } from "./data.ts";
+import { act, useErrorText, useWork } from "./data.ts";
+import { issueDraft } from "./issue.ts";
+import { ImportButton, IssueChip, IssuePicker } from "./IssuePicker.tsx";
 import { splitTaskText } from "./model.ts";
 import { ErrorLine } from "./parts.tsx";
 
@@ -20,7 +21,7 @@ export function Composer({ projectId, projectName }: { projectId: string; projec
   const { t } = useTranslation("tasks");
   const errorText = useErrorText();
   const selectTask = useNav((s) => s.selectTask);
-  const repo = useDaemon("github.repo", { projectId }, { staleTime: 60_000, retry: false });
+  const repo = useWork("github.repo", { projectId }, { staleTime: 60_000, retry: false });
   const [text, setText] = useState("");
   const [branch, setBranch] = useState("");
   const [kind, setKind] = useState<TaskKind | "auto">("auto");
@@ -28,6 +29,8 @@ export function Composer({ projectId, projectName }: { projectId: string; projec
   const [budget, setBudget] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [picking, setPicking] = useState(false);
+  const [issue, setIssue] = useState<{ number: number; url: string; title: string } | null>(null);
   const ids = { text: useId(), branch: useId(), kind: useId(), fallback: useId(), budget: useId() };
 
   const { title, description } = splitTaskText(text);
@@ -50,7 +53,10 @@ export function Composer({ projectId, projectName }: { projectId: string; projec
         ...(branch.trim() ? { baseBranch: branch.trim() } : {}),
         ...(budgetUsd !== undefined ? { budgetUsd } : {}),
       });
+      // The link is kept with the task; a failure here leaves the proposed task as it is.
+      if (issue) await act("github.linkIssue", { taskId: task.id, number: issue.number, url: issue.url, title: issue.title }).catch((err: unknown) => setError(errorText(err)));
       setText("");
+      setIssue(null);
       selectTask(task.id);
     } catch (err) {
       setError(errorText(err));
@@ -73,6 +79,17 @@ export function Composer({ projectId, projectName }: { projectId: string; projec
           {t("composer.label")}
         </label>
         <textarea id={ids.text} value={text} onChange={(e) => setText(e.target.value)} placeholder={t("composer.placeholder")} rows={2} />
+        {picking && (
+          <IssuePicker
+            projectId={projectId}
+            onClose={() => setPicking(false)}
+            onPick={(picked: IssueDetail) => {
+              setText(issueDraft(picked));
+              setIssue({ number: picked.number, url: picked.url, title: picked.title });
+              setPicking(false);
+            }}
+          />
+        )}
         <div className="tk-composer-row">
           <span className="chip" title={t("composer.repoTitle")}>
             <Folder size={14} strokeWidth={1.75} aria-hidden="true" />
@@ -107,6 +124,7 @@ export function Composer({ projectId, projectName }: { projectId: string; projec
             {t("composer.budget")}
             <input id={ids.budget} className="num" inputMode="decimal" value={budget} onChange={(e) => setBudget(e.target.value)} placeholder={t("composer.budgetNone")} aria-invalid={budgetBad || undefined} size={6} />
           </label>
+          {issue ? <IssueChip issue={issue} onRemove={() => setIssue(null)} /> : repo.data?.remote && <ImportButton onClick={() => setPicking(true)} />}
           <div className="end">
             <span className="kbd">Ctrl</span>
             <span className="kbd">Enter</span>
@@ -116,7 +134,7 @@ export function Composer({ projectId, projectName }: { projectId: string; projec
           </div>
         </div>
         <div className="tk-composer-foot">
-          <Label>{t("composer.note")}</Label>
+          <Label>{issue ? t("issues.composerNote") : t("composer.note")}</Label>
         </div>
         <ErrorLine>{error}</ErrorLine>
       </form>

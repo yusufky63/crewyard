@@ -241,6 +241,109 @@
     "stop": "Ajanı durdur",
     "stopConfirm": "{{who}} durdurulsun mu?"
   },
+  "issues": {
+    "import": "Issue içe aktar",
+    "importTitle": "Görevi bu deponun açık bir GitHub issue'sundan doldur",
+    "title": "GitHub issue'su içe aktar",
+    "close": "Kapat",
+    "search": "Numara, başlık ya da etiketle süz",
+    "listLabel": "Açık issue'lar",
+    "untrusted": "Issue metni GitHub'da yazıldı. Oluşturucuya alıntı olarak gelir; düzenleyebilirsin ve sen bir ekibi onaylamadan hiçbir şey başlamaz.",
+    "loading": "Açık issue'lar okunuyor…",
+    "loadingOne": "Okunuyor…",
+    "none": "Bu depoda açık issue yok.",
+    "noMatch": "Eşleşen açık issue yok.",
+    "by": "{{author}} açtı",
+    "chip": "Issue #{{number}}",
+    "detach": "Metni koru, #{{number}} bağlantısını kaldır",
+    "composerNote": "GitHub'dan alındı. Önermeden önce metni gözden geçir; ekibe alıntı olarak gider",
+    "fromIssue": "GitHub issue'sundan",
+    "proposalNote": "Görev metni bu issue'dan alıntı yapıyor. Metin GitHub'da yazıldığı için onaylamadan önce oku: ekip onu talimat olarak değil, veri olarak alır.",
+    "showText": "Görev metnini göster",
+    "problem": {
+      "no_gh": "GitHub CLI (gh) kurulu değil, bu yüzden issue'lar okunamıyor.",
+      "signed_out": "gh oturumu kapalı. gh auth login çalıştırıp yeniden dene.",
+      "not_a_repo": "Bu proje klasörü bir git deposu değil.",
+      "no_remote": "Bu projenin GitHub uzak deposu yok.",
+      "not_github": "Bu projenin uzak deposu GitHub'da değil.",
+      "rate_limited": "GitHub istek sınırına ulaşıldı. Sıfırlandıktan sonra yeniden dene.",
+      "offline": "GitHub'a ulaşılamadı.",
+      "error": "GitHub okunamadı."
+    }
+  },
+  "review": {
+    "open": "Farkı incele",
+    "openTurn": "Son tur",
+    "drafted_one": "{{count}} yorum taslakta, henüz gönderilmedi.",
+    "drafted_other": "{{count}} yorum taslakta, henüz gönderilmedi.",
+    "title": "{{title}} değişikliklerini incele",
+    "eyebrow": "Değişiklikleri incele",
+    "base": "taban {{sha}}",
+    "totals_one": "{{count}} dosya · +{{added}} −{{removed}}",
+    "totals_other": "{{count}} dosya · +{{added}} −{{removed}}",
+    "scope": "Hangi değişiklikler",
+    "scopeName": {
+      "worktree": "Worktree",
+      "turn": "Son tur"
+    },
+    "scopeHint": {
+      "worktree": "Görev dalındaki ve klasöründeki her şey, taban commit'e göre",
+      "turn": "Yalnızca ajanın son turunda bildirdiği dosyalar"
+    },
+    "noTurn": "Bu çalıştırıcı son turunun dosyalarını bildirmedi.",
+    "close": "Kapat (Esc)",
+    "files_one": "{{count}} dosya",
+    "files_other": "{{count}} dosya",
+    "commentCount_one": "{{count}} yorum",
+    "commentCount_other": "{{count}} yorum",
+    "drafts_one": "{{count}} taslak yorum",
+    "drafts_other": "{{count}} taslak yorum",
+    "noDrafts": "Henüz yorum yok. Bir satır seçip Enter'a bas ya da satıra çift tıkla.",
+    "notInView": "Bu satır şu anki görünümde yok.",
+    "remove": "{{where}} üzerindeki yorumu kaldır",
+    "cut": "Fark çok büyük, sonraki dosyalar dışarıda kaldı. Son tur ile daralt ya da dalı başka yerde incele.",
+    "problem": {
+      "no_worktree": "Bu görevin worktree'si yok, incelenecek bir fark da yok.",
+      "missing": "Worktree klasörü artık yok.",
+      "git": "git bu worktree'nin farkını okuyamadı."
+    },
+    "loading": "Fark okunuyor…",
+    "empty": "Taban commit'e göre değişiklik yok.",
+    "emptyTurn": "Son turdaki dosyaların hiçbiri taban commit'ten farklı değil.",
+    "listLabel": "Fark satırları",
+    "keys": "↑ ↓ ya da J K gezinir · Enter ya da C yorum ekler · N P sonraki ve önceki dosya · Delete yorumu siler · Esc kapatır",
+    "status": {
+      "added": "eklendi",
+      "modified": "değişti",
+      "deleted": "silindi",
+      "renamed": "adı değişti",
+      "binary": "ikili"
+    },
+    "note": {
+      "truncated": "Görünüm hızlı kalsın diye burada kesildi. Dosyada toplam +{{added}} −{{removed}} var.",
+      "binary": "İkili dosya, gösterilmiyor.",
+      "no_lines": "Satır değişikliği yok (yalnızca izin ya da ad değişikliği)."
+    },
+    "kind": {
+      "add": "eklendi",
+      "del": "silindi",
+      "context": "değişmedi"
+    },
+    "addAt": "{{where}} için yorum yaz",
+    "draft": "Taslak",
+    "commentHead": "Yorum:",
+    "placeholder": "Ajan burada neyi değiştirmeli?",
+    "editorKeys": "Ctrl Enter ekler · Esc vazgeçer",
+    "cancel": "Vazgeç",
+    "add": "Yorumu ekle",
+    "sendNote": "{{who}} adımına tek mesaj olarak gider; her yorum dosya:satır ve alıntılanmış koduyla birlikte. Çalışan ajan mesajı bir sonraki turunda okur, bitmiş bir adım kaldığı yerden devam eder. Taslaklar ajan teslim alana kadar durur.",
+    "noOwner": "Bu görevde worktree'ye yazan bir adım yok, yorumların gideceği kimse yok.",
+    "send_one": "{{count}} yorumu gönder",
+    "send_other": "{{count}} yorumu gönder",
+    "sending": "Gönderiliyor…",
+    "sent_one": "{{count}} yorum {{who}} adımına gönderildi.",
+    "sent_other": "{{count}} yorum {{who}} adımına gönderildi."
+  },
   "errors": {
     "load": "Görevler arka plan hizmetinden okunamadı.",
     "other": "Bir şeyler ters gitti: {{message}}",
@@ -274,6 +377,18 @@
     "worktree_branch_elsewhere": "Görevin dalı başka bir worktree'de açık.",
     "worktree_locked": "Worktree kilitli.",
     "worktree_path_taken": "Worktree'nin açılacağı yerde zaten bir klasör var.",
-    "adapter_failed": "Çalıştırıcı bir hata bildirdi."
+    "adapter_failed": "Çalıştırıcı bir hata bildirdi.",
+    "review_busy": "Bu yorumlar zaten gönderiliyor.",
+    "review_no_drafts": "Gönderilecek taslak yorum yok.",
+    "review_cancelled": "Görev iptal edildi, yorum gönderilemez.",
+    "review_no_owner": "Bu görevde dalın sahibi olan bir adım yok.",
+    "review_too_long": "Yorumlar tek mesaj için fazla uzun. Daha azını gönder.",
+    "review_too_many": "Bir görevde en fazla 200 taslak yorum olabilir. Önce bunları gönder.",
+    "review_empty_comment": "Önce bir yorum yaz.",
+    "review_comment_too_long": "Bu yorum fazla uzun.",
+    "review_bad_line": "Bu satıra yorum eklenemez.",
+    "issue_no_github": "Bu proje için GitHub okunamadı.",
+    "issue_is_pull": "Bu numara bir issue değil, pull request.",
+    "issue_bad_link": "Yalnızca bu projenin kendi deposundaki bir issue bağlanabilir."
   }
 }

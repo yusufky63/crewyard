@@ -11,6 +11,7 @@ import { useActivity } from "../screens/tasks/live.ts";
 import { formatDuration, latestRunOf, limitBanner, profileNames, resolveTarget, runDuration, stepState } from "../screens/tasks/model.ts";
 import { ConfirmButton, ErrorLine, LimitBanner, useFormat, useNow } from "../screens/tasks/parts.tsx";
 import { DiffStat } from "../screens/tasks/TaskRow.tsx";
+import { DiffReview } from "../screens/tasks/DiffReview.tsx";
 import "../screens/tasks/tasks.css";
 import "./inspector.css";
 
@@ -271,6 +272,7 @@ function Body({ detail, target }: { detail: TaskDetail; target: InspectorTarget 
           )}
         </div>
       )}
+      {tab === "changes" && <DiffReview detail={detail} run={run} />}
       {tab === "usage" && run && (
         <>
           <div className="ins-sec">

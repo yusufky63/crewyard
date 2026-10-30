@@ -24,6 +24,8 @@ export interface DraftInput {
 }
 
 const BODY_MAX = 4000;
+/** Drafts per task; a batch past this is no longer one readable message. */
+const DRAFTS_MAX = 200;
 const HUNK_MAX_LINES = 40;
 const MESSAGE_MAX = 60_000;
 const UNTRACKED_MAX = 200;
@@ -169,7 +171,9 @@ export class ReviewDesk {
     if (!input.path || !Number.isInteger(input.line) || input.line < 1) throw new Error("review.bad_line");
     this.deps.tasks().get(taskId);
     const c = { ...input, body };
-    if (dedupeComments(this.drafts(taskId), [c]).length) {
+    const existing = this.drafts(taskId);
+    if (dedupeComments(existing, [c]).length) {
+      if (existing.length >= DRAFTS_MAX) throw new Error("review.too_many");
       this.db
         .prepare("insert or ignore into review_drafts (id, task_id, dedupe_key, path, line, side, body, hunk, created_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?)")
         .run(randomUUID(), taskId, commentKey(c), c.path, c.line, c.side, body, clipHunk(input.hunk), this.now().toISOString());

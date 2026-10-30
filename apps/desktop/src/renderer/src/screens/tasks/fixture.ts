@@ -1,3 +1,4 @@
+import { reviewFixture } from "./reviewFixture.ts";
 import type { CandidateView, CrewMemberView, IpcMethod, IpcParams, IpcResult, LimitNoticePayload, RequestView, RoleId, RunView, TaskDetail, TaskSummary } from "@crewyard/core";
 
 // Screenshot data. Used only when the page URL has `fixture`, which the main process sets only
@@ -199,6 +200,17 @@ export function fixtureCall<M extends IpcMethod>(method: M, params: IpcParams<M>
       return task(p.taskId) as IpcResult<M>;
     case "requests.list":
       return d.requests.filter((q) => !p.taskId || q.taskId === p.taskId) as IpcResult<M>;
+    case "github.repo":
+    case "github.issues":
+    case "github.issue":
+    case "github.linkIssue":
+    case "github.taskIssue":
+    case "github.taskDiff":
+    case "github.reviewDrafts":
+    case "github.addReviewComment":
+    case "github.removeReviewComment":
+    case "github.sendReview":
+      return reviewFixture(method, params, task) as IpcResult<M>;
     default:
       return task(p.taskId) as IpcResult<M>;
   }
