@@ -1,5 +1,5 @@
 // The bridge exposed by the preload script as window.crewyard. Types only; shared by both sides.
-import type { IpcMethod, IpcParams, IpcResult } from "@crewyard/core";
+import type { IpcMethod, IpcParams, IpcResult, PickedElement, PreviewRefusal } from "@crewyard/core";
 
 export interface AppInfo {
   version: string;
@@ -96,6 +96,37 @@ export interface UpdateState {
   error: { code: UpdateErrorCode; problem: SignatureProblem | null; detail: string } | null;
 }
 
+/** Where the Preview tab's frame is, in CSS pixels of the window (docs/adr/0013-dev-server-preview.md). */
+export interface PreviewRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Why a load was refused: an address previewVerdict refused, or no window to show it in. */
+export type PreviewOpenResult = { ok: true } | { ok: false; reason: PreviewRefusal | "no_window" };
+
+/** What main stopped the page from doing: leave its origin, open a window, download, frame another scheme. */
+export type PreviewBlockReason = PreviewRefusal | "window" | "download" | "frame";
+
+/** The preview page as main sees it, pushed as `preview.state`. */
+export interface PreviewState {
+  /** The task whose dev server is loaded; null when nothing is. */
+  taskId: string | null;
+  /** The page's committed address. */
+  url: string | null;
+  title: string | null;
+  loading: boolean;
+  /** The last main-frame load error, as Chromium named it (e.g. ERR_CONNECTION_REFUSED). */
+  failed: { code: number; description: string; url: string } | null;
+  /** The last thing the guard stopped. */
+  blocked: { url: string; reason: PreviewBlockReason } | null;
+  picking: boolean;
+}
+
+export type PreviewPickResult = { ok: true; pick: PickedElement } | { ok: false; reason: "cancelled" | "not_loaded" | "invalid" | "failed" };
+
 export interface CrewyardApi {
   call<M extends IpcMethod>(method: M, params: IpcParams<M>): Promise<IpcResult<M>>;
   on(topic: string, listener: (payload: unknown) => void): () => void;
@@ -126,4 +157,19 @@ export interface CrewyardApi {
   setUpdateAutoCheck(on: boolean): Promise<UpdateState>;
   /** Opens the third-party licence list that shipped with this build; false when there is none. */
   openLicenses(): Promise<boolean>;
+  /** Loads a loopback address of the task's dev server; main checks it against the task's ports first. */
+  previewOpen(taskId: string, url: string): Promise<PreviewOpenResult>;
+  /** Where the frame is; null hides the page without unloading it. */
+  previewBounds(rect: PreviewRect | null): void;
+  previewReload(): void;
+  /** Moves keyboard focus into the page; Esc in the page brings it back (`preview.focus`). */
+  previewFocus(): void;
+  /** Opens the loaded address in the default browser, when it is still an allowed one. */
+  previewOpenExternal(): void;
+  /** Unloads the page and clears its in-memory storage. Never stops the server or the run. */
+  previewClose(): void;
+  previewState(): Promise<PreviewState>;
+  /** Waits for a click in the page; `color` is the accent token for the highlight. */
+  previewPick(color: string): Promise<PreviewPickResult>;
+  previewCancelPick(): void;
 }

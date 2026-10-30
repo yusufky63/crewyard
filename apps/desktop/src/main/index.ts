@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { app, BrowserWindow, dialog, ipcMain, Notification, powerMonitor, powerSaveBlocker, safeStorage, shell, type MessageBoxOptions } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Notification, powerMonitor, powerSaveBlocker, safeStorage, shell, type IpcMainEvent, type IpcMainInvokeEvent, type MessageBoxOptions } from "electron";
 import { inQuietHours, type AppSettings, type IpcMethod, type IpcParams, type IpcResult, type NotificationSettings } from "@crewyard/core";
 import type { AppInfo, NavigateTarget, StartupState, TitleBarColors } from "../shared/api.ts";
 import { DaemonHost } from "./daemon-host.ts";
@@ -10,6 +10,7 @@ import { pickMainLanguage, translator, type MainLanguage } from "./i18n.ts";
 import { batteryPct, KeepAwake } from "./keep-awake.ts";
 import { Toaster } from "./notify/toaster.ts";
 import { desktopFeatures } from "./platform.ts";
+import { PreviewHost } from "./preview/host.ts";
 import { secretHost } from "./secrets.ts";
 import { HIDDEN_ARG, readStartup, writeStartup } from "./startup.ts";
 import { AppTray } from "./tray.ts";
@@ -120,6 +121,19 @@ const daemon = new DaemonHost(join(here, "daemon.js"), join(app.getPath("userDat
 
 const callDaemon = <M extends IpcMethod>(method: M, params: IpcParams<M>) => daemon.call(method, params) as Promise<IpcResult<M>>;
 
+// The inspector's Preview tab (docs/adr/0013-dev-server-preview.md). Main asks the daemon for the
+// task's ports itself; the renderer's word is never enough to load an address.
+const preview = new PreviewHost({
+  window: () => win,
+  targets: (taskId) => callDaemon("preview.targets", { taskId }),
+  emit: (state) => send("preview.state", state),
+  returnFocus: () => {
+    if (!win || win.isDestroyed()) return;
+    win.webContents.focus();
+    send("preview.focus", null);
+  },
+});
+
 const toaster = new Toaster({
   call: callDaemon,
   settings: () => notifications,
@@ -188,7 +202,12 @@ function createWindow(): BrowserWindow {
     e.preventDefault();
     void onCloseRequested();
   });
-  w.webContents.on("did-start-loading", () => (rendererReady = false));
+  w.webContents.on("did-start-loading", () => {
+    rendererReady = false;
+    // A reloaded renderer has no Preview tab open any more.
+    preview.close();
+  });
+  w.on("closed", () => preview.close());
   // The renderer never navigates away; external https links open in the default browser.
   w.webContents.on("will-navigate", (e) => e.preventDefault());
   w.webContents.setWindowOpenHandler(({ url }) => {
@@ -382,6 +401,28 @@ ipcMain.handle("crewyard:open-licenses", async () => {
   const file = app.isPackaged ? join(dirname(process.execPath), "THIRD-PARTY-LICENSES.txt") : join(here, "../third-party/THIRD-PARTY-LICENSES.txt");
   if (!existsSync(file)) return false;
   return (await shell.openPath(file)) === "";
+});
+/** Preview channels answer the main window's own page only. */
+const fromApp = (e: IpcMainEvent | IpcMainInvokeEvent) => Boolean(win && !win.isDestroyed() && e.sender === win.webContents);
+ipcMain.handle("crewyard:preview-open", (e, taskId: unknown, url: unknown) => {
+  if (!fromApp(e) || typeof taskId !== "string" || typeof url !== "string") return { ok: false, reason: "invalid" };
+  return preview.open(taskId, url);
+});
+ipcMain.handle("crewyard:preview-state", (e) => (fromApp(e) ? preview.current() : null));
+ipcMain.handle("crewyard:preview-pick", (e, color: unknown) => (fromApp(e) && typeof color === "string" ? preview.pick(color) : { ok: false, reason: "not_loaded" }));
+ipcMain.on("crewyard:preview-bounds", (e, rect: unknown) => {
+  if (!fromApp(e)) return;
+  const r = rect as Record<string, unknown> | null;
+  const ok = r !== null && typeof r === "object" && ["x", "y", "width", "height"].every((k) => typeof r[k] === "number" && Number.isFinite(r[k]));
+  preview.setBounds(ok ? { x: r.x as number, y: r.y as number, width: r.width as number, height: r.height as number } : null);
+});
+ipcMain.on("crewyard:preview", (e, action: unknown) => {
+  if (!fromApp(e)) return;
+  if (action === "reload") preview.reload();
+  else if (action === "focus") preview.focus();
+  else if (action === "external") preview.openExternal();
+  else if (action === "close") preview.close();
+  else if (action === "cancel-pick") preview.cancelPick();
 });
 ipcMain.on("crewyard:battery", (_e, reading: unknown) => keepAwake.setBatteryPct(batteryPct(reading)));
 ipcMain.on("crewyard:titlebar", (_e, colors: TitleBarColors) => {

@@ -30,6 +30,15 @@ const api: CrewyardApi = {
   installUpdate: () => ipcRenderer.invoke("crewyard:update", "install"),
   setUpdateAutoCheck: (on) => ipcRenderer.invoke("crewyard:update", on ? "auto-on" : "auto-off"),
   openLicenses: () => ipcRenderer.invoke("crewyard:open-licenses"),
+  previewOpen: (taskId, url) => ipcRenderer.invoke("crewyard:preview-open", taskId, url),
+  previewBounds: (rect) => ipcRenderer.send("crewyard:preview-bounds", rect),
+  previewReload: () => ipcRenderer.send("crewyard:preview", "reload"),
+  previewFocus: () => ipcRenderer.send("crewyard:preview", "focus"),
+  previewOpenExternal: () => ipcRenderer.send("crewyard:preview", "external"),
+  previewClose: () => ipcRenderer.send("crewyard:preview", "close"),
+  previewState: () => ipcRenderer.invoke("crewyard:preview-state"),
+  previewPick: (color) => ipcRenderer.invoke("crewyard:preview-pick", color),
+  previewCancelPick: () => ipcRenderer.send("crewyard:preview", "cancel-pick"),
 };
 
 contextBridge.exposeInMainWorld("crewyard", api);

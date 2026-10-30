@@ -345,7 +345,12 @@ A run cannot create other runs. If an agent asks for more work, the request beco
 - The group starts all at once or not at all: N free slots and memory, and every paid estimate reserved against the parent's caps in one step. The parent's budget and per-task caps count every variant.
 - When the variants finish, the Tasks screen and the inspector compare them side by side (files changed, tests in each worktree, loop verdict, spend). Keeping one, after a confirm, moves its worktree and session to the parent, where test, review and PR continue; the others are stopped and parked.
 
-## 10. GitHub
+### 9.5 Dev-server preview ([ADR 0013](docs/adr/0013-dev-server-preview.md))
+
+- The inspector's Preview tab shows the web app a task serves: the worktree's bootstrap port (`CREWYARD_PORT`) and loopback URLs (`localhost`, `127.0.0.1`, `[::1]`) its runs printed in tool output. Nothing loads until you click `Load`.
+- The page is a `WebContentsView` owned by main, in an in-memory partition of its own, sandboxed, with no preload and no way to Crewyard's IPC. Main checks every load, navigation and redirect against the task's ports, which it reads from the daemon itself; new windows, downloads, permission requests and device pickers are refused. Crewyard opens no listener.
+- `Pick element` takes the clicked element's outer HTML (16 KB at most), selector, size and a fixed list of computed styles. You see it as text, add a note, and `Add to queue` puts it in the step's queue (ADR 0005) as quoted page data, never as instructions. A screenshot of the element waits for image attachments on `UserInput`.
+- Unloading the page, switching task or closing the inspector never stops the dev server or the run.
 
 - **Auth:** reuse the `gh` CLI login (token read at startup, kept in memory). No new token is stored.
 - **Observer:** REST and GraphQL with ETag conditional requests, only for repos with active tasks, every 60 s while a task is in review, plus a manual refresh. No polling loops on CI.

@@ -1,0 +1,27 @@
+/* Inspector Preview tab (docs/adr/0013-dev-server-preview.md). The page is a native view main draws
+   over .pv-frame; the frame itself only shows a hairline and the empty or covered state under it. */
+.pv-list { list-style: none; display: grid; gap: 0; border: 1px solid var(--line); }
+.pv-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto; column-gap: 12px; row-gap: 2px; align-items: center; padding: 8px 10px; border-top: 1px solid var(--line); }
+.pv-list li:first-child { border-top: 0; }
+.pv-list .btn { grid-column: 2; grid-row: 1 / span 2; }
+.pv-list .btn[aria-pressed="true"] { color: var(--accent); }
+.pv-url { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pv-src { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pv-view { gap: 8px; }
+/* The address gets its own line: at 380 px the tools would squeeze it to nothing. */
+.pv-bar { display: grid; gap: 6px; min-width: 0; }
+.pv-current { min-width: 0; font-size: 12px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pv-tools { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
+.pv-tools .btn[aria-pressed="true"] { color: var(--accent); }
+.pv-status { min-height: 18px; font-size: 12px; overflow-wrap: anywhere; }
+.pv-status.accent { color: var(--accent); }
+.pv-status.warn { color: var(--warn); }
+.pv-status.bad { color: var(--bad); }
+.pv-frame { height: clamp(240px, 52vh, 640px); border: 1px solid var(--line); background: var(--sunken); display: grid; place-items: center; }
+.pv-frame.on { border-color: var(--line-strong); }
+.pv-frame.picking { border-color: var(--accent); }
+.pv-frame-empty { max-width: 260px; text-align: center; font-size: 13px; padding: 16px; }
+.pv-selector { font-size: 12px; overflow-wrap: anywhere; }
+/* Page content as plain text, never HTML; long lines wrap so nothing scrolls sideways. */
+.pv-quote { background: var(--sunken); border: 1px solid var(--line); padding: 10px 12px; font: 400 12px / 1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 260px; overflow-y: auto; }
+.pv-note { width: 100%; border: 1px solid var(--line-strong); background: var(--canvas); padding: 8px 10px; font-size: 13px; resize: vertical; }
