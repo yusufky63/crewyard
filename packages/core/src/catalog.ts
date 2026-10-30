@@ -71,6 +71,26 @@ export function peakFactor(peak: PeakPricing | null | undefined, at: Date): numb
   return inside ? peak.factor : 1;
 }
 
+/**
+ * Per-request prices from curated.json for the web search and page fetch requests a provider runs
+ * server-side and bills apart from tokens (DeepSeek's Search and Fetch APIs). USD per 1,000
+ * successful requests, billed from `from` (an ISO instant) on; requests before it are free.
+ */
+export const RequestPricing = z.object({
+  searchPer1k: z.number().nonnegative(),
+  fetchPer1k: z.number().nonnegative(),
+  from: z.iso.datetime({ offset: true }),
+  ref: z.string(),
+  checked: z.string(),
+});
+export type RequestPricing = z.infer<typeof RequestPricing>;
+
+/** Estimated cost in USD of search and fetch requests made at `at`: zero before billing starts or without a price. */
+export function requestCost(pricing: RequestPricing | null | undefined, searches: number, fetches: number, at: Date): number {
+  if (!pricing || at.getTime() < Date.parse(pricing.from)) return 0;
+  return (searches * pricing.searchPer1k + fetches * pricing.fetchPer1k) / 1_000;
+}
+
 /** Estimated cost in USD for a token count; models.dev prices are per million tokens. */
 export function estimateCost(model: CatalogModel, tokensIn: number, tokensOut: number, cacheRead = 0): number | null {
   if (!model.cost || model.cost.input === null || model.cost.output === null) return null;

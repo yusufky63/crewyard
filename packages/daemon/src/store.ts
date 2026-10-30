@@ -735,6 +735,19 @@ export const MIGRATIONS: Migration[] = [
      primary key (runner, session_id)
    );`,
   },
+  // The server-side web search and fetch totals last seen per native session, so a run is charged
+  // only for the requests it added (DeepSeek bills them per request). Its own table for the same
+  // reason as native_usage_reasoning.
+  {
+    id: "native-usage-requests",
+    sql: `create table if not exists native_usage_requests (
+     runner text not null,
+     session_id text not null,
+     web_search integer not null,
+     web_fetch integer not null,
+     primary key (runner, session_id)
+   );`,
+  },
 ];
 
 /** What the positional scheme applied: a database at `user_version` N has the first N of these. */

@@ -10,6 +10,7 @@ import {
   EVENT_LIMITS,
   peakFactor,
   ProjectConfig,
+  requestCost,
   type AgentAdapter,
   type AgentEvent,
   type Answer,
@@ -1866,7 +1867,15 @@ export class Orchestrator {
     this.db.setNativeUsage(
       run.runner,
       run.native_session_id,
-      { tokensIn: less(totals.tokensIn, f.usage.tokensIn), tokensOut: less(totals.tokensOut, f.usage.tokensOut), cacheRead: less(totals.cacheRead, f.usage.cacheRead), costUsd: totals.costUsd !== null && f.usage.costUsd !== null ? less(totals.costUsd, f.usage.costUsd) : null },
+      {
+        tokensIn: less(totals.tokensIn, f.usage.tokensIn),
+        tokensOut: less(totals.tokensOut, f.usage.tokensOut),
+        cacheRead: less(totals.cacheRead, f.usage.cacheRead),
+        costUsd: totals.costUsd !== null && f.usage.costUsd !== null ? less(totals.costUsd, f.usage.costUsd) : null,
+        // Compaction searches nothing: the requests a fork copied with the history are all baseline.
+        webSearchRequests: totals.webSearchRequests,
+        webFetchRequests: totals.webFetchRequests,
+      },
       this.iso(),
     );
     await this.onUsage(run, this.db.task(run.task_id), {
@@ -1884,6 +1893,8 @@ export class Orchestrator {
       contextSize: null,
       costUsd: totals.costUsd,
       costProvenance: totals.costUsd === null ? "unknown" : "estimated",
+      webSearchRequests: totals.webSearchRequests,
+      webFetchRequests: totals.webFetchRequests,
     });
   }
 
@@ -2254,32 +2265,43 @@ export class Orchestrator {
     // totals of the run before it. So a run adds only the growth since the last total seen for
     // that session; a total that went down means the session counter restarted.
     const session = run.native_session_id ?? `run:${run.id}`;
-    const seen = this.db.nativeUsage(run.runner, session) ?? { tokensIn: 0, tokensOut: 0, cacheRead: 0, reasoning: 0, costUsd: null };
+    const seen = this.db.nativeUsage(run.runner, session) ?? { tokensIn: 0, tokensOut: 0, cacheRead: 0, reasoning: 0, costUsd: null, webSearchRequests: 0, webFetchRequests: 0 };
     const restarted = ev.tokensIn < seen.tokensIn || ev.tokensOut < seen.tokensOut;
     const grow = (now: number, before: number) => (restarted ? now : Math.max(0, now - before));
     const dIn = grow(ev.tokensIn, seen.tokensIn);
     const dOut = grow(ev.tokensOut, seen.tokensOut);
     const dCache = grow(ev.cacheRead, seen.cacheRead);
     const dReasoning = grow(ev.reasoning, seen.reasoning);
-    this.db.setNativeUsage(run.runner, session, { tokensIn: ev.tokensIn, tokensOut: ev.tokensOut, cacheRead: ev.cacheRead, reasoning: ev.reasoning, costUsd: ev.costUsd }, ev.at);
+    // A request total below the last one restarted on its own (a resumed Codex thread whose
+    // rollout could not be read), so its requests count in full; a runner that cannot see
+    // requests reports none and adds none.
+    const growRequests = (now: number | undefined, before: number) => (now === undefined ? 0 : restarted || now < before ? now : now - before);
+    const dSearch = growRequests(ev.webSearchRequests, seen.webSearchRequests);
+    const dFetch = growRequests(ev.webFetchRequests, seen.webFetchRequests);
+    const requests = ev.webSearchRequests !== undefined || ev.webFetchRequests !== undefined ? { webSearchRequests: ev.webSearchRequests ?? seen.webSearchRequests, webFetchRequests: ev.webFetchRequests ?? seen.webFetchRequests } : {};
+    this.db.setNativeUsage(run.runner, session, { tokensIn: ev.tokensIn, tokensOut: ev.tokensOut, cacheRead: ev.cacheRead, reasoning: ev.reasoning, costUsd: ev.costUsd, ...requests }, ev.at);
 
     const live = this.live.get(run.id);
     const model = live?.candidate.model ?? null;
     // Catalog prices, and OpenCode's own estimate (it prices from models.dev too), are the standard
     // rate; DeepSeek bills twice that in its weekday peak hours.
     const peak = peakFactor(live?.candidate.peak, this.now());
+    // DeepSeek bills the searches and fetches its server runs per request, at one rate all day and
+    // only from its billing start. No runner's own estimate on DeepSeek includes them.
+    const requestUsd = live?.candidate.profile.credential.kind === "api_key" ? requestCost(live.candidate.requests, dSearch, dFetch, this.now()) : 0;
     let dCost: number | null;
     let provenance: Provenance;
     if (ev.costUsd !== null) {
       dCost = restarted ? ev.costUsd : Math.max(0, ev.costUsd - (seen.costUsd ?? 0));
       provenance = ev.costProvenance;
-      if (provenance === "estimated") dCost *= peak;
+      // A billed cost already holds every request.
+      if (provenance === "estimated") dCost = dCost * peak + requestUsd;
     } else if (live && live.candidate.profile.credential.kind !== "api_key") {
       [dCost, provenance] = [0, "estimated"];
     } else {
       // The runner could not price these tokens (e.g. Claude Code on DeepSeek): price them from the catalog.
       const usd = model ? estimateCost(model, dIn, dOut, dCache) : null;
-      dCost = usd === null ? null : usd * peak;
+      dCost = usd === null ? null : usd * peak + requestUsd;
       provenance = dCost === null ? "unknown" : "estimated";
     }
     if (live && dCost !== null) {

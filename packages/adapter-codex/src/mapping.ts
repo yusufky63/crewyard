@@ -25,6 +25,7 @@ import type {
   TurnStartedNotification,
 } from "./protocol/index.ts";
 import { addUsage, NO_USAGE, type TokenUsageBreakdown } from "./review-usage.ts";
+import { addRequests, countRequest, NO_REQUESTS, type WebRequests } from "./web-requests.ts";
 
 // Pure translation between codex app-server messages and Crewyard's AgentEvent / Answer types.
 // The adapter adds the envelope (runId, seq, at, source) and owns process and request state.
@@ -118,9 +119,10 @@ export function unknownSamples(profileId: string, observedAt: string): LimitSamp
  * cacheRead and cacheWrite never overlap and a price lookup cannot count a token twice.
  * Context fill is the last request's total, which is what was in the window at that moment.
  * `subagents` is what the thread's review subagents spent (review-usage.ts): codex never reports
- * it, so it is added to the thread's own totals and the run's totals keep growing.
+ * it, so it is added to the thread's own totals and the run's totals keep growing. `requests` are
+ * the thread's and its reviews' web searches and page fetches (web-requests.ts), totals as well.
  */
-export function usageEvent(u: ThreadTokenUsage | null, subagents: TokenUsageBreakdown = NO_USAGE): EventBody {
+export function usageEvent(u: ThreadTokenUsage | null, subagents: TokenUsageBreakdown = NO_USAGE, requests: WebRequests = NO_REQUESTS): EventBody {
   const t = addUsage(u?.total ?? NO_USAGE, subagents);
   return {
     type: "usage.update",
@@ -134,6 +136,8 @@ export function usageEvent(u: ThreadTokenUsage | null, subagents: TokenUsageBrea
     // Subscription turns have no price; API-key cost is estimated by the daemon from the catalog.
     costUsd: null,
     costProvenance: "unknown",
+    webSearchRequests: requests.search,
+    webFetchRequests: requests.fetch,
   };
 }
 
@@ -275,6 +279,15 @@ export class NotificationMapper {
   lastUsage: ThreadTokenUsage | null = null;
   /** What the thread's review subagents spent so far; the adapter reads it from their rollouts. */
   subagentUsage: TokenUsageBreakdown = NO_USAGE;
+  /** The thread's own web requests: from its rollout when it was resumed, then from item/completed. */
+  webRequests: WebRequests = NO_REQUESTS;
+  /** The review subagents' web requests, read with their spend. */
+  subagentRequests: WebRequests = NO_REQUESTS;
+
+  /** The thread's totals as usage.update carries them, review subagents included. */
+  usage(): EventBody {
+    return usageEvent(this.lastUsage, this.subagentUsage, addRequests(this.webRequests, this.subagentRequests));
+  }
 
   map(method: string, params: unknown): EventBody[] {
     switch (method) {
@@ -305,6 +318,8 @@ export class NotificationMapper {
         this.items.set(item.id, item);
         if (item.type === "agentMessage") this.lastAgentMessage = item.text;
         if (item.type === "contextCompaction") this.compacted = true;
+        // Counted when the item finishes; it starts with the placeholder action `other`.
+        if (item.type === "webSearch") this.webRequests = countRequest(this.webRequests, item.action?.type);
         // The review is shown as the run's message; the verdict turn after it maps it to our schema.
         if (item.type === "exitedReviewMode") {
           this.reviewText = item.review;
@@ -335,7 +350,7 @@ export class NotificationMapper {
         return [{ type: "diff.update", files: parseDiffStats((params as TurnDiffUpdatedNotification).diff) }];
       case "thread/tokenUsage/updated":
         this.lastUsage = (params as ThreadTokenUsageUpdatedNotification).tokenUsage;
-        return [usageEvent(this.lastUsage, this.subagentUsage)];
+        return [this.usage()];
       case "account/rateLimits/updated":
         return limitEvents((params as { rateLimits: RateLimitSnapshot }).rateLimits);
       case "error": {

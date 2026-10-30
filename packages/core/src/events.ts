@@ -101,6 +101,13 @@ export const AgentEvent = z.discriminatedUnion("type", [
     contextSize: z.number().int().positive().nullable(),
     costUsd: z.number().nonnegative().nullable(),
     costProvenance: Provenance,
+    /**
+     * Web searches and page fetches the provider ran server-side for the session, running totals
+     * like the token counts; DeepSeek bills them per request apart from tokens. Absent when the
+     * runner cannot see them, never a guess.
+     */
+    webSearchRequests: z.number().int().nonnegative().optional(),
+    webFetchRequests: z.number().int().nonnegative().optional(),
   }),
   z.object({
     ...envelope,

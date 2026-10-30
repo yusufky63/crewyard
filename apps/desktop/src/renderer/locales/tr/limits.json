@@ -49,7 +49,7 @@
   },
   "spend": {
     "title": "API harcaması · {{range}}",
-    "note": "Token × katalog fiyatı, sürümlü",
+    "note": "Token ve web isteği × katalog fiyatı, sürümlü",
     "other": "Diğer",
     "aria": "Sağlayıcıya göre harcama: {{parts}}",
     "empty": "Bu aralıkta kayıtlı API harcaması yok."
@@ -188,6 +188,6 @@
     "noDollarsHint": "Abonelik planları, kodlama planları, yerel modeller ve fiyatı bilinmeyen modeller token başına faturalanmaz",
     "showAll": "{{count}} satırın hepsini göster",
     "showFewer": "Daha az göster",
-    "note": "Toplam {{tokens}} girdi ve çıktı tokenı. Dolarlar token başına ücretli anahtarların harcama defterinden gelir: katalog fiyat tablosuyla hesaplananlar (DeepSeek'in hafta içi yoğun saatleri gibi dönemlerde yoğun saat fiyatıyla) Tahmini, sağlayıcının faturaladıkları Bildirilen olarak işaretlenir. Önbellekten okunanlar girdiden ayrı sayılır."
+    "note": "Toplam {{tokens}} girdi ve çıktı tokenı. Dolarlar token başına ücretli anahtarların harcama defterinden gelir: katalog fiyat tablosuyla hesaplananlar Tahmini, sağlayıcının faturaladıkları Bildirilen olarak işaretlenir. Tahminler, DeepSeek'in hafta içi yoğun saatleri gibi dönemlerde yoğun saat fiyatını kullanır; DeepSeek'in 31 Ekim 2026 UTC 16.00'dan itibaren istek başına faturaladığı web aramalarını ve sayfa çekme isteklerini de ekler. Önbellekten okunanlar girdiden ayrı sayılır."
   }
 }

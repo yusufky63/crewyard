@@ -140,6 +140,8 @@ describe("NotificationMapper on a full turn", () => {
       contextSize: 272000,
       costUsd: null,
       costProvenance: "unknown",
+      webSearchRequests: 0,
+      webFetchRequests: 0,
     });
   });
 
@@ -167,6 +169,34 @@ describe("NotificationMapper on a full turn", () => {
 
   it("ignores notifications it does not know", () => {
     expect(new NotificationMapper().map("thread/realtime/started", {})).toEqual([]);
+  });
+});
+
+describe("NotificationMapper on DeepSeek's server-side web search", () => {
+  // codex-cli 0.147.0 app-server on deepseek-v4-pro, 2026-10-30: one search, then one opened page.
+  const notes = fixture<Array<{ method: string; params: unknown }>>("turn-web-search-deepseek.json");
+
+  it("counts a finished search as a Search request and an opened page as a Fetch", () => {
+    const m = new NotificationMapper();
+    const events = notes.flatMap((n) => m.map(n.method, n.params));
+    events.forEach(valid);
+    // The search's `queries` also holds DeepSeek's ws_call_id entry; it is still one request.
+    expect(events.find((e) => e.type === "usage.update")).toMatchObject({ tokensIn: 40130 - 33152, cacheRead: 33152, webSearchRequests: 1, webFetchRequests: 1 });
+    expect(events.filter((e) => e.type === "tool.call")).toHaveLength(2);
+  });
+
+  it("does not count an item that has only started", () => {
+    const m = new NotificationMapper();
+    for (const n of notes.filter((x) => x.method !== "item/completed")) m.map(n.method, n.params);
+    expect(m.usage()).toMatchObject({ webSearchRequests: 0, webFetchRequests: 0 });
+  });
+
+  it("adds the requests restored on resume and the review subagents' to the thread's own", () => {
+    const m = new NotificationMapper();
+    m.webRequests = { search: 3, fetch: 2 };
+    m.subagentRequests = { search: 1, fetch: 0 };
+    const events = notes.flatMap((n) => m.map(n.method, n.params));
+    expect(events.find((e) => e.type === "usage.update")).toMatchObject({ webSearchRequests: 5, webFetchRequests: 3 });
   });
 });
 

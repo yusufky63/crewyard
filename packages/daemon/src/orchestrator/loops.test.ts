@@ -236,12 +236,13 @@ describe("handoff hardening", () => {
   const slowImpl: Picker = (role, _req, resumed) => (role === "implementer" && !resumed ? [running, { wait: 400 }, say("halfway"), { wait: 400 }, say("turn finished")] : [running, say(`${role} done`)]);
 
   it("forks the session into a profile on the same runner and provider, and records the compaction's spend", async () => {
-    const { o, project, adapter } = await setup({
+    const { o, project, adapter, store } = await setup({
       pick: slowImpl,
       candidates: sameProvider(),
       scripted: {
         capabilities: { fork: { compact: true } },
-        fork: async () => ({ session: { runner: "fake", sessionId: "forked-1" }, compacted: true, summary: "short", usage: { tokensIn: 1000, tokensOut: 100, cacheRead: 0, costUsd: null }, totals: { tokensIn: 1000, tokensOut: 100, cacheRead: 0, costUsd: null } }),
+        // The copied history searched three times and opened a page before the fork.
+        fork: async () => ({ session: { runner: "fake", sessionId: "forked-1" }, compacted: true, summary: "short", usage: { tokensIn: 1000, tokensOut: 100, cacheRead: 0, costUsd: null }, totals: { tokensIn: 1000, tokensOut: 100, cacheRead: 0, costUsd: null, webSearchRequests: 3, webFetchRequests: 1 } }),
         result: (role) => (role === "reviewer" ? verdict("pass") : undefined),
       },
     });
@@ -257,6 +258,8 @@ describe("handoff hardening", () => {
     const tr = done.runs.find((r) => r.profileId === "ds-b")!;
     expect(tr.tokensIn).toBe(1000);
     expect(tr.cost.provenance).toBe("estimated");
+    // Those requests are the fork session's baseline: its later totals add only what is new.
+    expect(store.db.prepare("select web_search, web_fetch from native_usage_requests where session_id = ?").get("forked-1")).toEqual({ web_search: 3, web_fetch: 1 });
   });
 
   it("never forks into a reviewer: an independent role gets the written package", async () => {

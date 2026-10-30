@@ -6,7 +6,7 @@ import { capabilities as codexCapabilities } from "@crewyard/adapter-codex";
 import { capabilities as opencodeCapabilities } from "@crewyard/adapter-opencode";
 import { effortSupport, runnerSupport, type AgentCapabilities, type CatalogProvider, type EffortLevel, type Profile, type ProfileRunner, type ProfileSummary } from "@crewyard/core";
 import type { Candidate, ProfileDirectory } from "../orchestrator/directory.ts";
-import { peakPricingFor } from "./catalog.ts";
+import { peakPricingFor, requestPricingFor } from "./catalog.ts";
 import type { ProvidersService } from "./service.ts";
 
 // Turns the providers area's profiles and keys into what the orchestrator runs (PLAN.md D9):
@@ -169,6 +169,7 @@ export function providersDirectory(svc: ProvidersService): ProfileDirectory {
       credentialId: credential?.kind === "api_key" ? credential.id : null,
       catalogVersion: svc.catalog.current().hash,
       peak: peakPricingFor(p.providerId),
+      requests: requestPricingFor(p.providerId),
       note: p.note,
       readOnly: p.readOnly,
     };

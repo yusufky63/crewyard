@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { peakFactor, PeakPricing } from "./catalog.ts";
+import { peakFactor, PeakPricing, requestCost, RequestPricing } from "./catalog.ts";
 
 // DeepSeek's weekday peak hours, as its pricing page listed them on 2026-10-30.
 const deepseek = PeakPricing.parse({ factor: 2, days: [1, 2, 3, 4, 5], windows: ["01:00-04:00", "06:00-10:00"], ref: "https://api-docs.deepseek.com/quick_start/pricing", checked: "2026-10-30" });
@@ -33,5 +33,27 @@ describe("peakFactor", () => {
 
   it("refuses a window that is not HH:MM-HH:MM", () => {
     expect(PeakPricing.safeParse({ ...deepseek, windows: ["1-4"] }).success).toBe(false);
+  });
+});
+
+// DeepSeek's Search and Fetch APIs, as its pricing page listed them on 2026-10-30: billing starts
+// at 00:00 Beijing time (UTC+8) on 2026-11-01.
+const searchFetch = RequestPricing.parse({ searchPer1k: 0.75, fetchPer1k: 0.75, from: "2026-11-01T00:00:00+08:00", ref: "https://api-docs.deepseek.com/quick_start/pricing", checked: "2026-10-30" });
+
+describe("requestCost", () => {
+  it("is free before billing starts and per 1,000 requests from its first instant", () => {
+    expect(requestCost(searchFetch, 4, 2, new Date("2026-10-31T15:59:59Z"))).toBe(0);
+    expect(requestCost(searchFetch, 4, 2, new Date("2026-10-31T16:00:00Z"))).toBeCloseTo(0.0045, 10);
+    expect(requestCost(searchFetch, 1_000, 0, new Date("2026-11-02T08:00:00Z"))).toBeCloseTo(0.75, 10);
+  });
+
+  it("is zero without a price or without requests", () => {
+    expect(requestCost(null, 10, 10, new Date("2026-11-02T08:00:00Z"))).toBe(0);
+    expect(requestCost(undefined, 10, 10, new Date("2026-11-02T08:00:00Z"))).toBe(0);
+    expect(requestCost(searchFetch, 0, 0, new Date("2026-11-02T08:00:00Z"))).toBe(0);
+  });
+
+  it("refuses a start that is not an ISO instant", () => {
+    expect(RequestPricing.safeParse({ ...searchFetch, from: "2026-11-01" }).success).toBe(false);
   });
 });

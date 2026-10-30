@@ -43,11 +43,11 @@ import {
   permissionsWrite,
   questionRequest,
   unknownSamples,
-  usageEvent,
   userInputResponse,
   type EventBody,
 } from "./mapping.ts";
 import { NO_USAGE, ReviewUsage, sameUsage, threadCreatedAt } from "./review-usage.ts";
+import { NO_REQUESTS, rolloutRequests, sameRequests } from "./web-requests.ts";
 import type {
   CommandExecutionRequestApprovalParams,
   FileChangeRequestApprovalParams,
@@ -256,6 +256,10 @@ export class CodexAdapter implements AgentAdapter {
     if (ref.runner !== "codex") throw new Error(`cannot resume a ${ref.runner} session with codex`);
     const run = await this.open(req);
     try {
+      // codex restores the thread's token totals but sends none of its earlier items, so its web
+      // requests so far come from its rollout, read before any usage report can go out.
+      const rollout = rolloutOf(run.codexHome, ref.sessionId);
+      run.mapper.webRequests = rollout ? await rolloutRequests(rollout).catch(() => NO_REQUESTS) : NO_REQUESTS;
       const params: ThreadResumeParams = { ...this.threadParams(req), threadId: ref.sessionId, excludeTurns: true };
       const res = await run.server.rpc.request<ThreadStartResponse>("thread/resume", params, { timeoutMs: 60_000 }).catch((err: unknown) => {
         throw goneOr(err);
@@ -263,7 +267,9 @@ export class CodexAdapter implements AgentAdapter {
       this.attachThread(run, res.thread.id);
       // codex restores the thread's own totals; a review it ran earlier is added back, or the
       // totals would drop and the daemon would count the thread again as a restarted session.
-      run.mapper.subagentUsage = await new ReviewUsage(run.codexHome, run.threadId, threadCreatedAt(run.threadId)).total().catch(() => NO_USAGE);
+      const reviews = new ReviewUsage(run.codexHome, run.threadId, threadCreatedAt(run.threadId));
+      run.mapper.subagentUsage = await reviews.total().catch(() => NO_USAGE);
+      run.mapper.subagentRequests = reviews.requests();
       if (req.prompt.trim()) await this.startTurn(run, req.prompt);
       return run.handle;
     } catch (err) {
@@ -314,14 +320,9 @@ export class CodexAdapter implements AgentAdapter {
     });
   }
 
-  /** The thread's rollout under CODEX_HOME: `sessions/YYYY/MM/DD/rollout-<time>-<thread id>.jsonl`, newest days first. */
   async transcript(req: TranscriptRequest): Promise<TranscriptSource | null> {
-    const suffix = `-${req.session.sessionId}.jsonl`;
-    for (const base of ["sessions", "archived_sessions"]) {
-      const found = findNewestFirst(join(req.profile.configDir, base), (name) => name.endsWith(suffix), 3);
-      if (found) return { kind: "file", path: found, ext: "jsonl" };
-    }
-    return null;
+    const path = rolloutOf(req.profile.configDir, req.session.sessionId);
+    return path ? { kind: "file", path, ext: "jsonl" } : null;
   }
 
   /**
@@ -366,13 +367,16 @@ export class CodexAdapter implements AgentAdapter {
       const ok = await Promise.race([done.then(() => true), new Promise<false>((r) => (timer = setTimeout(() => r(false), FORK_COMPACT_MS)))]);
       clearTimeout(timer);
       const after = mapper.lastUsage;
+      // The fork's history holds the source thread's web requests, so a resume counts them in its
+      // rollout; they are the fork's starting totals, not new requests.
+      const copied = after ? await rolloutRequests(rollout.path).catch(() => NO_REQUESTS) : NO_REQUESTS;
       return {
         session: { runner: "codex", sessionId: threadId },
         compacted: ok && mapper.compacted,
         // codex keeps the compacted history inside the thread and sends no summary text for it.
         summary: null,
         usage: after ? forkSpend(after, before) : null,
-        totals: after ? usageTotals(after) : null,
+        totals: after ? { ...usageTotals(after), webSearchRequests: copied.search, webFetchRequests: copied.fetch } : null,
       };
     } finally {
       await server.close();
@@ -533,9 +537,11 @@ export class CodexAdapter implements AgentAdapter {
     run.reviewRead ??= reader
       .total()
       .then((total) => {
-        if (run.ended || sameUsage(total, run.mapper.subagentUsage)) return;
+        const requests = reader.requests();
+        if (run.ended || (sameUsage(total, run.mapper.subagentUsage) && sameRequests(requests, run.mapper.subagentRequests))) return;
         run.mapper.subagentUsage = total;
-        this.emit(run, usageEvent(run.mapper.lastUsage, total));
+        run.mapper.subagentRequests = requests;
+        this.emit(run, run.mapper.usage());
       })
       .catch(() => undefined)
       .finally(() => {
@@ -744,6 +750,16 @@ function findNewestFirst(dir: string, match: (name: string) => boolean, depth: n
   for (const e of entries) {
     if (!e.isDirectory()) continue;
     const found = findNewestFirst(join(dir, e.name), match, depth - 1);
+    if (found) return found;
+  }
+  return null;
+}
+
+/** The thread's rollout under CODEX_HOME: `sessions/YYYY/MM/DD/rollout-<time>-<thread id>.jsonl`, newest days first. */
+function rolloutOf(codexHome: string, threadId: string): string | null {
+  const suffix = `-${threadId}.jsonl`;
+  for (const base of ["sessions", "archived_sessions"]) {
+    const found = findNewestFirst(join(codexHome, base), (name) => name.endsWith(suffix), 3);
     if (found) return found;
   }
   return null;

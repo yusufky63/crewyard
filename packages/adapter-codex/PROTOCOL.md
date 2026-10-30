@@ -58,6 +58,7 @@ The 0.166 repository schema leaves out experimental methods. A method missing fr
 | `item/reasoning/summaryTextDelta`, `textDelta` | `thought.delta` |
 | `item/started` (command, file change, MCP, dynamic tool, web search, image view) | `tool.call` |
 | `item/completed` of the same | `tool.update` (output tail: 8,000 chars) |
+| `item/completed` of a `webSearch` | counted into `usage.update`'s `webSearchRequests` (action `search`) or `webFetchRequests` (`openPage`, `findInPage`). On DeepSeek the server runs them and bills each one (verified on `deepseek-v4-pro` with 0.147.0; `deepseek-flash` is offered no web search). A resumed thread starts from the `web_search_call` items in its rollout, review subagents' included (`web-requests.ts`). |
 | `turn/plan/updated` | `plan.update` |
 | `turn/diff/updated` | `diff.update` (per-file +/- counts) |
 | `thread/tokenUsage/updated` | `usage.update`. `tokensIn` excludes cached tokens. Context used is the last request's total. Cost is Unknown. Never sent for a `review/start` subagent: the adapter adds that subagent's totals from its rollout (`review-usage.ts`), so the run's totals include the review and never drop on resume. |
