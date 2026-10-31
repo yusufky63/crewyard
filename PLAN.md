@@ -75,7 +75,7 @@
 ```
 
 - **Process ownership:** every agent process is a child of the daemon. The daemon tracks process trees and kills them with `taskkill /PID <pid> /T /F` on stop, so nothing respawns or lingers. Closing the window hides it to the tray; quitting from the tray asks first and names the running agents.
-  - On Linux and macOS (prepared, not shipped; [ADR 0010](docs/adr/0010-linux-macos-groundwork.md)) every child leads its own process group. Stop sends SIGTERM to the group and to each descendant, then SIGKILL after 2 s.
+  - On Linux and macOS (unsigned pre-release builds; [ADR 0010](docs/adr/0010-linux-macos-groundwork.md)) every child leads its own process group. Stop sends SIGTERM to the group and to each descendant, then SIGKILL after 2 s.
   - Without a tray (Linux), closing the window goes to the same quit confirm.
 - **Ingress:** besides IPC there is one per-user local endpoint protected by a token, never a TCP port.
   - On Windows it is the named pipe `\\.\pipe\crewyard-<user-sid>`, restricted to the current user.
@@ -554,7 +554,7 @@ Worktree setup and cleanup commands (the Worktrees step) run without a shell in 
 - The inspector's Files tab reads a task worktree only through the daemon, confined to its root: a path with `..`, a drive, a UNC prefix, a `:` stream or a device name is refused by its text, and again after `realpath` when a junction or symlink leads outside (compared case-insensitively). Listings stop at 1,000 entries, text at 256 KB, images at 5 MB; it never writes.
 - Known risks to test: antivirus scanning slowing worktrees, Smart App Control blocking unsigned helpers, `node-pty` native build matching Electron (1.1.0 is Node-API with prebuilds, so the same binary loads in every Electron; `pnpm package` checks it ships).
 
-### 12.1 Linux and macOS (prepared, not shipped)
+### 12.1 Linux and macOS (unsigned pre-release builds)
 
 Windows comes first and behaves exactly as above. Every Windows-only call has a POSIX branch next to it ([ADR 0010](docs/adr/0010-linux-macos-groundwork.md)). Each helper takes the platform as an argument, so both branches run under test on Windows.
 
@@ -569,16 +569,15 @@ Windows comes first and behaves exactly as above. Every Windows-only call has a 
 | Defender, long paths | N/A: left out of the machine check |
 | case twins | still refused: Crewyard compares project paths without case on every platform |
 | tray, `toastXml` toasts, close-to-tray, Start with Windows | macOS: menu bar, plain notifications, Dock reopen, login item. Linux: plain notifications, no tray, so close asks to quit |
-| NSIS per-user | unsigned dmg and zip (macOS), AppImage and deb (Linux); never built or published yet |
+| NSIS per-user | ad-hoc signed dmg and zip for arm64 and x64 (macOS), AppImage and deb for x64 (Linux), built and published with Windows from one tag ([docs/release.md](docs/release.md)) |
 
-CI checks the POSIX branches on the existing ubuntu job. A macOS test workflow runs only by hand.
+CI checks the POSIX branches on the existing ubuntu job. A macOS test workflow runs only by hand. The release workflow builds each package on its own OS and CPU and starts it once before anything is published.
 
-What still blocks a Linux or macOS release:
+What these builds still lack:
 
 - conformance runs on real machines;
 - orphan identity by working folder;
-- icons;
-- signing (macOS);
+- Developer ID signing and notarization (macOS), and with it notifications;
 - the macOS title bar;
 - a Linux tray and autostart;
 - per-platform wording and default folders.
@@ -663,6 +662,11 @@ Each milestone ends with: typecheck, lint with `--max-warnings=0`, tests, build,
 - 2026-10-31: the owner asked for a release before the open items below were settled ("tüm projeyi bitir ve merge ve push et ve release yayınla": finish the project, merge, push and publish a release). v0.1.0 is therefore a GitHub pre-release in the private repository: an unsigned NSIS installer built without an update feed, so SmartScreen names an unknown publisher and the app never looks for updates. Open item 1 still decides the certificate and the feed host; the first release that has both is the first signed one, and v0.1.0 installs cannot update to it on their own.
 - 2026-10-31: one bottom panel with tabs. The owner asked: "ai chat, terminal, etkinlik ve hatalar gibi bir panel var mı, toplu şekilde gösterilen tabs'lı" (is there one panel with tabs that shows AI chat, terminal, activity and errors together?). The Activity drawer grew into it, with `Assistant` (the task assistant, now on every project screen, its rules unchanged), `Terminal` (your own shell through ConPTY, never started on its own, never given a key; [ADR 0016](docs/adr/0016-terminal.md)), `Events`, `Logs` and `Problems` (every failure of the project in one list, each with the way to its fix, dismissable until its cause changes or comes back). Closing the panel stops nothing; a terminal's own close ends its shell and asks first.
 - 2026-10-31: Autopilot (§9.7, [ADR 0017](docs/adr/0017-autopilot.md)). In the owner's words: "şimdi ai ile görev açıp görevleri düzenleyip tamamlayabilir miyim, yani kendim bir şey yapmasam bile ai ile yönetebilir miyim" (can I now open, edit and complete tasks with AI, so that I can manage everything through it even when I do nothing myself?). It is per project and off by default, acts only on tasks it created, approves crews only under the budget and rate limits you set, and has no tool for anything outward-facing: push, PR, merge, deletes, spend past a cap and Inbox approvals stay with you (D8 amended).
+- 2026-10-31: releases ship for Windows, macOS and Linux from one tag. In the owner's words: "mevcut görevler bitince release yayınlanacak ve web siteye de eklenecek ve otomatik olarak her release de web siteye eklenecek ve mac linux windows destekli şekilde" (when the current tasks are done a release will be published and added to the website, every release will reach the website automatically, with macOS, Linux and Windows support). Decided with it:
+  - the GitHub repository becomes public at release time, under the MIT licence (Copyright 2026 Yusuf);
+  - GitHub Releases is the download host, and the website (Vercel) reads releases from the public GitHub API, so a published release appears there without a deploy;
+  - builds stay unsigned for now: Windows without a certificate, macOS ad-hoc signed and not notarized. Every 0.x version is a GitHub pre-release, and none of these builds updates itself (open item 1);
+  - `.github/workflows/release.yml` checks the tag against both package.json versions, builds each package on its own OS and CPU, starts it once, and publishes only when all four builds pass. It also writes `SHA256SUMS.txt` and publishes a fixed set of file names that the website matches ([docs/release.md](docs/release.md), [ADR 0010](docs/adr/0010-linux-macos-groundwork.md) update).
 
 **Open**
 1. Before the first release: which code-signing certificate (OV as a PFX, a hardware-bound one in the Windows store, or Azure Trusted Signing) and which HTTPS host serves the update feed (ADR 0011, "What a real release needs").
