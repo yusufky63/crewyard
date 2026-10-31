@@ -4,7 +4,8 @@ import type { HandlerContext, HandlerMap } from "./types.ts";
 
 // Handlers for tasks, crews, runs, requests (Inbox), limits and handoffs. Owned by the orchestrator backend.
 // Thin by design: every rule lives in ../orchestrator so it can be tested without IPC.
-export function createTasksHandlers(ctx: HandlerContext, overrides?: Partial<OrchestratorOptions>): HandlerMap<TasksIpc> {
+// `tasks.preview` and `tasks.start` arrive with TaskFlow's Solo mode (see PendingMethods in server.ts).
+export function createTasksHandlers(ctx: HandlerContext, overrides?: Partial<OrchestratorOptions>): HandlerMap<Omit<TasksIpc, "tasks.preview" | "tasks.start">> {
   const o = orchestratorFor(ctx, overrides);
   return {
     "tasks.list": ({ projectId }) => o.list(projectId),

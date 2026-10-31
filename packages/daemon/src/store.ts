@@ -963,6 +963,106 @@ export const MIGRATIONS: Migration[] = [
      at text not null
    );`,
   },
+  // Orchestra goals (docs/adr/0019): your goal, its plan revisions, the ordinary tasks they became
+  // with their dependencies, merges into the goal branch and the decisions the scheduler leaves to
+  // you. No status column anywhere: plan and goal status are derived (D5). Each task's share of the
+  // goal budget is its own tasks.budget_usd. The settings row turns Orchestra on by default; an
+  // existing row (your choice) is left as it is.
+  {
+    id: "goals",
+    sql: `create table if not exists goals (
+     id text primary key,
+     project_id text not null references projects(id),
+     text text not null,
+     title text not null,
+     base_branch text,
+     base_sha text,
+     budget_usd real,
+     max_parallel integer not null default 2,
+     max_tasks integer not null default 8,
+     planner_profile_id text,
+     integration_task_id text references tasks(id),
+     collapsed_task_id text references tasks(id),
+     approved_revision integer,
+     approved_at text,
+     paused_at text,
+     stopped_at text,
+     halted_reason text,
+     halted_at text,
+     replans_used integer not null default 0,
+     revisions_used integer not null default 0,
+     created_at text not null
+   );
+   create index if not exists goals_project on goals(project_id, created_at);
+   create table if not exists goal_plans (
+     id text primary key,
+     goal_id text not null references goals(id),
+     revision integer not null,
+     cause text not null check (cause in ('initial', 'revise', 'replan', 'add')),
+     note text,
+     plan_task_id text references tasks(id),
+     plan text,
+     error text,
+     superseded_at text,
+     approved_at text,
+     created_at text not null,
+     unique (goal_id, revision)
+   );
+   create table if not exists goal_tasks (
+     task_id text primary key references tasks(id),
+     goal_id text not null references goals(id),
+     plan_id text not null references goal_plans(id),
+     key text not null,
+     position integer not null,
+     mode text not null check (mode in ('solo', 'crew')),
+     priority text not null check (priority in ('high', 'medium', 'low')),
+     basis text not null,
+     basis_matched integer not null,
+     reason text not null,
+     paths text not null,
+     writes integer not null,
+     edited integer not null default 0,
+     accepted integer,
+     discarded_at text,
+     released_at text,
+     joined_sha text,
+     joined_at text,
+     report_accepted_at text,
+     unique (plan_id, key)
+   );
+   create index if not exists goal_tasks_goal on goal_tasks(goal_id, position);
+   create table if not exists goal_task_deps (
+     goal_id text not null references goals(id),
+     task_id text not null references tasks(id),
+     depends_on text not null references tasks(id),
+     source text not null check (source in ('plan', 'user', 'overlap')),
+     primary key (task_id, depends_on)
+   );
+   create index if not exists goal_task_deps_goal on goal_task_deps(goal_id);
+   create table if not exists goal_joins (
+     id text primary key,
+     goal_id text not null references goals(id),
+     task_id text not null references tasks(id),
+     before_sha text not null,
+     after_sha text,
+     outcome text not null check (outcome in ('joined', 'conflict')),
+     conflict_paths text,
+     at text not null
+   );
+   create index if not exists goal_joins_goal on goal_joins(goal_id, at);
+   create table if not exists goal_decisions (
+     id text primary key,
+     goal_id text not null references goals(id),
+     kind text not null,
+     task_id text references tasks(id),
+     payload text not null,
+     created_at text not null,
+     answered_at text,
+     answer text
+   );
+   create index if not exists goal_decisions_open on goal_decisions(goal_id, answered_at);
+   insert or ignore into settings (key, value) values ('orchestra.enabled', 'true');`,
+  },
 ];
 
 /** What the positional scheme applied: a database at `user_version` N has the first N of these. */

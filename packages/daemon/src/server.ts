@@ -1,5 +1,5 @@
 import { basename } from "node:path";
-import type { DaemonStatus, IpcMessage, IpcMethods, IpcResponse } from "@crewyard/core";
+import type { DaemonStatus, GoalsIpc, IpcMessage, IpcMethods, IpcResponse } from "@crewyard/core";
 import { createCrewHandlers } from "./handlers/crew.ts";
 import { createGithubHandlers } from "./handlers/github.ts";
 import { createMcpHandlers } from "./handlers/mcp.ts";
@@ -21,7 +21,15 @@ import { assertFolder, scanForRepos } from "./projects.ts";
 import { readProjectConfig } from "./setup/config.ts";
 import { defaultWorktreeRoot } from "./setup/detect.ts";
 
-export type Handlers = HandlerMap<IpcMethods>;
+/**
+ * Methods whose contract is in core but whose daemon side lands with a later Orchestra work item
+ * (docs/adr/0019): `tasks.preview` and `tasks.start` with TaskFlow's Solo mode, `goals.*` with the
+ * goal handlers. Until then a call answers "Unknown method", never a made-up result. Each item
+ * removes its names here when it adds the handlers.
+ */
+export type PendingMethods = keyof GoalsIpc | "tasks.preview" | "tasks.start";
+
+export type Handlers = HandlerMap<Omit<IpcMethods, PendingMethods>>;
 
 // Base handlers live here; every area brings its own from ./handlers/<area>.ts.
 export function createHandlers(ctx: HandlerContext): Handlers {

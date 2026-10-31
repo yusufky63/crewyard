@@ -12,6 +12,11 @@ import type { TaskStatus } from "../state.ts";
 
 export type TaskKind = "code" | "research" | "review" | "docs";
 export type TaskSize = "S" | "M" | "L";
+/**
+ * How a task's crew is drafted: `crew` is the full plan for its kind (plan, implement, test,
+ * review); `solo` is one step of the kind's main role. The run-until-green loop still runs for code.
+ */
+export type TaskMode = "solo" | "crew";
 
 /**
  * What happens when a run hits a limit (PLAN.md §8.1). `wait_for_reset` resumes on the same
@@ -84,7 +89,21 @@ export type ReasonCode =
   | "loop.iteration_cap" // { max }
   | "loop.no_change" // the worktree is the same as at the last try
   | "loop.spend_cap" // { cap }
-  | "loop.no_resume"; // { runner }
+  | "loop.no_resume" // { runner }
+  // Orchestra goals (docs/adr/0019): why an accepted goal task has not started; `task` is its label ("01")
+  | "goal.waits_finish" // { task, taskId }
+  | "goal.waits_report" // { task, taskId }: a report you have not accepted yet
+  | "goal.waits_join" // { task, taskId }: finished, not merged into the goal branch yet
+  | "goal.waits_overlap" // { task, taskId }: both plan to change the same files
+  | "goal.prereq_failed" // { task, taskId }
+  | "goal.prereq_cancelled" // { task, taskId }
+  | "goal.prereq_skipped" // { task, taskId }
+  | "goal.paused" // you paused the goal
+  | "goal.paused_all" // Pause all goals is on
+  | "goal.halted" // the goal's stop rule halted it
+  | "goal.parallel_cap" // { running, max }: the goal already runs this many tasks at once
+  | "goal.conflict" // { paths }: merging it into the goal branch conflicts
+  | "goal.not_approved"; // the plan revision holding it is not approved
 
 export type OrchestratorErrorCode =
   | "project.not_found"
@@ -92,6 +111,7 @@ export type OrchestratorErrorCode =
   | "task.not_proposed" // approve on a task that is already approved or cancelled
   | "task.best_of_kind" // a Best of N task's kind cannot change: its variants were proposed for it
   | "task.cancelled"
+  | "task.goal_managed" // the task belongs to an Orchestra goal: it starts with its plan, never through tasks.approve
   | "crew.member_not_found"
   | "crew.missing_profile" // { role } still has no profile
   | "crew.unknown_profile" // { profileId }
@@ -505,6 +525,26 @@ export interface TaskSummary {
   bestOf?: { n: number; phase: BestOfPhase } | null;
   /** Set on the hidden task of one Best of N variant: the visible task it belongs to. */
   variantOf?: { taskId: string; position: number; n: number } | null;
+  /** Set on a task that belongs to an Orchestra goal (docs/adr/0019); it counts under its goal. */
+  goal?: TaskGoalRef | null;
+}
+
+/**
+ * A goal task as the task list sees it. `waiting`: accepted, not released yet (its derived status
+ * reads `proposed`, but it is never offered `Review crew`). `hidden`: planning, integration,
+ * discarded and not-yet-approved plan tasks, which show only inside the goal.
+ */
+export interface TaskGoalRef {
+  goalId: string;
+  key: string;
+  /** 1-based place in the plan, shown as "01". */
+  number: number;
+  waiting: boolean;
+  hold: Reason | null;
+  joined: boolean;
+  hidden: boolean;
+  /** What the task is to the goal: a plan task, the hidden planning task, or the hidden integration task. */
+  role?: "task" | "planning" | "integration";
 }
 
 // ---------------------------------------------------------------- Best of N (feature scan A8)
@@ -898,9 +938,22 @@ export interface TasksIpc {
       bestOf?: number;
       /** Ids from attachments.add; they move into the task's folder. */
       attachments?: string[];
+      /** `solo` drafts one step of the kind's main role; absent means `crew`. */
+      mode?: TaskMode;
     };
     result: TaskDetail;
   };
+  /**
+   * A dry run of `tasks.propose`: classification, the crew it would draft and its estimate.
+   * Writes nothing; the composer calls it while you type to show the price on the button.
+   */
+  "tasks.preview": { params: TaskPreviewParams; result: TaskPreview };
+  /**
+   * Solo's `Start`: proposes the task and approves its crew in the same call. When the estimate is
+   * Unknown, a cap would hold the step, or the crew has a problem, nothing is approved and the
+   * proposal comes back with `held`, so spend nobody can price still needs your click.
+   */
+  "tasks.start": { params: TaskPreviewParams & { baseBranch?: string; fallback?: FallbackMode; waitResetMinutes?: number; attachments?: string[] }; result: TaskStartResult };
   /**
    * Approves the crew, optionally with edits (remembered as preferences), and lets the scheduler
    * start ready steps under admission control. Fails with `crew.missing_profile` or
@@ -1007,6 +1060,39 @@ export interface TasksIpc {
   "schedules.runNow": { params: { id: string }; result: ScheduleRunView };
 }
 
+export interface TaskPreviewParams {
+  projectId: string;
+  title: string;
+  description?: string;
+  kind?: TaskKind;
+  size?: TaskSize;
+  budgetUsd?: number;
+  pins?: Partial<Record<RoleId, string>>;
+  exclude?: string[];
+  mode?: TaskMode;
+}
+
+export interface TaskPreview {
+  kind: TaskKind;
+  size: TaskSize;
+  mode: TaskMode;
+  classification: Reason[];
+  members: CrewMemberView[];
+  estimate: CostEstimate;
+}
+
+/** Why `tasks.start` proposed instead of starting: `estimate_unknown`, `over_cap` { cap }, or `crew` { code } (a crew.* refusal). */
+export interface TaskStartHold {
+  code: "estimate_unknown" | "over_cap" | "crew";
+  params?: Record<string, string | number>;
+}
+
+export interface TaskStartResult {
+  task: TaskDetail;
+  started: boolean;
+  held: TaskStartHold | null;
+}
+
 /** Live topics pushed through ctx.emit; the renderer re-reads with tasks.get when it needs more. */
 export interface TasksTopics {
   "tasks.changed": { taskId: string; projectId: string; status: TaskStatus; cause: TaskChangeCause };
@@ -1050,4 +1136,6 @@ export type TaskChangeCause =
   // The crew was edited in the Crew graph: a proposal edit, a follow-up, a skip or its approval.
   | "crew_edited"
   // The title, description or kind of a task that had not started changed (docs/adr/0017).
-  | "edited";
+  | "edited"
+  // Its Orchestra goal released, held, merged or discarded it (docs/adr/0019).
+  | "goal";
