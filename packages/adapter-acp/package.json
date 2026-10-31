@@ -2,6 +2,7 @@
   "name": "@crewyard/adapter-acp",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "Generic Agent Client Protocol driver (Gemini CLI and future agents).",
   "exports": {

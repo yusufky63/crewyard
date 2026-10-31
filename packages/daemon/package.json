@@ -2,6 +2,7 @@
   "name": "@crewyard/daemon",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "Background process: store, machine check, process spawning, scheduler.",
   "exports": {
