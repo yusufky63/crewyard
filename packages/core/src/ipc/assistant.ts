@@ -124,7 +124,10 @@ export interface TaskReport {
   /** Something was cut to the caps. */
   truncated: boolean;
   at: string;
-  /** Suggested follow-up tasks from the findings and the agent's propose_followup calls. */
+  /**
+   * Suggested follow-up tasks from the findings and the agent's propose_followup calls: the
+   * current result's, plus every draft already added. An older result's open drafts are left out.
+   */
   drafts: AssistantDraftView[];
   /** Autopilot read this report and marked the task done (docs/adr/0017); its reason is agent text. */
   completed?: { by: "autopilot"; at: string; reason: string } | null;

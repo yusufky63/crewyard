@@ -122,12 +122,43 @@ describe("task reports", () => {
     const newer = { summary: "One more thing.", findings: [{ title: "Session cookie lacks Secure", severity: "high", file: "src/cookie.ts", line: 7, detail: "Set Secure.", suggestedTask: { title: "Mark the session cookie Secure", description: "", kind: "code", acceptanceCriteria: [] } }] };
     s.store.appendEvent({ kind: "research.findings", source: "daemon", payload: newer, projectId, taskId });
     const second = s.a.report(taskId)!;
-    const fresh = second.drafts.find((d) => d.title === "Mark the session cookie Secure")!;
-    expect(fresh).toBeDefined();
+    // The older result's open drafts left with their findings: only the newer one shows and counts.
+    expect(second.drafts.map((d) => d.title)).toEqual(["Mark the session cookie Secure"]);
+    const fresh = second.drafts[0]!;
     // Not the old result's draft at the same index.
     expect(second.findings.map((f) => f.draftId ?? null)).toEqual([fresh.id]);
     // Read again: still one draft for it.
-    expect(s.a.report(taskId)!.drafts.filter((d) => d.title === fresh.title)).toHaveLength(1);
+    expect(s.a.report(taskId)!.drafts.map((d) => d.id)).toEqual([fresh.id]);
+  });
+
+  it("reuses the older draft when a newer result repeats a finding's task, and keeps added drafts on show", async () => {
+    const s = await setup(() => [running], (role) => (role === "researcher" ? FINDINGS : undefined));
+    const taskId = await runToDone(s, "research", "Find security issues");
+    const projectId = s.project.id;
+    const first = s.a.report(taskId)!;
+    const [redact, cap] = first.drafts;
+    await s.a.addDraft(redact!.id);
+
+    // A follow-up run repeats the retry finding (other words, same task) and adds a new one.
+    const newer = {
+      summary: "Still open.",
+      findings: [
+        { title: "Retries still unbounded", severity: "medium", file: "src/net.ts", line: 9, detail: "Still forever.", suggestedTask: { title: "cap  retries at FIVE", description: "", kind: "code", acceptanceCriteria: [] } },
+        { title: "Session cookie lacks Secure", severity: "high", file: "src/cookie.ts", line: 7, detail: "Set Secure.", suggestedTask: { title: "Mark the session cookie Secure", description: "", kind: "code", acceptanceCriteria: [] } },
+      ],
+    };
+    s.store.appendEvent({ kind: "research.findings", source: "daemon", payload: newer, projectId, taskId });
+    const second = s.a.report(taskId)!;
+    // The added task stays as history, the repeated finding points at the draft it already had,
+    // and only the new finding made a draft: one open card per task, never two.
+    expect(second.drafts.map((d) => [d.title, d.status])).toEqual([
+      ["Redact the Authorization header in logs", "added"],
+      ["Cap retries at five", "open"],
+      ["Mark the session cookie Secure", "open"],
+    ]);
+    expect(second.findings[0]!.draftId).toBe(cap!.id);
+    expect(second.drafts.filter((d) => d.status === "open")).toHaveLength(2);
+    expect(s.a.report(taskId)!.drafts.map((d) => d.id)).toEqual(second.drafts.map((d) => d.id));
   });
 
   it("refuses a second add of a draft while the first is still proposing it", async () => {
