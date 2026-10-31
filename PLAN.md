@@ -121,6 +121,7 @@ Electron, React 19, TypeScript, Vite, TanStack Router and Query, Zustand, `@xyfl
 | `pull_requests`, `checks` | number, state, head, mergeable, check runs, ETag |
 | `handoffs` | from run, to run, reason, package path, mode (`native_resume` / `new_session`), outcome |
 | `account_switches` | same-provider account switches (§8.3): from run, from and to profile, trigger, the numbers on both sides with provenance, accounts passed over, handoff |
+| `assistant_conversations`, `assistant_messages`, `assistant_drafts` | the task assistant (§9.6): one open conversation per project with its profile, native session and spend, its lines, and the drafts it proposed with their status and the task each became |
 | `events` | append-only: seq, at, project, task, run, kind, source, redacted payload, dedupe key |
 
 ## 5. Agent adapters
@@ -416,6 +417,15 @@ A run cannot create other runs. If an agent asks for more work, the request beco
 - `Pick element` takes the clicked element's outer HTML (16 KB at most), selector, size and a fixed list of computed styles. You see it as text, add a note, and `Add to queue` puts it in the step's queue (ADR 0005) as quoted page data, never as instructions. A screenshot of the element waits for image attachments on `UserInput`.
 - Unloading the page, switching task or closing the inspector never stops the dev server or the run.
 
+### 9.6 Task assistant ([ADR 0014](docs/adr/0014-task-assistant.md))
+
+- **What:** a terminal-style chat on the Tasks screen (`Assistant` beside the composer, `Ctrl Shift A`) with a read-only agent that turns what you describe into task drafts. A research request becomes a `research` draft whose questions are its acceptance criteria.
+- **How:** one runner session per project, started through the profile's own adapter in the project folder, on a profile you pick (ready, read-only enforcement and MCP; the read-only preset, then the cheapest, is the default). It gets Crewyard's report server with one tool, `propose_task`, and none of your MCP servers. Drafts are checked and capped in core (`parseTaskDraft`), stored, and shown as editable cards. No model is called without that profile's configured key or sign-in.
+- **Nothing starts:** `Add as draft` calls `propose()`, so the task gets a crew proposal that waits for your approval like any other (D8). The assistant has no tool that creates a task, a run or a file.
+- **Read-only:** the reviewer's policy with nothing allowed (`writes: none`, no commands, network denied), so each runner's engine is in its read-only mode; our layer denies every approval and cancels every question. Reads that need no approval still work.
+- **Spend:** priced like runs, written to the key's ledger with no task, shown with its label (Estimated, Reported, Unknown, or Plan for a sign-in). The key's daily cap is checked before it starts, before each message goes and after each usage update; reaching it stops the assistant. It needs a free global slot and the minimum free memory, like a run, but takes no project slot.
+- **Lifecycle:** the session stays open between messages and stops on `Stop and close`, `Esc` in the panel, `New conversation`, or after the hibernation setting's idle minutes. The conversation and drafts are kept; the next message resumes the native session where the runner can, otherwise starts a new one with the recent conversation quoted as data.
+
 - **Auth:** reuse the `gh` CLI login (token read at startup, kept in memory). No new token is stored.
 - **Observer:** REST and GraphQL with ETag conditional requests, only for repos with active tasks, every 60 s while a task is in review, plus a manual refresh and a refresh when the app window regains focus (at most once every 30 s; the watched projects and the open one if it has an open PR). No polling loops on CI.
 - **PR flow:** a PR is created only after the review gate passes and you click. Merge needs every gate: tests passed, branch up to date, no open questions, your approval. Merge method follows the repo setting.
@@ -612,6 +622,7 @@ Each milestone ends with: typecheck, lint with `--max-warnings=0`, tests, build,
 - 2026-10-30: the Crew graph hides React Flow's attribution link (`proOptions.hideAttribution`); React Flow is MIT and its licence notice ships with the app.
 - 2026-10-31: `project.json` is read tolerantly and written conservatively (§11.1): unknown values fall back (security fields fail closed), unknown keys survive saves, a newer version is read-only, and an invalid file is replaced only after asking, with a `.bak` copy. omux fixed the same class of bug in 0.6.1.
 - 2026-10-31: role files (§9.1) are loaded from `.crewyard\roles` and the data folder's `roles`. An override may only narrow the role it replaces, a custom role never gets more than the project's rules allow, and custom roles join the crew templates only through `customRoles` in project.json, so a role file added to a repo cannot by itself change who works on a task. A proposal keeps a copy of each file-defined role, so a later edit to the file never changes an approved crew.
+- 2026-10-31: a task assistant on the Tasks screen, in the owner's words: "tasks kısmında veya crew kısmında vs ai ile chat ile yönetmek olsa yani görevleri veya araştırılacak şeyleri ai ile de yapılandırabilsek terminal ile" (manage tasks through a chat with an AI on the Tasks or Crew screen, so tasks and things to research can be structured with AI too, in a terminal-style view). It runs as a read-only session of one of your runners rather than a direct provider call, only drafts tasks, and is the one panel that stops what it shows when closed (§9.6, [ADR 0014](docs/adr/0014-task-assistant.md)).
 
 **Open**
 1. Before the first release: which code-signing certificate (OV as a PFX, a hardware-bound one in the Windows store, or Azure Trusted Signing) and which HTTPS host serves the update feed (ADR 0011, "What a real release needs").

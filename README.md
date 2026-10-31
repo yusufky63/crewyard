@@ -7,6 +7,7 @@ Status: pre-release. It is built and tested on Windows 11. Linux and macOS are p
 ## What it does
 
 - **Crews per task.** Describe a task and Crewyard proposes who plans, implements, tests and reviews it, with the reason for each pick and a cost estimate. Nothing starts until you approve.
+- **Task assistant.** On the Tasks screen, `Assistant` or `Ctrl Shift A` opens a terminal-style chat with a read-only agent on a profile you pick. It reads the project, asks when something is unclear and proposes task drafts (kind, acceptance criteria or questions to research, size) as editable cards; `Add as draft` turns one into a task whose crew still waits for your approval. It never writes or starts runs, its spend counts against the key's daily cap (Estimated), and it stops when you close the panel or after it sits idle ([ADR 0014](docs/adr/0014-task-assistant.md)).
 - **Your own roles.** Markdown files in `.crewyard/roles/` (or global ones in Crewyard's data folder) change a built-in role's contract or add a role of your own. A role file can only narrow permissions, never widen them past the project's rules; a project lists the custom roles its crews may use in `.crewyard/project.json`. Settings → Roles shows each role's source and any file that was not used ([PLAN.md §9.1](PLAN.md#91-roles)).
 - **Four runners, many providers.**
   - Claude Code (Anthropic or Anthropic-compatible API keys only; never a claude.ai sign-in), Codex, OpenCode, and Gemini CLI over ACP.
