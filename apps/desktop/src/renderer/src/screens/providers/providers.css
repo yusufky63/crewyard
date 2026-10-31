@@ -102,4 +102,4 @@ tr.dim .prov-name { color: var(--ink-2); }
 .pv-ro { font-size: 12px; cursor: pointer; }
 .pv-ro input { accent-color: var(--accent); }
 .pv-slots { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; }
-.pv-slots .pv-input { max-width: 200px; }
+.pv-slots .pv-input { max-width: 100%; }

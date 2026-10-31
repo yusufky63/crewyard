@@ -41,7 +41,11 @@ button.sb:hover { background: var(--raised); color: var(--ink); }
 .sb .dot { width: 6px; height: 6px; }
 .sb b { font-weight: 500; color: var(--ink-2); }
 
-.screen { max-width: 1120px; margin: 0 auto; padding: 24px 28px 56px; }
+/* The main view grows with the window: no max width, only the side gutter (owner, 2026-10-31: "grow
+   with the window"). Inner rows widen with it; only running prose keeps a readable measure, set per
+   paragraph at zero class weight so any screen rule can lift it for one-line paths and fact lines. */
+.screen { padding: 24px var(--layout-gutter) 56px; min-width: 0; }
+:where(.screen) p { max-width: var(--layout-measure); }
 .page-head { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 12px 16px; margin-bottom: 18px; }
 .page-head h1 { font-size: var(--font-size-page); font-weight: 600; letter-spacing: var(--font-tracking-tight); line-height: 1.2; }
 .page-head .right { margin-left: auto; display: flex; gap: 8px; align-items: center; }

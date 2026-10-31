@@ -58,14 +58,14 @@
 .limits .us-export { display: flex; gap: 8px; }
 .limits .us-pad { padding: 12px 16px; font-size: 13px; }
 .limits .us-saved { padding: 8px 16px 0; font-size: 12px; overflow-wrap: anywhere; }
-.limits .us-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; padding: 16px; }
+.limits .us-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; padding: 16px; }
 .limits .us-tile { padding: 12px; display: grid; gap: 6px; align-content: start; min-width: 0; }
 .limits .us-val { font: 500 22px / 1.1 var(--mono); }
 .limits .us-tile-foot { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 11.5px; }
 .limits .us-controls { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 16px; }
 .limits .us-controls .seg button:disabled { opacity: 0.45; cursor: not-allowed; }
 .limits .us-bar { padding: 16px 16px 4px; }
-.limits .us-legend { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+.limits .us-legend { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
 .limits .us-legend .k { min-width: 0; }
 .limits .us-ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .limits .us-table-wrap { padding: 8px 16px 0; overflow-x: auto; }
@@ -90,3 +90,11 @@
   .limits .us-table .us-c-src { display: none; }
 }
 .limits .us-legend .as-typed { text-transform: none; letter-spacing: 0.02em; }
+
+/* Fluid main view (DESIGN.md §4): plan accounts flow into columns once the panel has room for two, so a
+   meter stays short of a full 2560 px row; the head and the notes span every column. */
+.limits .grid2 > .panel:first-child { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 560px), 1fr)); align-content: start; }
+.limits .grid2 > .panel:first-child > :not(.lim) { grid-column: 1 / -1; }
+/* Side by side, an account must not spread its lines over the taller neighbour's height, and every account
+   keeps its dashed top rule so the first row reads the same in each column. */
+.limits .grid2 > .panel:first-child > .lim { align-content: start; border-top: 1px dashed var(--tick); }

@@ -2,7 +2,7 @@
    here that takes a click opts out of it, and the layers it opens sit outside the bar. */
 
 .titlebar .tb-search, .titlebar .tb-btn, .titlebar .tb-chip { -webkit-app-region: no-drag; }
-.tb-chip-name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+.tb-chip-name { max-width: 22vw; overflow: hidden; text-overflow: ellipsis; }
 
 .tb-search {
   position: relative; flex: 1 1 auto; max-width: 420px; min-width: 160px;
