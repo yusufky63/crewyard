@@ -365,9 +365,10 @@
   "skip": {
     "title": "Skip {{target}}?",
     "body": "{{target}} will not run.",
-    "dependents": "{{steps}} wait for it and will start without its result.",
     "noDependents": "No step waits for it.",
-    "confirm": "Skip step"
+    "confirm": "Skip step",
+    "dependents_one": "{{steps}} waits for it and will start without its result.",
+    "dependents_other": "{{steps}} wait for it and will start without its result."
   },
   "handoffNow": {
     "title": "Hand off {{target}} now",

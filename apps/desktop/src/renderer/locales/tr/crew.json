@@ -365,9 +365,10 @@
   "skip": {
     "title": "{{target}} atlansın mı?",
     "body": "{{target}} çalışmayacak.",
-    "dependents": "{{steps}} bu adımı bekliyor; onun sonucu olmadan başlayacak.",
     "noDependents": "Bu adımı bekleyen başka adım yok.",
-    "confirm": "Adımı atla"
+    "confirm": "Adımı atla",
+    "dependents_one": "{{steps}} bu adımı bekliyor; onun sonucu olmadan başlayacak.",
+    "dependents_other": "{{steps}} bu adımı bekliyor; onun sonucu olmadan başlayacaklar."
   },
   "handoffNow": {
     "title": "{{target}} şimdi devredilsin",

@@ -98,7 +98,10 @@ test("Crew graph: edits a proposal step by step and approves it", async () => {
   await panel.getByRole("checkbox", { name: "01 Research" }).check();
   await expect.poll(async () => (await taskByTitle(page, title))!.crew!.members[1]!.dependsOn).toEqual(["researcher"]);
   // Making Research wait for Test would be a loop: its box is off and says why.
-  await panel.getByRole("button", { name: "Close the step editor" }).click();
+  // Esc closes the editor and gives the keyboard back to the step's tile.
+  await page.keyboard.press("Escape");
+  await expect(panel).toHaveCount(0);
+  await expect(screen.locator('.crew-node[data-node^="m:"]').last()).toBeFocused();
   await screen.locator('.crew-node[data-node^="m:"]').first().click();
   const researchPanel = screen.getByRole("complementary", { name: /^Edit 01 Research/ });
   await expect(researchPanel.getByRole("checkbox", { name: "02 Test" })).toBeDisabled();

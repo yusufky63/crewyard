@@ -609,7 +609,7 @@ function CrewView({ task, fixture }: { task: TaskDetail; fixture: boolean }) {
               onMenu={onMenu}
               onToggleFull={toggleFull}
               fitKey={fitKey}
-              editable={fixture ? undefined : editable}
+              editable={editable}
               onConnect={onConnect}
               onRemoveDependency={(dep) => void edit({ kind: "remove_dependency", ...dep })}
               removeLabel={removeLabel}

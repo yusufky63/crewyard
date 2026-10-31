@@ -40,8 +40,13 @@ export function StepPanel({ members, member, index, ranked, roles, env, busy, on
   const others = rows.filter((r) => !r.chosen && r.standby < 0);
   const deps = dependencyOptions(members, member, env);
   const roleIds = new Set((roles ?? []).map((r) => r.id));
+  // Controls stay enabled while an edit is on its way, so the keyboard keeps its place; a second
+  // edit in that moment is dropped instead.
+  const send = (edit: CrewProposalEdit) => {
+    if (!busy) onEdit(edit);
+  };
 
-  const setChain = (ids: string[]) => onEdit({ kind: "set_standby", memberId: member.id, profileIds: ids });
+  const setChain = (ids: string[]) => send({ kind: "set_standby", memberId: member.id, profileIds: ids });
   const insert = (profileId: string, at: number) => {
     const next = insertInChain(chain, profileId, at);
     if (next !== "standby_too_long") setChain(next);
@@ -71,7 +76,19 @@ export function StepPanel({ members, member, index, ranked, roles, env, busy, on
   const firstReason = (c: CandidateView) => (c.reasons[0] ? f.reason(c.reasons[0]) : null);
 
   return (
-    <aside className="crew-panel panel" aria-label={t("panel.label", { target })} aria-busy={busy}>
+    <aside
+      className="crew-panel panel"
+      aria-label={t("panel.label", { target })}
+      aria-busy={busy}
+      onKeyDown={(e) => {
+        // Esc closes the editor first, before full screen or anything under it.
+        if (matches(e, "close") && !(e.target as HTMLElement).closest("select")) {
+          e.preventDefault();
+          e.stopPropagation();
+          onClose();
+        }
+      }}
+    >
       <div className="crew-panel-head">
         <h2>{target}</h2>
         <button type="button" className="crew-x" onClick={onClose} aria-label={t("panel.close")}>
@@ -83,7 +100,7 @@ export function StepPanel({ members, member, index, ranked, roles, env, busy, on
 
         <label className="crew-field">
           <span className="lbl">{t("panel.role")}</span>
-          <select value={member.role} disabled={busy} onChange={(e) => onEdit({ kind: "set_role", memberId: member.id, role: e.target.value })}>
+          <select value={member.role} onChange={(e) => send({ kind: "set_role", memberId: member.id, role: e.target.value })}>
             {!roleIds.has(member.role) && <option value={member.role}>{role}</option>}
             {(roles ?? []).map((r) => (
               <option key={r.id} value={r.id}>
@@ -110,9 +127,9 @@ export function StepPanel({ members, member, index, ranked, roles, env, busy, on
                     type="radio"
                     name={`crew-cand-${member.id}`}
                     checked={r.chosen}
-                    disabled={busy || r.conflict !== null}
+                    disabled={r.conflict !== null}
                     aria-describedby={why ? `why-${member.id}-${c.profileId}` : undefined}
-                    onChange={() => onEdit({ kind: "set_candidate", memberId: member.id, profileId: c.profileId })}
+                    onChange={() => send({ kind: "set_candidate", memberId: member.id, profileId: c.profileId })}
                   />
                   <BrandIcon id={c.runner} />
                   <span className="crew-cand-name">
@@ -137,7 +154,7 @@ export function StepPanel({ members, member, index, ranked, roles, env, busy, on
                     <button
                       type="button"
                       className="crew-icon"
-                      disabled={busy || chain.length >= MAX_STANDBY}
+                      disabled={chain.length >= MAX_STANDBY}
                       title={chain.length >= MAX_STANDBY ? t("panel.standbyFull", { max: MAX_STANDBY }) : undefined}
                       aria-label={t("panel.addStandby", { alias: c.alias })}
                       onClick={() => insert(c.profileId, chain.length)}
@@ -198,13 +215,13 @@ export function StepPanel({ members, member, index, ranked, roles, env, busy, on
                 </span>
                 <span className="mono muted">{cost(c)}</span>
                 <span className="crew-chain-tools">
-                  <button type="button" className="crew-icon" disabled={busy || i === 0} aria-label={t("panel.moveUp", { alias: c.alias })} onClick={() => setChain(moveInChain(chain, i, i - 1))}>
+                  <button type="button" className="crew-icon" disabled={i === 0} aria-label={t("panel.moveUp", { alias: c.alias })} onClick={() => setChain(moveInChain(chain, i, i - 1))}>
                     <ArrowUp size={14} strokeWidth={1.75} />
                   </button>
-                  <button type="button" className="crew-icon" disabled={busy || i === chain.length - 1} aria-label={t("panel.moveDown", { alias: c.alias })} onClick={() => setChain(moveInChain(chain, i, i + 1))}>
+                  <button type="button" className="crew-icon" disabled={i === chain.length - 1} aria-label={t("panel.moveDown", { alias: c.alias })} onClick={() => setChain(moveInChain(chain, i, i + 1))}>
                     <ArrowDown size={14} strokeWidth={1.75} />
                   </button>
-                  <button type="button" className="crew-icon" disabled={busy} aria-label={t("panel.removeStandby", { alias: c.alias })} onClick={() => setChain(chain.filter((id) => id !== c.profileId))}>
+                  <button type="button" className="crew-icon" aria-label={t("panel.removeStandby", { alias: c.alias })} onClick={() => setChain(chain.filter((id) => id !== c.profileId))}>
                     <X size={14} strokeWidth={1.75} />
                   </button>
                 </span>
@@ -229,7 +246,7 @@ export function StepPanel({ members, member, index, ranked, roles, env, busy, on
                   <input
                     type="checkbox"
                     checked={d.checked}
-                    disabled={busy || why !== null}
+                    disabled={why !== null}
                     aria-describedby={why ? `dep-${member.id}-${d.step}` : undefined}
                     onChange={(e) => onEdit(e.target.checked ? { kind: "add_dependency", memberId: member.id, dependsOn: d.step } : { kind: "remove_dependency", memberId: member.id, dependsOn: d.step })}
                   />
@@ -249,9 +266,9 @@ export function StepPanel({ members, member, index, ranked, roles, env, busy, on
         <Button
           size="sm"
           variant="danger"
-          disabled={busy || members.length <= 1}
+          disabled={members.length <= 1}
           title={members.length <= 1 ? t("menu.why.last_step") : undefined}
-          onClick={() => onEdit({ kind: "remove_step", memberId: member.id })}
+          onClick={() => send({ kind: "remove_step", memberId: member.id })}
         >
           <Trash2 />
           {t("panel.remove")}

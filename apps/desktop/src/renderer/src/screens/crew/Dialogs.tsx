@@ -293,7 +293,7 @@ export function SkipDialog({ target, dependents, onConfirm, onClose }: { target:
       }
     >
       <p>{t("skip.body", { target })}</p>
-      <p className={dependents.length > 0 ? "crew-why" : "muted"}>{dependents.length > 0 ? t("skip.dependents", { steps: dependents.join(", ") }) : t("skip.noDependents")}</p>
+      <p className={dependents.length > 0 ? "crew-why" : "muted"}>{dependents.length > 0 ? t("skip.dependents", { steps: dependents.join(", "), count: dependents.length }) : t("skip.noDependents")}</p>
     </Dialog>
   );
 }
