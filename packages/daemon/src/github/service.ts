@@ -138,7 +138,9 @@ export class GithubService {
   /** Starts the 60 s refresh for projects with open PRs. The timer never keeps the daemon alive. */
   startBackground(): void {
     if (this.timer) return;
-    this.timer = setInterval(() => void this.backgroundTick(), REFRESH_MS);
+    // A tick that fails (the store closing on exit, a source that throws) waits for the next one;
+    // a rejection here would be unhandled and could end the daemon.
+    this.timer = setInterval(() => void this.backgroundTick().catch(() => undefined), REFRESH_MS);
     this.timer.unref?.();
   }
 

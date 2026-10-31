@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { run } from "@crewyard/proc";
 import { GithubClient, type FetchLike } from "./client.ts";
 import { focusDue, GithubService } from "./service.ts";
@@ -211,5 +211,31 @@ describe("focus refresh", { timeout: 30_000 }, () => {
     const svc = new GithubService({ projectPath: () => repo, emit: () => undefined, client: new GithubClient(async () => "t", fn), tokenState: () => "ok", resetToken: () => undefined, watched: () => [] });
     expect(await svc.focused("p")).toEqual([]);
     expect(seen).toEqual([]);
+  });
+});
+
+describe("background refresh", () => {
+  it("swallows a tick that throws, so a closing store never becomes an unhandled rejection", async () => {
+    vi.useFakeTimers();
+    try {
+      let calls = 0;
+      const svc = new GithubService({
+        projectPath: () => repo,
+        emit: () => undefined,
+        client: new GithubClient(async () => "t", async () => Response.json({})),
+        tokenState: () => "ok",
+        resetToken: () => undefined,
+        watched: () => {
+          calls++;
+          throw new Error("database is not open");
+        },
+      });
+      svc.startBackground();
+      await vi.advanceTimersByTimeAsync(130_000);
+      svc.stop();
+      expect(calls).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
