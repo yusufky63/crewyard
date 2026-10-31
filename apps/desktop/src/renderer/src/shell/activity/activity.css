@@ -77,6 +77,11 @@
 .as-docked .as-input textarea { min-height: 24px; resize: none; }
 .as-docked .as-foot { padding: 4px 16px 6px; }
 .as-docked .as-drafts { max-height: none; min-height: 0; border-left: 1px solid var(--line); border-top: 0; }
+/* The Autopilot strip (its consent and log) can be taller than the panel: it scrolls on its own and
+   leaves the conversation a usable minimum, and nothing in a tab ever spills over the status bar. */
+.drawer-body { overflow: hidden; }
+.as-docked .ap-strip { flex: 0 1 auto; min-height: 0; max-height: 60%; overflow-y: auto; }
+.as-docked .as-body { min-height: 96px; }
 
 /* Terminal tab (docs/adr/0016): toolbar, one sub-tab per shell, the xterm view on bg.sunken. */
 .term { flex: 1; min-height: 0; display: flex; flex-direction: column; }
