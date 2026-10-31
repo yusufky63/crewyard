@@ -1,8 +1,9 @@
 import { session, shell, WebContentsView, type BrowserWindow, type Session } from "electron";
-import { capPick, previewPorts, previewVerdict, type PreviewTargets } from "@crewyard/core";
+import { capPick, previewPorts, previewVerdict, type AttachmentView, type PreviewTargets } from "@crewyard/core";
 import type { PreviewOpenResult, PreviewPickResult, PreviewRect, PreviewState } from "../../shared/api.ts";
 import { guardPreviewContents, guardPreviewSession, type PreviewBlock } from "./guard.ts";
 import { PICKER_WORLD, pickerScript, STOP_PICKER } from "./picker.ts";
+import { captureShot, pickBox, shotName, shotRect } from "./shot.ts";
 
 // The Preview tab's page (docs/adr/0013-dev-server-preview.md): one WebContentsView on the main
 // window, in an in-memory partition of its own, with no preload. The renderer only says where the
@@ -22,6 +23,8 @@ export interface PreviewHostDeps {
   emit(state: PreviewState): void;
   /** Esc in the page: give the keyboard back to the renderer. */
   returnFocus(): void;
+  /** Stores a picked element's screenshot through the daemon (`attachments.add`, base64 PNG). */
+  attach(name: string, data: string): Promise<AttachmentView>;
 }
 
 export class PreviewHost {
@@ -152,18 +155,42 @@ export class PreviewHost {
     if (!view || !this.state.url || this.state.loading) return { ok: false, reason: "not_loaded" };
     this.cancelPick();
     const hex = /^#[0-9a-f]{6}$/i.test(color) ? color : "#7AA2FF";
+    const taskId = this.state.taskId;
     const done = new Promise<PreviewPickResult>((resolve) => (this.pickDone = resolve));
     this.update({ picking: true });
     view.webContents.focus();
     view.webContents
       .executeJavaScriptInIsolatedWorld(PICKER_WORLD, [{ code: pickerScript(hex) }], true)
-      .then((raw: unknown) => {
+      .then(async (raw: unknown) => {
         if (raw === null || raw === undefined) return this.settle({ ok: false, reason: "cancelled" });
         const pick = capPick(raw, view.webContents.getURL());
-        this.settle(pick ? { ok: true, pick } : { ok: false, reason: "invalid" });
+        if (!pick) return this.settle({ ok: false, reason: "invalid" });
+        this.settle({ ok: true, pick, shot: await this.shoot(view, taskId, raw) });
       })
       .catch(() => this.settle({ ok: false, reason: "failed" }));
     return done;
+  }
+
+  /**
+   * The picked element's screenshot, stored as an upload, or null. Only this view's own page is
+   * captured, and only while it still shows the task the pick started on; any failure leaves the
+   * pick as text alone.
+   */
+  private async shoot(view: WebContentsView, taskId: string | null, raw: unknown): Promise<AttachmentView | null> {
+    const box = pickBox(raw);
+    if (!box || taskId === null) return null;
+    // A pick cancelled meanwhile (navigation, Esc, unload) wants no upload left behind.
+    const same = () => this.pickDone !== null && this.view === view && this.state.taskId === taskId && !view.webContents.isDestroyed();
+    try {
+      if (!same()) return null;
+      const rect = shotRect(box, view.webContents.getZoomFactor(), view.getBounds());
+      if (!rect) return null;
+      const png = await captureShot(view.webContents, rect);
+      if (!png || !same()) return null;
+      return await this.deps.attach(shotName(new Date()), png.toString("base64"));
+    } catch {
+      return null;
+    }
   }
 
   private settle(result: PreviewPickResult): void {

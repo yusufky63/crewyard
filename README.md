@@ -28,7 +28,7 @@ Status: pre-release. It is built and tested on Windows 11. Linux and macOS are p
   - turn control (queue, steer, undo);
   - images and files on a task or a queued message (paste, drop or pick), passed to each runner its own way;
   - Best of N;
-  - a Preview tab that shows the dev server a task's run serves on localhost and sends a picked element's HTML and styles to the agent's queue;
+  - a Preview tab that shows the dev server a task's run serves on localhost and sends a picked element's HTML, styles and a screenshot of just that element to the agent's queue;
   - scheduled tasks;
   - idle agents that sleep and wake with your answer;
   - an MCP report server agents use to send checkpoints and follow-up proposals.

@@ -41,7 +41,13 @@ The feature scan flagged the constraints on 2026-10-30: an isolated partition an
   - Printed `0.0.0.0` and `[::]` (servers bound to every interface) are read as `localhost` and `[::1]`; ANSI colour codes are removed first, since Vite prints the port in bold.
 - **The daemon** answers `preview.targets { taskId }` with the stored bootstrap port and the URLs in the task's stored `run.tool.update` events (the newest 400 that mention a loopback host), so the list survives a restart and needs no new table. Main asks the daemon itself before every load; it never trusts a port list from the renderer.
 - **The picker** runs in an isolated world (`executeJavaScriptInIsolatedWorld`), so the page cannot see or replace its functions, and ignores synthetic events (`isTrusted`). It returns the element's outer HTML, a selector, its size and a fixed list of computed style properties. Main checks the shape and caps it (`capPick`): HTML 16 KB, cut on a character boundary and marked; 24 style properties from the allow-list, values 200 characters; selector 300 characters. The renderer shows the result as plain text with an optional note and, on `Add to queue`, sends it through `runs.message`, so it becomes a queued message of the step (ADR 0005) that you can still edit or delete. The message says it is page content quoted as data, and the HTML sits in a code fence longer than any backtick run inside it, so it cannot close the fence.
-- **No screenshot yet.** Image attachments on `UserInput` were being built in a parallel change and were not on `main` when this landed, so the picker sends HTML and styles as text only. Adding the element's `capturePage(rect)` is a follow-up once attachments exist.
+- **The element's screenshot** (added once image attachments landed, PLAN.md §5.3). The picker also reports the element's viewport box; after it removes its outline it waits two frames (or 150 ms where frames are throttled) before answering, so the outline is not in the image. Main then:
+  - checks the box (finite numbers, positive size; `pickBox` in `apps/desktop/src/main/preview/shot.ts`), multiplies it by the page zoom, grows it to whole pixels and clamps it to the view's own size (`shotRect`), which is the part of the frame visible in the inspector. Nothing in sight gives no screenshot, and the pick stays text only;
+  - captures that rectangle with `webContents.capturePage(rect)` of the preview view only. The image comes at the display's scale (a 132 x 34 px button is 264 x 68 px at 200 %);
+  - scales its longest edge down to 1,568 px and, while the PNG is over the 5 MB image cap, shrinks it by 0.7 up to three times, then gives up rather than send a larger image (`captureShot`);
+  - stores it through `attachments.add` as `pick-<yyyymmdd-hhmmss>.png`, only while the same view still shows the task the pick started on and the pick was not cancelled meanwhile.
+
+  The draft shows the thumbnail, its alt text naming the element's selector, with a remove button. `Add to queue` sends `runs.message { text, attachments: [id] }`; the text adds, after the fence, one line of ours naming the file as "a screenshot of the element quoted above", so no page text is ever outside the quote. Each runner gets the image through its own input; one without image input gets its path in the text (`withAttachments`), and the draft says so. Removing it, discarding the pick, a new pick or leaving the tab gives the upload back (`attachments.discard`) at once. Once queued it is part of the queued message, which you can still delete until the turn boundary.
 
 ## Sources
 
@@ -52,6 +58,8 @@ The feature scan flagged the constraints on 2026-10-30: an isolated partition an
 | https://www.electronjs.org/docs/latest/tutorial/security (items 3, 4, 5, 12, 13, 14) | 2026-10-31 | same | MIT | no |
 | https://www.electronjs.org/docs/latest/api/session (`fromPartition` without `persist:` is in memory; permission, device and display-media handlers; `will-download` can be prevented) | 2026-10-31 | same | MIT | no |
 | https://www.electronjs.org/docs/latest/api/web-contents (`will-navigate` is not emitted for `loadURL`; `will-redirect` cancels the whole navigation; `will-frame-navigate`; `executeJavaScriptInIsolatedWorld`) | 2026-10-31 | same | MIT | no |
+| https://www.electronjs.org/docs/latest/api/web-contents (`capturePage([rect, opts])`: "the area of the page to be captured"; `getZoomFactor`) | 2026-10-31 | same | MIT | no |
+| https://www.electronjs.org/docs/latest/api/native-image (`resize` keeps the ratio, quality `best`; `getSize`, `toPNG`, `isEmpty`) | 2026-10-31 | same | MIT | no |
 | https://github.com/onurozcan/omux `Sources/omux/Browser.swift`, `Sources/omux/Store.swift` (`mentionedURLs`) | 2026-10-31 | 75 | MIT | no |
 
 What omux does differently, and why we do not: it uses the default website data store (shared cookies), loads the last printed server as soon as the panel shows, accepts any typed address, and writes picks to files the agent is told to read. Ideas only; no code was copied or ported.
@@ -59,6 +67,7 @@ What omux does differently, and why we do not: it uses the default website data 
 ## Windows notes
 
 - `capturePage` of the main window does not include child views, so `CREWYARD_SHOT` screenshots show the tab, the list and the frame, never a loaded page.
+- The element screenshot's rectangle is in DIPs of the view; `capturePage` returns device pixels. Checked with Electron 45.1.0 at `--force-device-scale-factor` 1, 1.5 and 2: a 100 x 50 rectangle gave 100 x 50, 150 x 75 and 200 x 100 px, and `getSize()` and `toPNG()` agree, so the edge cap applies to real pixels.
 - Bounds are CSS pixels from the renderer; the window has no zoom of its own, so they equal DIPs at every Windows scaling.
 - `localhost` resolves through the hosts file and may try `::1` before `127.0.0.1`; a server bound only to IPv4 still loads, and the list shows the address as printed.
 - Windows Defender Firewall never prompts: the app only connects out to loopback, it listens on nothing.
@@ -73,7 +82,8 @@ What omux does differently, and why we do not: it uses the default website data 
 - **Electron fuses unchanged**, no new command-line switch, no remote debugging.
 - **Loads only on a click** in the tab; switching the inspector to another task or closing it unloads the page. Unloading never touches the dev server or the run: Crewyard did not start the server and does not stop it.
 - **Picked content** is untrusted: never rendered as HTML in Crewyard (shown in a `<pre>` as text), capped, quoted in the message, and only sent when you press `Add to queue`.
+- **Screenshot privacy:** only `capturePage` of the preview's own WebContents is called, never of the main window or the screen, so the image cannot hold Crewyard's UI, another app or another task's page (there is one preview page, and the capture is dropped if it moved to another task). Only the picked element's rectangle within the visible view is captured; whatever the page draws there (including data it shows) goes with the message, which is why the draft shows the image and lets you remove it before queuing. It is stored like any other upload under the app's data folder, checked by its PNG signature and size in the daemon, and the page never learns that a screenshot was taken. The picker's box is page data: a page that lies about it can only move the rectangle inside its own view.
 
 ## Rollback
 
-The change adds one IPC area (`preview`), main-process IPC channels prefixed `crewyard:preview-`, a renderer tab and strings. It adds no table, setting or migration. Reverting the code removes the tab; the in-memory partition leaves nothing on disk.
+The change adds one IPC area (`preview`), main-process IPC channels prefixed `crewyard:preview-`, a renderer tab and strings. It adds no table, setting or migration. Reverting the code removes the tab; the in-memory partition leaves nothing on disk. Element screenshots are ordinary attachments: ones already queued stay with their messages, unused ones go in the daemon's daily sweep.

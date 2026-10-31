@@ -1,4 +1,4 @@
-import { portUrl, type PreviewTargets } from "@crewyard/core";
+import { pickMessage, portUrl, type AttachmentView, type PickedElement, type PreviewTargets } from "@crewyard/core";
 import type { PreviewRect } from "../../../../shared/api.ts";
 
 // Pure parts of the Preview tab (docs/adr/0013-dev-server-preview.md): the address list and where
@@ -52,3 +52,16 @@ export function visibleRect(frame: Box, clip: Box): PreviewRect | null {
 export const COVERING = 'dialog[open], [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]:not(select)';
 
 export const sameRect = (a: PreviewRect | null, b: PreviewRect | null): boolean => (a === null || b === null ? a === b : a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height);
+
+/**
+ * What "Add to queue" sends for a pick: the quoted text, and the screenshot as an attachment when
+ * there is one. The line about the image is ours, outside the fence, and names the element only as
+ * "quoted above" so no page text reaches the agent unquoted. Each runner gets the image its own way;
+ * one without image input gets its path in the text (withAttachments in the daemon).
+ */
+export function pickPayload(pick: PickedElement, note: string, shot: AttachmentView | null): { text: string; attachments: string[] } {
+  const text = pickMessage(pick, note);
+  if (!shot) return { text, attachments: [] };
+  const line = `The attached image ${shot.name} is a screenshot of the element quoted above, as the preview showed it (${pick.width} x ${pick.height} CSS px).`;
+  return { text: `${text}\n\n${line}`, attachments: [shot.id] };
+}

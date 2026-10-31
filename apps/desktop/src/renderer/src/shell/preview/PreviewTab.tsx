@@ -2,20 +2,21 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
 import { Crosshair, ExternalLink, ListPlus, RotateCw, X } from "lucide-react";
-import { pickMessage, pickQuote, type PickedElement, type PreviewTargets, type RunView, type TaskDetail, type TasksTopics } from "@crewyard/core";
+import { pickQuote, type AttachmentView, type PickedElement, type PreviewTargets, type RunView, type TaskDetail, type TasksTopics } from "@crewyard/core";
 import { Button, Label } from "@crewyard/ui";
 import type { PreviewRect, PreviewState } from "../../../../shared/api.ts";
 import { act, useErrorText, useRecheck, useWork } from "../../screens/tasks/data.ts";
+import { Tile } from "../../screens/tasks/Attachments.tsx";
 import { FIXTURE } from "../../screens/tasks/fixture.ts";
 import { ErrorLine, useFormat } from "../../screens/tasks/parts.tsx";
-import { COVERING, previewCandidates, sameRect, visibleRect } from "./model.ts";
+import { COVERING, pickPayload, previewCandidates, sameRect, visibleRect } from "./model.ts";
 import { subscribePreview, usePreview } from "./store.ts";
 import "./preview.css";
 
 // The inspector's Preview tab (docs/adr/0013-dev-server-preview.md). It lists where this task's
 // dev server may be, loads one only on a click, and lets you pick an element whose HTML and styles
-// go to the step's queue as quoted text. The page itself is a view main draws over the frame below;
-// nothing from it is ever rendered as HTML here.
+// go to the step's queue as quoted text, with a screenshot of just that element attached. The page
+// itself is a view main draws over the frame below; nothing from it is ever rendered as HTML here.
 
 const ICON = { size: 14, strokeWidth: 1.75 } as const;
 const SHOT = FIXTURE ? new URLSearchParams(location.search).get("preview") : null;
@@ -48,6 +49,7 @@ const FIXTURE_PICK: PickedElement = {
   width: 132,
   height: 34,
 };
+const FIXTURE_SHOT: AttachmentView = { id: "a-pick", kind: "image", name: "pick-20261031-140203.png", mime: "image/png", bytes: 6_412, createdAt: new Date(T0).toISOString() };
 const FIXTURE_STATE = (taskId: string): PreviewState => ({ taskId, url: "http://localhost:5173/settings", title: "Settings", loading: false, failed: null, blocked: null, picking: false });
 
 /** Sends the frame's visible part to main every frame it changes; null while hidden or covered. */
@@ -109,7 +111,46 @@ function Status({ state }: { state: PreviewState }) {
   );
 }
 
-function PickDraft({ detail, run, pick, onDone }: { detail: TaskDetail; run: RunView | null; pick: PickedElement; onDone: (queued: boolean) => void }) {
+/** A pick waiting for "Add to queue": the element as main capped it and its stored screenshot. */
+interface Pick {
+  element: PickedElement;
+  shot: AttachmentView | null;
+  /** Remounts the draft for each new pick, so the previous one gives its upload back. */
+  seq: number;
+}
+
+/**
+ * The screenshot belongs to the draft until it is queued: removing it, discarding the pick or
+ * leaving the tab gives the upload back at once instead of leaving it for the daemon's sweep.
+ */
+function useShot(initial: AttachmentView | null) {
+  const [shot, setShot] = useState(initial);
+  const owned = useRef<string | null>(initial?.id ?? null);
+  // Deferred a tick: StrictMode's rehearsal unmount remounts at once and cancels it.
+  const leaving = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (leaving.current) clearTimeout(leaving.current);
+    leaving.current = null;
+    return () => {
+      const id = owned.current;
+      if (id) leaving.current = setTimeout(() => void act("attachments.discard", { id }).catch(() => undefined), 0);
+    };
+  }, []);
+  return {
+    shot,
+    remove: () => {
+      if (owned.current) void act("attachments.discard", { id: owned.current }).catch(() => undefined);
+      owned.current = null;
+      setShot(null);
+    },
+    /** Queued: the message owns it now. */
+    claim: () => {
+      owned.current = null;
+    },
+  };
+}
+
+function PickDraft({ detail, run, pick: { element: pick, shot: captured }, onDone }: { detail: TaskDetail; run: RunView | null; pick: Pick; onDone: (queued: boolean) => void }) {
   const { t } = useTranslation("preview");
   const errorText = useErrorText();
   const recheck = useRecheck();
@@ -118,13 +159,18 @@ function PickDraft({ detail, run, pick, onDone }: { detail: TaskDetail; run: Run
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { shot, remove, claim } = useShot(captured);
+  const thumb = useWork("attachments.preview", { id: shot?.id ?? "" }, { enabled: Boolean(shot), staleTime: Infinity, retry: false });
+  const imageRefused = run?.controls.attach?.image.ok === false;
   const canQueue = Boolean(run) && run!.endReason !== "completed" && !detail.cancelledAt;
   const queue = async () => {
     if (!run) return;
     setBusy(true);
     setError(null);
     try {
-      await act("runs.message", { runId: run.id, text: pickMessage(pick, note), sessionId: run.nativeSessionId });
+      const payload = pickPayload(pick, note, shot);
+      await act("runs.message", { runId: run.id, text: payload.text, attachments: payload.attachments, sessionId: run.nativeSessionId });
+      claim();
       onDone(true);
     } catch (err) {
       setError(errorText(err));
@@ -138,6 +184,16 @@ function PickDraft({ detail, run, pick, onDone }: { detail: TaskDetail; run: Run
       <Label>{t("picked")}</Label>
       <p className="mono pv-selector as-typed">{t("pickedSize", { selector: pick.selector, width: pick.width, height: pick.height })}</p>
       {pick.truncated && <p className="muted ins-small">{t("pickedCut")}</p>}
+      {shot ? (
+        <>
+          <ul className="tk-attach-list" aria-label={t("shotList")}>
+            <Tile view={shot} preview={thumb.data?.dataUrl ?? null} alt={t("shotAlt", { selector: pick.selector })} onRemove={remove} />
+          </ul>
+          <p className="muted ins-small">{imageRefused ? t("shotAsPath") : t("shotHint")}</p>
+        </>
+      ) : (
+        captured === null && <p className="muted ins-small">{t("shotNone")}</p>
+      )}
       <span className="muted ins-small" id={quoteId}>
         {t("quoteLabel")}
       </span>
@@ -174,7 +230,8 @@ export function PreviewTab({ detail, run }: { detail: TaskDetail; run: RunView |
   const loadedHere = state.taskId === detail.id && state.url !== null;
   const frame = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
-  const [pick, setPick] = useState<PickedElement | null>(SHOT === "picked" ? FIXTURE_PICK : null);
+  const [pick, setPick] = useState<Pick | null>(SHOT === "picked" ? { element: FIXTURE_PICK, shot: FIXTURE_SHOT, seq: 0 } : null);
+  const seq = useRef(0);
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(subscribePreview, []);
@@ -194,7 +251,7 @@ export function PreviewTab({ detail, run }: { detail: TaskDetail; run: RunView |
     setNotice(null);
     const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
     const res = await window.crewyard.previewPick(accent);
-    if (res.ok) setPick(res.pick);
+    if (res.ok) setPick({ element: res.pick, shot: res.shot, seq: ++seq.current });
     else if (res.reason === "invalid") setError(t("pickInvalid"));
     else if (res.reason === "failed") setError(t("pickFailed"));
   };
@@ -230,6 +287,7 @@ export function PreviewTab({ detail, run }: { detail: TaskDetail; run: RunView |
       {/* The pick sits above the page, so it shows the moment you click, without scrolling. */}
       {pick && (
         <PickDraft
+          key={pick.seq}
           detail={detail}
           run={run}
           pick={pick}
