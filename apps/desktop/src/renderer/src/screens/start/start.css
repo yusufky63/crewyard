@@ -71,6 +71,7 @@
 .start .mtile { padding: 10px 12px; display: grid; gap: 4px; align-content: start; min-width: 0; }
 .start .mtile:hover { --tk: var(--ink-3); }
 .start .mtile.s-warn, .start .mtile.s-unknown { --tk: var(--warn); }
+.start .mtile.s-bad { --tk: var(--bad); }
 .start .mtile-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .start .mtile-name { font-size: 13px; font-weight: 500; flex: 1; }
 .start .mtile-name-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

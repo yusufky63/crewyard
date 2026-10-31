@@ -3,9 +3,11 @@ import type { DefenderCheck, MachineEnv, ToolCheck, ToolId } from "@crewyard/cor
 // One state per This machine check, shared by the strip at the top of Start and the full panel
 // under it, so both always agree. Color is state only (DESIGN.md §2): a missing agent CLI is not a
 // problem by itself, because one is enough (the Getting started checklist says when none is found).
+// Found is ok, outdated or worth a look is warn, and a missing Git or GitHub CLI is bad, since the
+// worktree and PR flows cannot run without them (owner, 2026-10-31: use red, amber and green).
 
 export type MachineItemId = ToolId | "longPaths" | "defender";
-export type MachineState = "ok" | "warn" | "neutral" | "unknown" | "pending";
+export type MachineState = "ok" | "warn" | "bad" | "neutral" | "unknown" | "pending";
 
 /** What the user can do about a problem. The app never runs a fix; it copies a command or shows steps. */
 export type MachineFix = { kind: "copy"; command: string; label: "update" | "signIn" | "remove" } | { kind: "steps"; target: "longPaths" | "defender" } | null;
@@ -36,7 +38,7 @@ export function toolItem(id: ToolId, q: ToolInput, env: MachineEnv | undefined):
   if (q.pending || (id === "gh" && !env && !q.error)) return { id, state: "pending", detail: { key: "machine.checking" }, fix: null };
   if (q.error || !q.data) return { id, state: "unknown", detail: { key: "machine.unread" }, fix: null };
   const tool = q.data;
-  if (!tool.found) return { id, state: AGENT_IDS.has(id) ? "neutral" : "warn", detail: { key: "machine.notFound" }, fix: null };
+  if (!tool.found) return { id, state: AGENT_IDS.has(id) ? "neutral" : "bad", detail: { key: "machine.notFound" }, fix: null };
   const gate = tool.gate;
   if (gate && gate.status !== "ok") {
     return { id, state: "warn", detail: { key: `machine.gateShort.${gate.status}` }, fix: gate.update ? { kind: "copy", command: gate.update, label: "update" } : null };
@@ -76,15 +78,18 @@ export function defenderItem(check: DefenderCheck | undefined, pending: boolean,
 }
 
 export interface MachineSummary {
-  /** Checks that want the user: a warning, or one Crewyard could not read. */
+  /** Checks that want the user: a missing tool, a warning, or one Crewyard could not read. */
   attention: number;
+  /** Of those, the missing ones; the summary turns bad when there is one. */
+  missing: number;
   pending: number;
   total: number;
 }
 
 export function summarize(items: MachineItem[]): MachineSummary {
   return {
-    attention: items.filter((i) => i.state === "warn" || i.state === "unknown").length,
+    attention: items.filter((i) => i.state === "bad" || i.state === "warn" || i.state === "unknown").length,
+    missing: items.filter((i) => i.state === "bad").length,
     pending: items.filter((i) => i.state === "pending").length,
     total: items.length,
   };

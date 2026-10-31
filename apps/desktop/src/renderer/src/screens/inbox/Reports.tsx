@@ -94,6 +94,7 @@ function ReportItem({ r, onError }: { r: CrewReportView; onError: (err: unknown)
           {r.type === "followup" && (
             <Button
               size="sm"
+              tone="ok"
               disabled={busy}
               onClick={() =>
                 go(async () => {

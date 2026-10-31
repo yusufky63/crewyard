@@ -32,7 +32,7 @@ export function AutopilotSection({ index }: { index: number }) {
   return (
     <Section id="autopilot" index={index} title={ts("sections.autopilot")}>
       <Row label={t("settings.kill")} hint={t("settings.killHint")}>
-        <Toggle label={t("settings.kill")} value={v?.killed ?? false} onChange={(on) => void g.kill(on)} disabled={!v} />
+        <Toggle label={t("settings.kill")} onTone="bad" value={v?.killed ?? false} onChange={(on) => void g.kill(on)} disabled={!v} />
       </Row>
       <Row label={t("settings.projects")} hint={t("settings.hint")}>
         <span className="st-note">{v && v.projects.length > 0 ? v.projects.map((p) => (p.halted ? `${p.name} (${t("settings.halted")})` : p.name)).join(", ") : t("settings.none")}</span>

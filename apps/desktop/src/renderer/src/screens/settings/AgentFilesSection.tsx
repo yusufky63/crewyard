@@ -246,7 +246,7 @@ function ShareRow({ s }: { s: ShareView }) {
         ))}
       </ul>
       <div className="mcp-actions">
-        <Button size="sm" disabled={busy || !stale} onClick={() => run(() => act("agentfiles.sync", { shareId: s.id }))}>
+        <Button size="sm" tone="ok" disabled={busy || !stale} onClick={() => run(() => act("agentfiles.sync", { shareId: s.id }))}>
           {t("agentfiles.sync")}
         </Button>
         <ConfirmButton label={t("agentfiles.unshare")} confirm={t("agentfiles.unshareConfirm", { name: s.name })} onConfirm={() => run(() => act("agentfiles.unshare", { shareId: s.id }))} />
@@ -369,7 +369,7 @@ export function AgentFilesSection({ index }: { index: number }) {
 
       <div className="mcp-usage-head af-shares-head">
         <span className="lbl">{t("agentfiles.sharedTitle")}</span>
-        <Button size="sm" disabled={syncing || stale === 0} onClick={() => void syncAll()}>
+        <Button size="sm" tone="ok" disabled={syncing || stale === 0} onClick={() => void syncAll()}>
           {stale > 0 ? t("agentfiles.syncAll", { count: stale }) : t("agentfiles.allCurrent")}
         </Button>
       </div>

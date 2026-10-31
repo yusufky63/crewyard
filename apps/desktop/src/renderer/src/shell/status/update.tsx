@@ -31,8 +31,8 @@ function UpdateStatus() {
   if (s?.phase === "downloaded") {
     return (
       <button type="button" className="sb" onClick={() => openSettings("updates")} title={t("status.updateReadyTitle", { version })}>
-        <RotateCcw size={13} strokeWidth={1.75} />
-        <b>{t("status.updateReady")}</b>
+        <RotateCcw size={13} strokeWidth={1.75} color="var(--ok)" />
+        <b style={{ color: "var(--ok)" }}>{t("status.updateReady")}</b>
       </button>
     );
   }

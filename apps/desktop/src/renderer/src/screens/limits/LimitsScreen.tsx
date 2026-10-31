@@ -166,7 +166,7 @@ function PlanKeyAccount({ quota, credential, provider, profiles, windows, thresh
           </Button>
         </div>
       </div>
-      <div className={`lim-meta${quota.state === "error" ? " pv-error" : " muted"}`}>
+      <div className={`lim-meta${quota.state === "error" ? " pv-error" : quota.state === "ok" ? " st-ok" : " muted"}`}>
         {quota.state === "ok" && quota.checkedAt
           ? t("plans.state.ok", { time: when.ago(quota.checkedAt) })
           : quota.state === "error"

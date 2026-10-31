@@ -1,5 +1,5 @@
 import { basename } from "node:path";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import type { FakeStep } from "@crewyard/adapter-fake";
 import { approval, daemon, hold, launch, limitReached, question, running, say, usage, type E2eProfile, type Harness } from "./harness.ts";
 
@@ -89,7 +89,20 @@ test("Inbox: answers an approval request and a question", async () => {
   const task = await startTask("Check the limiter store");
   await openInbox();
   const list = page.getByRole("listbox", { name: "Requests" });
+  // The bell says the level in words too, so its amber icon is never the only sign (DESIGN.md §8). An unlisted
+  // command with no paths and no network is medium risk (core/risk.ts).
+  await page.getByRole("button", { name: /^Notifications/ }).click();
+  const bell = page.getByRole("dialog", { name: "Notifications" });
+  await expect(bell.locator(".tb-n-item", { hasText: "npm view express version" }).locator(".badge")).toHaveText("Medium risk");
+  await page.keyboard.press("Escape");
+  await expect(bell).toHaveCount(0);
   await list.getByRole("option", { name: /Run npm view express version\?/ }).click();
+  // State colours (DESIGN.md §3): the risk level is a tone chip with its word, Approve is ok, Deny is bad.
+  const detail = page.locator(".ib-detail");
+  await expect(detail.locator(".ib-eyebrow .badge")).toHaveText("Medium risk");
+  await expect(detail.locator(".ib-eyebrow .badge")).toHaveClass(/\bbadge-warn\b/);
+  await expect(page.getByRole("button", { name: "Approve once" })).toHaveClass(/btn-ok/);
+  await expect(detail.getByRole("button", { name: "Deny" })).toHaveClass(/btn-bad/);
   await page.getByRole("button", { name: "Approve once" }).click();
   await list.getByRole("option", { name: /Which store should the limiter use\?/ }).click();
   await page.getByRole("radio", { name: "redis" }).check();
@@ -323,6 +336,46 @@ test("Schedules: creates one switched off, switches it on and runs it now", asyn
   await page.getByRole("group", { name: "View" }).getByRole("button", { name: "Tasks" }).click();
 });
 
+/** The hex of a colour token as the computed `rgb(...)` a browser reports, to check the colour actually shown. */
+async function tokenRgb(page: Page, name: string): Promise<string> {
+  return page.evaluate((n) => {
+    const probe = document.createElement("span");
+    probe.style.color = `var(${n})`;
+    document.body.append(probe);
+    const rgb = getComputedStyle(probe).color;
+    probe.remove();
+    return rgb;
+  }, name);
+}
+
+/**
+ * On / Off colours in Settings (DESIGN.md §3): a chosen On shows in ok and only while chosen; Off on a safety net that
+ * is on by default (Windows notifications) shows in warn; a disabled switch and one that relaxes an approval (approve
+ * from a notification) show no colour. Leaves notifications on, as it found them.
+ */
+async function settingColors(main: Locator) {
+  const page = main.page();
+  const notify = main.getByRole("group", { name: "Windows notifications", exact: true });
+  const approve = main.getByRole("group", { name: "Approve once from a notification", exact: true });
+  await expect(notify.getByRole("button", { name: "On" })).toHaveAttribute("aria-pressed", "true");
+  await expect(notify.getByRole("button", { name: "On" })).toHaveClass(/\bseg-ok\b/);
+  await expect(notify.getByRole("button", { name: "On" })).toHaveCSS("color", await tokenRgb(page, "--ok"));
+  await expect(notify.getByRole("button", { name: "Off" })).not.toHaveClass(/seg-/);
+  await expect(approve.getByRole("button", { name: "On" })).toHaveAttribute("aria-pressed", "true");
+  await expect(approve.getByRole("button", { name: "On" })).not.toHaveClass(/seg-/);
+  await notify.getByRole("button", { name: "Off" }).click();
+  await expect(notify.getByRole("button", { name: "Off" })).toHaveAttribute("aria-pressed", "true");
+  await expect(notify.getByRole("button", { name: "Off" })).toHaveClass(/\bseg-warn\b/);
+  await expect(notify.getByRole("button", { name: "Off" })).toHaveCSS("color", await tokenRgb(page, "--warn"));
+  await expect(notify.getByRole("button", { name: "On" })).not.toHaveClass(/seg-/);
+  // With notifications off, the switches under them do nothing, so none of them looks chosen in a state colour.
+  const limit = main.getByRole("group", { name: "Limit actions in notifications", exact: true });
+  await expect(limit.getByRole("button", { name: "On" })).toBeDisabled();
+  await expect(limit.getByRole("button", { name: "On" })).not.toHaveClass(/seg-/);
+  await notify.getByRole("button", { name: "On" }).click();
+  await expect(notify.getByRole("button", { name: "On" })).toHaveAttribute("aria-pressed", "true");
+}
+
 test("Fallback: with account switching on, a limit moves the step to the provider's other account and the Inbox says so", async () => {
   const { page } = h;
   const main = page.locator("main");
@@ -333,8 +386,14 @@ test("Fallback: with account switching on, a limit moves the step to the provide
   await toggle().getByRole("button", { name: "On" }).click();
   const note = main.getByRole("alertdialog", { name: "Before you turn it on" });
   await expect(note).toBeVisible();
+  // Accepting terms turns on a standing rule, so it stays neutral and color never nudges toward it (DESIGN.md §3).
+  await expect(note.getByRole("button", { name: "I understand, turn it on" })).not.toHaveClass(/btn-(ok|warn|bad)/);
   await note.getByRole("button", { name: "I understand, turn it on" }).click();
   await expect(toggle().getByRole("button", { name: "On" })).toHaveAttribute("aria-pressed", "true");
+  // For the same reason a chosen On of account switching stays neutral, and so does the Off not chosen.
+  await expect(toggle().getByRole("button", { name: "On" })).not.toHaveClass(/seg-/);
+  await expect(toggle().getByRole("button", { name: "Off" })).not.toHaveClass(/seg-/);
+  await settingColors(main);
   // Settings hides the sidebar; Back returns to where it was opened from.
   await main.getByRole("button", { name: "[ Back ]", exact: true }).click();
 
@@ -360,8 +419,11 @@ test("Fallback: with account switching on, a limit moves the step to the provide
   await expect(entry).toContainText("Fake Work");
   await expect(entry).toContainText("Fake Home");
   await expect(entry).toContainText("limit reached");
+  await expect(entry.getByRole("button", { name: "Off for this task" })).toHaveClass(/btn-warn/);
   await entry.getByRole("button", { name: "Off for this task" }).click();
   await expect(entry.getByRole("button", { name: "Off for this task" })).toBeDisabled();
+  // A disabled button drops its tone, so a done action no longer reads as "look here".
+  await expect(entry.getByRole("button", { name: "Off for this task" })).not.toHaveClass(/btn-warn/);
   await entry.getByRole("button", { name: "Dismiss" }).click();
   await expect(page.locator(".ib-switch")).toHaveCount(0);
 

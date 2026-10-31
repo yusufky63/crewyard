@@ -134,6 +134,8 @@ test("Crew graph: retries a failed step from its node menu", async () => {
   const menu = page.getByRole("menu", { name: /^Actions for / });
   await expect(menu).toBeVisible();
   await expect(menu.getByRole("menuitem", { name: "Open changes" })).toBeVisible();
+  // Going again wears ok on its icon (DESIGN.md §3 "State colors on actions").
+  await expect(menu.getByRole("menuitem", { name: "Retry step" })).toHaveClass(/cmenu-ok/);
   await menu.getByRole("menuitem", { name: "Retry step" }).click();
   await expect(screen.locator(".crew-live")).toContainText("again");
   await expect.poll(async () => (await taskByTitle(page, title))?.status, { timeout: 20_000 }).toBe("done");

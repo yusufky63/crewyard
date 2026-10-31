@@ -112,6 +112,13 @@
     "installed": "installed",
     "noConformance": "conformance not run yet",
     "notInstalled": "not installed",
+    "gate": {
+      "outdated": "update needed",
+      "untested": "not the checked version",
+      "pending": "not the checked 2.x",
+      "isolation": "too old to keep profiles apart",
+      "unknown": "version unknown"
+    },
     "bridge": "Offer instruction files to every runner",
     "bridgeHint": "AGENTS.md, CLAUDE.md, GEMINI.md and the Copilot, Cursor and Windsurf rules in this folder reach the runners that do not read them by themselves, through each runner's own setting. Off by default; Settings can change it later.",
     "names": { "claude-code": "Claude Code", "codex": "Codex", "opencode": "OpenCode", "gemini-cli": "Gemini CLI" }

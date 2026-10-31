@@ -26,7 +26,7 @@ export function AccountSwitchRows({ settings, save }: { settings: AppSettings; s
   return (
     <>
       <Row label={t("accountSwitch.label")} hint={t("accountSwitch.hint")}>
-        <Toggle label={t("accountSwitch.label")} value={a.enabled} onChange={turn} />
+        <Toggle label={t("accountSwitch.label")} onTone={null} value={a.enabled} onChange={turn} />
       </Row>
       {asking && (
         <div className="banner banner-warn st-terms" role="alertdialog" aria-labelledby={ids.title} aria-describedby={ids.text}>
@@ -35,9 +35,9 @@ export function AccountSwitchRows({ settings, save }: { settings: AppSettings; s
           </span>
           <p id={ids.text}>{t("accountSwitch.terms")}</p>
           <div className="st-terms-acts">
+            {/* Accepting terms turns on a standing rule, so it stays neutral like Allow always (DESIGN.md §3). */}
             <Button
               size="sm"
-              variant="primary"
               onClick={() => {
                 setAsking(false);
                 save({ accountSwitch: { enabled: true, acceptTerms: true } });

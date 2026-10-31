@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Check, ChevronDown, CircleHelp, Copy, FolderTree, ListChecks, Minus, RefreshCw, ShieldCheck } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, CircleHelp, Copy, FolderTree, ListChecks, Minus, RefreshCw, ShieldCheck, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { DefenderCheck, MachineEnv, ToolCopy, ToolId, VersionGate } from "@crewyard/core";
 import { BrandIcon, Button, Panel } from "@crewyard/ui";
@@ -60,8 +60,8 @@ function StateIcon({ state }: { state: MachineState }) {
       </span>
     );
   }
-  const icon = { ok: <Check size={16} strokeWidth={1.75} aria-hidden="true" />, warn: <AlertTriangle size={16} strokeWidth={1.75} aria-hidden="true" />, unknown: <CircleHelp size={16} strokeWidth={1.75} aria-hidden="true" />, neutral: <Minus size={16} strokeWidth={1.75} aria-hidden="true" /> }[state];
-  const cls = { ok: "st st-ok", warn: "st st-wait", unknown: "st st-wait", neutral: "st muted" }[state];
+  const icon = { ok: <Check size={16} strokeWidth={1.75} aria-hidden="true" />, bad: <X size={16} strokeWidth={1.75} aria-hidden="true" />, warn: <AlertTriangle size={16} strokeWidth={1.75} aria-hidden="true" />, unknown: <CircleHelp size={16} strokeWidth={1.75} aria-hidden="true" />, neutral: <Minus size={16} strokeWidth={1.75} aria-hidden="true" /> }[state];
+  const cls = { ok: "st st-ok", bad: "st st-bad", warn: "st st-wait", unknown: "st st-wait", neutral: "st muted" }[state];
   return <span className={cls}>{icon}</span>;
 }
 
@@ -270,7 +270,7 @@ export function MachineCheck() {
   }, [open, focus]);
 
   let summary: { text: string; cls: string };
-  if (sum.attention > 0) summary = { text: t("machine.summary.attention", { count: sum.attention }), cls: "st-wait" };
+  if (sum.attention > 0) summary = { text: t("machine.summary.attention", { count: sum.attention }), cls: sum.missing > 0 ? "st-bad" : "st-wait" };
   else if (sum.pending > 0) summary = { text: t("machine.summary.checking", { count: sum.pending }), cls: "muted" };
   else summary = { text: t("machine.summary.ok"), cls: "st-ok" };
 

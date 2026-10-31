@@ -127,7 +127,9 @@ function PushPanel({ projectId }: { projectId: string }) {
       <div className="metric num">
         {known ? branches.length : "—"} <small>{known ? `${t("push.branches", { count: branches.length })} · ${t("push.commits", { count: commits })}` : ""}</small>
       </div>
-      {problem && <span className="gh-note">{t(`push.unavailable.${problem}`, { defaultValue: t("push.unavailable.other") })}</span>}
+      {/* A queue Crewyard cannot read (no remote, a remote off GitHub, signed out) needs a look; a read that failed
+          (offline, an error) is bad. The sentence says which. */}
+      {problem && <span className={`gh-note ${problem === "error" || problem === "offline" ? "gh-bad" : "gh-warn"}`}>{t(`push.unavailable.${problem}`, { defaultValue: t("push.unavailable.other") })}</span>}
       {known && branches.length === 0 && <span className="gh-note">{t("push.empty")}</span>}
       {shown.map((b) => (
         <PushRow key={b.branch} projectId={projectId} b={b} primary={branches.length === 1} />
@@ -174,7 +176,7 @@ function StaleWorktree({ projectId, path, branch }: { projectId: string; path: s
             </Button>
           </span>
         ) : (
-          <Button size="sm" variant="ghost" onClick={() => setAsking(true)}>
+          <Button size="sm" variant="ghost" tone="bad" onClick={() => setAsking(true)}>
             {t("taskPull.cleanup.remove")}
           </Button>
         )}
@@ -359,7 +361,7 @@ function PullRow({ projectId, pr, method, now }: { projectId: string; pr: PullSu
                   <Button size="sm" variant="ghost" onClick={() => setConfirm(false)} disabled={busy}>
                     {t("pulls.cancel")}
                   </Button>
-                  <Button size="sm" variant="primary" onClick={() => void merge()} disabled={busy}>
+                  <Button size="sm" tone="ok" onClick={() => void merge()} disabled={busy}>
                     <GitMerge {...ICON} />
                     {busy ? t("pulls.merging") : t("pulls.mergeNow")}
                   </Button>

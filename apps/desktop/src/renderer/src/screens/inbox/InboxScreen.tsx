@@ -15,6 +15,7 @@ import { ConfirmButton, ErrorLine, useFormat, Who } from "../tasks/parts.tsx";
 import { ApprovalActions } from "./ApprovalActions.tsx";
 import { InboxSplit } from "./InboxSplit.tsx";
 import { ReportList, useReports } from "./Reports.tsx";
+import { RiskBadge } from "./RiskBadge.tsx";
 import { StallList, useStalls } from "./Stalls.tsx";
 import { SwitchList, useSwitches } from "./Switches.tsx";
 import { defaultTarget, emptyForm, formAnswer, formReady, handoffChoices, infoNotices, orderRequests, titleKey, type QuestionForm } from "./model.ts";
@@ -60,7 +61,10 @@ function Item({ q, selected, onSelect }: { q: RequestView; selected: boolean; on
       <KindIcon q={q} />
       <span className="ib-text">
         <span className={`t${q.payload.kind === "approval" && q.payload.command ? " mono" : ""}`}>{title(q)}</span>
-        <span className="s">{asleep ? `${asker} · ${f.t("tasks:step.hibernated")}` : asker}</span>
+        <span className="s">
+          {q.risk && <RiskBadge risk={q.risk} />}
+          {asleep ? `${asker} · ${f.t("tasks:step.hibernated")}` : asker}
+        </span>
       </span>
       <span className="k">{f.when.ago(q.createdAt)}</span>
     </button>
@@ -217,8 +221,10 @@ function Handoff({ p, answer }: { p: Payload<"handoff">; answer: (a: RequestAnsw
             {picked ? t("action.handOffTo", { target: `${f.runner(picked.runner)} · ${picked.alias}` }) : t("action.pickTarget")}
           </Button>
         )}
+        {/* Waiting is the safe choice and stays neutral; going on past a spend cap costs money, so it takes warn
+            (DESIGN.md §3 "State colors on actions"). */}
         {choices.waitForReset && p.resetsAt && <Button onClick={() => void answer({ kind: "handoff", decision: "wait_for_reset" })}>{t("action.waitForReset", { time: f.when.at(p.resetsAt) })}</Button>}
-        {choices.continuePastCap && <Button onClick={() => void answer({ kind: "handoff", decision: "continue" })}>{p.trigger === "unpriced" ? t("action.continueUnpriced") : t("action.continuePastCap")}</Button>}
+        {choices.continuePastCap && <Button tone="warn" onClick={() => void answer({ kind: "handoff", decision: "continue" })}>{p.trigger === "unpriced" ? t("action.continueUnpriced") : t("action.continuePastCap")}</Button>}
         <ConfirmButton label={t("action.stop")} confirm={t("action.stopConfirm")} onConfirm={() => answer({ kind: "handoff", decision: "stop" })} size="md" />
       </div>
       {choices.continuePastCap && <p className="ib-note">{p.trigger === "unpriced" ? t("detail.unpricedNote") : t("detail.continueNote")}</p>}
@@ -251,10 +257,10 @@ function Detail({ q }: { q: RequestView }) {
   };
   return (
     <Panel className="ib-detail" aria-live="polite">
-      <Label>
-        {t(`eyebrow.${p.kind}`)}
-        {q.risk && ` · ${t(`risk.${q.risk}`)}`}
-      </Label>
+      <div className="ib-eyebrow">
+        <Label>{t(`eyebrow.${p.kind}`)}</Label>
+        {q.risk && <RiskBadge risk={q.risk} />}
+      </div>
       <h2>{title(q)}</h2>
       {task.data && (
         <p className="sec ib-line">

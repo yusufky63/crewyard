@@ -23,7 +23,9 @@ export function ApprovalActions({ q, answer }: { q: RequestView; answer: (a: Req
         <textarea id={id} className="ib-note-input" rows={2} maxLength={2000} value={reason} onChange={(e) => setReason(e.target.value)} placeholder={t("detail.denyReasonHint")} />
       </div>
       <div className="ib-actions">
-        <Button variant="primary" onClick={() => void answer({ kind: "approval", decision: "allow_once" })}>
+        {/* Approve in ok and Deny in bad (owner, 2026-10-31: "kırmızı sarı veya yeşil ... kullanmaktan çekinme");
+            Allow always stays neutral so the colour never nudges toward a standing rule. */}
+        <Button tone="ok" onClick={() => void answer({ kind: "approval", decision: "allow_once" })}>
           {t("action.approveOnce")}
         </Button>
         {canAllowAlways(q.risk) && command && (
@@ -31,7 +33,7 @@ export function ApprovalActions({ q, answer }: { q: RequestView; answer: (a: Req
             {t("action.allowAlways")}
           </Button>
         )}
-        <Button variant="ghost" onClick={() => void answer(denyAnswer(reason))}>
+        <Button variant="ghost" tone="bad" onClick={() => void answer(denyAnswer(reason))}>
           {reason.trim() ? t("action.denyWithReason") : t("action.deny")}
         </Button>
       </div>

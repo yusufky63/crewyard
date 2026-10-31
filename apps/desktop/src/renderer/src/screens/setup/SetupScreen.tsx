@@ -118,7 +118,7 @@ function ReplaceConfirm({ file, onReplace, onKeep }: { file: string; onReplace: 
         <Button size="sm" variant="ghost" onClick={onKeep}>
           {t("config.keep")}
         </Button>
-        <Button size="sm" variant="primary" onClick={onReplace}>
+        <Button size="sm" tone="warn" onClick={onReplace}>
           {t("config.replace")}
         </Button>
       </div>

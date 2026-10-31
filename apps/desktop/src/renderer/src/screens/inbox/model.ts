@@ -32,6 +32,9 @@ export function titleKey(p: RequestPayload): string {
 /** "Always allow in this project" is never offered for high risk (PLAN.md §11). */
 export const canAllowAlways = (risk: RiskLevel | null) => risk !== "high";
 
+/** The state colour of a risk chip (owner, 2026-10-31: use red, amber and green); the chip's word still names the level. */
+export const riskTone = (risk: RiskLevel): "ok" | "warn" | "bad" => (risk === "low" ? "ok" : risk === "medium" ? "warn" : "bad");
+
 export interface HandoffChoices {
   handOff: boolean;
   waitForReset: boolean;

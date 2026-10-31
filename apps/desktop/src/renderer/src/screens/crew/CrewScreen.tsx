@@ -89,6 +89,17 @@ const ICONS: Record<ActionId, LucideIcon> = {
   stop: Square,
 };
 
+/** State colours for menu actions that have one (owner, 2026-10-31): going again in ok, holding back in warn. Stop and Remove are already danger. */
+const ACTION_TONE: Partial<Record<ActionId, "ok" | "warn">> = {
+  resume: "ok",
+  resume_all: "ok",
+  retry: "ok",
+  pause: "warn",
+  pause_all: "warn",
+  skip: "warn",
+  wait_reset: "warn",
+};
+
 const errorCode = (err: unknown) => (err instanceof Error ? err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : String(err));
 
 /** Re-reads the task when the daemon reports a change; run events are batched to one read a second. */
@@ -384,7 +395,7 @@ function CrewView({ task, fixture }: { task: TaskDetail; fixture: boolean }) {
             id: a.id,
             label: t(a.id === "retry" && menuNode.run?.endReason === "failed" ? "menu.retry_failed" : `menu.${a.id}`),
             icon: <Icon size={14} strokeWidth={1.75} />,
-            tone: a.danger ? ("danger" as const) : undefined,
+            tone: a.danger ? ("danger" as const) : ACTION_TONE[a.id],
             disabledReason: a.disabled ? t(`menu.why.${a.disabled}`) : null,
           };
         }),

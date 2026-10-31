@@ -42,7 +42,7 @@ function SwitchItem({ s, onError }: { s: AccountSwitchView; onError: (err: unkno
           <Button size="sm" onClick={() => inspect({ taskId: s.taskId, memberId: s.memberId, ...(s.toRunId ? { runId: s.toRunId } : {}) })}>
             {t("switch.openTask")}
           </Button>
-          <Button size="sm" disabled={held || !task.data} onClick={() => go(() => act("tasks.setAccountSwitch", { taskId: s.taskId, enabled: false }))}>
+          <Button size="sm" tone="warn" disabled={held || !task.data} onClick={() => go(() => act("tasks.setAccountSwitch", { taskId: s.taskId, enabled: false }))}>
             {held ? t("switch.offForTaskDone") : t("switch.offForTask")}
           </Button>
           <Button size="sm" variant="ghost" onClick={() => go(() => act("switches.dismiss", { switchId: s.id }))}>

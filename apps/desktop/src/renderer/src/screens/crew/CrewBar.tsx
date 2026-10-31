@@ -61,11 +61,11 @@ export function CrewBar(p: CrewBarProps) {
     <div className="crew-bar" role="group" aria-label={t("bar.label")}>
       <span className="lbl crew-bar-kind">{t("bar.running")}</span>
       <span className="crew-bar-actions start">
-        <Button size="sm" onClick={p.onPauseAll} disabled={off || pauseWhy !== null} aria-describedby={pauseWhy ? "crew-why-pause" : undefined}>
+        <Button size="sm" tone="warn" onClick={p.onPauseAll} disabled={off || pauseWhy !== null} aria-describedby={pauseWhy ? "crew-why-pause" : undefined}>
           <Pause />
           {t("bar.pauseAll")}
         </Button>
-        <Button size="sm" onClick={p.onResumeAll} disabled={off || resumeWhy !== null} aria-describedby={resumeWhy ? "crew-why-resume" : undefined}>
+        <Button size="sm" tone="ok" onClick={p.onResumeAll} disabled={off || resumeWhy !== null} aria-describedby={resumeWhy ? "crew-why-resume" : undefined}>
           <Play />
           {t("bar.resumeAll")}
         </Button>
