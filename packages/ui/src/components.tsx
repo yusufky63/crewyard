@@ -3,10 +3,19 @@ import type { Provenance } from "@crewyard/core";
 import { tickClasses } from "./meter.ts";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
+/** A state colour for an action that has one (Turn on in ok, Turn off in warn, Stop in bad); never on primary. */
+export type Tone = "ok" | "warn" | "bad";
 
-export function Button({ variant = "secondary", size = "md", className = "", ...rest }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: "md" | "sm" }) {
+export function Button({
+  variant = "secondary",
+  size = "md",
+  tone,
+  className = "",
+  ...rest
+}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: "md" | "sm"; tone?: Tone }) {
   const v = variant === "secondary" ? "" : ` btn-${variant}`;
-  return <button type="button" className={`btn${v}${size === "sm" ? " btn-sm" : ""} ${className}`.trim()} {...rest} />;
+  const toned = tone && variant !== "primary" ? ` btn-${tone}` : "";
+  return <button type="button" className={`btn${v}${toned}${size === "sm" ? " btn-sm" : ""} ${className}`.trim()} {...rest} />;
 }
 
 export function Panel({ className = "", ...rest }: HTMLAttributes<HTMLDivElement>) {

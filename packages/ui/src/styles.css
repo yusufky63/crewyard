@@ -119,6 +119,8 @@ svg.i, .i { width: 16px; height: 16px; flex: none; }
 .btn-warn:hover { background: var(--warn-soft); --tk: var(--warn); }
 .btn-bad { color: var(--bad); border-color: var(--bad); --tk: var(--bad); }
 .btn-bad:hover { background: var(--bad-soft); --tk: var(--bad); }
+/* A ghost button keeps its brackets and no border; only the text takes the tone. */
+.btn-ghost.btn-ok, .btn-ghost.btn-warn, .btn-ghost.btn-bad { border-color: transparent; }
 
 .kbd { font: 500 11px / 1 var(--mono); color: var(--ink-2); border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: var(--radius-keycap); padding: 3px 5px; }
 .chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 9px; border: 1px solid var(--line); color: var(--ink-2); font-size: 13px; white-space: nowrap; }
