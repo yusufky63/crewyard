@@ -62,7 +62,11 @@ const JUMPS: Array<[ShortcutId, () => string]> = [
   ["go.limits", () => "limits"],
   ["go.providers", () => "providers"],
   ["go.github", () => "github"],
+  ["go.guide", () => "guide"],
 ];
+
+/** The Guide teaches from Start too, so its jump works without a project. */
+const WITHOUT_PROJECT = new Set(["guide"]);
 
 function KeysStatus() {
   const { t } = useTranslation("keys");
@@ -74,8 +78,8 @@ function KeysStatus() {
       const step = sequenceStep(seq.current, e, Date.now());
       seq.current = step.state;
       const to = JUMPS.find(([id]) => id === step.id)?.[1]();
-      // Project screens need an open project; on Start the keys do nothing.
-      if (!to || !useNav.getState().projectId) return;
+      // Project screens need an open project; on Start only the Guide's jump works.
+      if (!to || (!useNav.getState().projectId && !WITHOUT_PROJECT.has(to))) return;
       e.preventDefault();
       useNav.getState().go(to);
     };

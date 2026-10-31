@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Folder, FolderInput, FolderOpen, FolderSearch, GitBranch, GitPullRequest, History, Plus } from "lucide-react";
+import { BookOpen, Folder, FolderInput, FolderOpen, FolderSearch, GitBranch, GitPullRequest, History, Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button, Label, Panel } from "@crewyard/ui";
 import type { ProjectSummary } from "@crewyard/core";
@@ -269,6 +269,7 @@ export function StartScreen() {
   const qc = useQueryClient();
   const projects = useDaemon("projects.list", undefined);
   const root = usePrefs((s) => s.scanRoot);
+  const go = useNav((s) => s.go);
   const [version, setVersion] = useState<string | null>(null);
   useEffect(() => {
     void window.crewyard.appInfo().then((i) => setVersion(i.version));
@@ -312,6 +313,11 @@ export function StartScreen() {
             <Button onClick={() => openSetup("clone")}>
               <GitPullRequest size={14} strokeWidth={1.75} />
               {t("setup:source.clone")}
+            </Button>
+            {/* The Guide owns this string (its namespace), so Start's locale files stay as they are. */}
+            <Button variant="ghost" onClick={() => go("guide")}>
+              <BookOpen size={14} strokeWidth={1.75} />
+              {t("guide:startLink")}
             </Button>
           </div>
         </div>

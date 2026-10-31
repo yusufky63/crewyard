@@ -47,6 +47,7 @@
     "go.limits": "Limitler ve kullanım",
     "go.providers": "Sağlayıcılar",
     "go.github": "GitHub",
+    "go.guide": "Rehber (nasıl çalışır)",
     "panel.terminal": "Paneli terminalde aç ya da gizle",
     "panel.problems": "Paneli sorunlarda aç ya da gizle",
     "terminal.close": "Bir terminalin sekmesindeyken: kabuğunu kapat (çalışıyorsa önce sorar)",

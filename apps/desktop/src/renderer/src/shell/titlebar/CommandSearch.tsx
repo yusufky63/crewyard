@@ -46,6 +46,10 @@ function useEntries(): Entry[] {
       entries.push({ id: `screen:${s.id}`, group: "screen", title: t(s.navKey), meta: projectId ? undefined : targetName, icon: Icon ? ico(Icon) : null, run: () => goInProject(qc, target, s.id) });
     }
     entries.push({ id: "action:new-task", group: "action", title: t("search.newTask"), meta: targetName, icon: ico(SquarePen), run: () => startNewTask(qc, target) });
+  } else {
+    // The Guide also opens without any project, so a first run can still find it here.
+    const guide = projectScreens.find((s) => s.id === "guide");
+    if (guide?.navKey) entries.push({ id: "screen:guide", group: "screen", title: t(guide.navKey), keywords: t("guide:title"), icon: guide.icon ? ico(guide.icon) : null, run: () => useNav.getState().go("guide") });
   }
   entries.push(
     { id: "action:new-project", group: "action", title: t("setup:newProject"), icon: ico(Plus), run: () => openSetup("local") },

@@ -37,6 +37,7 @@ export const SHORTCUTS = [
   { id: "go.limits", group: "navigate", after: "g", chords: [{ key: "l" }] },
   { id: "go.providers", group: "navigate", after: "g", chords: [{ key: "p" }] },
   { id: "go.github", group: "navigate", after: "g", chords: [{ key: "h" }] },
+  { id: "go.guide", group: "navigate", after: "g", chords: [{ key: "w" }] },
   { id: "list.next", group: "lists", chords: [{ key: "j" }] },
   { id: "list.prev", group: "lists", chords: [{ key: "k" }] },
   { id: "submit", group: "tasks", chords: [{ key: "Enter", ctrl: true }] },
