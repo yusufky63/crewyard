@@ -23,6 +23,8 @@
     "submit": "Submit the composer, approve the focused crew, send a message or comment",
     "assistant": "Open the panel on the task assistant, or stop it and close the panel",
     "assistant.send": "Send your message to the task assistant (Shift Enter adds a line)",
+    "assistant.prev": "In the task assistant's conversation: the previous message, whose actions Tab then reaches",
+    "assistant.next": "In the task assistant's conversation: the next message",
     "list.next": "Next item in the list",
     "list.prev": "Previous item in the list",
     "graph.full": "Full screen on or off",

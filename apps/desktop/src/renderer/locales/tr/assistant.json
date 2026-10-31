@@ -88,7 +88,8 @@
       "preset": "Hazır görev",
       "finding": "Bir bulgudan",
       "followup": "Ajanın takip önerisi"
-    }
+    },
+    "addedBadge": "Eklendi"
   },
   "presets": {
     "title": "Hazır görevler",
@@ -108,13 +109,15 @@
       "security": "Güvenlik sorunlarını bul",
       "deps": "Bağımlılıkları ve lisansları denetle",
       "tests": "Test kapsamındaki boşlukları bul"
-    }
+    },
+    "free": "Yerel, model çağrısı yok"
   },
   "suggest": {
     "button": "Bu proje için görev öner",
     "title": "Asistana yukarıdaki profille bir kez sorar; yanındaki tutar, düğmeye basmadan önceki tahminimizdir",
     "about": "yaklaşık ${{usd}}",
-    "message": "Bu proje için görev öner. Koda göz at ve projeye en çok yarayacak üç ila beş görev öner; her birinin türü, kabul ölçütleri ve boyutu olsun."
+    "message": "Bu proje için görev öner. Koda göz at ve projeye en çok yarayacak üç ila beş görev öner; her birinin türü, kabul ölçütleri ve boyutu olsun.",
+    "lead": "Asistan koda bir kez göz atar ve üç ila beş taslak önerir."
   },
   "report": {
     "completed": "Autopilot {{time}} tarihinde tamamlandı olarak işaretledi.",
@@ -171,5 +174,44 @@
     "assistant_preset_unknown": "Böyle bir hazır görev yok.",
     "assistant_too_many_drafts": "Bu sohbette zaten 20 taslak var. Önce bazılarını ekle ya da vazgeç.",
     "other": "Bir şeyler ters gitti: {{message}}"
+  },
+  "readOnly": "Salt okunur",
+  "readOnlyTitle": "Projeyi okur; dosyalara dokunmaz, çalıştırma başlatmaz. Harcama profilin anahtarından düşer.",
+  "about": "Asistan hakkında: tuşlar, salt okunurluk, harcama",
+  "keysShort": "Enter gönderir · Shift Enter: yeni satır",
+  "stop": "Durdur",
+  "stopTitle": "Bu yanıtı ve oturumu durdurur. Sohbet kalır; bir sonraki mesajın onu sürdürür.",
+  "bytes": "{{kb}} / {{cap}} KB",
+  "bytesTitle": "Bir mesaj en fazla 8 KB olabilir",
+  "imageRef": "Görsel: {{alt}}",
+  "live": {
+    "sending": "Gönderiliyor…",
+    "starting": "Oturum başlıyor…",
+    "thinking": "Düşünüyor…",
+    "tool": "Şu an",
+    "elapsed": "Mesajından bu yana geçen süre",
+    "queued_one": "{{count}} mesaj bu tur bitince gidecek",
+    "queued_other": "{{count}} mesaj bu tur bitince gidecek"
+  },
+  "tools": {
+    "list": "Bu adımdaki araç çağrıları",
+    "read_one": "{{count}} dosya okudu",
+    "read_other": "{{count}} dosya okudu",
+    "search_one": "{{count}} arama",
+    "search_other": "{{count}} arama",
+    "other_one": "{{count}} başka çağrı",
+    "other_other": "{{count}} başka çağrı"
+  },
+  "actions": {
+    "label": "Yanıt işlemleri",
+    "replyLabel": "Ajanın yanıtı",
+    "copy": "Yanıtı kopyala",
+    "copied": "Kopyalandı",
+    "copyCode": "Kodu kopyala",
+    "copyPath": "{{path}} yolunu kopyala",
+    "quote": "Mesajımda alıntıla",
+    "drafts": "Bundan taslak çıkar",
+    "draftsTitle": "Asistana bu yanıtı görev taslaklarına çevirmesini isteyen bir mesaj gönderir. Her mesaj gibi ücretlidir.",
+    "draftsMessage": "\"{{excerpt}}\" diye başlayan yanıtını görev taslaklarına çevir: içindeki her görev için bir kez propose_task çağır; her birinin türü, kabul ölçütleri ve boyutu olsun."
   }
 }

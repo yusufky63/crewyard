@@ -88,7 +88,8 @@
       "preset": "Ready-made",
       "finding": "From a finding",
       "followup": "Agent's follow-up"
-    }
+    },
+    "addedBadge": "Added"
   },
   "presets": {
     "title": "Ready-made tasks",
@@ -108,13 +109,15 @@
       "security": "Find security issues",
       "deps": "Audit dependencies and licences",
       "tests": "Find test coverage gaps"
-    }
+    },
+    "free": "Local, no model call"
   },
   "suggest": {
     "button": "Suggest tasks for this project",
     "title": "Asks the assistant once, on the profile above; the cost beside it is our estimate before you press it",
     "about": "about ${{usd}}",
-    "message": "Suggest tasks for this project. Look through the code and propose three to five tasks that would help it most, each with a kind, acceptance criteria and a size."
+    "message": "Suggest tasks for this project. Look through the code and propose three to five tasks that would help it most, each with a kind, acceptance criteria and a size.",
+    "lead": "The assistant looks through the code once and proposes three to five drafts."
   },
   "report": {
     "completed": "Marked done by Autopilot on {{time}}.",
@@ -171,5 +174,44 @@
     "assistant_preset_unknown": "That ready-made task does not exist.",
     "assistant_too_many_drafts": "This conversation already has 20 drafts. Add or discard some first.",
     "other": "Something went wrong: {{message}}"
+  },
+  "readOnly": "Read-only",
+  "readOnlyTitle": "It reads the project and never edits files or starts runs. Spend counts against the profile's key.",
+  "about": "About the assistant: keys, read-only, spend",
+  "keysShort": "Enter sends · Shift Enter: new line",
+  "stop": "Stop",
+  "stopTitle": "Stops this reply and the session. The conversation stays; your next message resumes it.",
+  "bytes": "{{kb}} / {{cap}} KB",
+  "bytesTitle": "A message can be at most 8 KB",
+  "imageRef": "Image: {{alt}}",
+  "live": {
+    "sending": "Sending…",
+    "starting": "Starting the session…",
+    "thinking": "Thinking…",
+    "tool": "Now",
+    "elapsed": "Time since your message",
+    "queued_one": "{{count}} message goes when this turn ends",
+    "queued_other": "{{count}} messages go when this turn ends"
+  },
+  "tools": {
+    "list": "Tool calls in this step",
+    "read_one": "Read {{count}} file",
+    "read_other": "Read {{count}} files",
+    "search_one": "{{count}} search",
+    "search_other": "{{count}} searches",
+    "other_one": "{{count}} other call",
+    "other_other": "{{count}} other calls"
+  },
+  "actions": {
+    "label": "Reply actions",
+    "replyLabel": "Agent reply",
+    "copy": "Copy reply",
+    "copied": "Copied",
+    "copyCode": "Copy code",
+    "copyPath": "Copy path {{path}}",
+    "quote": "Quote in my message",
+    "drafts": "Make drafts from this",
+    "draftsTitle": "Sends a message asking the assistant to turn this reply into task drafts. It costs like any message.",
+    "draftsMessage": "Turn your reply that starts with \"{{excerpt}}\" into task drafts: call propose_task once for each task in it, with a kind, acceptance criteria and a size."
   }
 }

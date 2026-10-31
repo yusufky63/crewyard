@@ -42,6 +42,8 @@ export const SHORTCUTS = [
   { id: "submit", group: "tasks", chords: [{ key: "Enter", ctrl: true }] },
   { id: "assistant", group: "panel", chords: [{ key: "a", ctrl: true, shift: true }] },
   { id: "assistant.send", group: "panel", chords: [{ key: "Enter" }] },
+  { id: "assistant.prev", group: "panel", chords: [{ key: "ArrowUp" }] },
+  { id: "assistant.next", group: "panel", chords: [{ key: "ArrowDown" }] },
   // Ctrl ` as in most editors; Ctrl Shift T for layouts (Turkish Q) where ` is hard to reach.
   { id: "panel.terminal", group: "panel", chords: [{ key: "`", ctrl: true }, { key: "t", ctrl: true, shift: true }] },
   { id: "panel.problems", group: "panel", chords: [{ key: "m", ctrl: true, shift: true }] },
