@@ -730,6 +730,25 @@ describe("manual handoff and retry", () => {
     await expect(o.retry(fresh.id)).rejects.toThrow("run.ended");
   });
 
+  it("closes the crash question about a failed run when you resume it", async () => {
+    let researchers = 0;
+    const pick: Picker = () => (researchers++ === 0 ? [running, { emit: { type: "run.ended", reason: "failed", detail: "boom" } }] : [running, say("ok")]);
+    const { o, project, adapter } = await setup({ pick });
+    const t = await o.propose({ projectId: project.id, title: "Research A", fallback: "manual" });
+    await o.approve({ taskId: t.id });
+    const q = await waitFor(() => o.requests({ taskId: t.id }).find((r) => r.kind === "handoff"));
+    const failed = o.get(t.id).runs[0]!;
+    expect(failed.endReason).toBe("failed");
+
+    const resumed = await o.resume(failed.id);
+    expect(resumed.resumedFrom).toBe(failed.id);
+    // The question is about a run the resume superseded; answering it must not move the step again.
+    expect(o.requests({ taskId: t.id }).map((r) => r.id)).not.toContain(q.id);
+    await waitFor(() => o.get(t.id).status === "done");
+    expect(adapter.started.map((s) => s.resumed)).toEqual([false, true]);
+    expect(o.get(t.id).handoffs).toEqual([]);
+  });
+
   it("re-checks a limit on retry: refuses while the window is used up, continues once it cleared", async () => {
     const resetsAt = new Date(Date.now() + 3 * 3_600_000).toISOString();
     const pick: Picker = (_role, _req, resumed) =>

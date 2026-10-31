@@ -71,6 +71,8 @@ export class RunActions extends Part {
     const adapter = this.adapters.get(run.runner);
     if (!adapter?.capabilities.resume || !run.native_session_id) throw new OrchestratorError("run.resume_unsupported", { runner: run.runner });
     this.deps.cancelAutoRetry(run.id);
+    // As with retry: resuming answers the crash or limit question about the old run.
+    for (const q of this.db.openRequestsForRun(run.id).filter((q) => q.kind === "handoff")) this.deps.closeRequest(q, "system");
     const newId = await this.deps.launch({
       task,
       member: this.db.member(run.member_id),
