@@ -7,8 +7,10 @@ import { daemon, launch, running, type Harness } from "./harness.ts";
 // "Done". Here the composer's preset makes a research task, the fake researcher ends with checked
 // findings, the row shows the report's first line with tone badges, the inspector the whole
 // report with findings that expand, filter, copy and jump to their two suggested drafts, and the
-// Suggested tab adds both as tasks waiting for their crews. The assistant panel puts a
-// preset in its drafts without any model call. Screenshots land in apps/desktop/screens/report.
+// Suggested tab keeps a card's edits across tabs and adds both, as edited, as tasks waiting for
+// their crews. A docs task, which has a worktree, opens a finding's file in the Files tab. The
+// assistant panel puts a preset in its drafts without any model call. Screenshots land in
+// apps/desktop/screens/report.
 
 test.describe.configure({ mode: "serial" });
 
@@ -74,8 +76,11 @@ test("a preset from the composer runs as a research task and its report shows on
 
   const row = main.locator(".tk-row", { hasText: "Find bugs and problems" });
   await expect(row.locator(".tk-report-text")).toHaveText(FINDINGS.summary);
-  await expect(row.getByText("3 findings")).toBeVisible();
-  await expect(row.getByText("2 suggested tasks")).toBeVisible();
+  // The count takes the worst finding's tone and names it, so colour is never the only signal.
+  const count = row.locator(".tk-report-line > .badge", { hasText: "3 findings" });
+  await expect(count).toHaveText("3 findings · 1 High");
+  await expect(count).toHaveClass(/\bbadge-bad\b/);
+  await expect(row.getByRole("button", { name: "2 suggested tasks" })).toHaveClass(/\bbadge-info\b/);
   for (const width of [1280, 1920]) {
     for (const theme of ["dark", "light"] as const) {
       await look(page, width, theme);
@@ -103,6 +108,10 @@ test("Open report shows the whole report in the inspector: findings expand, filt
   // The severity bar filters the list, and a second click shows everything again.
   const bar = report.getByRole("group", { name: "Filter findings by severity" });
   await expect(bar.getByRole("button")).toHaveText(["High 1", "Medium 1", "Info 1"]);
+  // Critical and high are bad, medium a warning, info the plain hairline badge.
+  await expect(bar.getByRole("button", { name: "High 1" })).toHaveClass(/\bbadge-bad\b/);
+  await expect(bar.getByRole("button", { name: "Medium 1" })).toHaveClass(/\bbadge-warn\b/);
+  await expect(bar.getByRole("button", { name: "Info 1" })).not.toHaveClass(/badge-(ok|warn|bad|info)/);
   await bar.getByRole("button", { name: "Medium 1" }).click();
   await expect(bar.getByRole("button", { name: "Medium 1" })).toHaveAttribute("aria-pressed", "true");
   await expect(list.locator(".tk-finding")).toHaveCount(1);
@@ -129,22 +138,20 @@ test("Open report shows the whole report in the inspector: findings expand, filt
   // Windows hands clipboard text back with CRLF line ends.
   expect((await h.app.evaluate(({ clipboard }) => clipboard.readText())).replace(/\r\n/g, "\n")).toBe("[High] Token logged on auth failure\nsrc/auth.ts:42\n\nThe Authorization header is written to <b>debug.log</b> when a request fails.");
 
-  // The file opens in the Files tab when the task has a worktree, and is copied when it has none.
+  // A research task reads and never writes, so it has no worktree: its `file:line` copies the
+  // location. A task with a worktree opens the file instead (the docs flow below).
   const tasks = await daemon<Array<{ id: string; title: string }>>(page, "tasks.list", {});
   const task = await daemon<{ worktree: { path: string } | null }>(page, "tasks.get", { taskId: tasks.find((t) => t.title === "Find bugs and problems")!.id });
-  if (!task.worktree) {
-    await report.getByRole("button", { name: "src/auth.ts:42" }).click();
-    await expect(report.getByText("Path copied")).toBeVisible();
-    expect(await h.app.evaluate(({ clipboard }) => clipboard.readText())).toBe("src/auth.ts:42");
-  } else {
-    await report.getByRole("button", { name: "src/auth.ts:42" }).click();
-    await expect(inspector.getByRole("tab", { name: "Files" })).toHaveAttribute("aria-selected", "true");
-    await expect(inspector.getByRole("region", { name: /src\/auth\.ts/ })).toBeVisible();
-    await inspector.getByRole("tab", { name: "Details" }).click();
-  }
+  expect(task.worktree).toBeNull();
+  await report.getByRole("button", { name: "src/auth.ts:42" }).click();
+  await expect(report.getByText("Path copied")).toBeVisible();
+  expect(await h.app.evaluate(({ clipboard }) => clipboard.readText())).toBe("src/auth.ts:42");
 
-  // The finding jumps to its suggested draft at the bottom of Details.
+  // The header's count moves the keyboard to the Suggested tasks block, and the finding jumps to
+  // its own draft card there.
   const suggested = inspector.getByRole("region", { name: "Suggested tasks" });
+  await report.getByRole("button", { name: "2 suggested tasks" }).click();
+  await expect(suggested).toBeFocused();
   await report.locator(".tk-finding.open").getByRole("button", { name: "Its suggested task" }).click();
   await expect(suggested.locator(".tk-suggested-slot").first()).toBeFocused();
   await expect(suggested.locator(".tk-suggested-slot").first().getByRole("article", { name: /Redact the Authorization header/ })).toBeInViewport();
@@ -161,16 +168,35 @@ test("Open report shows the whole report in the inspector: findings expand, filt
   await look(page, 1280, "dark");
 });
 
-test("the Suggested tab lists the drafts with their count, and Add all adds each as a task waiting for its crew", async () => {
+test("the Suggested tab lists the drafts with their count, keeps a card's edits, and Add all adds each as edited", async () => {
   const { page } = h;
   const inspector = page.locator("#app-inspector");
+  const row = page.locator("main .tk-row", { hasText: "Find bugs and problems" });
+  // The row's suggestion count opens the inspector on the Suggested tab.
+  await row.getByRole("button", { name: "2 suggested tasks" }).click();
   const tab = inspector.getByRole("tab", { name: "Suggested 2" });
-  await expect(tab).toBeVisible();
-  await tab.click();
   await expect(tab).toHaveAttribute("aria-selected", "true");
   const suggested = inspector.getByRole("region", { name: "Suggested tasks" });
   await expect(suggested.getByRole("article")).toHaveCount(2);
   await expect(suggested.getByText("Nothing starts until you approve each crew", { exact: false })).toBeVisible();
+  const addAll = suggested.getByRole("button", { name: "Add all as drafts (2)" });
+
+  // A card with no title holds Add all back, and says why.
+  const titleOf = (n: number) => suggested.getByRole("article").nth(n).getByLabel("Title");
+  await titleOf(1).fill("");
+  await expect(addAll).toBeDisabled();
+  await expect(suggested.getByText("A card has no title.", { exact: false })).toBeVisible();
+  await titleOf(1).fill("Cap network retries at three");
+  await expect(addAll).toBeEnabled();
+
+  // Open report goes back to Details whatever tab was showing, and the edit is there too.
+  await row.getByRole("button", { name: "Open report" }).click();
+  await expect(inspector.getByRole("tab", { name: "Details" })).toHaveAttribute("aria-selected", "true");
+  await expect(inspector.getByRole("region", { name: "Report" })).toBeVisible();
+  await expect(titleOf(1)).toHaveValue("Cap network retries at three");
+  await tab.click();
+  await expect(titleOf(1)).toHaveValue("Cap network retries at three");
+
   for (const width of [1280, 1920]) {
     for (const theme of ["dark", "light"] as const) {
       await look(page, width, theme);
@@ -179,17 +205,57 @@ test("the Suggested tab lists the drafts with their count, and Add all adds each
   }
   await look(page, 1280, "dark");
 
-  await suggested.getByRole("button", { name: "Add all as drafts (2)" }).click();
+  await addAll.click();
   await expect(suggested.getByText("2 tasks added. Each crew waits for your approval in Tasks.")).toBeVisible();
+  // Each task is the card as it read, not as the agent wrote it.
   await expect.poll(async () => (await daemon<Array<{ title: string; status: string }>>(page, "tasks.list", {})).map((t) => [t.title, t.status]).sort()).toEqual([
-    ["Cap network retries at five", "proposed"],
+    ["Cap network retries at three", "proposed"],
     ["Find bugs and problems", "done"],
     ["Redact the Authorization header in logs", "proposed"],
   ]);
   // Added drafts stay on show as added; nothing is open, so the count and Add all go.
   await expect(suggested.getByText("Added to Tasks. Its crew waits for your approval.")).toHaveCount(2);
+  await expect(suggested.getByText("Cap network retries at three", { exact: true })).toBeVisible();
   await expect(inspector.getByRole("tab", { name: "Suggested", exact: true })).toBeVisible();
   await expect(suggested.getByRole("button", { name: /Add all as drafts/ })).toHaveCount(0);
+});
+
+test("a docs task's review verdict opens a finding's file in the Files tab, once", async () => {
+  const { page, repo } = h;
+  const verdict = { verdict: "pass", summary: "The README reads well.", comments: [{ file: "README.md", line: 1, severity: "minor", body: "Name the retry limit in the title." }] };
+  h.setScripts({ docs: [[running]], reviewer: [[running, { emit: { type: "run.ended", reason: "completed", output: { ok: true, value: verdict } } }]] });
+  const projects = await daemon<Array<{ id: string; path: string }>>(page, "projects.list", undefined);
+  const projectId = projects.find((p) => p.path.toLowerCase() === repo.toLowerCase())!.id;
+  const title = "Document the retry limit in the README";
+  // Size M: the docs writer, who gets the task's worktree, then a reviewer whose verdict is the report.
+  const draft = await daemon<{ id: string }>(page, "tasks.propose", { projectId, title, kind: "docs", size: "M" });
+  await daemon(page, "tasks.approve", { taskId: draft.id });
+  await expect.poll(async () => (await daemon<{ status: string }>(page, "tasks.get", { taskId: draft.id })).status, { timeout: 20_000 }).toBe("done");
+
+  const row = page.locator("main .tk-row", { hasText: title });
+  await row.getByRole("button", { name: "Open report" }).click();
+  const inspector = page.locator("#app-inspector");
+  const report = inspector.getByRole("region", { name: "Report" });
+  await expect(report.locator(".tk-report-head .badge", { hasText: "Review verdict" })).toBeVisible();
+  // The verdict is a tone badge: a pass is ok.
+  await expect(report.locator(".tk-report-head .badge", { hasText: "Pass" })).toHaveClass(/\bbadge-ok\b/);
+
+  await report.getByRole("button", { name: "README.md:1" }).click();
+  await expect(inspector.getByRole("tab", { name: "Files" })).toHaveAttribute("aria-selected", "true");
+  const preview = inspector.getByRole("region", { name: "Preview of README.md" });
+  await expect(preview.getByRole("heading", { name: "demo" })).toBeVisible();
+  for (const width of [1280, 1920]) {
+    for (const theme of ["dark", "light"] as const) {
+      await look(page, width, theme);
+      await page.screenshot({ path: join(shots, `files-${theme}-${width}.png`) });
+    }
+  }
+  await look(page, 1280, "dark");
+  // The request is spent once shown: back on Files later, the tab is as you left it, not reopened.
+  await inspector.getByRole("tab", { name: "Details" }).click();
+  await inspector.getByRole("tab", { name: "Files" }).click();
+  await expect(inspector.getByRole("tree", { name: "Worktree" })).toBeVisible();
+  await expect(preview).toHaveCount(0);
 });
 
 test("the assistant panel puts a ready-made task in its drafts without a model call", async () => {
