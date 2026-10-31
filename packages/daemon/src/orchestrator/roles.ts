@@ -1,4 +1,4 @@
-import { isBuiltinRole, type BuiltinRoleId, type CustomRoleStep, type ProjectConfig, type RoleId, type RolePolicy, type RunnerId, type TaskKind, type TaskSize } from "@crewyard/core";
+import { isBuiltinRole, type BuiltinRoleId, type CustomRoleStep, type ProjectConfig, type RoleId, type RolePolicy, type RunnerId, type TaskKind, type TaskMode, type TaskSize } from "@crewyard/core";
 
 // Built-in role templates (PLAN.md §9.1). Permissions are never enforced by the prompt: each
 // runner's own engine refuses a read-only role's writes (sandbox, permission mode or ruleset), and
@@ -164,10 +164,18 @@ export interface PlanStep {
 const s = (role: RoleId, dependsOn: RoleId[] = []): PlanStep => ({ step: role, role, dependsOn, required: true });
 
 /**
- * The DAG per task class (PLAN.md §9 step 2). Code M is Plan → Implement → Test ∥ Review; the
- * PR step belongs to the GitHub work and is not a run.
+ * The role a Solo task's one step works as: the kind's main role. Code keeps its run-until-green
+ * loop, because the test gate belongs to the implementer step, not to a tester (loops.ts).
  */
-export function planFor(kind: TaskKind, size: TaskSize, security: boolean): PlanStep[] {
+export const SOLO_ROLE: Record<TaskKind, BuiltinRoleId> = { code: "implementer", research: "researcher", review: "reviewer", docs: "docs" };
+
+/**
+ * The DAG per task class (PLAN.md §9 step 2). Code M is Plan → Implement → Test ∥ Review; the
+ * PR step belongs to the GitHub work and is not a run. Solo (docs/adr/0019) is one step of the
+ * kind's main role, whatever the size or the security flag: you chose one agent on purpose.
+ */
+export function planFor(kind: TaskKind, size: TaskSize, security: boolean, mode: TaskMode = "crew"): PlanStep[] {
+  if (mode === "solo") return [s(SOLO_ROLE[kind])];
   switch (kind) {
     case "code":
       if (size === "S") return [s("implementer"), s("reviewer", ["implementer"])];

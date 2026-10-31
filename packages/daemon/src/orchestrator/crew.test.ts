@@ -1,6 +1,7 @@
 import type { Headroom } from "@crewyard/core";
 import { describe, expect, it } from "vitest";
-import { eligible, proposeCrew, rankForRole, scoreCandidate, type ScoringContext } from "./crew.ts";
+import { applyCrewEdits, eligible, proposeCrew, rankForRole, scoreCandidate, validateCrew, type CrewCheckMember, type ScoringContext } from "./crew.ts";
+import { planFor, ROLES, SOLO_ROLE } from "./roles.ts";
 import { CANDIDATES } from "./testing.ts";
 
 // Profile presets in the crew proposal (feature scan A16): the note and the read-only preset.
@@ -63,5 +64,94 @@ describe("pins the proposal could not keep", () => {
     expect(roleOf(ro.members, "implementer").reasons[0]).toEqual({ code: "pin.dropped", params: { alias: "openai-key", cause: "read_only" } });
     const gone = proposeCrew("research", false, CANDIDATES(), ctx({ pins: { researcher: "deleted-profile" } }));
     expect(roleOf(gone.members, "researcher").reasons[0]).toEqual({ code: "pin.dropped", params: { alias: "deleted-profile", cause: "unavailable" } });
+  });
+});
+
+describe("Solo mode (docs/adr/0019)", () => {
+  it("drafts one step of the kind's main role, whatever the size or the security flag", () => {
+    for (const kind of ["code", "research", "review", "docs"] as const) {
+      for (const size of ["S", "M", "L"] as const) {
+        for (const security of [false, true]) {
+          expect(planFor(kind, size, security, "solo")).toEqual([{ step: SOLO_ROLE[kind], role: SOLO_ROLE[kind], dependsOn: [], required: true }]);
+        }
+      }
+    }
+    expect(SOLO_ROLE).toEqual({ code: "implementer", research: "researcher", review: "reviewer", docs: "docs" });
+  });
+
+  it("leaves Crew exactly as it was, with or without the mode argument", () => {
+    for (const kind of ["code", "research", "review", "docs"] as const) {
+      for (const size of ["S", "M", "L"] as const) {
+        expect(planFor(kind, size, true, "crew")).toEqual(planFor(kind, size, true));
+      }
+    }
+    expect(planFor("code", "M", false).map((s) => s.role)).toEqual(["planner", "implementer", "tester", "reviewer"]);
+  });
+
+  it("adds no custom steps from project.json to a Solo crew", () => {
+    const linter = { ...ROLES.tester, id: "linter", title: "Linter" };
+    const roles = { templates: new Map([["linter", linter]]), steps: [{ role: "linter", kinds: ["code" as const], after: ["implementer"] }] };
+    const crew = proposeCrew("code", false, CANDIDATES(), ctx({ size: "S" }), roles, "crew");
+    expect(crew.members.map((m) => m.role)).toEqual(["implementer", "reviewer", "linter"]);
+    const solo = proposeCrew("code", false, CANDIDATES(), ctx({ size: "S" }), roles, "solo");
+    expect(solo.members.map((m) => [m.role, m.writesCode])).toEqual([["implementer", true]]);
+    expect(solo.estimate).toEqual(solo.members[0]!.chosen!.estimate);
+  });
+});
+
+describe("validateCrew and applyCrewEdits", () => {
+  const cands = CANDIDATES();
+  const view = (i: number, role: "implementer" | "reviewer" = "implementer") => scoreCandidate(cands[i]!, role, ctx());
+  const members: CrewCheckMember[] = [
+    { id: "m-impl", role: "implementer", template: ROLES.implementer },
+    { id: "m-rev", role: "reviewer", template: ROLES.reviewer },
+  ];
+  const views = () => new Map([["m-impl", view(0)], ["m-rev", view(1, "reviewer")]]);
+
+  it("passes a crew with a profile per member, no read-only writer and independent models", () => {
+    expect(validateCrew({ members, views: views(), candidates: cands })).toBeNull();
+  });
+
+  it("names the first member without a profile", () => {
+    const v = views();
+    v.set("m-rev", null as never);
+    expect(validateCrew({ members, views: v, candidates: cands })).toEqual({ code: "crew.missing_profile", params: { role: "reviewer" } });
+  });
+
+  it("refuses a profile marked read-only after the proposal, in a writing role only", () => {
+    const ro = cands.map((c, i) => (i === 0 || i === 1 ? { ...c, readOnly: true } : c));
+    expect(validateCrew({ members, views: views(), candidates: ro })).toEqual({ code: "crew.read_only_profile", params: { profileId: "anthropic-key", role: "implementer" } });
+    // The reviewer never writes, so its read-only profile is fine.
+    expect(validateCrew({ members, views: views(), candidates: cands.map((c, i) => (i === 1 ? { ...c, readOnly: true } : c)) })).toBeNull();
+  });
+
+  it("refuses a reviewer on the implementer's model, and on any Best of N variant's model", () => {
+    const same = views();
+    same.set("m-rev", view(0, "reviewer"));
+    expect(validateCrew({ members, views: same, candidates: cands })).toEqual({ code: "crew.independence", params: { role: "reviewer" } });
+    expect(validateCrew({ members, views: views(), candidates: cands, group: { memberId: "m-impl", candidates: [view(0), view(1)] } })).toEqual({ code: "crew.independence", params: { role: "reviewer" } });
+    expect(validateCrew({ members, views: views(), candidates: cands, group: { memberId: "m-impl", candidates: [view(0), view(2)] } })).toBeNull();
+  });
+
+  it("keeps approve's old leniency for a vanished profile unless `available` is given", () => {
+    const left = cands.slice(1);
+    expect(validateCrew({ members, views: views(), candidates: left })).toBeNull();
+    expect(validateCrew({ members, views: views(), candidates: left, available: (c, tpl) => eligible(c, tpl, ctx()) })).toEqual({ code: "crew.unknown_profile", params: { profileId: "anthropic-key" } });
+    // A profile that is still there but can no longer take its role counts as gone too.
+    const notReady = cands.map((c, i) => (i === 1 ? { ...c, ready: false } : c));
+    expect(validateCrew({ members, views: views(), candidates: notReady, available: (c, tpl) => eligible(c, tpl, ctx()) })).toEqual({ code: "crew.unknown_profile", params: { profileId: "openai-key" } });
+  });
+
+  it("applies edits, or names the member, the read-only profile or the unknown profile", () => {
+    const scoring = ctx();
+    const ok = applyCrewEdits({ members, views: views(), candidates: cands, edits: [{ memberId: "m-rev", profileId: "deepseek-key", model: "deepseek-reasoner" }], scoring });
+    expect(ok.ok && ok.views.get("m-rev")).toMatchObject({ profileId: "deepseek-key", model: "deepseek-reasoner" });
+    // The input map is never changed: the function writes nothing.
+    expect(views().get("m-rev")!.profileId).toBe("openai-key");
+    expect(applyCrewEdits({ members, views: views(), candidates: cands, edits: [{ memberId: "nope", profileId: "deepseek-key" }], scoring })).toEqual({ ok: false, problem: { code: "crew.member_not_found", params: { memberId: "nope" } } });
+    const ro = cands.map((c, i) => (i === 2 ? { ...c, readOnly: true } : c));
+    expect(applyCrewEdits({ members, views: views(), candidates: ro, edits: [{ memberId: "m-impl", profileId: "deepseek-key" }], scoring })).toEqual({ ok: false, problem: { code: "crew.read_only_profile", params: { profileId: "deepseek-key", role: "implementer" } } });
+    expect(applyCrewEdits({ members, views: views(), candidates: cands, edits: [{ memberId: "m-impl", profileId: "gone" }], scoring })).toEqual({ ok: false, problem: { code: "crew.unknown_profile", params: { profileId: "gone" } } });
+    expect(applyCrewEdits({ members, views: views(), candidates: cands, edits: [{ memberId: "m-impl", profileId: "deepseek-key" }], scoring: ctx({ exclude: ["deepseek-key"] }) })).toEqual({ ok: false, problem: { code: "crew.unknown_profile", params: { profileId: "deepseek-key" } } });
   });
 });

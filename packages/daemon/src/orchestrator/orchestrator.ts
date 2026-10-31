@@ -132,6 +132,7 @@ export class Orchestrator {
       stopRun: (runId, detail, reason) => this.lifecycle.stopRun(runId, detail, reason),
       closeRequest: (q, by) => this.inbox.closeRequest(q, by),
       closeHandoff: (id, outcome, detail) => this.handoffs.closeHandoff(id, outcome, detail),
+      capFor: (taskId, runId, candidate, addUsd) => this.budget.capFor(taskId, runId, candidate, addUsd),
       tick: () => this.dispatcher.tick(),
     });
     this.dispatcher = new Dispatcher(ctx, {
@@ -366,6 +367,16 @@ export class Orchestrator {
 
   approve(p: TasksIpc["tasks.approve"]["params"]): Promise<TaskDetail> {
     return this.taskFlow.approve(p);
+  }
+
+  /** The composer's dry run: classification, crew and estimate, written nowhere (docs/adr/0019). */
+  preview(p: TasksIpc["tasks.preview"]["params"]): Promise<TasksIpc["tasks.preview"]["result"]> {
+    return this.taskFlow.preview(p);
+  }
+
+  /** Solo's Start: propose and approve in one call, or the proposal with why it waits for a click. */
+  startTask(p: TasksIpc["tasks.start"]["params"]): Promise<TasksIpc["tasks.start"]["result"]> {
+    return this.taskFlow.start(p);
   }
 
   edit(taskId: string, patch: { title?: string; description?: string; kind?: TaskKind; budgetUsd?: number }): Promise<TaskDetail> {

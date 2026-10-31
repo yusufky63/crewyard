@@ -1079,6 +1079,11 @@ export interface TaskPreview {
   classification: Reason[];
   members: CrewMemberView[];
   estimate: CostEstimate;
+  /**
+   * Set when `tasks.start` would propose instead of starting, so Solo's button reads `Propose`
+   * before the click. A hint only: `tasks.start` checks again against the stored proposal.
+   */
+  hold?: TaskStartHold | null;
 }
 
 /** Why `tasks.start` proposed instead of starting: `estimate_unknown`, `over_cap` { cap }, or `crew` { code } (a crew.* refusal). */
