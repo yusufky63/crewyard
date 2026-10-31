@@ -78,11 +78,17 @@ export function AssistantPanel({ projectId, onClose }: { projectId: string; onCl
 
   // One polite announcement per finished reply, never per streamed word (DESIGN.md §8).
   const prevState = useRef(v?.state);
+  const fresh = view.isFetchedAfterMount;
   useEffect(() => {
+    // A cached view from before this panel opened is not a change you just saw happen.
+    if (!fresh) {
+      prevState.current = undefined;
+      return;
+    }
     if (prevState.current === "working" && v?.state === "waiting") setAnnounce(t("announce.replied", { count: drafts.filter((d) => d.status === "open").length }));
     if (v && v.state === "idle" && prevState.current && prevState.current !== "idle" && v.ended) setAnnounce(t(`notice.ended.${v.ended}`));
     prevState.current = v?.state;
-  }, [v, drafts, t]);
+  }, [v, drafts, t, fresh]);
 
   const set = (next: AssistantView) => qc.setQueryData(key, next);
 
