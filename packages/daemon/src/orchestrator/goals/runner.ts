@@ -314,6 +314,11 @@ export class GoalRunner extends Part {
   private readonly holds = new Map<string, Reason>();
   /** The status each goal was last announced with, so goals.changed goes out when it changes. */
   private readonly announced = new Map<string, string>();
+  /**
+   * Goals that finished (Merged, or Done with no branch), by the approval they finished under: the
+   * pass skips them until a new revision is approved, so old goals cost nothing on every tick.
+   */
+  private readonly settled = new Map<string, string | null>();
   /** One approval per goal at a time; a second click waits and then reads the approved revision. */
   private readonly approving = new Map<string, Promise<void>>();
 
@@ -527,6 +532,7 @@ export class GoalRunner extends Part {
     if (this.closed) return { held, rerun };
     const pausedAll = this.pausedAll();
     for (const goal of this.rows.activeGoals()) {
+      if (this.settled.has(goal.id) && this.settled.get(goal.id) === goal.approved_at) continue;
       try {
         await this.passGoal(goal, pausedAll, held, rerun);
       } catch (err) {
@@ -536,14 +542,20 @@ export class GoalRunner extends Part {
     return { held, rerun };
   }
 
+  /**
+   * Released tasks are ordinary approved tasks and go on; the ones the goal has not released yet
+   * show why. A paused goal stays paused even when its pass failed.
+   */
   private failGoal(goal: GoalRow, err: unknown, held: Set<string>): void {
     try {
       const code = err instanceof GoalError ? err.code : errorCode(err);
+      const fresh = this.rows.goal(goal.id);
+      const paused = fresh.paused_at !== null || this.pausedAll().on;
       for (const t of this.rows.tasks(goal.id)) {
-        held.add(t.task_id);
-        this.hold(goal, t.task_id, { code: "goal.halted" });
+        if (paused) held.add(t.task_id);
+        if (t.accepted === 1 && t.released_at === null && t.discarded_at === null) this.hold(goal, t.task_id, { code: "goal.error", params: { code } });
       }
-      if (goal.integration_task_id) held.add(goal.integration_task_id);
+      if (paused && goal.integration_task_id) held.add(goal.integration_task_id);
       this.events.append(goal.project_id, goal.id, "goal.error", { code, detail: err instanceof Error ? err.message.slice(0, 300) : null });
       this.rows.raiseDecision(goal, "stuck", null, { detail: code });
       this.announce(goal.id, "decision");
@@ -553,10 +565,9 @@ export class GoalRunner extends Part {
   }
 
   private async passGoal(goal: GoalRow, pausedAll: PausedAll, held: Set<string>, rerun: Set<string>): Promise<void> {
-    this.recordFailures(goal);
-    goal = this.stopRule(goal);
     const all = this.rows.tasks(goal.id);
-    // Pause means pause: no new run of any goal task starts, nothing is released or merged.
+    // Pause means pause: no new run of any goal task starts, nothing is released or merged. It is
+    // checked first, so nothing that could fail later in the pass can let a paused goal's step start.
     if (goal.paused_at || pausedAll.on) {
       const reason: Reason = { code: goal.paused_at ? "goal.paused" : "goal.paused_all" };
       for (const t of all) {
@@ -567,6 +578,8 @@ export class GoalRunner extends Part {
       this.announce(goal.id, "paused");
       return;
     }
+    this.recordFailures(goal);
+    goal = this.stopRule(goal);
     await this.mergeFinished(goal);
     let facts = this.facts(goal.id);
     this.prerequisiteDecisions(goal, facts);
@@ -776,6 +789,7 @@ export class GoalRunner extends Part {
   private finishedCheck(goal: GoalRow): void {
     const s = this.state(goal.id);
     if (s.status !== "finished" && s.status !== "ready_for_review") return;
+    if (s.status === "finished") this.settled.set(goal.id, goal.approved_at);
     const kind = s.status === "finished" ? `finished:${s.outcome}` : "ready_for_review";
     if (this.events.read(goal.id, "goal.finished").some((e) => e.payload.state === kind)) return;
     this.events.append(goal.project_id, goal.id, "goal.finished", { state: kind });

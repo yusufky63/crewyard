@@ -270,6 +270,7 @@ describe("one goal's failure", () => {
     expect(released(store, ids.a!)).toBe(false);
     const stuck = decisions(store, goalId).find((d) => d.kind === "stuck")!;
     expect(JSON.parse(stuck.payload)).toEqual({ detail: "worktree.path_taken" });
+    expect(o.get(ids.a!).goal!.hold).toEqual({ code: "goal.error", params: { code: "worktree.path_taken" } });
 
     const other = await o.propose({ projectId: project.id, title: "Bağımsız araştırma", kind: "research", size: "S", mode: "solo" });
     await o.approve({ taskId: other.id });
@@ -717,6 +718,98 @@ describe("the goal branch and its last review", () => {
     expect(o.get(ids.y!).status).toBe("cancelled");
     expect(row<{ d: string | null }>(store, "select discarded_at as d from goal_tasks where task_id = ?", ids.y!).d).not.toBeNull();
     await waitFor(() => o.goals.state(goalId).status === "ready_for_review", 40_000);
+  });
+});
+
+/** A revision of cause `add` with one task you wrote, as `goals.addTask` (work item 3) stores it. */
+async function addRevision(o: Orchestrator, store: Store, projectId: string, goalId: string, spec: Spec, position: number): Promise<string> {
+  const planId = randomUUID();
+  q(store, "insert into goal_plans (id, goal_id, revision, cause, plan, created_at) values (?, ?, 2, 'add', ?, ?)", planId, goalId, JSON.stringify({ summary: "", tasks: [] }), new Date().toISOString());
+  const t = await flowOf(o).propose(
+    { projectId, title: spec.title, kind: spec.kind, size: "S", mode: "solo", fallback: "manual" },
+    {
+      inTx: (taskId) =>
+        q(
+          store,
+          "insert into goal_tasks (task_id, goal_id, plan_id, key, position, mode, priority, basis, basis_matched, reason, paths, writes) values (?, ?, ?, ?, ?, 'solo', 'medium', '', 0, '', ?, 1)",
+          taskId,
+          goalId,
+          planId,
+          spec.key,
+          position,
+          JSON.stringify(spec.paths ?? []),
+        ),
+    },
+  );
+  for (const d of spec.deps ?? []) q(store, "insert into goal_task_deps (goal_id, task_id, depends_on, source) values (?, ?, ?, 'user')", goalId, t.id, d);
+  return t.id;
+}
+
+describe("revisions after approval", () => {
+  it("runs the last review again when an added task joins after it passed, and kept tasks keep their shares", async () => {
+    const { o, store, project, adapter } = await setup({ pick: writer({ "[A]": { file: "a.txt", text: "A\n" }, "[E]": { file: "e.txt", text: "E\n" } }) });
+    const { goalId, ids } = await seedGoal(o, store, project.id, [{ key: "a", title: "[A] Sunucu", kind: "code" }]);
+    await approve(o, goalId, ["a"], { budgetUsd: 20 });
+    await waitFor(() => o.goals.state(goalId).status === "ready_for_review", 40_000);
+    const shareA = row<{ b: number }>(store, "select budget_usd as b from tasks where id = ?", ids.a!).b;
+    const integration = goalRow(store, goalId).integration_task_id!;
+    const shareReview = row<{ b: number }>(store, "select budget_usd as b from tasks where id = ?", integration).b;
+
+    const e = await addRevision(o, store, project.id, goalId, { key: "e", title: "[E] Ek iş", kind: "code", paths: ["e.txt"] }, 1);
+    expect(o.goals.state(goalId)).toMatchObject({ status: "needs_you", reason: "plan_ready" });
+    // The first approval gave the whole budget out; adding work needs a larger one.
+    expect(await goalRefusal(approve(o, goalId, ["e"], { revision: 2, budgetUsd: 20 }))).toMatchObject({ code: "goal.over_budget" });
+    await approve(o, goalId, ["e"], { revision: 2, budgetUsd: 40 });
+    await waitFor(() => joinedSha(store, e), 40_000);
+    await waitFor(() => adapter.started.filter((s) => s.role === "reviewer").length === 2 && o.goals.state(goalId).status === "ready_for_review", 40_000);
+    const head = (await git(project.path, "rev-parse", goalBranch(store, goalId))).trim();
+    expect(o.get(integration).loop.verdicts.map((v) => v.headSha)).toEqual([expect.any(String), head]);
+    expect(row<{ b: number }>(store, "select budget_usd as b from tasks where id = ?", ids.a!).b).toBe(shareA);
+    expect(row<{ b: number }>(store, "select budget_usd as b from tasks where id = ?", integration).b).toBe(shareReview);
+    expect(row<{ b: number }>(store, "select budget_usd as b from tasks where id = ?", e).b).toBeGreaterThan(0);
+  });
+
+  it("orders overlapping writers again when the task between them is skipped, and keeps a side-by-side pair", async () => {
+    const { o, store, project } = await setup();
+    const { goalId, ids } = await seedGoal(o, store, project.id, [
+      { key: "a", title: "[A] Kimlik", kind: "code", paths: ["src/auth/"] },
+      { key: "b", title: "[B] Oturum", kind: "code", paths: ["src/auth/session.ts"], overlap: ["a"] },
+      { key: "c", title: "[C] Çıkış", kind: "code", paths: ["src/auth/logout.ts"], overlap: ["b"] },
+      // Overlaps a, but you chose to run it side by side: no edge.
+      { key: "s", title: "[S] Yan yana", kind: "code", paths: ["src/auth/**"] },
+    ]);
+    await o.goals.pauseAll(true);
+    await approve(o, goalId, ["a", "c", "s"]);
+    const deps = rows<{ task_id: string; depends_on: string; source: string }>(store, "select task_id, depends_on, source from goal_task_deps where goal_id = ?", goalId);
+    expect(deps).toContainEqual({ task_id: ids.c, depends_on: ids.a, source: "overlap" });
+    expect(deps.filter((d) => d.task_id === ids.s || d.depends_on === ids.s)).toEqual([]);
+    await o.goals.pauseAll(false);
+    await waitFor(() => joinedSha(store, ids.c!) && joinedSha(store, ids.s!), 40_000);
+    const at = (id: string) => row<{ released_at: string; joined_at: string }>(store, "select released_at, joined_at from goal_tasks where task_id = ?", id);
+    // c starts only after a joined; s ran beside a from the start.
+    expect(at(ids.c!).released_at >= at(ids.a!).joined_at).toBe(true);
+    expect(at(ids.s!).released_at <= at(ids.a!).joined_at).toBe(true);
+    const held = rows<{ payload: string }>(store, "select payload from events where kind = 'goal.task_held'").map((r) => JSON.parse(r.payload) as { taskId: string; reason: { code: string; params?: Record<string, unknown> } });
+    expect(held).toContainEqual({ goalId, taskId: ids.c, reason: { code: "goal.waits_overlap", params: { task: "01", taskId: ids.a } } });
+  });
+});
+
+describe("the task list", () => {
+  it("marks goal tasks, the planning task and the integration task, and leaves other tasks alone", async () => {
+    const { o, store, project } = await setup();
+    const planning = await o.propose({ projectId: project.id, title: "Hedefi planla", kind: "research", size: "M" });
+    const { goalId, ids } = await seedGoal(o, store, project.id, [{ key: "a", title: "[A] Sunucu", kind: "code" }]);
+    q(store, "update goal_plans set plan_task_id = ? where goal_id = ?", planning.id, goalId);
+    const plain = await o.propose({ projectId: project.id, title: "Sıradan iş", kind: "research", size: "S" });
+    // Before approval the plan's tasks show only inside the goal.
+    expect(o.get(ids.a!).goal).toMatchObject({ waiting: false, hidden: true });
+    await o.goals.pauseAll(true);
+    await approve(o, goalId, ["a"]);
+    const list = new Map(o.list(project.id).map((t) => [t.id, t]));
+    expect(list.get(ids.a!)!.goal).toMatchObject({ goalId, key: "a", number: 1, waiting: true, hidden: false, joined: false, role: "task", hold: { code: "goal.paused_all" } });
+    expect(list.get(planning.id)!.goal).toEqual({ goalId, key: "plan", number: 0, waiting: false, hold: null, joined: false, hidden: true, role: "planning" });
+    expect(list.get(goalRow(store, goalId).integration_task_id!)!.goal).toMatchObject({ role: "integration", hidden: true });
+    expect("goal" in list.get(plain.id)!).toBe(false);
   });
 });
 
