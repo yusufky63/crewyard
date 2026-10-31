@@ -6,6 +6,7 @@ import type { AgentEvent, LimitNoticePayload, TasksTopics } from "@crewyard/core
 import type { NavigateTarget } from "../../../../shared/api.ts";
 import { useNav } from "../../nav.ts";
 import { FIXTURE, fixtureNotices } from "./fixture.ts";
+import { useGoalNav } from "./goalNav.ts";
 
 // Live state from the daemon's push topics. Facts stay in the daemon and are re-read with
 // tasks.get; this store only keeps what exists nowhere else: the latest limit notices and what
@@ -58,6 +59,7 @@ export function openTarget(target: NavigateTarget): void {
   if (target.projectId && target.projectId !== nav.projectId) nav.openProject(target.projectId);
   if (!useNav.getState().projectId) return;
   if (target.taskId) nav.selectTask(target.taskId);
+  if (target.goalId) useGoalNav.getState().open(target.goalId);
   nav.go(target.screen);
 }
 

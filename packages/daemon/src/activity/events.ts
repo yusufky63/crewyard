@@ -51,6 +51,10 @@ export function listActivity(db: DatabaseSync, f: ActivityEventFilter & { before
     where.push("run_id = ?");
     args.push(f.runId);
   }
+  if (f.goalId) {
+    where.push("json_extract(payload, '$.goalId') = ?");
+    args.push(f.goalId);
+  }
   if (f.kind) {
     if (f.kind.endsWith(".")) {
       where.push("kind like ? escape '\\'");

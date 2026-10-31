@@ -27,6 +27,7 @@
   "context": "{{open}} need your answer · {{info}} for your information",
   "listLabel": "Requests",
   "empty": "Nothing needs you right now.",
+  "emptyGoals": "No questions or approvals. The goals below need you.",
   "forInfo": "For your information",
   "errors": {
     "load": "Requests could not be loaded from the background service."

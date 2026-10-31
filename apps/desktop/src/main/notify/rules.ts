@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { EMPTY_ALERT, evaluate, inQuietHours, type AlertState, type LimitNoticePayload, type NotificationSettings, type RequestAnswer, type RequestView, type TasksTopics } from "@crewyard/core";
+import { EMPTY_ALERT, evaluate, inQuietHours, type AlertState, type GoalChangeCause, type GoalNeedsReason, type GoalOutcome, type GoalStatus, type LimitNoticePayload, type NotificationSettings, type RequestAnswer, type RequestView, type TasksTopics } from "@crewyard/core";
 
 // What becomes a Windows toast, which buttons it carries, and whether a button press may act
 // (PLAN.md §7.3, §11). Pure, so every rule has a test; toaster.ts does the Electron part.
@@ -12,9 +12,13 @@ import { EMPTY_ALERT, evaluate, inQuietHours, type AlertState, type LimitNoticeP
 export interface ToastState {
   alerts: Map<string, AlertState>;
   requests: Set<string>;
+  /** Goal toasts already raised, per goal (see goalToast). */
+  goals: Map<string, Set<GoalToastKind>>;
+  /** Goals with a `goals.changed` seen since the daemon last started (see goalMayToast). */
+  goalsLive: Set<string>;
 }
 
-export const emptyToastState = (): ToastState => ({ alerts: new Map(), requests: new Set() });
+export const emptyToastState = (): ToastState => ({ alerts: new Map(), requests: new Set(), goals: new Map(), goalsLive: new Set() });
 
 /** The context window belongs to one run; plan windows belong to the account. */
 const alertKey = (n: LimitNoticePayload) => `${n.profileId}|${n.window}|${n.window === "context" ? (n.runId ?? "") : ""}`;
@@ -64,6 +68,108 @@ export class AutopilotBatches {
     return n;
   }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Orchestra goals (docs/adr/0019, design §3.6). A goal toasts at most once for each of: the first
+// time it needs you, its last review passing ("ready for a pull request"), a halt, and finishing.
+// Its tasks raise no toast of their own when they finish (Orca #30058): Crewyard has no per-task
+// "done" toast at all, and `toastTopic` keeps it so, since `tasks.changed` never toasts. A goal
+// task's Inbox request still toasts as any request does, labelled with its goal, so a goal that
+// needs you because of a request leaves the request's toast to say it.
+
+export type GoalToastKind = "needs_you" | "ready" | "halted" | "finished";
+
+/** The topics that may raise a toast; every other daemon event, task changes included, never does. */
+export type ToastTopic = "request" | "limit" | "autopilot" | "goal";
+
+export function toastTopic(topic: string): ToastTopic | null {
+  switch (topic) {
+    case "requests.changed":
+      return "request";
+    case "limits.notice":
+      return "limit";
+    case "autopilot.changed":
+      return "autopilot";
+    case "goals.changed":
+      return "goal";
+    default:
+      return null;
+  }
+}
+
+/** Most goals a toast state remembers; the oldest are dropped first, as the grants are. */
+const MAX_GOALS = 500;
+
+/**
+ * Causes the goal runner announces from its scheduling pass, without a new fact behind them. After
+ * a daemon start the runner's memory of what it announced is empty, so its first pass announces
+ * every approved goal again with one of these, finished and ready ones included. The first such
+ * event per goal after a start is a baseline, never a toast.
+ */
+const PASS_CAUSES = new Set<GoalChangeCause>(["released", "held", "paused", "decision"]);
+
+/** The daemon (re)started: the next pass announces every goal again, and those are baselines. */
+export function goalsRestarted(state: ToastState): void {
+  state.goalsLive.clear();
+}
+
+function goalFired(state: ToastState, goalId: string, kinds: GoalToastKind[]): void {
+  const fired = state.goals.get(goalId) ?? new Set<GoalToastKind>();
+  for (const k of kinds) fired.add(k);
+  state.goals.delete(goalId);
+  state.goals.set(goalId, fired);
+  while (state.goals.size > MAX_GOALS) state.goals.delete(state.goals.keys().next().value as string);
+}
+
+/**
+ * A goal change worth reading the goal for. Ready, finished and halted toast only on the runner's
+ * own causes for them, which it raises once per transition and dedupes across restarts through the
+ * stored `goal.finished` and `goal.halted` events. "Needs you" toasts on any cause except a
+ * restart's baseline: the first pass event for a goal after a start records that it already needs
+ * you, so a launch never repeats the toasts of goals that needed you before it.
+ */
+export function goalMayToast(state: ToastState, ev: { goalId: string; status: GoalStatus; cause: GoalChangeCause }): boolean {
+  if (ev.cause === "collapsed") return false;
+  const first = !state.goalsLive.has(ev.goalId);
+  if (first) {
+    state.goalsLive.add(ev.goalId);
+    while (state.goalsLive.size > MAX_GOALS) state.goalsLive.delete(state.goalsLive.values().next().value as string);
+  }
+  const fired = state.goals.get(ev.goalId);
+  if (ev.cause === "halted") return !fired?.has("halted");
+  if (ev.cause === "finished") return ev.status === "ready_for_review" ? !fired?.has("ready") : ev.status === "finished" ? !fired?.has("finished") : false;
+  if (ev.status !== "needs_you") return false;
+  if (first && PASS_CAUSES.has(ev.cause)) {
+    goalFired(state, ev.goalId, ["needs_you"]);
+    return false;
+  }
+  return !fired?.has("needs_you");
+}
+
+/**
+ * Which toast a goal raises now, recording it so it never raises the same kind twice. Reads the
+ * goal as the daemon has it now (status, reason, outcome), never the event's word alone; `cause`
+ * is the event's, which says whether this is the runner's announcement of a halt or a finish.
+ */
+export function goalToast(state: ToastState, goalId: string, g: { status: GoalStatus; reason: GoalNeedsReason | null; outcome: GoalOutcome | null }, cause: GoalChangeCause): GoalToastKind | null {
+  const fired = state.goals.get(goalId) ?? new Set<GoalToastKind>();
+  let kind: GoalToastKind | null = null;
+  if (cause === "halted") kind = g.status === "needs_you" && !fired.has("halted") ? "halted" : null;
+  else if (cause === "finished") {
+    if (g.status === "ready_for_review") kind = fired.has("ready") ? null : "ready";
+    else if (g.status === "finished" && g.outcome !== "collapsed") kind = fired.has("finished") ? null : "finished";
+  } else if (g.status === "needs_you" && g.reason !== "halted" && g.reason !== "request") {
+    // The request toasts on its own; the goal's first "needs you" stays for something only the goal says.
+    kind = fired.has("needs_you") ? null : "needs_you";
+  }
+  if (kind === null) return null;
+  // A halt is the goal needing you; it is its first time too.
+  goalFired(state, goalId, kind === "halted" ? ["halted", "needs_you"] : [kind]);
+  return kind;
+}
+
+/** "01": a goal task's number as the toast's goal label shows it ("Passkeys · 02 Server"). */
+export const goalTaskNumber = (n: number) => String(n).padStart(2, "0");
 
 // ---------------------------------------------------------------------------------------------
 // Quiet hours (inQuietHours, in core) and mute. Suppressed toasts are dropped, not queued: the Inbox and the tray count
@@ -208,6 +314,8 @@ export interface ToastTarget {
   projectId: string | null;
   taskId: string | null;
   requestId: string | null;
+  /** A goal toast opens that goal's view (design §3.3). */
+  goalId?: string | null;
 }
 
 export function activationArgs(action: ToastAction, token: string | null, target: ToastTarget): string {
@@ -216,6 +324,7 @@ export function activationArgs(action: ToastAction, token: string | null, target
   if (target.projectId) q.set("p", target.projectId);
   if (target.taskId) q.set("k", target.taskId);
   if (target.requestId) q.set("r", target.requestId);
+  if (target.goalId) q.set("g", target.goalId);
   return PREFIX + q.toString();
 }
 
@@ -238,7 +347,8 @@ export function parseActivation(raw: unknown): Activation | null {
     return v !== null && ID.test(v) ? v : null;
   };
   const t = q.get("t");
-  return { action, token: t !== null && TOKEN.test(t) ? t : null, target: { screen, projectId: id("p"), taskId: id("k"), requestId: id("r") } };
+  const goalId = id("g");
+  return { action, token: t !== null && TOKEN.test(t) ? t : null, target: { screen, projectId: id("p"), taskId: id("k"), requestId: id("r"), ...(goalId ? { goalId } : {}) } };
 }
 
 // ---------------------------------------------------------------------------------------------

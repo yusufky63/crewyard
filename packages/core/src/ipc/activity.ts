@@ -17,6 +17,8 @@ export interface ActivityEventFilter {
   runId?: string | null;
   /** Exact kind (`run.tool_call`) or a family ending in a dot (`run.`). */
   kind?: string | null;
+  /** Only events whose payload names this Orchestra goal (`goal.*` events carry `goalId`, task id null). */
+  goalId?: string | null;
   /** Include streamed text (message and thought deltas), which otherwise drowns everything else. */
   stream?: boolean;
 }

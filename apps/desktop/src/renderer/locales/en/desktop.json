@@ -48,7 +48,27 @@
     "limitPct": "{{window}} at {{pct}}%",
     "limitUnknown": "{{window}}, usage unknown",
     "test": "Test notification",
-    "testBody": "Notifications from Crewyard show like this."
+    "testBody": "Notifications from Crewyard show like this.",
+    "goalNeedsYouTitle": "{{goal}}: needs you",
+    "goalReason": {
+      "plan_ready": "The plan is ready for you to review.",
+      "plan_failed": "Planning failed. Retry it or run the goal as one task.",
+      "halted": "Tasks kept failing. Resume, replan or stop it.",
+      "decision": "A decision waits for you in the goal.",
+      "request": "A task waits for your answer.",
+      "failed": "A task failed. Its dependents wait for you.",
+      "report": "A report waits for you to read and accept it.",
+      "stuck": "No task can start. Choose how to go on.",
+      "empty": "No accepted task is left. Replan or stop it."
+    },
+    "goalReadyTitle": "{{goal}}: ready for a pull request",
+    "goalReadyBody": "The last review passed on the goal branch. You open the pull request.",
+    "goalHaltedTitle": "{{goal}}: halted",
+    "goalHaltedBody": "Tasks kept failing. Resume, replan or stop it.",
+    "goalFinishedTitle": "{{goal}}: finished",
+    "goalMerged": "Its pull request was merged.",
+    "goalDone": "Every task is done.",
+    "goalTask": "{{goal}} · {{number}} {{task}}"
   },
   "button": {
     "approve": "Approve once",

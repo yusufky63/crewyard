@@ -27,6 +27,7 @@
   "context": "{{open}} yanıt bekliyor · {{info}} bilgi notu",
   "listLabel": "İstekler",
   "empty": "Şu an sizi bekleyen bir şey yok.",
+  "emptyGoals": "Soru ya da onay yok. Aşağıdaki hedefler sizi bekliyor.",
   "forInfo": "Bilginize",
   "errors": {
     "load": "İstekler arka plan hizmetinden okunamadı."

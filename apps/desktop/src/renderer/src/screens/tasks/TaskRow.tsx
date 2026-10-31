@@ -8,7 +8,8 @@ import { TaskPullChip } from "../github/TaskPull.tsx";
 import { act, useErrorText, useWork } from "./data.ts";
 import { useActivity } from "./live.ts";
 import { ReportLine } from "./TaskReport.tsx";
-import { currentRun, diffTotals, elapsedMs, formatDuration, latestRunOf, limitBanner, profileNames, runDuration, runnersOf, statusLine, stepState } from "./model.ts";
+import { GoalChip, GoalTaskLabel } from "./GoalRow.tsx";
+import { currentRun, diffTotals, elapsedMs, formatDuration, goalRowStatus, latestRunOf, limitBanner, profileNames, runDuration, runnersOf, statusLine, stepState } from "./model.ts";
 import { ConfirmButton, ErrorLine, LimitBanner, StatusLabel, useFormat, useNow } from "./parts.tsx";
 
 export function DiffStat({ stat }: { stat: { files: number; added: number; removed: number } }) {
@@ -28,7 +29,10 @@ export function DiffStat({ stat }: { stat: { files: number; added: number; remov
 
 /**
  * DESIGN.md `TaskRow`: title, branch, runner marks, elapsed and one status line; the expanded
- * body lists the crew's steps. Rows never expand on their own when events arrive.
+ * body lists the crew's steps. Rows never expand on their own when events arrive. A task of an
+ * Orchestra goal (docs/adr/0019) carries its goal chip, says why it waits instead of "Waiting for
+ * approval", and never offers Review crew: it starts with its plan. Hidden goal tasks (planning,
+ * the last review) draw nothing here; they show inside the goal.
  */
 export function TaskRow({ summary, requests }: { summary: TaskSummary; requests: RequestView[] }) {
   const f = useFormat();
@@ -38,12 +42,14 @@ export function TaskRow({ summary, requests }: { summary: TaskSummary; requests:
   const [error, setError] = useState<string | null>(null);
   const { taskId: selected, selectTask, go } = useNav();
   const inspect = useInspector((s) => s.open);
-  const detailQ = useWork("tasks.get", { taskId: summary.id });
+  const hidden = summary.goal?.hidden === true;
+  const detailQ = useWork("tasks.get", { taskId: summary.id }, { enabled: !hidden });
   const notices = useActivity((s) => s.notices);
   const live = summary.activeRuns > 0;
   const now = useNow(1000, live);
   const detail = detailQ.data;
 
+  if (hidden) return null;
   if (!detail) {
     return (
       <div className="tk-row" aria-busy="true">
@@ -53,6 +59,8 @@ export function TaskRow({ summary, requests }: { summary: TaskSummary; requests:
   }
 
   const line = statusLine(detail, requests);
+  const goalRef = summary.goal ?? detail.goal ?? null;
+  const goalLine = goalRowStatus(goalRef, detail.status);
   const run = currentRun(detail);
   const elapsed = elapsedMs(detail, now);
   const diff = diffTotals(detail);
@@ -101,6 +109,7 @@ export function TaskRow({ summary, requests }: { summary: TaskSummary; requests:
                 {f.t("row.agents", { count: detail.crew?.members.length ?? runners.length })}
               </span>
             )}
+            {goalRef && <GoalChip goalRef={goalRef} />}
             <span>{f.t(`kind.${detail.kind}`)}</span>
             {detail.bestOf && (
               <span>
@@ -122,10 +131,11 @@ export function TaskRow({ summary, requests }: { summary: TaskSummary; requests:
         </button>
       </div>
       <div className="tk-status">
-        <StatusLabel line={line} />
+        {goalLine ? <GoalTaskLabel line={goalLine} /> : <StatusLabel line={line} />}
         {run && !run.endedAt && <span className="muted tk-small">{`${f.runner(run.runner)} · ${names.get(run.profileId)?.alias ?? run.profileId}${run.model ? ` · ${run.model}` : ""}`}</span>}
         {diff && <DiffStat stat={diff} />}
-        {detail.kind === "code" && (detail.status === "review" || detail.status === "merged") && (
+        {/* A goal task's branch is merged into the goal branch, never pushed or pulled on its own. */}
+        {detail.kind === "code" && !goalRef && (detail.status === "review" || detail.status === "merged") && (
           <TaskPullChip
             taskId={detail.id}
             onOpen={() => {
@@ -135,7 +145,7 @@ export function TaskRow({ summary, requests }: { summary: TaskSummary; requests:
           />
         )}
         <div className="end">
-          {detail.status === "proposed" && (
+          {detail.status === "proposed" && !goalRef && (
             <Button size="sm" onClick={() => selectTask(detail.id)}>
               {f.t("row.reviewCrew")}
             </Button>
