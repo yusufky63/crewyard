@@ -1,26 +1,29 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { X } from "lucide-react";
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
+import { PanelBottomClose, PanelBottomOpen } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Splitter } from "@crewyard/ui";
-import { keyText, matches } from "../../keys.ts";
+import { ariaKeys, keyText, matches } from "../../keys.ts";
 import { useNav } from "../../nav.ts";
 import { DRAWER_TABS, usePrefs, type DrawerTab } from "../../prefs.ts";
 import { AssistantPanel } from "../../screens/tasks/Assistant.tsx";
 import { DRAWER, DRAWER_ID, drawerBounds } from "../layout.ts";
 import { EventsPanel } from "./EventsPanel.tsx";
 import { LogsPanel } from "./LogsPanel.tsx";
-import { hideAfterAssistant } from "./panel.ts";
+import { collapsePanel, hideAfterAssistant, togglePanel } from "./panel.ts";
 import { ProblemsTab, useProblems } from "./ProblemsTab.tsx";
 import { TerminalTab } from "./TerminalTab.tsx";
 import { useTerminals } from "./terminals.ts";
-import { focusToggle, takeFocus } from "./focus.ts";
+import { PANEL_TOGGLE_ID, takeFocus } from "./focus.ts";
 import "./activity.css";
 
 // The bottom panel under the main view (DESIGN.md §4): the task assistant, terminals, the
-// project's events, Crewyard's own logs and the project's problems, one tab each. Closed by
-// default; closing it or switching tabs only hides a view, so nothing it shows stops. The two
-// exceptions say so on their own controls: the assistant's `Stop and close` (docs/adr/0014) and a
-// terminal's own close, which asks first (docs/adr/0016). Its views read only while it is open.
+// project's events, Crewyard's own logs and the project's problems, one tab each. Inside a project
+// it never closes: the toggle at the right end of its head collapses it to that head strip, whose
+// tabs and counts stay, and expands it again to its last height (owner, 2026-10-31: "tam
+// kapanmasın"). Collapsing or switching tabs only hides a view, so nothing it shows stops, the
+// assistant included. Two controls stop what they show and say so: the assistant's `Stop and close`
+// (docs/adr/0014) and a terminal's own close, which asks first (docs/adr/0016). Its views read only
+// while it is expanded; the strip's counts keep reading.
 
 function useViewportHeight(): number {
   const [h, setH] = useState(() => window.innerHeight);
@@ -35,6 +38,7 @@ function useViewportHeight(): number {
 function DrawerSplitter() {
   const { t } = useTranslation("activity");
   const height = usePrefs((s) => s.drawerHeight);
+  const open = usePrefs((s) => s.drawerOpen);
   const setHeight = usePrefs((s) => s.setDrawerHeight);
   const setOpen = usePrefs((s) => s.setDrawerOpen);
   const bounds = drawerBounds(useViewportHeight());
@@ -47,18 +51,15 @@ function DrawerSplitter() {
       defaultValue={DRAWER.default}
       edge="start"
       label={t("resize")}
-      title={t("resizeHint")}
+      title={t(open ? "resizeCollapseHint" : "resizeExpandHint")}
       controls={DRAWER_ID}
-      // A drag far under the minimum, or Enter, closes the panel; it opens again at its last height.
+      // A drag far under the minimum, or Enter, collapses the panel to its strip; dragging the strip
+      // up, Enter again or Up expands it to its last height. The handle stays, so focus stays on it.
       collapse={{
-        collapsed: false,
-        size: 0,
-        below: DRAWER.closeBelow,
-        setCollapsed: (c) => {
-          if (!c) return;
-          setOpen(false);
-          focusToggle();
-        },
+        collapsed: !open,
+        size: DRAWER.strip,
+        below: DRAWER.collapseBelow,
+        setCollapsed: (c) => setOpen(!c),
       }}
       onChange={setHeight}
     />
@@ -98,15 +99,24 @@ export function ActivityDrawer() {
   const projectId = useNav((s) => s.projectId);
   const tab: DrawerTab = DRAWER_TABS.includes(stored) ? stored : "events";
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const root = useRef<HTMLElement>(null);
 
-  if (!open || !projectId) return null;
+  // A shortcut that expanded the panel or moved it to a tab puts focus on that tab. A layout effect,
+  // so the assistant's own focus on its message box (a passive effect as it mounts) comes after.
+  useLayoutEffect(() => {
+    if (open) takeFocus(root.current);
+  }, [open, tab]);
 
-  const close = () => {
-    setOpen(false);
-    focusToggle();
+  if (!projectId) return null;
+
+  // A tab click in the strip expands the panel on that tab; focus stays on the tab.
+  const pick = (x: DrawerTab) => {
+    setTab(x);
+    if (!open) setOpen(true);
   };
 
-  // Tabs after the WAI-ARIA tabs pattern: arrows move and select, Home and End jump.
+  // Tabs after the WAI-ARIA tabs pattern: arrows move and select, Home and End jump. In the strip they
+  // select without expanding, so a keyboard pass never opens the panel; Enter or a click does.
   const onTabKey = (e: KeyboardEvent<HTMLButtonElement>) => {
     const n = DRAWER_TABS.length;
     const i = DRAWER_TABS.indexOf(tab);
@@ -117,17 +127,21 @@ export function ActivityDrawer() {
     tabRefs.current[DRAWER_TABS[next]!]?.focus();
   };
 
-  // Esc inside the panel closes it before anything under it (DESIGN.md §7); a menu or dialog
-  // opened from inside handles its own Esc first, and inside a terminal Esc belongs to the shell.
+  // Esc inside the expanded panel collapses it before anything under it closes (DESIGN.md §7); a
+  // menu or dialog opened from inside handles its own Esc first, and inside a terminal Esc belongs to
+  // the shell. In the strip Esc goes on to the layer under it.
   const onKey = (e: KeyboardEvent<HTMLElement>) => {
-    if (!matches(e, "close") || e.defaultPrevented || document.querySelector("dialog[open], [role=menu]")) return;
+    if (!open || !matches(e, "close") || e.defaultPrevented || document.querySelector("dialog[open], [role=menu]")) return;
     if ((e.target as HTMLElement).closest(".xterm")) return;
     e.preventDefault();
-    close();
+    collapsePanel();
   };
 
+  const toggleTitle = t(open ? "toggle.collapse" : "toggle.expand", { keys: keyText("drawer") });
+  const ToggleIcon = open ? PanelBottomClose : PanelBottomOpen;
+
   return (
-    <section id={DRAWER_ID} className="drawer" aria-label={t("label")} onKeyDown={onKey} ref={takeFocus}>
+    <section id={DRAWER_ID} className="drawer" data-collapsed={open ? undefined : ""} aria-label={t("label")} onKeyDown={onKey} ref={root}>
       <DrawerSplitter />
       <div className="drawer-head">
         <div className="drawer-tabs" role="tablist" aria-label={t("tabsLabel")}>
@@ -141,9 +155,9 @@ export function ActivityDrawer() {
               role="tab"
               id={`drawer-tab-${x}`}
               aria-selected={tab === x}
-              aria-controls={`drawer-panel-${x}`}
+              aria-controls={open && tab === x ? `drawer-panel-${x}` : undefined}
               tabIndex={tab === x ? 0 : -1}
-              onClick={() => setTab(x)}
+              onClick={() => pick(x)}
               onKeyDown={onTabKey}
               data-drawer-tab={tab === x ? "active" : undefined}
             >
@@ -153,18 +167,31 @@ export function ActivityDrawer() {
             </button>
           ))}
         </div>
-        <span className="drawer-note muted">{t(tab === "assistant" ? "closeNoteAssistant" : tab === "terminal" ? "closeNoteTerminal" : "closeNote")}</span>
-        <button type="button" className="drawer-x" onClick={close} aria-label={t("close")} title={t("closeTitle", { keys: keyText("drawer") })}>
-          <X size={16} strokeWidth={1.75} aria-hidden="true" />
+        <span className="drawer-note muted">{t(!open ? "collapsedNote" : tab === "assistant" ? "collapseNoteAssistant" : tab === "terminal" ? "collapseNoteTerminal" : "collapseNote")}</span>
+        <button
+          type="button"
+          id={PANEL_TOGGLE_ID}
+          className="drawer-x drawer-toggle"
+          onClick={togglePanel}
+          aria-label={toggleTitle}
+          title={toggleTitle}
+          aria-expanded={open}
+          aria-controls={DRAWER_ID}
+          aria-keyshortcuts={ariaKeys("drawer")}
+        >
+          <ToggleIcon size={16} strokeWidth={1.75} aria-hidden="true" />
         </button>
       </div>
-      <div className="drawer-body" role="tabpanel" id={`drawer-panel-${tab}`} aria-labelledby={`drawer-tab-${tab}`}>
-        {tab === "assistant" && <AssistantPanel key={projectId} projectId={projectId} docked onClose={hideAfterAssistant} />}
-        {tab === "terminal" && <TerminalTab projectId={projectId} />}
-        {tab === "events" && <EventsPanel projectId={projectId} />}
-        {tab === "logs" && <LogsPanel />}
-        {tab === "problems" && <ProblemsTab projectId={projectId} />}
-      </div>
+      {open && (
+        <div className="drawer-body" role="tabpanel" id={`drawer-panel-${tab}`} aria-labelledby={`drawer-tab-${tab}`}>
+          {/* The assistant's own Stop and close stops it first, then collapses the panel here. */}
+          {tab === "assistant" && <AssistantPanel key={projectId} projectId={projectId} docked onClose={hideAfterAssistant} />}
+          {tab === "terminal" && <TerminalTab projectId={projectId} />}
+          {tab === "events" && <EventsPanel projectId={projectId} />}
+          {tab === "logs" && <LogsPanel />}
+          {tab === "problems" && <ProblemsTab projectId={projectId} />}
+        </div>
+      )}
     </section>
   );
 }

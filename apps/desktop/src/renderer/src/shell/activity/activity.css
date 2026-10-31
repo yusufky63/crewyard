@@ -17,6 +17,11 @@
 .drawer-head .drawer-note { margin-left: auto; }
 .drawer-x { width: 28px; height: 28px; display: grid; place-items: center; flex: none; color: var(--ink-3); }
 .drawer-x:hover { color: var(--ink); background: var(--raised); }
+/* Collapsed (owner, 2026-10-31: "tam kapanmasın"): only the head stays, a 36 px strip whose tabs,
+   counts and toggle work as when expanded; the main view takes the rest. */
+.drawer[data-collapsed] { height: auto; min-height: 0; }
+.drawer[data-collapsed] .drawer-head { border-bottom: 0; }
+.drawer[data-collapsed] .drawer-tabs [role="tab"][aria-selected="true"]::after { display: none; }
 .drawer-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .drawer-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 

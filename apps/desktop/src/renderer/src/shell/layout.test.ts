@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_LAYOUT, drawerBounds, inboxListBounds, inspectorBounds, layoutVars, sanitizeLayout, sidebarColumn } from "./layout.ts";
+import { DEFAULT_LAYOUT, DRAWER, drawerBounds, inboxListBounds, inspectorBounds, layoutVars, sanitizeLayout, sidebarColumn } from "./layout.ts";
 
 describe("sanitizeLayout", () => {
   it("fills the defaults when nothing was stored", () => {
@@ -19,8 +19,11 @@ describe("sanitizeLayout", () => {
 });
 
 describe("drawerBounds", () => {
-  it("keeps the drawer closed by default and leaves the main view its minimum height", () => {
+  it("keeps the panel collapsed to its strip by default and leaves the main view its minimum height", () => {
     expect(DEFAULT_LAYOUT.drawerOpen).toBe(false);
+    // A drag collapses under a height the strip is below and the expanded minimum is above.
+    expect(DRAWER.strip).toBeLessThan(DRAWER.collapseBelow);
+    expect(DRAWER.collapseBelow).toBeLessThan(DRAWER.min);
     expect(DEFAULT_LAYOUT.drawerHeight).toBe(280);
     expect(drawerBounds(1080)).toEqual({ min: 160, max: 640 });
     expect(drawerBounds(720)).toEqual({ min: 160, max: 452 });

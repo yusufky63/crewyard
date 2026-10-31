@@ -17,11 +17,11 @@
   "action": {
     "palette": "Search screens, projects and tasks",
     "sidebar": "Collapse or expand the sidebar",
-    "drawer": "Show or hide the panel (assistant, terminal, events, logs, problems)",
+    "drawer": "Expand or collapse the panel (assistant, terminal, events, logs, problems); nothing stops",
     "help": "Show this list",
-    "close": "Close the topmost layer: menu, dialog, the panel while focus is in it (not inside a terminal), inspector, then full screen",
+    "close": "Close the topmost layer: menu, dialog, collapse the panel while focus is in it (not inside a terminal), inspector, then full screen",
     "submit": "Submit the composer, approve the focused crew, send a message or comment",
-    "assistant": "Open the panel on the task assistant, or stop it and close the panel",
+    "assistant": "Expand the panel on the task assistant, or collapse it while the assistant keeps running",
     "assistant.send": "Send your message to the task assistant (Shift Enter adds a line)",
     "list.next": "Next item in the list",
     "list.prev": "Previous item in the list",
@@ -47,8 +47,8 @@
     "go.limits": "Limits & usage",
     "go.providers": "Providers",
     "go.github": "GitHub",
-    "panel.terminal": "Open the panel on the terminal, or hide it",
-    "panel.problems": "Open the panel on problems, or hide it",
+    "panel.terminal": "Expand the panel on the terminal, or collapse it",
+    "panel.problems": "Expand the panel on problems, or collapse it",
     "terminal.close": "On a terminal's tab: end its shell (asks while it runs)",
     "terminal.leave": "Inside a terminal: move focus back to its tab (Tab goes to the shell)"
   }

@@ -17,11 +17,11 @@
   "action": {
     "palette": "Ekran, proje ve görev ara",
     "sidebar": "Kenar çubuğunu daralt ya da genişlet",
-    "drawer": "Paneli (asistan, terminal, olaylar, günlükler, sorunlar) göster ya da gizle",
+    "drawer": "Paneli (asistan, terminal, olaylar, günlükler, sorunlar) genişlet ya da daralt; hiçbir şey durmaz",
     "help": "Bu listeyi göster",
-    "close": "En üstteki katmanı kapat: menü, iletişim kutusu, odak içindeyken panel (terminalin içinde değilken), denetçi, sonra tam ekran",
+    "close": "En üstteki katmanı kapat: menü, iletişim kutusu, odak içindeyken paneli daralt (terminalin içinde değilken), denetçi, sonra tam ekran",
     "submit": "Oluşturucuyu gönder, seçili ekibi onayla, mesajı ya da yorumu gönder",
-    "assistant": "Paneli görev asistanında aç ya da asistanı durdurup paneli kapat",
+    "assistant": "Paneli görev asistanında genişlet ya da daralt; asistan çalışmaya devam eder",
     "assistant.send": "Mesajını görev asistanına gönderir (Shift Enter yeni satır ekler)",
     "list.next": "Listede sonraki öğe",
     "list.prev": "Listede önceki öğe",
@@ -47,8 +47,8 @@
     "go.limits": "Limitler ve kullanım",
     "go.providers": "Sağlayıcılar",
     "go.github": "GitHub",
-    "panel.terminal": "Paneli terminalde aç ya da gizle",
-    "panel.problems": "Paneli sorunlarda aç ya da gizle",
+    "panel.terminal": "Paneli terminalde genişlet ya da daralt",
+    "panel.problems": "Paneli sorunlarda genişlet ya da daralt",
     "terminal.close": "Bir terminalin sekmesindeyken: kabuğunu kapat (çalışıyorsa önce sorar)",
     "terminal.leave": "Terminalin içindeyken: odağı sekmesine geri taşı (Tab kabuğa gider)"
   }
