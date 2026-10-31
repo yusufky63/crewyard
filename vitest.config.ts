@@ -11,6 +11,8 @@ export default defineConfig({
       // No fsModuleCache: it keys a transformed file by its own content, so an import.meta.glob in it
       // (locales, screens, the key registry test) kept its old file list and a new file went unseen.
       { extends: true, test: { name: "desktop", root: "apps/desktop", include: ["src/**/*.test.ts", "scripts/**/*.test.ts"], testTimeout, fsModuleCache: false } },
+      // The website (apps/web) keeps its own project config for its server-only alias.
+      "apps/web/vitest.config.ts",
     ],
   },
 });
