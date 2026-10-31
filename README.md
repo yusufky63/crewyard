@@ -143,7 +143,7 @@ The running app also refreshes it from models.dev once a day. Providers → Vers
 
 ## Licence
 
-Crewyard is released under the [MIT License](LICENSE), Copyright (c) 2026 Yusuf. Third-party material and its licences are listed in [NOTICE](NOTICE), and the installer ships `THIRD-PARTY-LICENSES.txt` with every bundled npm package.
+Crewyard is released under the [MIT License](LICENSE), Copyright (c) 2026 Yusuf. Third-party material and its licences are listed in [NOTICE](NOTICE), which also repeats the MIT text because the installer ships it as `NOTICE.txt`, next to `THIRD-PARTY-LICENSES.txt` with every bundled npm package.
 
 Contributions are accepted under the same licence; [CONTRIBUTING.md](CONTRIBUTING.md) has the rules. Report a vulnerability privately as [SECURITY.md](SECURITY.md) describes, never in a public issue.
 
