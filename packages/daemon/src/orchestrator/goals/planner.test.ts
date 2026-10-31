@@ -450,6 +450,25 @@ describe("revising and replanning", () => {
   });
 });
 
+describe("overlap ordering in a replan", () => {
+  it("puts a new task that touches a released task's files after it, never the released task after the new one", async () => {
+    // The planner lists the new task first; a released task is past the release step all the same.
+    const replanned = { summary: "", tasks: [task({ key: "hotfix", title: "Oturum düzeltmesi", paths: ["src/auth/session.ts"] }), PLAN.tasks[0]!] };
+    const env = await setup({ result: planner(ok(PLAN), ok(replanned)) });
+    const { o, store, project } = env;
+    const start = await o.createGoal({ projectId: project.id, text: GOAL });
+    await o.settle();
+    approve(store, start.goalId);
+    const api = byKey(store, start.goalId).get("api")!.task_id;
+    q(store, "update goal_tasks set released_at = 'now' where task_id = ?", api);
+    await o.replanGoal(start.goalId);
+    await o.settle();
+    const hotfix = byKey(store, start.goalId).get("hotfix")!.task_id;
+    expect(rows(store, "select depends_on, source from goal_task_deps where task_id = ?", hotfix)).toEqual([{ depends_on: api, source: "overlap" }]);
+    expect(rows(store, "select 1 from goal_task_deps where task_id = ?", api)).toEqual([]);
+  });
+});
+
 describe("adding a task", () => {
   it("adds one task you wrote as its own revision, with no planner call, ordered after what it waits for", async () => {
     const env = await setup();

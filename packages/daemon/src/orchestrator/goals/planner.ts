@@ -55,7 +55,7 @@ import { Part } from "../part.ts";
 import type { RoleResult } from "../results.ts";
 import { projectRoles } from "../role-files.ts";
 import { GOAL_PLANNER } from "../roles.ts";
-import { correctiveTurn, goalTaskDescription, planningPrompt, waitsForLine, type FrozenTaskFacts, type PlanningPromptInput } from "./prompt.ts";
+import { correctiveTurn, goalTaskDescription, goalTaskNumber, planningPrompt, waitsForLine, type FrozenTaskFacts, type PlanningPromptInput } from "./prompt.ts";
 
 // The Orchestra planner (docs/adr/0019, design §4.3 to §4.5 and §4.10). Each plan revision is one
 // hidden planning task: kind research, one step of the read-only goal-planner role, its own budget
@@ -561,8 +561,14 @@ export class GoalPlanner extends Part {
       const nodes = [...graph].map(([id, dependsOn]) => ({ id, dependsOn }));
       if (!wouldCycle(nodes, e.task, e.on)) add(e.task, e.on, "user");
     }
-    const input = this.overlapInput(goalId).filter((t) => members.has(t.id));
-    for (const e of overlapPairs(input)) add(e.taskId, e.dependsOn, "overlap");
+    // Tasks that stayed count as earlier, so what is new waits for them, never the other way round;
+    // and a task already released or done never gains a prerequisite (it is past the release step).
+    const started = new Set([...frozen.values()].filter((b) => b.frozen !== "edited").map((b) => b.row.task_id));
+    const stayed = new Set([...frozen.values()].map((b) => b.row.task_id));
+    const input = this.overlapInput(goalId)
+      .filter((t) => members.has(t.id))
+      .map((t) => (stayed.has(t.id) ? { ...t, position: t.position - GOAL_LIMITS.maxTasksHard } : t));
+    for (const e of overlapPairs(input)) if (!started.has(e.taskId)) add(e.taskId, e.dependsOn, "overlap");
   }
 
   // ---------------------------------------------------------------- status
@@ -608,7 +614,7 @@ export class GoalPlanner extends Part {
   private taskFacts(r: GoalTaskRow): GoalTaskFacts {
     return {
       id: r.task_id,
-      label: String(r.position + 1).padStart(2, "0"),
+      label: goalTaskNumber(r.position),
       position: r.position,
       priority: r.priority,
       writes: r.writes === 1,

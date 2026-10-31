@@ -170,10 +170,10 @@ export function goalTaskDescription(t: Pick<GoalPlan["tasks"][number], "descript
 /**
  * The line a goal task's description ends with while it waits for others. An older build after a
  * rollback shows waiting goal tasks as ordinary proposals with no dependency, so the order stays
- * readable there (design §4.5). Numbers are plan positions, as the goal view shows them ("01").
+ * readable there (design §4.5). `positions` are 0-based plan positions, shown as the goal view numbers them ("01").
  */
-export function waitsForLine(numbers: number[]): string {
-  return numbers.length === 0 ? "" : `[Goal: waits for ${[...new Set(numbers)].sort((a, b) => a - b).map(goalTaskNumber).join(", ")}]`;
+export function waitsForLine(positions: number[]): string {
+  return positions.length === 0 ? "" : `[Goal: waits for ${[...new Set(positions)].sort((a, b) => a - b).map(goalTaskNumber).join(", ")}]`;
 }
 
 /** A plan position (0-based) as the person reads it: "01", "02", ... */
