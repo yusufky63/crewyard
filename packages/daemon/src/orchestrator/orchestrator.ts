@@ -2,13 +2,9 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import {
-  capEvent,
-  EVENT_LIMITS,
   type AgentAdapter,
-  type AgentEvent,
   type Attachment,
   type CandidateView,
-  type EndReason,
   type ForkResult,
   type HandoffStop,
   type HandoffTrigger,
@@ -27,14 +23,14 @@ import {
   type TasksIpc,
   sessionProblemOf,
   type UserInput,
-  utf8Length,
   withAttachments,
 } from "@crewyard/core";
 import type { McpHook } from "../mcp/service.ts";
 import { Bootstrapper } from "../worktrees/bootstrap.ts";
 import { admit, DEFAULT_LIMITS } from "./admission.ts";
-import { OrchestratorContext, type Ended, type LaunchSpec, type Live, type OrchestratorOptions, type ProposeParams } from "./context.ts";
+import { OrchestratorContext, type LaunchSpec, type Live, type OrchestratorOptions, type ProposeParams } from "./context.ts";
 import { Part } from "./part.ts";
+import { RunLifecycle } from "./run-lifecycle.ts";
 import { BestOfRunner } from "./best-of.ts";
 import { Hibernator } from "./hibernation.ts";
 import { LoopRunner } from "./loops.ts";
@@ -47,17 +43,16 @@ import { classifyTask } from "./classify.ts";
 import { eligible, estimateFor, proposeCrew, readOnlyConflict, sameModel, scoreCandidate, sumEstimates } from "./crew.ts";
 import type { MemberRow, ProjectRow, RunRow, TaskRow, WorktreeRow } from "./db.ts";
 import type { Candidate, ProfileDirectory } from "./directory.ts";
-import { errorCode, errorDetail, OrchestratorError, redactDetail } from "./errors.ts";
-import { ensureWorktree, sameDir, taskSlug, writeFileAtomic } from "./git.ts";
+import { errorCode, errorDetail, OrchestratorError } from "./errors.ts";
+import { ensureWorktree, sameDir, taskSlug } from "./git.ts";
 import { reviewContext } from "./loops.ts";
-import { applyResult, outputSchemaFor, type RoleResult } from "./results.ts";
+import { outputSchemaFor } from "./results.ts";
 import type { LimitMonitor } from "./limits.ts";
 import { rolePrompt } from "./prompts.ts";
 import { projectRoles } from "./role-files.ts";
 import { capResetsAt, capWindow, reserveSpend, settleReservation, spendCredential } from "./spend.ts";
 import { joinMessages } from "./queue.ts";
 import { Scheduler } from "./schedules.ts";
-import { snapshotTranscript } from "./transcripts.ts";
 
 export type { OrchestratorOptions } from "./context.ts";
 
@@ -67,9 +62,6 @@ export type { OrchestratorOptions } from "./context.ts";
 
 /** Roles that read a pinned, detached checkout of the commit they review instead of the live worktree. */
 const PINNED_ROLES: RoleId[] = ["reviewer", "security"];
-
-/** Largest tool output kept whole on disk when its event is cut; bigger ones keep only the head. */
-const KEEP_FULL_MAX = 8 * 1024 * 1024;
 
 const pidAlive = (pid: number) => {
   try {
@@ -92,11 +84,11 @@ export class Orchestrator extends Part {
     resolveTarget: (run, profileId, payload) => this.handoffs.resolveTarget(run, profileId, payload),
     performHandoff: (sourceRunId, target, trigger) => this.handoffs.performHandoff(sourceRunId, target, trigger),
     scheduleResume: (runId, resetsAt) => this.fallback.scheduleResume(runId, resetsAt),
-    stopRun: (runId, detail, reason) => this.stopRun(runId, detail, reason),
+    stopRun: (runId, detail, reason) => this.lifecycle.stopRun(runId, detail, reason),
     continuePastCap: (runId) => this.fallback.continuePastCap(runId),
     wakeRun: (runId, cause) => this.hibernator.wakeRun(runId, cause),
     proceed: (runId, text) => this.proceed(runId, text),
-    endRun: (runId, reason, detail) => this.endRun(runId, reason, detail),
+    endRun: (runId, reason, detail) => this.lifecycle.endRun(runId, reason, detail),
     tick: () => this.tick(),
   });
   private readonly budget: Budget = new Budget(this.ctx, {
@@ -107,9 +99,9 @@ export class Orchestrator extends Part {
     closeRequest: (q, by) => this.inbox.closeRequest(q, by),
     offerHandoff: (run, task, mode, info, detail) => this.fallback.offerHandoff(run, task, mode, info, detail),
     launch: (spec) => this.launch(spec),
-    stopRun: (runId, detail, reason) => this.stopRun(runId, detail, reason),
-    endRun: (runId, reason, detail) => this.endRun(runId, reason, detail),
-    copyTranscript: (runId) => this.copyTranscript(runId),
+    stopRun: (runId, detail, reason) => this.lifecycle.stopRun(runId, detail, reason),
+    endRun: (runId, reason, detail) => this.lifecycle.endRun(runId, reason, detail),
+    copyTranscript: (runId) => this.lifecycle.copyTranscript(runId),
     capFor: (taskId, runId, candidate, addUsd, alsoApproved) => this.budget.capFor(taskId, runId, candidate, addUsd, alsoApproved),
     approvalsFor: (runId) => this.budget.approvalsFor(runId),
   });
@@ -132,16 +124,32 @@ export class Orchestrator extends Part {
   });
   private readonly hibernator: Hibernator = new Hibernator(this.ctx, {
     continueRun: (runId, text) => this.continueRun(runId, text),
-    endRun: (runId, reason, detail) => this.endRun(runId, reason, detail),
+    endRun: (runId, reason, detail) => this.lifecycle.endRun(runId, reason, detail),
     onFailure: (runId, detail) => this.fallback.onFailure(runId, detail),
     tick: () => this.tick(),
   });
   private readonly bestOfRunner: BestOfRunner = new BestOfRunner(this.ctx, {
     insertRun: (spec) => this.insertRun(spec),
     boot: (runId, spec) => this.boot(runId, spec),
-    stopRun: (runId, detail, reason) => this.stopRun(runId, detail, reason),
+    stopRun: (runId, detail, reason) => this.lifecycle.stopRun(runId, detail, reason),
     cancel: (taskId) => this.cancel(taskId),
     get: (taskId) => this.get(taskId),
+    tick: () => this.tick(),
+  });
+  private readonly lifecycle: RunLifecycle = new RunLifecycle(this.ctx, {
+    confirmHandoff: (targetRunId) => this.handoffs.confirmHandoff(targetRunId),
+    failHandoff: (handoffId, detail) => this.handoffs.failHandoff(handoffId, detail),
+    onUsage: (run, task, ev) => this.budget.onUsage(run, task, ev),
+    onLimitReached: (runId, info) => this.fallback.onLimitReached(runId, info),
+    onFailure: (runId, detail) => this.fallback.onFailure(runId, detail),
+    insertRequest: (taskId, runId, nativeId, risk, payload) => this.inbox.insertRequest(taskId, runId, nativeId, risk, payload),
+    routeApproval: (run, task, ev) => this.inbox.routeApproval(run, task, ev),
+    closeRequest: (q, by) => this.inbox.closeRequest(q, by),
+    replaceSession: (failedRunId, problem) => this.replaceSession(failedRunId, problem),
+    pinHead: (runId) => this.loopRunner.pinHead(runId),
+    reviewLoop: (reviewerRunId, result) => this.loopRunner.reviewLoop(reviewerRunId, result),
+    dropCheckout: (runId) => this.loopRunner.dropCheckout(runId),
+    refreshVariantDiff: (variantId) => this.bestOfRunner.refreshVariantDiff(variantId),
     tick: () => this.tick(),
   });
 
@@ -452,7 +460,7 @@ export class Orchestrator extends Part {
     if (!task.cancelled_at) {
       this.db.exec("update tasks set cancelled_at = ? where id = ?", this.iso(), task.id);
       for (const r of this.db.runs(task.id).filter((r) => r.ended_at && r.resume_at)) this.fallback.cancelAutoRetry(r.id);
-      for (const r of this.db.runs(task.id).filter((r) => !r.ended_at)) await this.stopRun(r.id, "task_cancelled");
+      for (const r of this.db.runs(task.id).filter((r) => !r.ended_at)) await this.lifecycle.stopRun(r.id, "task_cancelled");
       for (const q of this.db.requests({ taskId: task.id })) this.inbox.closeRequest(q, "system");
       for (const h of this.db.handoffs(task.id).filter((h) => !h.closed_at)) this.handoffs.closeHandoff(h.id, "cancelled", null);
       // The variants of a Best of N group go with their task; their worktrees stay, like the task's.
@@ -542,7 +550,7 @@ export class Orchestrator extends Part {
     const run = this.db.run(runId);
     this.checkSeen(run, seen);
     if (run.ended_at && run.resume_at) this.fallback.cancelAutoRetry(runId);
-    if (!run.ended_at) await this.stopRun(runId, "user_stop");
+    if (!run.ended_at) await this.lifecycle.stopRun(runId, "user_stop");
     return this.db.runView(this.db.run(runId));
   }
 
@@ -811,31 +819,6 @@ export class Orchestrator extends Part {
     return newer ? latest : null;
   }
 
-  /** Copies the runner's own transcript into the task folder (feature scan A18); returns our copy's path. */
-  private async copyTranscript(runId: string): Promise<string | null> {
-    const run = this.db.run(runId);
-    const adapter = this.adapters.get(run.runner);
-    if (!adapter || !run.native_session_id) return null;
-    try {
-      const session = await this.sessionFor(run);
-      if (!session) return null;
-      const copy = await snapshotTranscript({
-        store: this.opts.store,
-        dataDir: this.opts.dataDir,
-        taskId: run.task_id,
-        runId,
-        adapter,
-        req: { ...session, cwd: run.cwd, session: { runner: run.runner, sessionId: run.native_session_id } },
-        now: this.now(),
-      });
-      if (copy) this.audit(run.task_id, runId, "transcript.copied", { bytes: copy.copiedBytes, sourceBytes: copy.sourceBytes, truncated: copy.truncated, kept: copy.kept });
-      return copy?.path ?? null;
-    } catch (err) {
-      this.audit(run.task_id, runId, "transcript.failed", { detail: (err instanceof Error ? err.message : String(err)).slice(0, 200) });
-      return null;
-    }
-  }
-
   // ---------------------------------------------------------------- requests
 
   requests(filter: { projectId?: string; taskId?: string; includeAnswered?: boolean }): RequestView[] {
@@ -1065,7 +1048,7 @@ export class Orchestrator extends Part {
       // has its own fallback (the source stays paused), so it is never replaced here.
       const problem = spec.resumeRef && !spec.replacing && !spec.handoffId ? sessionProblemOf(err) : null;
       // The reason stays with the run (redacted), so the UI can say why it never started.
-      this.endRun(runId, "failed", problem ? `session.${problem}` : errorDetail(err, await this.secretsFor(target.profileId)));
+      this.lifecycle.endRun(runId, "failed", problem ? `session.${problem}` : errorDetail(err, await this.secretsFor(target.profileId)));
       if (problem) await this.replaceSession(runId, problem);
     }
   }
@@ -1192,190 +1175,7 @@ export class Orchestrator extends Part {
     this.pendingWake.delete(runId);
     const live: Live = { adapter, handle, candidate, done: new Promise<void>((r) => (finish = r)), inTurn: true, turnBegun: false };
     this.live.set(runId, live);
-    this.track(this.pump(runId, live).finally(finish));
-  }
-
-  private async pump(runId: string, live: Live): Promise<void> {
-    let ended: Ended | null = null;
-    try {
-      for await (const ev of live.adapter.events(live.handle)) {
-        if (this.live.get(runId) !== live) return;
-        if (this.confirming.has(runId)) await this.handoffs.confirmHandoff(runId);
-        if (ev.type === "run.ended") {
-          this.record(runId, ev);
-          const result = applyResult(this.db, runId, ev, (kind, payload) => this.audit(this.db.run(runId).task_id, runId, kind, payload));
-          if (result) this.keepVerdict(runId, result);
-          ended = { reason: ev.reason, detail: ev.detail ?? null };
-          break;
-        }
-        try {
-          await this.onEvent(runId, ev);
-        } catch (err) {
-          this.audit(this.db.run(runId).task_id, runId, "orchestrator.error", { code: errorCode(err), event: ev.type });
-        }
-      }
-    } catch {
-      ended = { reason: "failed", detail: "adapter_error" };
-    }
-    if (this.live.get(runId) !== live) return;
-    this.live.delete(runId);
-    await this.onStreamEnd(runId, ended ?? { reason: "failed", detail: "stream_closed" });
-  }
-
-  private async onEvent(runId: string, ev: AgentEvent): Promise<void> {
-    const run = this.db.run(runId);
-    const task = this.db.task(run.task_id);
-    this.record(runId, ev);
-    // A source that lost its step to a handoff may still send events before its process is gone.
-    // They are logged and their spend counts, but they change no state and ask nobody anything.
-    if (this.loops.fenced(runId, run.member_id) && ev.type !== "usage.update") {
-      if (ev.type === "request.question" || ev.type === "request.approval") {
-        const live = this.live.get(runId);
-        if (live) await this.safe(() => live.adapter.answer(live.handle, ev.requestId, { kind: "cancel" }));
-      }
-      this.audit(task.id, runId, "event.fenced", { type: ev.type });
-      return;
-    }
-    this.db.exec("update runs set last_activity_at = ? where id = ?", ev.at, runId);
-    switch (ev.type) {
-      case "run.state":
-        this.db.exec("update runs set last_state = ? where id = ?", ev.state, runId);
-        break;
-      case "turn.started": {
-        this.turns.ref(runId, ev.turnRef);
-        const live = this.live.get(runId);
-        if (live) live.turnBegun = true;
-        break;
-      }
-      case "plan.update":
-        this.db.exec("update runs set plan = ? where id = ?", JSON.stringify(ev.steps), runId);
-        break;
-      case "diff.update":
-        this.db.exec("update runs set diff = ? where id = ?", JSON.stringify(ev.files), runId);
-        break;
-      case "usage.update":
-        await this.budget.onUsage(run, task, ev);
-        break;
-      case "limit.update":
-        this.limits.ingest({ profileId: run.profile_id, window: ev.window, usedPct: ev.usedPct, resetsAt: ev.resetsAt, provenance: ev.provenance, observedAt: ev.at }, { runId, taskId: task.id, reached: ev.reached });
-        if (ev.reached) await this.fallback.onLimitReached(runId, { trigger: "limit", window: ev.window, resetsAt: ev.resetsAt });
-        break;
-      case "request.question":
-        this.inbox.insertRequest(task.id, runId, ev.requestId, null, { kind: "question", questions: ev.questions });
-        break;
-      case "request.approval":
-        await this.inbox.routeApproval(run, task, ev);
-        break;
-      default:
-        break;
-    }
-  }
-
-  private async onStreamEnd(runId: string, ended: Ended): Promise<void> {
-    const run = this.db.run(runId);
-    if (run.ended_at) return;
-    // Stopped for hibernation: the run stays open and holds its step.
-    if (this.hibernating.delete(runId)) {
-      this.emitTask(run.task_id, "hibernation");
-      void this.tick();
-      return;
-    }
-    const stopDetail = this.stopping.get(runId);
-    if (stopDetail !== undefined) {
-      this.endRun(runId, "stopped", stopDetail);
-      return;
-    }
-    // A pause (by you or by a limit) interrupts the turn; the session stays open for resume or handoff.
-    if (run.paused_at && ended.reason === "stopped") {
-      this.emitTask(run.task_id, "run_paused");
-      void this.tick();
-      return;
-    }
-    if (ended.reason === "limit") {
-      await this.fallback.onLimitReached(runId, { trigger: "limit", window: null, resetsAt: null });
-      return;
-    }
-    // The loop stopped this implementer (iteration cap, no change, spend cap): the step failed its tests.
-    const loopStop = this.loopFailed.get(runId);
-    this.loopFailed.delete(runId);
-    if (ended.reason === "completed" && loopStop) {
-      this.endRun(runId, "failed", loopStop);
-      return;
-    }
-    // Runners report provider errors as they got them; what we keep and show is redacted and bounded.
-    const detail = ended.detail === null ? null : redactDetail(ended.detail, await this.secretsFor(run.profile_id)) || null;
-    // Claude reports a gone or locked session only in its stream (adapter-claude: "session.gone: ...").
-    const problem = ended.reason === "failed" && this.resumed.has(runId) && !run.handoff_id ? /^session\.(gone|locked):/.exec(detail ?? "")?.[1] : undefined;
-    if (ended.reason === "completed") await this.loopRunner.pinHead(runId);
-    this.endRun(runId, ended.reason, detail);
-    if (problem && !this.confirming.has(runId)) {
-      await this.replaceSession(runId, problem as SessionProblem);
-      return;
-    }
-    if (ended.reason === "failed") await this.fallback.onFailure(runId, detail);
-    const verdict = this.verdicts.get(runId);
-    this.verdicts.delete(runId);
-    if (ended.reason === "completed" && verdict) await this.loopRunner.reviewLoop(runId, verdict);
-  }
-
-  /** A reviewer's checked verdict, stored with the commit its pinned checkout held. */
-  private keepVerdict(runId: string, result: RoleResult): void {
-    const run = this.db.run(runId);
-    if (result.kind === "review") {
-      const pinned = this.loops.checkout(runId);
-      this.loops.addVerdict({ runId, taskId: run.task_id, memberId: run.member_id, verdict: result.verdict, headSha: pinned?.sha ?? null, native: this.nativeReviews.has(runId) });
-    }
-    if (run.role === "reviewer") this.verdicts.set(runId, result);
-  }
-
-  private endRun(runId: string, reason: EndReason, detail: string | null): void {
-    const run = this.db.run(runId);
-    if (run.ended_at) return;
-    this.db.exec("update runs set ended_at = ?, end_reason = ?, end_detail = ? where id = ? and ended_at is null", this.iso(), reason, detail, runId);
-    this.clearTimer(runId);
-    this.held.delete(runId);
-    this.turns.end(runId);
-    this.resumed.delete(runId);
-    this.nativeReviews.delete(runId);
-    this.draining.delete(runId);
-    this.drainRelease.get(runId)?.(null);
-    this.drainRelease.delete(runId);
-    this.track(this.loopRunner.dropCheckout(runId));
-    // The runner may expire its own record; ours stays with the task (feature scan A18).
-    if (run.native_session_id) this.track(this.copyTranscript(runId));
-    settleReservation(this.opts.store.db, runId, this.now());
-    // Its report ticket stops working and its open questions close (docs/adr/0007).
-    this.mcp?.runEnded(runId);
-    this.hibernation.wake(runId, "ended");
-    this.hibernation.dropGrant(runId);
-    this.pendingWake.delete(runId);
-    // A Best of N variant's diff is what you compare; read it from git once its run is over.
-    const variant = this.bestOf.variantByTask(run.task_id);
-    if (variant) this.track(this.bestOfRunner.refreshVariantDiff(variant.id));
-    // A handoff target that ends before it confirmed leaves the source paused and asks you.
-    const pendingHandoff = this.confirming.get(runId);
-    if (pendingHandoff) {
-      this.confirming.delete(runId);
-      this.track(this.handoffs.failHandoff(pendingHandoff, detail ?? "target_ended"));
-    }
-    // Nobody is left to receive these answers; they close instead of lingering as "needs input".
-    // A run that finished its work needs no hand off either (e.g. a cap tripped on its last report).
-    for (const q of this.db.openRequestsForRun(runId).filter((q) => q.kind !== "handoff" || reason === "completed")) this.inbox.closeRequest(q, "system");
-    this.audit(run.task_id, runId, "run.finished", { reason, detail });
-    this.emitTask(run.task_id, "run_ended");
-    void this.tick();
-  }
-
-  private async stopRun(runId: string, detail: string, reason: EndReason = "stopped"): Promise<void> {
-    const live = this.live.get(runId);
-    this.clearTimer(runId);
-    if (live) {
-      this.stopping.set(runId, detail);
-      await this.safe(() => live.adapter.stop(live.handle));
-      await this.within(live.done, this.opts.stopTimeoutMs ?? 30_000);
-      this.stopping.delete(runId);
-    }
-    this.endRun(runId, reason, detail);
+    this.track(this.lifecycle.pump(runId, live).finally(finish));
   }
 
   /** Native resume on the same run; used after a pause and at a limit reset. */
@@ -1501,32 +1301,6 @@ export class Orchestrator extends Part {
   }
 
   // ---------------------------------------------------------------- helpers
-
-  private record(runId: string, ev: AgentEvent): void {
-    const run = this.db.run(runId);
-    const task = this.db.task(run.task_id);
-    // The log and the window get a capped copy; the caller keeps the full event for its rules
-    // (risk is classified on the whole command).
-    const { event } = capEvent(ev, EVENT_LIMITS, (field, full) => this.keepFull(task.id, runId, ev.seq, field, full));
-    this.opts.store.appendEvent({ kind: `run.${ev.type}`, source: ev.source.adapter, payload: event, projectId: task.project_id, taskId: task.id, runId });
-    this.emit("runs.event", { taskId: task.id, runId, event });
-  }
-
-  /**
-   * The full text of a cut tool output, in the task's folder under the data folder: the same
-   * per-user place as the event log that already holds its head, never sent to the window or to an
-   * agent. Past KEEP_FULL_MAX only the head is kept.
-   */
-  private keepFull(taskId: string, runId: string, seq: number, field: string, full: string): string | null {
-    if (utf8Length(full) > KEEP_FULL_MAX) return null;
-    const path = join(this.opts.dataDir, "tasks", taskId, "output", `${runId}-${seq}-${field}.txt`);
-    try {
-      writeFileAtomic(path, full);
-      return path;
-    } catch {
-      return null;
-    }
-  }
 
 }
 
