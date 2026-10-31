@@ -6,6 +6,7 @@ import type { AttachmentStore } from "./attachments.ts";
 import { BestOfRunner, type BestOfStore } from "./best-of.ts";
 import { Budget } from "./budget.ts";
 import { OrchestratorContext, type OrchestratorOptions, type ProposeParams } from "./context.ts";
+import { CrewManager } from "./crew-manage.ts";
 import type { OrchestratorDb } from "./db.ts";
 import type { ProfileDirectory } from "./directory.ts";
 import { Dispatcher } from "./dispatch.ts";
@@ -54,6 +55,8 @@ export class Orchestrator {
   readonly attachments: AttachmentStore;
   /** Loop decisions, test results, pinned verdicts, review checkouts, run epochs (loops.ts). */
   readonly loops: LoopStore;
+  /** Crew graph management: proposal edits, follow-ups, skip, Pause all (crew-manage.ts). */
+  readonly crew: CrewManager;
 
   /** Kept on the facade too: github/flow.test.ts reads `opts.store` through a cast. */
   private readonly opts: OrchestratorOptions;
@@ -246,6 +249,12 @@ export class Orchestrator {
       closeHandoff: (id, outcome, detail) => this.handoffs.closeHandoff(id, outcome, detail),
       offerHandoff: (run, task, mode, info, detail) => this.fallback.offerHandoff(run, task, mode, info, detail),
       dropCheckout: (runId) => this.loopRunner.dropCheckout(runId),
+    });
+    this.crew = new CrewManager(ctx, {
+      get: (taskId) => this.taskFlow.get(taskId),
+      tick: () => this.dispatcher.tick(),
+      pause: (runId) => this.actions.pause(runId),
+      resume: (runId) => this.actions.resume(runId),
     });
     this.db.taskExtras = (t) => this.bestOfRunner.taskExtras(t);
     this.db.taskLoop = (t) => this.loopRunner.loopView(t);

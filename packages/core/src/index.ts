@@ -16,6 +16,7 @@ export * from "./ipc/providers.ts";
 export * from "./ipc/github.ts";
 export * from "./ipc/setup.ts";
 export * from "./ipc/crew.ts";
+export * from "./crew-edit.ts";
 export * from "./ipc/settings.ts";
 export * from "./ipc/worktrees.ts";
 export * from "./ipc/usage.ts";

@@ -1,9 +1,12 @@
 import { CREW_LAYOUT_LIMITS, type CrewIpc, type CrewLayout, type NodePosition } from "@crewyard/core";
+import { orchestratorFor } from "../orchestrator/index.ts";
 import type { HandlerContext, HandlerMap } from "./types.ts";
 
 // Handlers for the Crew graph screen. Layouts live in the existing settings table under
 // `crew.layout.<taskId>`, so this area needs no migration. A layout is presentation only and is
-// never read by the orchestrator.
+// never read by the orchestrator. Managing the crew (crew.edit and the rest) is thin: the rules
+// are @crewyard/core's crew-edit.ts, applied by the orchestrator's CrewManager, which is reached
+// only when such a call arrives.
 
 const key = (taskId: string) => `crew.layout.${taskId}`;
 
@@ -60,5 +63,11 @@ export function createCrewHandlers(ctx: HandlerContext): HandlerMap<CrewIpc> {
       db.prepare("delete from settings where key = ?").run(key(taskId));
       return { taskId, positions: {}, savedAt: null };
     },
+    "crew.candidates": ({ taskId, role }) => orchestratorFor(ctx).crew.rankCandidates(taskId, role),
+    "crew.edit": ({ taskId, edit }) => orchestratorFor(ctx).crew.edit(taskId, edit),
+    "crew.approveSteps": ({ taskId }) => orchestratorFor(ctx).crew.approveSteps(taskId),
+    "crew.skip": ({ taskId, memberId }) => orchestratorFor(ctx).crew.skip(taskId, memberId),
+    "crew.pauseAll": ({ taskId }) => orchestratorFor(ctx).crew.pauseAll(taskId),
+    "crew.resumeAll": ({ taskId }) => orchestratorFor(ctx).crew.resumeAll(taskId),
   };
 }

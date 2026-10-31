@@ -129,8 +129,13 @@ export function ChangeAiDialog({
   live,
   onConfirm,
   onClose,
+  title,
+  body,
 }: {
   target: string;
+  /** Hand off now (a limit question) reuses this dialog with its own title and note. */
+  title?: string;
+  body?: string;
   candidates: CandidateView[];
   runnerLabel: (runner: CandidateView["runner"]) => string;
   /** A turn is under way, so the user may let it finish before the switch. */
@@ -144,7 +149,7 @@ export function ChangeAiDialog({
   const [busy, setBusy] = useState(false);
   return (
     <Dialog
-      title={t("changeAi.title", { target })}
+      title={title ?? t("changeAi.title", { target })}
       onClose={onClose}
       footer={
         <>
@@ -176,7 +181,119 @@ export function ChangeAiDialog({
         ))}
       </fieldset>
       {live && <HandoffStopChoice name="crew-change-stop" value={stop} onChange={setStop} />}
-      <p className="muted">{t("changeAi.body")}</p>
+      <p className="muted">{body ?? t("changeAi.body")}</p>
+    </Dialog>
+  );
+}
+
+export interface StepOption {
+  step: string;
+  label: string;
+}
+
+/**
+ * Add a step: a role from the project's role set (custom roles included) and the step it starts
+ * after. A follow-up of a running crew has its step fixed and waits for its own approval.
+ */
+export function AddStepDialog({
+  title,
+  roles,
+  steps,
+  after,
+  fixedAfter,
+  note,
+  onConfirm,
+  onClose,
+}: {
+  title: string;
+  roles: Array<{ id: string; label: string }>;
+  steps: StepOption[];
+  after: string | null;
+  fixedAfter: boolean;
+  note: string;
+  onConfirm: (role: string, after: string[]) => Promise<void>;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation("crew");
+  const [role, setRole] = useState(roles[0]?.id ?? "");
+  const [dep, setDep] = useState(after ?? "");
+  const [busy, setBusy] = useState(false);
+  return (
+    <Dialog
+      title={title}
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            {t("dialog.cancel")}
+          </Button>
+          <Button
+            variant="primary"
+            disabled={!role || busy}
+            onClick={() => {
+              setBusy(true);
+              void onConfirm(role, dep ? [dep] : []).finally(() => setBusy(false));
+            }}
+          >
+            {t("addStep.confirm")}
+          </Button>
+        </>
+      }
+    >
+      <label className="crew-field">
+        <span className="lbl">{t("addStep.role")}</span>
+        <select value={role} onChange={(e) => setRole(e.target.value)} data-autofocus>
+          {roles.map((r) => (
+            <option key={r.id} value={r.id}>
+              {r.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="crew-field">
+        <span className="lbl">{t("addStep.after")}</span>
+        <select value={dep} onChange={(e) => setDep(e.target.value)} disabled={fixedAfter}>
+          {!fixedAfter && <option value="">{t("addStep.afterNone")}</option>}
+          {steps.map((s) => (
+            <option key={s.step} value={s.step}>
+              {s.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <p className="muted">{note}</p>
+    </Dialog>
+  );
+}
+
+/** Skip confirms and names what waits for the step, so nobody is surprised by what starts without it. */
+export function SkipDialog({ target, dependents, onConfirm, onClose }: { target: string; dependents: string[]; onConfirm: () => Promise<void>; onClose: () => void }) {
+  const { t } = useTranslation("crew");
+  const [busy, setBusy] = useState(false);
+  return (
+    <Dialog
+      title={t("skip.title", { target })}
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose} data-autofocus>
+            {t("dialog.cancel")}
+          </Button>
+          <Button
+            variant="primary"
+            disabled={busy}
+            onClick={() => {
+              setBusy(true);
+              void onConfirm().finally(() => setBusy(false));
+            }}
+          >
+            {t("skip.confirm")}
+          </Button>
+        </>
+      }
+    >
+      <p>{t("skip.body", { target })}</p>
+      <p className={dependents.length > 0 ? "crew-why" : "muted"}>{dependents.length > 0 ? t("skip.dependents", { steps: dependents.join(", "), count: dependents.length }) : t("skip.noDependents")}</p>
     </Dialog>
   );
 }

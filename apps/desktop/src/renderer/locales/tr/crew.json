@@ -36,7 +36,8 @@
     "reports": "Sonucu iletir",
     "depends": "Bekler",
     "fallback": "Yedek",
-    "help": "Sürükleyip yerleştir · Alt+oklar taşır · işlemler için sağ tık ya da Shift+F10 · F tam ekran"
+    "help": "Sürükleyip yerleştir · Alt+oklar taşır · işlemler için sağ tık ya da Shift+F10 · F tam ekran",
+    "helpEdit": "Düzenlemek için adıma tıkla · bir adımı bekletmek için başka bir adımın sağ kenarından ona sürükle · işlemler için sağ tık ya da Shift+F10"
   },
   "zoom": {
     "label": "Yakınlaştırma",
@@ -52,7 +53,8 @@
       "ask": "yedek · önce sorar",
       "auto": "yedek · kendiliğinden",
       "wait_for_reset": "yedek · sıfırlanmayı bekledikten sonra"
-    }
+    },
+    "remove": "Bağımlılığı kaldır: {{to}}, {{from}} adımını bekliyor"
   },
   "annot": {
     "limit": "Limit doldu",
@@ -99,7 +101,8 @@
     "stopped": "Durduruldu",
     "interrupted": "Yarıda kaldı",
     "cancelled": "Çalışmadı",
-    "standby": "Yedekte"
+    "standby": "Yedekte",
+    "skipped": "Atlandı"
   },
   "taskStatus": {
     "proposed": "Onayını bekliyor",
@@ -136,7 +139,9 @@
     "branch": "{{base}} → {{branch}}",
     "kind": "{{kind}} · boyut {{size}}",
     "queuedMessages_one": "{{count}} mesaj bekliyor",
-    "queuedMessages_other": "{{count}} mesaj bekliyor"
+    "queuedMessages_other": "{{count}} mesaj bekliyor",
+    "skipped": "sen atladın",
+    "pendingApproval": "onayını bekliyor"
   },
   "blocked": {
     "admission": {
@@ -171,8 +176,27 @@
       "no_run": "Henüz çalıştırma yok, kimlik de yok",
       "superseded": "Bu adımı zaten daha yeni bir çalıştırma sürdürüyor",
       "working": "Ajan hâlâ çalışıyor, kontrol edilecek bir şey yok",
-      "no_target": "Bu adımı devredebileceğin başka hesap yok"
-    }
+      "no_target": "Bu adımı devredebileceğin başka hesap yok",
+      "no_request": "Şu an bu adım için devir soran bir şey yok",
+      "no_reset": "Sıfırlanma saati bilinmiyor",
+      "last_step": "Ekipte en az bir adım kalmalı",
+      "skipped": "Bu adım zaten atlandı",
+      "nothing_live": "Çalışan adım yok",
+      "nothing_paused": "Duraklatılmış adım yok"
+    },
+    "open_changes": "Değişiklikleri aç",
+    "open_files": "Dosyaları aç",
+    "retry_failed": "Adımı yeniden dene",
+    "handoff_now": "Şimdi devret…",
+    "wait_reset": "Sıfırlanmayı bekle",
+    "edit": "Adımı düzenle…",
+    "add_step": "Adım ekle…",
+    "add_after": "Bundan sonra adım ekle…",
+    "remove_step": "Adımı kaldır",
+    "skip": "Adımı atla…",
+    "follow_up": "Devam adımı ekle…",
+    "pause_all": "Hepsini duraklat",
+    "resume_all": "Hepsini sürdür"
   },
   "stop": {
     "title": "Bu ajan durdurulsun mu?",
@@ -199,7 +223,17 @@
     "message": "Mesaj gönderildi",
     "copied": "Çalıştırma kimliği kopyalandı",
     "retry": "{{target}} yeniden kontrol ediliyor",
-    "handoff": "{{target}} devrediliyor"
+    "handoff": "{{target}} devrediliyor",
+    "edit": "Ekip güncellendi · tahmin {{cost}}",
+    "approved": "Ekip onaylandı; adımlar yer açıldıkça başlar",
+    "approvedSteps": "Yeni adımlar onaylandı",
+    "skip": "{{target}} atlandı",
+    "followUp": "Devam adımı eklendi. Sen onaylayınca çalışır",
+    "pauseAll_one": "{{count}} adım duraklatılıyor",
+    "pauseAll_other": "{{count}} adım duraklatılıyor",
+    "resumeAll_one": "{{count}} adım sürdürülüyor",
+    "resumeAll_other": "{{count}} adım sürdürülüyor",
+    "waitReset": "{{target}} limitinin sıfırlanmasını bekliyor"
   },
   "error": {
     "generic": "İşlem başarısız oldu ({{code}})",
@@ -219,9 +253,36 @@
     },
     "task": {
       "not_found": "Bu görev artık yok",
-      "cancelled": "Görev durduruldu"
+      "cancelled": "Görev durduruldu",
+      "not_proposed": "Bu ekip zaten onaylandı"
     },
-    "crew": { "read_only_profile": "Bu hesap salt okunur, bu adım ise dosya değiştiriyor" },
+    "crew": {
+      "read_only_profile": "Bu hesap salt okunur, bu adım ise dosya değiştiriyor",
+      "unknown_step": "Bu adım artık yok",
+      "unknown_role": "Bu rol bu projede kullanılamıyor",
+      "self": "Bir adım kendini bekleyemez",
+      "exists": "Bu adımı zaten bekliyor",
+      "missing": "Bu adımı beklemiyor",
+      "cycle": "Bu bir döngü oluşturur",
+      "started": "Bu adım zaten çalıştı",
+      "approved": "Bu adım onaylanmış ekibin parçası",
+      "not_finished": "Devam adımı bitmiş bir adımın ardından gelir",
+      "last_step": "Ekipte en az bir adım kalmalı",
+      "too_many": "Bu ekip alabileceği kadar adıma sahip",
+      "unknown_candidate": "Bu hesap bu rol için puanlanmadı",
+      "independence": "İki adım aynı modeli kullanırdı; bağımsızlık kuralına aykırı",
+      "read_only_lease": "Salt okunur bir rol çalışma ağacının yazma iznini asla almaz",
+      "standby_chosen": "Kullanımdaki hesap aynı zamanda yedek olamaz",
+      "standby_duplicate": "Bu hesap zaten zincirde",
+      "standby_too_long": "Yedek zinciri dolu",
+      "skipped": "Bu adım zaten atlandı",
+      "no_candidate": "Bir adımın henüz hesabı yok",
+      "missing_profile": "Bir adımın henüz hesabı yok",
+      "unknown_profile": "Bu hesap kullanılamıyor",
+      "member_not_found": "Bu adım artık yok",
+      "not_approved": "Atlama onaylanmış ekibin adımları içindir; bunu kaldır",
+      "best_of": "Bu adım Best of N grubu olarak çalışıyor ve yerinde kalır"
+    },
     "handoff": {
       "same_profile": "Adım zaten bu hesapla çalışıyor",
       "open": "Bu adım zaten devrediliyor",
@@ -238,9 +299,93 @@
   },
   "loop": {
     "attempt": "Düzeltme {{attempt}}/{{max}}",
-    "verdict": { "pass": "Geçti", "changes": "Değişiklik istendi" },
+    "verdict": {
+      "pass": "Geçti",
+      "changes": "Değişiklik istendi"
+    },
     "commit": "Commit {{sha}}",
     "noCommit": "Sabitlenmiş commit yok",
     "stale": "Eskidi"
+  },
+  "bar": {
+    "label": "Ekip",
+    "proposal": "Öneri",
+    "running": "Çalışan ekip",
+    "estimate": "Tahmin {{cost}}",
+    "approve": "Onayla ve başlat",
+    "approveNote": "Sen onaylamadan hiçbir şey başlamaz.",
+    "addStep": "Adım ekle",
+    "pauseAll": "Hepsini duraklat",
+    "resumeAll": "Hepsini sürdür",
+    "pending_one": "{{count}} yeni adım onayını bekliyor",
+    "pending_other": "{{count}} yeni adım onayını bekliyor",
+    "approveSteps": "Yeni adımları onayla",
+    "problem": "Onaylamadan önce: {{problem}}"
+  },
+  "panel": {
+    "label": "{{target}} adımını düzenle",
+    "close": "Adım düzenleyicisini kapat",
+    "role": "Rol",
+    "roleFile": "{{title}} · rol dosyası",
+    "ai": "Yapay zeka ve model",
+    "aiHint": "Bu rol için puanlanan tüm hesaplar, en iyisi başta.",
+    "loading": "Adaylar puanlanıyor…",
+    "loadError": "Adaylar okunamadı ({{code}})",
+    "none": "Bu role uyan hesap yok. Sağlayıcılar'dan bir hesap ekle ya da başka bir rol seç.",
+    "inUse": "Kullanımda",
+    "use": "Kullan",
+    "score": "puan {{score}}",
+    "headroom": "%{{pct}} kaldı",
+    "headroomUnknown": "kalan pay bilinmiyor",
+    "conflict": "{{step}}. adımla aynı model",
+    "standby": "Yedekler, sırayla",
+    "standbyHint": "Hesapları devralacakları sıraya sürükle. Alt+Yukarı ve Alt+Aşağı odaktakini taşır.",
+    "standbyEmpty": "Yedek yok: bu adım limite takılırsa seni bekler. Buraya bir hesap sürükle.",
+    "standbyFull": "Zincirde en fazla {{max}} hesap olur",
+    "addStandby": "{{alias}} hesabını yedek zincirine ekle",
+    "removeStandby": "{{alias}} hesabını yedek zincirinden çıkar",
+    "moveUp": "{{alias}} hesabını yukarı taşı",
+    "moveDown": "{{alias}} hesabını aşağı taşı",
+    "dependsOn": "Beklediği adımlar",
+    "dependsHint": "Grafikte bir adımın sağ kenarından bu adımın sol kenarına sürükle.",
+    "noOthers": "Tek adım bu.",
+    "remove": "Adımı kaldır",
+    "pendingNote": "Bu adım çalışan ekibe eklendi. Ancak sen onaylayınca çalışır."
+  },
+  "addStep": {
+    "title": "Adım ekle",
+    "followTitle": "{{target}} sonrasına devam adımı ekle",
+    "role": "Rol",
+    "after": "Ne zaman başlasın",
+    "afterNone": "Hemen, hiçbir adımı beklemeden",
+    "proposalNote": "Adım, rolü için en uygun hesabı alır; onaylamadan önce değiştirebilirsin.",
+    "followNote": "Yeni adım çalışmadan önce onayını bekler.",
+    "confirm": "Adımı ekle"
+  },
+  "skip": {
+    "title": "{{target}} atlansın mı?",
+    "body": "{{target}} çalışmayacak.",
+    "noDependents": "Bu adımı bekleyen başka adım yok.",
+    "confirm": "Adımı atla",
+    "dependents_one": "{{steps}} bu adımı bekliyor; onun sonucu olmadan başlayacak.",
+    "dependents_other": "{{steps}} bu adımı bekliyor; onun sonucu olmadan başlayacaklar."
+  },
+  "handoffNow": {
+    "title": "{{target}} şimdi devredilsin",
+    "body": "Gelen kutusundaki limit sorusunu yanıtlar: seçtiğin hesap kaydedilen işten devam eder."
+  },
+  "edit": {
+    "why": {
+      "unknown_step": "Bu adım artık yok",
+      "self": "Bir adım kendini bekleyemez",
+      "exists": "Bu adımı zaten bekliyor",
+      "cycle": "Bu bir döngü oluşturur: {{path}}",
+      "started": "Bu adım zaten çalıştı",
+      "approved": "Bu adım onaylanmış ekibin parçası",
+      "independence": "{{step}} adımı {{other}} adımıyla aynı modeli kullanırdı",
+      "read_only_lease": "{{step}} adımı salt okunur ama yazma iznini tutuyor",
+      "no_candidate": "{{step}} adımının henüz hesabı yok",
+      "unknown_role": "{{role}} rolü kullanılamıyor"
+    }
   }
 }

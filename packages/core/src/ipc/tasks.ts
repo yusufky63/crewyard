@@ -216,6 +216,10 @@ export interface CrewMemberView {
   edited: boolean;
   /** Set while the step is ready but admission control holds it back. */
   blockedBy: Reason | null;
+  /** A step added to an approved crew (a follow-up): it waits for its own approval before it runs. */
+  pendingApproval?: boolean;
+  /** You skipped the step before it started; the steps after it go on without its result. */
+  skippedAt?: string | null;
 }
 
 export interface CrewView {
@@ -1041,4 +1045,6 @@ export type TaskChangeCause =
   // A run's process was stopped while idle, or woke again.
   | "hibernation"
   // The task let in or held out same-provider account switching (docs/adr/0009).
-  | "account_switch";
+  | "account_switch"
+  // The crew was edited in the Crew graph: a proposal edit, a follow-up, a skip or its approval.
+  | "crew_edited";

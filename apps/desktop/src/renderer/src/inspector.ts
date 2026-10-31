@@ -9,6 +9,8 @@ export interface InspectorTarget {
   memberId?: string;
   /** A specific run of that step, e.g. the one before a handoff. */
   runId?: string;
+  /** Opens this tab instead of the one shown last (the Crew graph's Open changes, Open files). */
+  tab?: "details" | "changes" | "usage" | "files" | "preview";
 }
 
 interface Inspector {
