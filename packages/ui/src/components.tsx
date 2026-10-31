@@ -1,10 +1,9 @@
 import type { ButtonHTMLAttributes, CSSProperties, HTMLAttributes, ReactNode } from "react";
 import type { Provenance } from "@crewyard/core";
+import { buttonClass, type ButtonVariant, type Tone } from "./button.ts";
 import { tickClasses } from "./meter.ts";
 
-type Variant = "primary" | "secondary" | "ghost" | "danger";
-/** A state colour for an action that has one (Turn on in ok, Turn off in warn, Stop in bad); never on primary. */
-export type Tone = "ok" | "warn" | "bad";
+export type { Tone } from "./button.ts";
 
 export function Button({
   variant = "secondary",
@@ -12,10 +11,8 @@ export function Button({
   tone,
   className = "",
   ...rest
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: "md" | "sm"; tone?: Tone }) {
-  const v = variant === "secondary" ? "" : ` btn-${variant}`;
-  const toned = tone && variant !== "primary" ? ` btn-${tone}` : "";
-  return <button type="button" className={`btn${v}${toned}${size === "sm" ? " btn-sm" : ""} ${className}`.trim()} {...rest} />;
+}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant; size?: "md" | "sm"; tone?: Tone }) {
+  return <button type="button" className={buttonClass({ variant, size, tone, disabled: rest.disabled, className })} {...rest} />;
 }
 
 export function Panel({ className = "", ...rest }: HTMLAttributes<HTMLDivElement>) {
