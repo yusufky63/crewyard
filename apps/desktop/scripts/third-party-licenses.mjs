@@ -7,7 +7,8 @@
 //
 // Run after `electron-vite build`: node scripts/third-party-licenses.mjs
 
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -18,6 +19,9 @@ const ALLOWED = new Set(["MIT", "Apache-2.0", "ISC", "BSD-2-Clause", "BSD-3-Clau
 const EXCEPTIONS = {
   "@anthropic-ai/claude-agent-sdk": "Anthropic's commercial terms (its LICENSE.md); used only to drive Claude Code with API keys (NOTICE, PLAN.md §6)",
 };
+
+/** Packages copied as files rather than bundled (docs/adr/0016-terminal.md): node-pty for the terminal. */
+const NATIVE = ["node-pty"];
 
 /**
  * The folder of the npm package a bundled file came from, or null for our own sources.
@@ -87,7 +91,8 @@ export function render(entries) {
     "Crewyard: third-party licences",
     "",
     "The npm packages below are bundled into this build of Crewyard (main process, daemon, preload",
-    "and window). Electron's and Chromium's own licences ship next to this file as LICENSE.electron.txt",
+    "and window), or ship beside it as native files (node-pty, for the terminal). Electron's and",
+    "Chromium's own licences ship next to this file as LICENSE.electron.txt",
     "and LICENSES.chromium.html. NOTICE.txt lists the data and designs Crewyard uses.",
     "",
     `${entries.length} packages.`,
@@ -110,7 +115,9 @@ function main() {
   const targets = ["main", "preload", "renderer"];
   const missing = targets.filter((t) => !existsSync(join(outDir, `${t}.json`)));
   if (missing.length) throw new Error(`no package list for ${missing.join(", ")}: run electron-vite build first`);
-  const dirs = targets.flatMap((t) => JSON.parse(readFileSync(join(outDir, `${t}.json`), "utf8")));
+  // Native modules ship as files beside app.asar (electron-builder extraResources), not in a bundle.
+  const native = NATIVE.map((name) => dirname(realpathSync(createRequire(join(appDir, "package.json")).resolve(`${name}/package.json`))));
+  const dirs = [...targets.flatMap((t) => JSON.parse(readFileSync(join(outDir, `${t}.json`), "utf8"))), ...native];
   const entries = collect(dirs);
   const bad = refused(entries);
   if (bad.length) {

@@ -61,3 +61,63 @@
   .drawer-x { margin-left: auto; }
   .drawer-pager { margin-left: 0; }
 }
+
+/* Tab counts: problems still shown (red while one is a failure), shells running. */
+.drawer-count { margin-left: 6px; font: 400 11px / 1 var(--mono); letter-spacing: 0; color: var(--ink-3); }
+.drawer-count-bad { color: var(--bad); }
+.drawer-path { flex: 1 1 auto; min-width: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Assistant tab: the task assistant (docs/adr/0014) fills the panel; its own frame and fixed log height give way. */
+.as-docked { flex: 1; min-height: 0; display: flex; flex-direction: column; margin: 0; border: 0; }
+.as-docked .as-head { padding: 6px 8px 6px 16px; }
+.as-docked .as-body { flex: 1; min-height: 0; grid-template-columns: minmax(0, 1fr) minmax(260px, 34%); }
+.as-docked .as-term { grid-template-rows: minmax(0, 1fr) auto auto auto; min-height: 0; }
+.as-docked .as-log { height: auto; min-height: 48px; }
+.as-docked .as-input { padding: 6px 8px 6px 16px; }
+.as-docked .as-input textarea { min-height: 24px; resize: none; }
+.as-docked .as-foot { padding: 4px 16px 6px; }
+.as-docked .as-drafts { max-height: none; min-height: 0; border-left: 1px solid var(--line); border-top: 0; }
+
+/* Terminal tab (docs/adr/0016): toolbar, one sub-tab per shell, the xterm view on bg.sunken. */
+.term { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.term-tabs { display: flex; align-items: stretch; gap: 0; padding: 0 8px 0 16px; border-bottom: 1px solid var(--line); min-height: 30px; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; }
+.term-tab { position: relative; display: flex; align-items: center; flex: none; border-right: 1px solid var(--line); }
+.term-tab [role="tab"] { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 6px 0 10px; font: 400 12px / 1 var(--mono); color: var(--ink-3); }
+.term-tab [role="tab"]:hover, .term-tab[data-active] [role="tab"] { color: var(--ink); }
+.term-tab[data-active]::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--ink); }
+.term-x { width: 22px; height: 22px; margin-right: 4px; display: grid; place-items: center; color: var(--ink-3); }
+.term-x:hover { color: var(--ink); background: var(--raised); }
+.term-dot { width: 6px; height: 6px; border-radius: var(--radius-dot); background: var(--ink-3); flex: none; }
+.term-dot.term-running { background: var(--accent); }
+.term-dot.term-failed { background: var(--bad); }
+.term-confirm { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 6px 16px; border-bottom: 1px solid var(--line); background: var(--bad-soft); font-size: 13px; color: var(--ink); }
+.term-view { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--sunken); }
+.term-box { flex: 1; min-height: 0; padding: 4px 0 0 12px; overflow: hidden; }
+.term-host, .term-host .xterm { height: 100%; }
+.term-host .xterm-viewport { scrollbar-width: thin; scrollbar-color: var(--tick) transparent; }
+/* xterm.css paints its viewport black; the rows below the last full line show it. */
+.term-host .xterm .xterm-viewport, .term-host .xterm .xterm-screen { background-color: var(--sunken); }
+.term-host .xterm:focus-within { outline: none; }
+.term-view:focus-within { box-shadow: inset 0 0 0 1px var(--accent); }
+.term-line { margin: 0; padding: 4px 16px; font: 400 12px / 1.5 var(--mono); color: var(--ink-2); border-bottom: 1px solid var(--line); }
+.term-bad { color: var(--bad); }
+.term-foot { display: flex; gap: 12px; justify-content: space-between; margin: 0; padding: 4px 16px; border-top: 1px solid var(--line); font-size: 11px; min-width: 0; }
+.term-foot > :first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.term-foot > :last-child { flex: none; }
+.term-empty { padding: 16px; font-size: 13px; max-width: var(--layout-measure); }
+.term-empty p { margin: 0 0 6px; }
+
+/* Problems tab: one row per problem, newest first, with the way to its fix. */
+.pb { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.pb-summary { font-size: 12px; color: var(--ink-2); }
+.pb-list { flex: 1; min-height: 0; overflow: auto; margin: 0; padding: 0; list-style: none; background: var(--sunken); scrollbar-width: thin; scrollbar-color: var(--tick) transparent; }
+.pb-list:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.pb-row { display: flex; align-items: center; gap: 12px; padding: 4px 8px 4px 16px; min-height: 40px; border-bottom: 1px solid var(--line); min-width: 0; }
+.pb-sev { flex: none; display: inline-flex; }
+.pb-danger .pb-sev { color: var(--bad); }
+.pb-warning .pb-sev { color: var(--warn); }
+.pb-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.pb-title { font-size: 13px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pb-detail { font-size: 12px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pb-act { flex: none; display: flex; align-items: center; gap: 6px; }
+:root[data-density="compact"] .pb-row { padding: 2px 8px 2px 12px; min-height: 34px; }

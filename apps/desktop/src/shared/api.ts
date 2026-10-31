@@ -143,6 +143,36 @@ export interface PreviewState {
  */
 export type PreviewPickResult = { ok: true; pick: PickedElement; shot: AttachmentView | null } | { ok: false; reason: "cancelled" | "not_loaded" | "invalid" | "failed" };
 
+/** A shell the Terminal tab can start (docs/adr/0016-terminal.md); `path` is the resolved executable. */
+export type TerminalShellId = "powershell" | "pwsh" | "gitbash" | "cmd" | "posix";
+
+export interface TerminalShell {
+  id: TerminalShellId;
+  path: string;
+}
+
+export interface TerminalOpenRequest {
+  /** The project folder or a task's worktree; main checks it is an absolute folder that exists. */
+  cwd: string;
+  shell: TerminalShellId;
+  cols: number;
+  rows: number;
+}
+
+export type TerminalOpenResult = { ok: true; id: string; pid: number } | { ok: false; reason: "folder" | "shell" | "limit" | "failed"; detail?: string };
+
+/** Pushed as `terminal.data`: output of one terminal, as the shell wrote it. Untrusted text. */
+export interface TerminalData {
+  id: string;
+  data: string;
+}
+
+/** Pushed as `terminal.exit` when a shell ended, on its own, by close, or because the host stopped (code null). */
+export interface TerminalExit {
+  id: string;
+  code: number | null;
+}
+
 export interface CrewyardApi {
   call<M extends IpcMethod>(method: M, params: IpcParams<M>): Promise<IpcResult<M>>;
   on(topic: string, listener: (payload: unknown) => void): () => void;
@@ -192,4 +222,12 @@ export interface CrewyardApi {
   /** Waits for a click in the page; `color` is the accent token for the highlight. */
   previewPick(color: string): Promise<PreviewPickResult>;
   previewCancelPick(): void;
+  /** Shells found on this machine, PowerShell 5.1 first on Windows. */
+  terminalShells(): Promise<TerminalShell[]>;
+  /** Starts a shell; only ever on a click. Its output arrives as `terminal.data`, its end as `terminal.exit`. */
+  terminalOpen(req: TerminalOpenRequest): Promise<TerminalOpenResult>;
+  terminalWrite(id: string, data: string): void;
+  terminalResize(id: string, cols: number, rows: number): void;
+  /** Ends the shell and everything it started. */
+  terminalClose(id: string): void;
 }

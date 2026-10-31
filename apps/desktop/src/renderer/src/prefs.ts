@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
 import type { Language } from "./i18n.ts";
+import type { Dismissed } from "./shell/activity/problems.ts";
 import { DEFAULT_LAYOUT, sanitizeLayout, type LayoutPrefs } from "./shell/layout.ts";
 
 // Per-viewer UI preferences only. Anything that must survive a reinstall or be shared lives in the daemon.
@@ -29,13 +30,22 @@ interface Prefs extends LayoutPrefs {
   toggleDrawer(): void;
   drawerTab: DrawerTab;
   setDrawerTab(tab: DrawerTab): void;
+  /** Opens the panel on one tab; it stays open when it already is. */
+  openDrawerTab(tab: DrawerTab): void;
+  /** The shell picked last for a new terminal. */
+  terminalShell: string | null;
+  setTerminalShell(id: string): void;
+  /** Problems you dismissed, per project: problem id to the fingerprint it had (shell/activity/problems.ts). */
+  problemsDismissed: Record<string, Dismissed>;
+  setProblemsDismissed(projectId: string, dismissed: Dismissed): void;
   /** The sidebar accounts block's `+N not used` line, expanded or folded. */
   accountsUnusedOpen: boolean;
   setAccountsUnusedOpen(open: boolean): void;
 }
 
-/** The Activity drawer's tabs; the terminal view is not built (DESIGN.md §4). */
-export type DrawerTab = "events" | "logs";
+/** The bottom panel's tabs, in order (DESIGN.md §4). */
+export const DRAWER_TABS = ["assistant", "terminal", "events", "logs", "problems"] as const;
+export type DrawerTab = (typeof DRAWER_TABS)[number];
 
 // localStorage can be missing or throw (private profiles, blocked storage); fall back to memory.
 const memory = new Map<string, string>();
@@ -87,6 +97,17 @@ export const usePrefs = create<Prefs>()(
       toggleDrawer: () => set((s) => ({ drawerOpen: !s.drawerOpen })),
       drawerTab: "events",
       setDrawerTab: (drawerTab) => set({ drawerTab }),
+      openDrawerTab: (drawerTab) => set({ drawerTab, drawerOpen: true }),
+      terminalShell: null,
+      setTerminalShell: (terminalShell) => set({ terminalShell }),
+      problemsDismissed: {},
+      setProblemsDismissed: (projectId, dismissed) =>
+        set((s) => {
+          const next = { ...s.problemsDismissed };
+          if (Object.keys(dismissed).length) next[projectId] = dismissed;
+          else delete next[projectId];
+          return { problemsDismissed: next };
+        }),
       accountsUnusedOpen: false,
       setAccountsUnusedOpen: (accountsUnusedOpen) => set({ accountsUnusedOpen }),
     }),

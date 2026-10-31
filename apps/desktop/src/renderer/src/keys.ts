@@ -11,7 +11,7 @@ export interface Chord {
   shift?: boolean;
 }
 
-export type ShortcutGroup = "global" | "navigate" | "lists" | "tasks" | "graph" | "review";
+export type ShortcutGroup = "global" | "navigate" | "lists" | "tasks" | "panel" | "graph" | "review";
 
 export interface Shortcut {
   id: string;
@@ -40,8 +40,13 @@ export const SHORTCUTS = [
   { id: "list.next", group: "lists", chords: [{ key: "j" }] },
   { id: "list.prev", group: "lists", chords: [{ key: "k" }] },
   { id: "submit", group: "tasks", chords: [{ key: "Enter", ctrl: true }] },
-  { id: "assistant", group: "tasks", chords: [{ key: "a", ctrl: true, shift: true }] },
-  { id: "assistant.send", group: "tasks", chords: [{ key: "Enter" }] },
+  { id: "assistant", group: "panel", chords: [{ key: "a", ctrl: true, shift: true }] },
+  { id: "assistant.send", group: "panel", chords: [{ key: "Enter" }] },
+  // Ctrl ` as in most editors; Ctrl Shift T for layouts (Turkish Q) where ` is hard to reach.
+  { id: "panel.terminal", group: "panel", chords: [{ key: "`", ctrl: true }, { key: "t", ctrl: true, shift: true }] },
+  { id: "panel.problems", group: "panel", chords: [{ key: "m", ctrl: true, shift: true }] },
+  { id: "terminal.close", group: "panel", chords: [{ key: "Delete" }] },
+  { id: "terminal.leave", group: "panel", chords: [{ key: "F6" }] },
   { id: "graph.full", group: "graph", chords: [{ key: "f" }] },
   { id: "graph.menu", group: "graph", chords: [{ key: "F10", shift: true }, { key: "ContextMenu" }] },
   { id: "graph.move", group: "graph", chords: arrows.map((key) => ({ key, alt: true })), display: [["Alt", "←", "↑", "→", "↓"]] },
@@ -62,7 +67,7 @@ export const SHORTCUTS = [
 
 export type ShortcutId = (typeof SHORTCUTS)[number]["id"];
 
-export const GROUPS: ShortcutGroup[] = ["global", "navigate", "lists", "tasks", "graph", "review"];
+export const GROUPS: ShortcutGroup[] = ["global", "navigate", "lists", "tasks", "panel", "graph", "review"];
 
 const byId = new Map<string, Shortcut>(SHORTCUTS.map((s) => [s.id, s]));
 

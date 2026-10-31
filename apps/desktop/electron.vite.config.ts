@@ -60,6 +60,8 @@ export default defineConfig({
         input: {
           index: resolve(import.meta.dirname, "src/main/index.ts"),
           daemon: resolve(import.meta.dirname, "../../packages/daemon/src/entry.ts"),
+          // The terminals' utility process (docs/adr/0016-terminal.md); node-pty stays external.
+          "pty-host": resolve(import.meta.dirname, "src/main/terminal/pty-host.ts"),
         },
       },
     },

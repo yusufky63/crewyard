@@ -1,20 +1,25 @@
 {
-  "label": "Activity",
-  "tabsLabel": "Activity views",
+  "label": "Panel",
+  "tabsLabel": "Panel views",
   "tab": {
+    "assistant": "Assistant",
+    "terminal": "Terminal",
     "events": "Events",
-    "logs": "Logs"
+    "logs": "Logs",
+    "problems": "Problems"
   },
-  "closeNote": "Closing this drawer does not stop anything.",
-  "close": "Close the Activity drawer",
+  "closeNote": "Closing this panel does not stop anything.",
+  "closeNoteAssistant": "Hiding the panel keeps the assistant as it is; Stop and close stops it.",
+  "closeNoteTerminal": "Hiding the panel keeps shells running; closing a terminal's tab ends it.",
+  "close": "Close the panel",
   "closeTitle": "Close ({{keys}} or Esc). Nothing stops.",
-  "resize": "Resize the Activity drawer",
+  "resize": "Resize the panel",
   "resizeHint": "Drag to resize, or drag down to close. Double-click to reset.",
   "loading": "Loading…",
   "toggle": {
-    "label": "Activity",
-    "show": "Show events and logs ({{keys}})",
-    "hide": "Hide events and logs ({{keys}}). Nothing stops."
+    "label": "Panel",
+    "show": "Show the panel: assistant, terminal, events, logs, problems ({{keys}})",
+    "hide": "Hide the panel ({{keys}}). Nothing stops."
   },
   "events": {
     "filters": "Event filters",
@@ -75,5 +80,92 @@
     "none": "No log lines yet.",
     "noneFiltered": "No log lines match these filters.",
     "error": "Could not read the log files."
+  },
+  "terminal": {
+    "shell": "Shell",
+    "shells": {
+      "powershell": "Windows PowerShell",
+      "pwsh": "PowerShell 7",
+      "gitbash": "Git Bash",
+      "cmd": "Command Prompt",
+      "posix": "Login shell"
+    },
+    "where": "Start in",
+    "project": "Project folder",
+    "worktree": "Task worktree",
+    "noWorktree": "Select a task that has a worktree to start there.",
+    "new": "New terminal",
+    "tabsLabel": "Terminals",
+    "tabName": "{{shell}} {{n}}",
+    "state": {
+      "starting": "Starting",
+      "running": "Running",
+      "exited": "Ended",
+      "failed": "Could not start"
+    },
+    "close": "Close terminal {{n}}",
+    "closeTitle": "Close this terminal (Delete on its tab). Ends its shell.",
+    "confirm": "End this shell? It and everything it started stop.",
+    "keep": "Keep it",
+    "end": "End shell",
+    "empty": "No terminal is open in this project.",
+    "emptyNote": "New terminal starts your shell in the project folder or the selected task's worktree. It runs as you, with no API key passed in, and Crewyard never starts one on its own.",
+    "failed": "The shell did not start: {{reason}}",
+    "refused": {
+      "folder": "the folder does not exist any more",
+      "shell": "this shell is not installed",
+      "limit": "8 terminals are open, close one first",
+      "failed": "the terminal host could not start it"
+    },
+    "endedHost": "The terminal host stopped, so this shell ended.",
+    "ended": "The shell ended with exit code {{code}}.",
+    "foot": "Tab goes to the shell · F6 leaves the terminal · no keys are passed in",
+    "countLabel_one": "{{count}} shell running",
+    "countLabel_other": "{{count}} shells running"
+  },
+  "problems": {
+    "none": "No problems",
+    "summary_one": "{{count}} problem · {{danger}} failed, {{warning}} to check",
+    "summary_other": "{{count}} problems · {{danger}} failed, {{warning}} to check",
+    "restore_one": "Show {{count}} dismissed",
+    "restore_other": "Show {{count}} dismissed",
+    "error": "Some sources could not be read, so this list may be missing problems.",
+    "empty": "Nothing failed in this project.",
+    "allDismissed": "Every problem is dismissed. One shows again if its cause changes or comes back.",
+    "listLabel": "Problems, newest first",
+    "severity": {
+      "danger": "Failed",
+      "warning": "Needs a look"
+    },
+    "title": {
+      "run": "{{role}} on {{runner}} failed",
+      "event": "{{kind}}",
+      "check": "Check {{name}} fails on pull request #{{pr}}",
+      "stall": {
+        "no_events": "A step has been quiet for {{minutes}} min",
+        "request_unanswered": "A request has waited {{minutes}} min for your answer",
+        "same_failure": "A step failed {{count}} times in a row"
+      },
+      "configInvalid": "project.json cannot be used",
+      "configNewer": "project.json is from a newer Crewyard (version {{version}}), read-only",
+      "configNewerUnknown": "project.json is from a newer Crewyard (version {{version}}) and has fields this one does not know",
+      "configReplaced": "project.json has values this version replaced: {{count}}",
+      "role": "Role file not used: {{role}}",
+      "agentfileError": "Copy of {{name}} into {{profile}} failed",
+      "agentfileGone": "The original of {{name}} (shared into {{profile}}) is gone",
+      "key": "Key check failed: {{alias}}"
+    },
+    "open": {
+      "task": "Open task",
+      "inbox": "Open Inbox",
+      "github": "Open GitHub",
+      "settings": "Open Settings",
+      "providers": "Open Providers",
+      "events": "Show events"
+    },
+    "dismiss": "Dismiss",
+    "dismissLabel": "Dismiss: {{title}}",
+    "countLabel_one": "{{count}} problem",
+    "countLabel_other": "{{count}} problems"
   }
 }

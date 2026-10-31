@@ -2,7 +2,7 @@ import { existsSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } 
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { app, BrowserWindow, dialog, ipcMain, Notification, powerMonitor, powerSaveBlocker, safeStorage, shell, type IpcMainEvent, type IpcMainInvokeEvent, type MessageBoxOptions } from "electron";
 import { inQuietHours, type AppSettings, type IpcMethod, type IpcParams, type IpcResult, type NotificationSettings } from "@crewyard/core";
-import type { AppInfo, NavigateTarget, OpenFolderRequest, StartupState, TitleBarColors } from "../shared/api.ts";
+import type { AppInfo, NavigateTarget, OpenFolderRequest, StartupState, TerminalOpenRequest, TitleBarColors } from "../shared/api.ts";
 import { DaemonHost } from "./daemon-host.ts";
 import { refusedDebugSwitches } from "./debug-switches.ts";
 import { e2eMode } from "./e2e.ts";
@@ -16,6 +16,7 @@ import { PreviewHost } from "./preview/host.ts";
 import { secretHost } from "./secrets.ts";
 import { HIDDEN_ARG, readStartup, writeStartup } from "./startup.ts";
 import { TaskbarBadge } from "./taskbar.ts";
+import { TerminalHost } from "./terminal/host.ts";
 import { AppTray } from "./tray.ts";
 import { createUpdater, readRelease } from "./updater/index.ts";
 import { EMPTY_WORK, quitDetail, summarize, type WorkSummary } from "./work.ts";
@@ -134,6 +135,10 @@ const daemon = new DaemonHost(join(here, "daemon.js"), join(app.getPath("userDat
   } else if (topic === "tasks.changed" || topic === "requests.changed") scheduleWork();
 }, hostSecrets, logs);
 
+// The panel's Terminal tab (docs/adr/0016-terminal.md): shells live in their own utility process,
+// started on the first terminal. Packaged, node-pty ships outside app.asar in resources/native.
+const terminals = new TerminalHost(join(here, "pty-host.js"), app.isPackaged ? join(process.resourcesPath, "native", "node-pty") : null);
+
 const callDaemon = <M extends IpcMethod>(method: M, params: IpcParams<M>) => daemon.call(method, params) as Promise<IpcResult<M>>;
 
 const taskbar = new TaskbarBadge({ mode: features.badge, window: () => win, t });
@@ -226,10 +231,15 @@ function createWindow(): BrowserWindow {
   });
   w.webContents.on("did-start-loading", () => {
     rendererReady = false;
-    // A reloaded renderer has no Preview tab open any more.
+    // A reloaded renderer has no Preview tab open any more, and no terminals.
     preview.close();
+    terminals.closeOwner(w.webContents);
   });
-  w.on("closed", () => preview.close());
+  const contents = w.webContents;
+  w.on("closed", () => {
+    preview.close();
+    terminals.closeOwner(contents);
+  });
   // The renderer never navigates away; external https links open in the default browser.
   w.webContents.on("will-navigate", (e) => e.preventDefault());
   w.webContents.setWindowOpenHandler(({ url }) => {
@@ -332,7 +342,7 @@ async function requestQuit(reason: "quit" | "update" = "quit"): Promise<void> {
   quitting = true;
   keepAwake.dispose();
   updater.unschedule();
-  await daemon.shutdown();
+  await Promise.all([daemon.shutdown(), terminals.shutdown()]);
   tray?.destroy();
   // electron-updater starts the installer and quits; it hands Crewyard back to Windows when done.
   if (reason === "update" && updater.install()) return;
@@ -344,7 +354,7 @@ async function installUpdate(): Promise<void> {
   if (updater.state().phase !== "downloaded") return;
   if (interactive) return requestQuit("update");
   quitting = true;
-  await daemon.shutdown();
+  await Promise.all([daemon.shutdown(), terminals.shutdown()]);
   if (!updater.install()) app.quit();
 }
 
@@ -468,6 +478,18 @@ ipcMain.on("crewyard:preview", (e, action: unknown) => {
   else if (action === "close") preview.close();
   else if (action === "cancel-pick") preview.cancelPick();
 });
+// Terminals answer the main window's own page only; each one belongs to the page that opened it.
+ipcMain.handle("crewyard:terminal-shells", (e) => (fromApp(e) ? terminals.shells() : []));
+ipcMain.handle("crewyard:terminal-open", (e, req: unknown) => {
+  if (!fromApp(e) || !req || typeof req !== "object") return { ok: false, reason: "failed" };
+  return terminals.open(e.sender, req as TerminalOpenRequest);
+});
+ipcMain.on("crewyard:terminal", (e, action: unknown, id: unknown, a: unknown, b: unknown) => {
+  if (!fromApp(e)) return;
+  if (action === "write") terminals.write(e.sender, id, a);
+  else if (action === "resize") terminals.resize(e.sender, id, a, b);
+  else if (action === "close") terminals.close(e.sender, id);
+});
 ipcMain.on("crewyard:battery", (_e, reading: unknown) => keepAwake.setBatteryPct(batteryPct(reading)));
 ipcMain.on("crewyard:titlebar", (_e, colors: TitleBarColors) => {
   if (features.titleBarOverlay && win && !win.isDestroyed()) win.setTitleBarOverlay({ ...colors, height: 40 });
@@ -525,7 +547,8 @@ app.on("window-all-closed", () => {
   // screenshot, smoke or e2e run quits when its window closes.
   if (interactive) return;
   daemon.stop();
-  app.quit();
+  // Shells are not the host's children on Windows (ConPTY starts them), so end them before quitting.
+  void terminals.shutdown(1500).finally(() => app.quit());
 });
 
 /** `CREWYARD_SMOKE=1 electron .` starts the app, checks the daemon round trip and exits. Used before releases. */
