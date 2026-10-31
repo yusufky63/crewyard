@@ -6,7 +6,7 @@ Status: pre-release. It is built and tested on Windows 11. Linux and macOS are p
 
 ## Website
 
-`apps/web` is the project's website: what Crewyard is, how it works, downloads for Windows, macOS and Linux, the changelog, the FAQ and the security model. It reads releases from this repository's GitHub releases, so each new release appears on the download and changelog pages within the hour with no code change. It is a Next.js app deployed on Vercel with `apps/web` as the root directory; [apps/web/README.md](apps/web/README.md) covers development, the screenshots, the deploy and its environment variables.
+`apps/web` is the project's website: what Crewyard is, how it works, downloads (Windows today; macOS and Linux files appear when a release includes them), the changelog, the FAQ and the security model. It reads releases from this repository's GitHub releases, so each new release appears on the download and changelog pages within the hour with no code change. It is a Next.js app deployed on Vercel with `apps/web` as the root directory; [apps/web/README.md](apps/web/README.md) covers development, the screenshots, the deploy and its environment variables.
 
 ## What it does
 

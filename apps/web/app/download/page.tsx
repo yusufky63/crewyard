@@ -15,7 +15,7 @@ export const revalidate = 3600;
 
 export const metadata = pageMeta({
   title: "Download",
-  description: "Download Crewyard for Windows, macOS or Linux: every file of the latest release with its size and SHA-256, install steps for each system and what you need installed.",
+  description: "Download Crewyard: every file of the latest release for each system it ships for with its size and SHA-256, install steps for each system and what you need installed.",
   path: "/download",
 });
 
@@ -42,10 +42,12 @@ function FileRow({ file }: { file: DownloadFile }) {
   );
 }
 
-const pick = (files: DownloadFile[], kind: DownloadFile["kind"], fallback: string) => files.find((f) => f.kind === kind)?.name ?? fallback;
+// The notes only render for a platform that has files, and every command names a file the release
+// really has: a missing kind leaves its section out instead of printing a name that does not exist.
+const nameOf = (files: DownloadFile[], kind: DownloadFile["kind"]) => files.find((f) => f.kind === kind)?.name;
 
-function WindowsNotes({ files, version }: { files: DownloadFile[]; version: string }) {
-  const exe = pick(files, "exe", `Crewyard-Setup-${version}-x64.exe`);
+function WindowsNotes({ files }: { files: DownloadFile[] }) {
+  const exe = nameOf(files, "exe");
   return (
     <>
       <h3>Install</h3>
@@ -56,17 +58,21 @@ function WindowsNotes({ files, version }: { files: DownloadFile[]; version: stri
         </li>
         <li>Uninstall from Windows Settings. Your data in %APPDATA%\Crewyard stays until you delete it.</li>
       </ol>
-      <h3>Silent install</h3>
-      <CodeBlock code={`.\\${exe} /S`} />
-      <h3>Check the file (PowerShell)</h3>
-      <CodeBlock code={`Get-FileHash .\\${exe} -Algorithm SHA256`} />
+      {exe ? (
+        <>
+          <h3>Silent install</h3>
+          <CodeBlock code={`.\\${exe} /S`} />
+          <h3>Check the file (PowerShell)</h3>
+          <CodeBlock code={`Get-FileHash .\\${exe} -Algorithm SHA256`} />
+        </>
+      ) : null}
       <p>Built and tested on Windows 11. Windows 10 has not been tried.</p>
     </>
   );
 }
 
-function MacNotes({ files, version }: { files: DownloadFile[]; version: string }) {
-  const dmg = pick(files, "dmg", `Crewyard-${version}-arm64.dmg`);
+function MacNotes({ files }: { files: DownloadFile[] }) {
+  const sumFile = nameOf(files, "dmg") ?? files[0]?.name;
   return (
     <>
       <h3>Install</h3>
@@ -79,30 +85,47 @@ function MacNotes({ files, version }: { files: DownloadFile[]; version: string }
         <li>If macOS says the app is damaged and cannot be opened, remove the download quarantine flag:</li>
       </ol>
       <CodeBlock code="xattr -dr com.apple.quarantine /Applications/Crewyard.app" />
-      <h3>Check the file (Terminal)</h3>
-      <CodeBlock code={`shasum -a 256 ~/Downloads/${dmg}`} />
+      {sumFile ? (
+        <>
+          <h3>Check the file (Terminal)</h3>
+          <CodeBlock code={`shasum -a 256 ~/Downloads/${sumFile}`} />
+        </>
+      ) : null}
     </>
   );
 }
 
-function LinuxNotes({ files, version }: { files: DownloadFile[]; version: string }) {
-  const appimage = pick(files, "appimage", `Crewyard-${version}-x86_64.AppImage`);
-  const deb = pick(files, "deb", `Crewyard-${version}-amd64.deb`);
+function LinuxNotes({ files }: { files: DownloadFile[] }) {
+  const appimage = nameOf(files, "appimage");
+  const deb = nameOf(files, "deb");
+  const sumFile = appimage ?? deb;
   return (
     <>
-      <h3>AppImage</h3>
-      <CodeBlock code={`chmod +x ${appimage}\n./${appimage}`} />
-      <p>If it does not start, your distribution may need FUSE 2: the libfuse2 package (libfuse2t64 on Ubuntu 24.04).</p>
-      <h3>Debian or Ubuntu package</h3>
-      <CodeBlock code={`sudo apt install ./${deb}`} />
-      <h3>Check the file</h3>
-      <CodeBlock code={`sha256sum ${appimage}`} />
+      {appimage ? (
+        <>
+          <h3>AppImage</h3>
+          <CodeBlock code={`chmod +x ${appimage}\n./${appimage}`} />
+          <p>If it does not start, your distribution may need FUSE 2: the libfuse2 package (libfuse2t64 on Ubuntu 24.04).</p>
+        </>
+      ) : null}
+      {deb ? (
+        <>
+          <h3>Debian or Ubuntu package</h3>
+          <CodeBlock code={`sudo apt install ./${deb}`} />
+        </>
+      ) : null}
+      {sumFile ? (
+        <>
+          <h3>Check the file</h3>
+          <CodeBlock code={`sha256sum ${sumFile}`} />
+        </>
+      ) : null}
       <p>API keys are stored through the Secret Service (GNOME Keyring) or KWallet; without one, Crewyard does not store keys in plain text. Linux has no tray icon, so closing the window asks whether to quit.</p>
     </>
   );
 }
 
-const NOTES: Record<Platform, (p: { files: DownloadFile[]; version: string }) => ReactNode> = {
+const NOTES: Record<Platform, (p: { files: DownloadFile[] }) => ReactNode> = {
   windows: WindowsNotes,
   macos: MacNotes,
   linux: LinuxNotes,
@@ -130,7 +153,7 @@ function PlatformPanel({ release, platform, index }: { release: Release; platfor
         <div className="files">
           {files.length > 0 ? files.map((f) => <FileRow key={f.name} file={f} />) : <p className="empty-files">v{release.version} has no {PLATFORM_LABEL[platform]} build. Earlier or later releases may; see all releases on GitHub.</p>}
         </div>
-        <div className="notes">{files.length > 0 ? <Notes files={files} version={release.version} /> : null}</div>
+        <div className="notes">{files.length > 0 ? <Notes files={files} /> : null}</div>
       </div>
     </section>
   );
@@ -210,7 +233,7 @@ export default async function DownloadPage() {
           </>
         ) : (
           <>
-            <p className="lead">Crewyard ships for Windows, macOS and Linux through GitHub releases. This page lists the files of the latest release as soon as one is public.</p>
+            <p className="lead">Crewyard is built and tested on Windows 11; macOS and Linux files appear here when a release includes them. This page lists the files of the latest release from GitHub releases as soon as one is public.</p>
             <ReleaseUnavailable reason={state.kind === "unavailable" ? state.reason : "no-releases"} />
           </>
         )}

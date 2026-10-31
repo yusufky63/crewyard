@@ -42,7 +42,7 @@ const JSON_LD = JSON.stringify({
       "@type": "SoftwareApplication",
       name: SITE.name,
       applicationCategory: "DeveloperApplication",
-      operatingSystem: "Windows, macOS, Linux",
+      operatingSystem: "Windows 11; macOS and Linux when a release includes them",
       url: SITE.url,
       downloadUrl: `${SITE.url}/download`,
       license: "https://opensource.org/licenses/MIT",

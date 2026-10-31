@@ -10,7 +10,7 @@ export const revalidate = 3600;
 
 export const metadata = pageMeta({
   title: "Changelog",
-  description: "Every Crewyard release, newest first, with its notes and its files for Windows, macOS and Linux, read from GitHub releases.",
+  description: "Every Crewyard release, newest first, with its notes and its files for each system, read from GitHub releases.",
   path: "/changelog",
 });
 
