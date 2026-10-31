@@ -55,6 +55,8 @@ export class Orchestrator {
   /** Loop decisions, test results, pinned verdicts, review checkouts, run epochs (loops.ts). */
   readonly loops: LoopStore;
 
+  /** Kept on the facade too: github/flow.test.ts reads `opts.store` through a cast. */
+  private readonly opts: OrchestratorOptions;
   private readonly ctx: OrchestratorContext;
   private readonly taskFlow: TaskFlow;
   private readonly dispatcher: Dispatcher;
@@ -76,6 +78,7 @@ export class Orchestrator {
   private interval: NodeJS.Timeout | null = null;
 
   constructor(opts: OrchestratorOptions) {
+    this.opts = opts;
     const ctx = new OrchestratorContext(opts);
     this.ctx = ctx;
     ctx.bootstrap = new Bootstrapper({
@@ -251,7 +254,7 @@ export class Orchestrator {
   /** Recovers from the last session, then starts scheduling. */
   start(): void {
     this.recovery.recover();
-    const opts = this.ctx.opts;
+    const opts = this.opts;
     const ms = opts.tickMs ?? 5_000;
     if (ms > 0) this.interval = setInterval(() => void this.tick(), ms).unref();
     const stallMs = opts.stallCheckMs ?? 30_000;
