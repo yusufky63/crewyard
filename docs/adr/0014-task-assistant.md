@@ -1,6 +1,6 @@
 # ADR 0014: Task assistant on the Tasks screen
 
-**Status:** accepted, 2026-10-31. Owner request the same day.
+**Status:** accepted, 2026-10-31. Owner request the same day. Amended by [ADR 0018](0018-assistant-read-tools.md): the assistant also gets read tools and edit and discard of its own open drafts.
 
 ## Problem
 
