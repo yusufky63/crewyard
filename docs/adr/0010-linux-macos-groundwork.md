@@ -2,6 +2,8 @@
 
 Date: 2026-10-30. Status: accepted. Large tier (AGENTS.md): a new platform layer.
 
+**Update 2026-10-31: shipped as unsigned pre-release builds.** One tag now builds and publishes Windows, macOS (arm64 and x64) and Linux (x64) packages. The macOS build is ad-hoc signed, not notarized. See [Shipping](#update-2026-10-31-shipping-unsigned-pre-release-builds) below and [docs/release.md](../release.md); the gaps that remain are under [What is still missing](#what-is-still-missing-on-linux-or-macos).
+
 ## Problem
 
 The owner, 2026-10-30: "linux ve mac için hazırlıklar da yapabiliriz ama öncelik windows da" (we can prepare for Linux and macOS, but Windows comes first). Nothing ships for Linux or macOS yet, and no release is made. Windows must behave exactly as before.
@@ -168,10 +170,12 @@ In screenshot, smoke and e2e runs every row is off, as before, except the captio
 
 ### Packaging (`apps/desktop/electron-builder.config.cjs`)
 
-- **mac:** dmg and zip for arm64 and x64, `identity: null` (unsigned), `notarize: false`, category `public.app-category.developer-tools`.
+As first prepared on 2026-10-30; the 2026-10-31 update below replaced the parts marked.
+
+- **mac:** dmg and zip for arm64 and x64, `identity: null` (unsigned; now ad-hoc, see below), `notarize: false`, category `public.app-category.developer-tools`.
 - **linux:** AppImage and deb for x64, category `Development`, executable `crewyard`.
-- `pnpm package:mac` and `pnpm package:linux` run only on that OS, because `electronDist` is the Electron pnpm installed there.
-- The config passes electron-builder 26.17.0's own schema check (`validateConfiguration`).
+- `pnpm package:mac` and `pnpm package:linux` run only on that OS, because `electronDist` is the Electron pnpm installed there (now a hook that downloads any other platform or arch).
+- The config passes electron-builder 26.17.0's own schema check (`validateConfiguration`; now a test).
 - Nothing was built or downloaded for these targets.
 
 ### CI
@@ -180,6 +184,7 @@ In screenshot, smoke and e2e runs every row is off, as before, except the captio
 - `macos-test.yml` is new and runs `pnpm test` on `macos-latest`, on `workflow_dispatch` only. macOS minutes count ten times Linux ones on a private repository. It has `concurrency` with `cancel-in-progress` and `timeout-minutes`.
 - Crewyard's own workflow check passes both files. A first draft put the macOS job in `ci.yml` behind `if:`; the check flagged it as a costly runner on push, so it moved to its own file.
 - No CI run was started.
+- 2026-10-31: `release.yml` builds and publishes the packages on a `v*` tag, or builds them as a dry run by hand (see the update below). It is the only workflow that packages anything.
 
 ## Sources (all opened 2026-10-30)
 
@@ -256,19 +261,208 @@ What runs only on POSIX, and will first run on the Linux CI job:
 
 The rest of the suite has never run on Linux either, because there is no GitHub remote yet. Some older tests may assume Windows paths.
 
-## What blocks shipping on Linux or macOS
+## Update 2026-10-31: shipping unsigned pre-release builds
+
+### Problem
+
+The owner, 2026-10-31: "mevcut görevler bitince release yayınlanacak ve web siteye de eklenecek ve otomatik olarak her release de web siteye eklenecek ve mac linux windows destekli şekilde" (when the current tasks are done a release will be published and added to the website, every release will reach the website automatically, with macOS, Linux and Windows support). Decided the same day:
+
+- the repository becomes public at release time, under the MIT licence (Copyright (c) 2026 Yusuf);
+- GitHub Releases is the download host;
+- the website (Vercel) reads releases from the public GitHub API;
+- the builds stay unsigned for now.
+
+Until this update nothing had been built for macOS or Linux, and v0.1.0 was a Windows installer uploaded by hand.
+
+### Decisions
+
+**Pipeline.**
+
+- Options:
+  - (a) each build job publishes with electron-builder's GitHub provider (`--publish always`), as emdash and orca do;
+  - (b) every job builds with `--publish never`, and one job uploads with `gh release upload`.
+- **Chosen: (b),** in `.github/workflows/release.yml`:
+  - **prepare** checks the tag and opens a draft;
+  - four **build** jobs, one per OS and CPU, build and check the packages;
+  - **publish**, only when all four passed, checks the whole set, writes `SHA256SUMS.txt`, uploads it to the draft and publishes.
+- Why:
+  - With no electron-builder publish config, no `app-update.yml` points the app at GitHub. ADR 0011 allows an update feed only for signed builds.
+  - The set of files is checked as a whole before anything is public.
+  - Only one job holds a write token.
+- This also departs from the first plan, where build jobs uploaded to the draft themselves. The build jobs run dependency install scripts (Electron, esbuild, node-pty), and an install script can reach any token in its job. setup-node's own advanced-usage guide keeps install scripts and caches away from publishing credentials for the same reason. So build jobs are `contents: read` and pass their files on as workflow artifacts, kept five days so that a re-run of a failed publish job still finds them.
+- There are no caches: dependencies come from the registry and Electron from its checksummed download on every run.
+- `workflow_dispatch` runs the same builds as a dry run: nothing is published, and the artifacts are kept three days.
+- The workflow has `concurrency` per event and tag with `cancel-in-progress` (so a manual dry run on a tag ref never cancels that tag's real run), `timeout-minutes` on every job, and no `schedule`. Every step runs as `bash -eo pipefail`, so `release-check | tee` fails when the check does. The tag check also refuses a build when `LICENSE` is missing or does not match the MIT licence and copyright the packages declare. It never runs on a branch push or a pull request. Crewyard's own workflow check (`packages/daemon/src/github/workflows.ts`) passes it.
+
+**macOS signing.**
+
+- Options:
+  - (a) `identity: null`: no signature at all;
+  - (b) `identity: "-"`: ad-hoc.
+- **Chosen: (b).**
+  - Apple silicon refuses to run an arm64 binary without a valid signature. electron-builder flips the fuses after Electron's own signature, which breaks it. A downloaded unsigned copy is then reported as "damaged" with no way past it.
+  - Ad hoc turns that into Gatekeeper's "could not verify" prompt, which System Settings → Privacy & Security → Open Anyway (or `xattr -dr com.apple.quarantine`) gets past. The release notes say so ([docs/release-notes/install.md](../release-notes/install.md)).
+- `hardenedRuntime: false`:
+  - electron-builder 26.17.0 itself warns that ad-hoc signing with hardened runtime needs `disable-library-validation` (`MacTargetHelper.findSigningIdentity`);
+  - hardened runtime only matters for notarization, which needs a Developer ID anyway.
+- `darkModeSupport: true`, so the app follows the system appearance.
+- `minimumSystemVersion: "13.0"`: Electron 45 supports macOS 13 Ventura and later (its README, "Platform support"), so the bundle says the same and an older Mac refuses it up front. The README, the release notes and docs/release.md name macOS 13 too.
+- `codesign --verify --deep --strict` and `Signature=adhoc` are checked on the runner.
+
+**The Intel Mac build.**
+
+- Options:
+  - (a) build x64 on the Apple-silicon runner;
+  - (b) build x64 on GitHub's Intel runner (`macos-15-intel`).
+- node-pty ships prebuilds for both macOS CPUs, so (a) packages correctly. `electronDist` is now a hook that downloads the matching Electron for any platform or arch other than the machine's own.
+- **Chosen: (b)** anyway, so the x64 app and its node-pty run natively in the release checks. cc-switch splits its macOS targets across two machines too.
+- The hook keeps a local `pnpm package:mac` on either Mac correct for both CPUs.
+
+**The Linux build machine.**
+
+- Options:
+  - (a) `ubuntu-latest` (24.04);
+  - (b) `ubuntu-22.04`.
+- node-pty has no Linux prebuild: `pnpm install` compiles `pty.node` against the runner's glibc, so the build machine sets the oldest system it runs on.
+- **Chosen: (b),** glibc 2.35: Ubuntu 22.04, Debian 12, Fedora 36 and later. emdash builds its Linux packages in an `ubuntu:22.04` container and cc-switch on `ubuntu-22.04`, for the same reason.
+- `release-check.mjs` reads `pty.node`'s glibc symbol versions with `objdump -T` and fails above 2.35, so a runner change cannot quietly raise the floor.
+
+**node-pty per platform.**
+
+- `extraResources` already puts node-pty next to `app.asar` (ADR 0016), so no `asarUnpack` is needed. The filter `prebuilds/${platform}-${arch}` picks the Windows or macOS prebuild for the target CPU, and `build/Release/*.node` picks Linux's compiled one.
+- **spawn-helper.**
+  - The node-pty 1.1.0 npm tarball stores both macOS `spawn-helper` binaries with mode 0644 (`tar -tvzf`). pnpm and electron-builder keep that, so every terminal on a packaged Mac would fail with `posix_spawnp failed`.
+  - An `afterPack` hook (`scripts/after-pack.cjs`) sets 0755 before the bundle is signed, and fails the build if the helper is missing.
+  - orca reports the same `posix_spawnp` symptom from another cause: arm64 helpers in an Intel build.
+- **Checks.** `release-check.mjs build` checks, per OS:
+  - the files are present;
+  - on macOS, the CPU of `pty.node`, `spawn-helper` and the app's executable (`lipo -archs`);
+  - on Linux, `file` and `objdump`.
+
+  It then starts a shell through the packaged node-pty with the runner's own Node. That is the same binary Electron loads, because node-pty is a Node-API addon.
+
+**Icons.**
+
+- Options:
+  - (a) png2icons, or `iconutil` on the macOS runner;
+  - (b) extend `scripts/make-icon.mjs`, which already draws every size from the title-bar mark.
+- **Chosen: (b):** no dependency, no Mac needed, and byte-for-byte reproducible.
+- What it writes:
+  - `build/icon.icns`: PNG entries from 16 to 1024 px, with the tile on Apple's 824/1024 grid with rounded corners and a transparent margin;
+  - `build/icons/<n>x<n>.png`: 16 to 512 px, the same square tile as `icon.png`, for the hicolor theme.
+- `icon.ico` and `icon.png` came out byte-identical.
+- A test parses the committed `.icns` and PNGs.
+
+**Linux package metadata.**
+
+- The maintainer is `Yusuf <yusufky63@users.noreply.github.com>`, the homepage is the GitHub repository until the site has a domain, and the licence is MIT.
+- `desktopName: crewyard.desktop` makes Electron's Wayland app id and X11 `WM_CLASS` match the installed entry, so the window groups under its launcher icon. electron-builder 26 warns without it.
+- The deb's own after-install script installs an AppArmor profile on Ubuntu 24.04 and later. There the AppImage's launcher instead starts the app with `--no-sandbox` when user namespaces are restricted. The install notes therefore recommend the deb on those systems.
+
+**Licence files on macOS.** On Windows and Linux, `NOTICE.txt` and `THIRD-PARTY-LICENSES.txt` stay next to the executable, as before. A macOS bundle keeps its resources in `Contents/Resources`, and a loose file directly in `Contents` puts code signing at risk, so on macOS they go to `Contents/Resources`.
+
+**Asset names.**
+
+- [`scripts/release-assets.cjs`](../../apps/desktop/scripts/release-assets.cjs) holds them for the config, the workflow and the website:
+  - `Crewyard-Setup-<v>-x64.exe`;
+  - `Crewyard-<v>-arm64.dmg` and `Crewyard-<v>-x64.dmg`;
+  - `Crewyard-<v>-arm64-mac.zip` and `Crewyard-<v>-x64-mac.zip`;
+  - `Crewyard-<v>-x86_64.AppImage`;
+  - `crewyard_<v>_amd64.deb`;
+  - `SHA256SUMS.txt`.
+- A test expands the config's patterns with electron-builder's own `expandMacro` and `getArtifactArchName`, so the names cannot drift from what electron-builder writes.
+- **Versions.** The root `package.json` now carries the version too. The tag must equal both versions, and every `0.x` version is a pre-release. GitHub's `/releases/latest` skips pre-releases, so the website must read the list (docs/release.md).
+
+### Windows notes
+
+- The NSIS target, its options, `installer.nsh` and the installer's name are unchanged.
+- The licence files moved from the top-level `extraFiles` into `win.extraFiles`, with the same source and destination. `e2e/update/update-flow.mjs` spreads the base config, so its test installers still carry them.
+- The `electronDist` hook returns the same `node_modules/electron/dist` for a win32 x64 build, so nothing is downloaded.
+- The release job builds with `--win nsis --x64` on `windows-latest`. It uses no signing variables, so the installer is unsigned and has no update feed, exactly like a local `pnpm package`.
+
+### Security notes
+
+- The tag reaches shell steps only through environment variables, and `release-check.mjs` accepts only `v<major>.<minor>.<patch>[-pre]` before anything else runs.
+- Build jobs are `contents: read`, check out without persisted credentials, and use no cache. Only `prepare` and `publish` can write, and neither runs dependency install scripts.
+- A published release is never modified: `prepare` refuses a tag whose release is no longer a draft.
+- `publish` uploads only the exact set of files and checks names, sizes and upload state on GitHub before it publishes.
+- Users can check a download with `SHA256SUMS.txt`, and GitHub's own asset `digest`. These only prove the file is the one the workflow built; nothing here proves who built it, which is what signing will add.
+
+### What was verified, and how (2026-10-31, on Windows 11)
+
+- **Windows package.** `pnpm package` still builds `dist/Crewyard-Setup-0.1.0-x64.exe` with the same layout: `NOTICE.txt` and `THIRD-PARTY-LICENSES.txt` next to the exe, and `resources/native/node-pty` with only the win32-x64 prebuild, including `conpty/conpty.dll`.
+- **Windows exe metadata.** `Crewyard.exe` reads `LegalCopyright: Copyright (c) 2026 Yusuf` and `CompanyName: Yusuf`. Before, `extraMetadata.author` was a string, electron-builder (which reads `author.name`) set no company, and the exe kept Electron's own "GitHub, Inc."; author is now an object.
+- **Release checks on Windows.**
+  - `release-check.mjs build windows-x64` passes: it started `cmd.exe` through the packaged node-pty and ConPTY.
+  - `release-check.mjs smoke windows-x64` passes: the packaged app started on a throwaway profile, its daemon answered `daemon.status` and `machine.check`, and it exited 0.
+  - The installer was not run, because it would replace the installed Crewyard on this machine.
+- **Tag check.** `release-check.mjs version` refuses a missing `LICENSE`. Run the way the workflow now runs it (`bash --noprofile --norc -eo pipefail`), `release-check version v9.9.9 | tee` fails the step; under plain `bash -e`, GitHub's default before, the same line passed.
+- **Checksums and asset sets.** On a fake set of files, `release` writes sums that verify, and refuses an extra `.blockmap`. `published` refuses a missing file, a size difference and an asset still uploading.
+- **Configuration.**
+  - The config passes electron-builder's schema check; a test now runs it.
+  - js-yaml parses all three workflows, and Crewyard's workflow check (`checkWorkflows`, private repository, default branch `main`) finds nothing; `triggeredBy` gives only `ci.yml` for a push to `main` and for a pull request.
+  - A push to `main` or to a pull-request branch starts only `ci.yml`.
+
+### What was not verified
+
+- No macOS or Linux build has run. The first run will be the dry run on GitHub's runners (docs/release.md, "Before the first release"). Never run:
+  - ad-hoc signing;
+  - dmg and zip creation;
+  - the `afterPack` chmod on real files;
+  - `lipo`, `codesign`, `objdump`;
+  - AppImage and deb creation;
+  - the smoke runs on macOS and under Xvfb.
+- WSL here has only Docker's internal distribution, and Docker was not running, so nothing Linux ran locally.
+- actionlint was not run. The workflow was checked by reading it, by parsing it, and with Crewyard's own rules.
+- No release, tag or GitHub setting was created or changed.
+
+### Sources (opened 2026-10-31)
+
+| Source | Stars | Licence | Archived | What we learned |
+|---|---|---|---|---|
+| github.com/generalaction/emdash: `.github/workflows/release-prod.yml`, `release-linux.yml`, `apps/emdash-desktop/electron-builder.config.ts` (main) | 6,128 | Apache-2.0 | no | draft first, per-OS jobs upload, a finalize job publishes; Linux built in an `ubuntu:22.04` container; mac dmg+zip with hardened runtime and entitlements, signed and notarized in its release jobs |
+| github.com/stablyai/orca: `config/electron-builder.config.cjs`, `.github/workflows/release-mac-build.yml` (main) | 111,631 | MIT | no | draft until every asset is verified; both mac CPUs from one machine needs a per-target node-pty, or Intel Macs get `posix_spawnp` failures; hardened runtime and notarization only on signed release builds; `icns` as the Linux icon source; deb `artifactName` with `_${version}_${arch}` |
+| github.com/farion1231/cc-switch: `.github/workflows/release.yml` (main) | 150,617 | MIT | no | `v*` tag plus `workflow_dispatch` as a dry run; concurrency per ref; Linux on `ubuntu-22.04`; macOS targets on separate machines |
+| github.com/electron-userland/electron-builder, installed `app-builder-lib@26.17.0`: `out/mac/MacTargetHelper.js`, `out/macPackager.js`, `out/targets/FpmTarget.js`, `out/targets/LinuxTargetHelper.js`, `out/targets/appimage/*.js`, `out/electron/ElectronFramework.js`, `out/platformPackager.js`, `out/configuration.d.ts`, `templates/linux/after-install.tpl`; `builder-util@26.16.0` `out/arch.js` | 14,693 | MIT | no | `"-"` is ad hoc and warns with hardened runtime; deb needs homepage and maintainer; per-format arch names; `electronDist` may be a hook; afterPack runs before fuses and signing; AppImage launcher adds `--no-sandbox` without user namespaces; deb installs an AppArmor profile; `desktopName` sets `StartupWMClass` |
+| github.com/electron/electron `shell/common/asar/archive.cc` at v45.1.0 | | MIT | no | asar integrity is validated only on macOS and Windows; the fuse is inert on Linux |
+| electronjs.org/docs/latest/tutorial/asar-integrity | | MIT | | platform support for asar integrity |
+| github.com/microsoft/node-pty 1.1.0: npm tarball (`tar -tvzf`), `binding.gyp`, `lib/utils.js`, `lib/unixTerminal.js`, `scripts/prebuild.js` | 2,056 | MIT | no | prebuilds for win32 and darwin only; `spawn-helper` stored 0644; Linux builds from source; macOS needs `spawn-helper` next to `pty.node` |
+| github.com/cli/cli `pkg/cmd/release/shared/fetch.go`, `pkg/cmd/release/create/create.go` (trunk) | | MIT | no | `gh release view/upload/edit <tag>` find a draft by its pending tag; `--notes-file` is prepended to `--generate-notes`; `--verify-tag` |
+| docs.github.com: actions/reference/runners/github-hosted-runners; rest/releases/releases | | | | `macos-15`, `macos-15-intel`, `ubuntu-22.04` labels; `/releases/latest` skips pre-releases; drafts only for push access; assets carry `digest` |
+| github.com/actions/setup-node `docs/advanced-usage.md` (v7.1.0); release notes of checkout v6/v7, setup-node v6/v7, upload-artifact v6/v7, download-artifact v7/v8, pnpm/action-setup v5/v6 and its README | | MIT | no | turn caching off where something is published; current majors and their breaking changes |
+
+No code was copied or ported. Workflow keys, CLI flags, file formats (ICNS type codes) and API fields are used as facts.
+
+### Rollback
+
+- **Workflow:** delete `.github/workflows/release.yml` and `docs/release-notes/install.md`. Releases go back to a Windows installer uploaded by hand.
+- **macOS signing:** set `identity: null` to return to no signature. Arm64 downloads then show as damaged.
+- **electronDist:** a plain `"node_modules/electron/dist"` string restores the old behaviour, and local cross-arch Mac builds are wrong again.
+- **spawn-helper:** removing `afterPack` brings the `posix_spawnp` failure back on packaged Macs.
+
+## What is still missing on Linux or macOS
+
+Numbered as in the first version of this list; done items are struck through.
 
 1. Real-machine runs of the four adapters (conformance suite, PLAN.md §5.4) on each OS.
 2. Orphan identity off Windows: match the run's working folder and require a session leader before killing.
-3. Icons: `.icns` for macOS and a PNG set for Linux (`scripts/make-icon.mjs` writes `.ico` only).
-4. deb needs a `homepage` and a maintainer email, which do not exist yet.
-5. macOS signing and notarization (also what makes notifications work), or at least ad-hoc signing for Apple silicon.
-6. The title bar on macOS (traffic lights).
+3. ~~Icons: `.icns` for macOS and a PNG set for Linux.~~ Done 2026-10-31.
+4. ~~deb needs a `homepage` and a maintainer email.~~ Done 2026-10-31 (the GitHub repository until the site has a domain).
+5. macOS signing with a Developer ID and notarization, which is also what makes notifications work. Ad-hoc signing is done (2026-10-31).
+6. The title bar on macOS: the traffic lights sit over the 40 px title bar's own content.
 7. A Linux tray decision (StatusNotifier detection) and XDG autostart.
 8. The Start screen's default import folder is `C:\Projeler`; it needs a home-based default.
 9. Wording that names Windows or DPAPI (Settings → Data, the provider dialog) needs per-platform text, in English and Turkish.
 10. `safeStorage`'s `shouldReEncrypt` is ignored; blobs are not rewritten after a keychain key rotation.
 11. Case-sensitive project paths on Linux (store collation).
+12. ~~Settings → About opens `THIRD-PARTY-LICENSES.txt` from the executable's folder, but on macOS the file is in `Contents/Resources`.~~ Done 2026-10-31: `main/index.ts` looks in `process.resourcesPath` on macOS.
+13. `pnpm dev` on a Mac: the `spawn-helper` in `node_modules` is 0644 too, so the terminal fails in development. `afterPack` fixes packaged builds only. A `postinstall` chmod, or the pty host checking the mode, would fix it.
+14. **AppImage:**
+    - it needs FUSE 2 (`libfuse2`, which Ubuntu 22.04 and later no longer install by default);
+    - on Ubuntu 24.04 it starts without Chromium's sandbox;
+    - electron-builder's static-runtime toolset (`toolsets.appimage: "1.0.3"`, beta in 26.17.0) would drop the FUSE need.
+15. Linux arm64 and Windows arm64 are not built.
+16. None of these builds updates itself. Unsigned builds get no feed (ADR 0011).
 
 ## Rollback
 

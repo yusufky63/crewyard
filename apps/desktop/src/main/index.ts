@@ -446,9 +446,14 @@ ipcMain.handle("crewyard:update", (_e, action: unknown) => {
   else if (action === "auto-on" || action === "auto-off") updater.setAutoCheck(action === "auto-on");
   return updater.state();
 });
-/** The licence list that shipped next to the exe (electron-builder.config.cjs), or the one the last build wrote. */
+/**
+ * The licence list that shipped with the app (electron-builder.config.cjs), or the one the last build
+ * wrote. Windows and Linux keep it next to the executable; a macOS bundle keeps it in
+ * Contents/Resources, because loose files beside the executable would break the code signature.
+ */
 ipcMain.handle("crewyard:open-licenses", async () => {
-  const file = app.isPackaged ? join(dirname(process.execPath), "THIRD-PARTY-LICENSES.txt") : join(here, "../third-party/THIRD-PARTY-LICENSES.txt");
+  const shipped = process.platform === "darwin" ? process.resourcesPath : dirname(process.execPath);
+  const file = app.isPackaged ? join(shipped, "THIRD-PARTY-LICENSES.txt") : join(here, "../third-party/THIRD-PARTY-LICENSES.txt");
   if (!existsSync(file)) return false;
   return (await shell.openPath(file)) === "";
 });

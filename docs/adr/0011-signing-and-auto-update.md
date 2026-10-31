@@ -202,3 +202,7 @@ These rules hold:
 2. **An HTTPS feed host** for `latest.yml`, `Crewyard-Setup-<version>-x64.exe` and its `.blockmap`, uploaded together for each release, with write access limited to you.
 3. **The build:** `CREWYARD_SIGN=1`, the certificate variables, `CREWYARD_UPDATE_URL`, then `pnpm package`, then upload `dist\latest.yml`, the installer and the blockmap. Do it on your machine, once per release; CI stays on ubuntu (AGENTS.md).
 4. **Before the first public release:** adopt signed update manifests once electron-builder 27 is stable. Packaged builds already refuse `--remote-debugging-port` and `--remote-debugging-pipe` (Security notes).
+
+## Addendum, 2026-10-31: the repository becomes public
+
+The owner decided that yusufky63/crewyard becomes public at release time, under the MIT licence (PLAN.md §17, 2026-10-31). The constraint behind option 1's first objection, "the code repository is private", no longer holds: once the repository is public, the GitHub Releases provider needs no token on users' machines. The other objections stand (the `sax` licence, the API and Atom parsing), so the choice of update feed remains open item 1 and is not decided here.

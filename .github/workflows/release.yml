@@ -1,0 +1,219 @@
+name: release
+
+# One version tag builds Crewyard for Windows, macOS (Apple silicon and Intel) and Linux and publishes
+# the files as one GitHub release (docs/release.md, docs/adr/0010-linux-macos-groundwork.md):
+#   - a pushed v* tag builds, checks and publishes;
+#   - Actions -> release -> Run workflow builds and checks the same four packages and keeps them as
+#     workflow artifacts for three days, without creating or touching any release (a dry run).
+# Nothing else starts it: no branch push, no pull request, no schedule. The Windows and macOS runners
+# here therefore only run for a tag or by hand.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+# A tag pushed again replaces the run still going for it; the draft it made is reused. The event is
+# part of the group, so a dry run started by hand on a tag ref never cancels that tag's real run
+# (in the middle of publishing, say).
+concurrency:
+  group: release-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Read-only unless a job says otherwise. GITHUB_TOKEN is the only credential this workflow uses.
+permissions:
+  contents: read
+
+# Every run step, on every OS, as `bash --noprofile --norc -eo pipefail`. GitHub's default for a
+# plain `run` on Linux is `bash -e` without pipefail, which would let `release-check | tee` pass when
+# release-check refuses the tag.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # Checks the tag before any build minute is spent and opens the draft the files will go to.
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      # v<major>.<minor>.<patch>[-pre], equal to both package.json versions; 0.x is a pre-release.
+      # The tag reaches the shell only through the environment, never inside the script text.
+      - id: version
+        env:
+          EVENT: ${{ github.event_name }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [ "$EVENT" = "push" ]; then
+            node apps/desktop/scripts/release-check.mjs version "$TAG" | tee -a "$GITHUB_OUTPUT"
+          else
+            node apps/desktop/scripts/release-check.mjs version --dry-run | tee -a "$GITHUB_OUTPUT"
+          fi
+      - name: Create the draft release, or reuse it
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ steps.version.outputs.version }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+        run: |
+          if state=$(gh release view "$TAG" --json isDraft --jq .isDraft 2> "$RUNNER_TEMP/view.err"); then
+            if [ "$state" != "true" ]; then
+              echo "::error::$TAG is already published. A published release is never rebuilt: bump the version and push a new tag."
+              exit 1
+            fi
+            echo "Reusing the draft release for $TAG."
+            exit 0
+          fi
+          if ! grep -q "release not found" "$RUNNER_TEMP/view.err"; then cat "$RUNNER_TEMP/view.err"; exit 1; fi
+          # The version's own notes when written (docs/release-notes/<tag>.md), else GitHub's
+          # generated list of changes; the install steps for unsigned builds go first either way.
+          notes="$RUNNER_TEMP/notes.md"
+          cp docs/release-notes/install.md "$notes"
+          generate=()
+          if [ -f "docs/release-notes/$TAG.md" ]; then
+            printf '\n' >> "$notes"
+            cat "docs/release-notes/$TAG.md" >> "$notes"
+          else
+            generate=(--generate-notes)
+          fi
+          gh release create "$TAG" --draft --verify-tag --title "Crewyard $VERSION" --prerelease="$PRERELEASE" --notes-file "$notes" "${generate[@]}"
+
+  # Each package is built and checked on the OS and CPU it is for, so the native terminal module
+  # (node-pty) and the smoke run are real. These jobs hold no write token: they run dependency
+  # install scripts, so their files reach the release only through the publish job.
+  build:
+    name: build ${{ matrix.id }}
+    needs: prepare
+    strategy:
+      # One failed build means no release, so the others stop instead of spending minutes.
+      fail-fast: true
+      matrix:
+        include:
+          - id: windows-x64
+            runner: windows-latest
+            platform: win
+            arch: x64
+            targets: nsis
+          - id: macos-arm64
+            runner: macos-15
+            platform: mac
+            arch: arm64
+            targets: dmg zip
+          # An Intel runner, so the x64 app and its node-pty run natively in the checks below.
+          - id: macos-x64
+            runner: macos-15-intel
+            platform: mac
+            arch: x64
+            targets: dmg zip
+          # 22.04, not latest: node-pty is compiled here, and glibc 2.35 keeps Ubuntu 22.04 and
+          # Debian 12 able to run it (release-check.mjs fails a build that needs newer).
+          - id: linux-x64
+            runner: ubuntu-22.04
+            platform: linux
+            arch: x64
+            targets: AppImage deb
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      # The macOS build is ad-hoc signed by its config; never look for a keychain identity.
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # No dependency or Electron cache: a release starts from the registry and from Electron's
+      # own checksums, never from a cache another run wrote.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - uses: pnpm/action-setup@v6
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      # pnpm may skip Electron's download script; the package copies this Electron into the app.
+      - name: Download Electron
+        run: node apps/desktop/node_modules/electron/install.js
+      - name: Build
+        run: pnpm --filter @crewyard/desktop build
+      - name: Package
+        working-directory: apps/desktop
+        run: pnpm exec electron-builder --${{ matrix.platform }} ${{ matrix.targets }} --${{ matrix.arch }} --config electron-builder.config.cjs --publish never
+      # The expected file names, node-pty for this OS and CPU (and, on macOS, the ad-hoc signature),
+      # then a shell started through the packaged node-pty.
+      - name: Check the package
+        run: node apps/desktop/scripts/release-check.mjs build ${{ matrix.id }} apps/desktop/dist "$RUNNER_TEMP/release"
+      - name: Start the packaged app
+        if: matrix.platform != 'linux'
+        run: node apps/desktop/scripts/release-check.mjs smoke ${{ matrix.id }} apps/desktop/dist
+      - name: Start the packaged app on a virtual display
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends xvfb
+          xvfb-run -a node apps/desktop/scripts/release-check.mjs smoke ${{ matrix.id }} apps/desktop/dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: crewyard-${{ matrix.id }}
+          path: ${{ runner.temp }}/release
+          if-no-files-found: error
+          # dmg, zip, AppImage and deb are compressed already.
+          compression-level: 0
+          # Long enough for "Re-run failed jobs" on publish a few days later to still find the
+          # files of the builds that passed (docs/release.md).
+          retention-days: ${{ github.event_name == 'push' && 5 || 3 }}
+
+  # Runs only when every build passed: one checked set of files, SHA256SUMS.txt, then the draft
+  # becomes the published release.
+  publish:
+    needs: [prepare, build]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ github.ref_name }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+      PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: crewyard-*
+          path: release
+          merge-multiple: true
+      - name: Check the files and write SHA256SUMS.txt
+        run: node apps/desktop/scripts/release-check.mjs release release "$VERSION"
+      - name: Upload to the draft
+        run: gh release upload "$TAG" release/* --clobber
+      - name: Check the draft
+        run: |
+          gh release view "$TAG" --json assets > "$RUNNER_TEMP/assets.json"
+          node apps/desktop/scripts/release-check.mjs published "$RUNNER_TEMP/assets.json" release "$VERSION"
+      - name: Publish
+        run: |
+          gh release edit "$TAG" --draft=false --prerelease="$PRERELEASE"
+          echo "Published https://github.com/$GH_REPO/releases/tag/$TAG" >> "$GITHUB_STEP_SUMMARY"

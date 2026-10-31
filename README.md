@@ -4,7 +4,26 @@ License: [MIT](LICENSE) · [Contributing](CONTRIBUTING.md) · [Security policy](
 
 A local, Windows-first desktop app that runs and supervises coding agents (Claude Code, Codex, Gemini CLI, OpenCode) across several of your own accounts and API keys. It proposes a crew for each task, waits for your approval, watches limits and spend, hands work to a backup agent when you allow it, and keeps GitHub under your control.
 
-Status: pre-release. It is built and tested on Windows 11. Linux and macOS are prepared for but not shipped. v0.1.0 is an unsigned pre-release under this repository's GitHub releases: Windows SmartScreen warns about an unknown publisher, and that build never checks for updates (PLAN.md §17).
+Status: pre-release. It is built and tested on Windows 11. From the release after v0.1.0, each version also ships for macOS (Apple silicon and Intel) and Linux (x64). Those packages are built and started on GitHub's runners for every release, but have not been tried on real Macs or Linux desktops yet ([ADR 0010](docs/adr/0010-linux-macos-groundwork.md)). No build carries a publisher's signature yet (macOS builds are only ad-hoc signed), and none checks for updates (PLAN.md §17).
+
+## Install
+
+Download from this repository's [Releases](https://github.com/yusufky63/crewyard/releases). While the version is 0.x, every release is marked pre-release. Each one lists `SHA256SUMS.txt` for checking a download.
+
+| System | File | First start |
+|---|---|---|
+| Windows 11, x64 | `Crewyard-Setup-<version>-x64.exe`: installs for your user, no admin prompt | SmartScreen: More info, then Run anyway |
+| macOS 13 (Ventura) or later, Apple silicon | `Crewyard-<version>-arm64.dmg` (or `-arm64-mac.zip`) | not notarized: System Settings → Privacy & Security → Open Anyway |
+| macOS 13 (Ventura) or later, Intel | `Crewyard-<version>-x64.dmg` (or `-x64-mac.zip`) | as above |
+| Debian, Ubuntu (x64) | `crewyard_<version>_amd64.deb`: `sudo apt install ./crewyard_<version>_amd64.deb` | from the app menu, or `crewyard` |
+| Other Linux (x64) | `Crewyard-<version>-x86_64.AppImage`: `chmod +x`, then run it | needs FUSE 2 (`libfuse2`) |
+
+- Linux packages need glibc 2.35 or newer: Ubuntu 22.04, Debian 12, Fedora 36 and later.
+- On Ubuntu 24.04 and later, prefer the deb. It installs the AppArmor profile Chromium's sandbox needs; the AppImage runs there without that sandbox.
+- macOS from the terminal instead of Open Anyway: `xattr -dr com.apple.quarantine /Applications/Crewyard.app`.
+- These builds do not update themselves; install the next release over the old one. Your data stays in `%APPDATA%\Crewyard`, `~/Library/Application Support/Crewyard` or `~/.config/Crewyard`.
+
+The same steps are at the top of every release's notes ([docs/release-notes/install.md](docs/release-notes/install.md)). How a release is cut is in [docs/release.md](docs/release.md).
 
 ## What it does
 
@@ -51,7 +70,7 @@ Status: pre-release. It is built and tested on Windows 11. Linux and macOS are p
 
 ## Requirements
 
-- Windows 11. Windows 10 has not been tried.
+- Windows 11 for development and the tested build. Windows 10 has not been tried. macOS 13 (Ventura) or later and Linux x64 run the pre-release packages (see Install); development there is untested.
 - Node.js 24 or newer, pnpm 9 (`corepack enable` gives the pinned version).
 - Git.
 - The GitHub CLI (`gh`), for the GitHub features.
@@ -122,7 +141,9 @@ Live tests with real runners and keys cost a few cents and run only when asked. 
 | [DESIGN.md](DESIGN.md) | Design system: tokens, components, screens, interaction rules |
 | [PRIOR_ART.md](PRIOR_ART.md) | What the strongest open-source projects in this space do, and what we take or avoid |
 | [AGENTS.md](AGENTS.md) | Rules for coding agents working in this repo |
+| [LICENSE](LICENSE) | The MIT licence |
 | [NOTICE](NOTICE) | Third-party material and its licences |
+| [docs/release.md](docs/release.md) | Cutting a release: version, tag, the release workflow, and the file names the website matches |
 
 ## Refreshing the provider catalog
 
@@ -144,7 +165,7 @@ The running app also refreshes it from models.dev once a day. Providers → Vers
 
 ## Licence
 
-Crewyard is released under the [MIT License](LICENSE), Copyright (c) 2026 Yusuf. Third-party material and its licences are listed in [NOTICE](NOTICE), which also repeats the MIT text because the installer ships it as `NOTICE.txt`, next to `THIRD-PARTY-LICENSES.txt` with every bundled npm package.
+Crewyard is released under the [MIT License](LICENSE), Copyright (c) 2026 Yusuf. Third-party material and its licences are listed in [NOTICE](NOTICE), which also repeats the MIT text because the installer ships it as `NOTICE.txt`, next to `THIRD-PARTY-LICENSES.txt` with every bundled npm package, which Settings → About opens.
 
 Contributions are accepted under the same licence; [CONTRIBUTING.md](CONTRIBUTING.md) has the rules. Report a vulnerability privately as [SECURITY.md](SECURITY.md) describes, never in a public issue.
 
@@ -177,7 +198,9 @@ To turn on updates, also set `CREWYARD_UPDATE_URL` to an HTTPS folder, and uploa
 
 `node apps/desktop/e2e/update/update-flow.mjs` (after `pnpm --filter @crewyard/desktop build`) tests signing and the whole update flow on this machine. It uses throwaway certificates, a feed on 127.0.0.1 and a separate test identity, and removes everything afterwards.
 
-The icon is generated from the title-bar mark by `pnpm --filter @crewyard/desktop icon`.
+The icons (`icon.ico`, `icon.png`, macOS `icon.icns` and the Linux `icons/` set) are generated from the title-bar mark by `pnpm --filter @crewyard/desktop icon`.
+
+On a Mac, `pnpm --filter @crewyard/desktop package:mac` builds the dmg and zip for both CPUs, ad-hoc signed. On Linux, `pnpm --filter @crewyard/desktop package:linux` builds the AppImage and the deb. Published releases come from the tag-triggered workflow instead ([docs/release.md](docs/release.md)).
 
 [docs/adr/0004-packaging-and-recovery.md](docs/adr/0004-packaging-and-recovery.md) explains these choices and the crash recovery. [docs/adr/0011-signing-and-auto-update.md](docs/adr/0011-signing-and-auto-update.md) explains signing, updates and what a real release still needs.
 

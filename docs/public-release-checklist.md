@@ -65,9 +65,9 @@ d. **Old Actions runs.** The existing workflow runs and their logs become public
 
 e. **Your own project names in the design material.** `design/prototype.html` and every screenshot rendered from it (all of `design/screens/*.png`) use the owner's own project names and folders as sample data: in the title-bar project picker, the recent projects, the paths and the GitHub screens. At least one of them is the name of another private repository. If those names should stay unknown, rename the sample projects in the prototype and re-shoot the whole `design/screens/` set, not only some of it. The names stay in history either way.
 
-f. **Copyright line in the installer.** `apps/desktop/electron-builder.config.cjs` says "Copyright 2026 Crewyard contributors", while LICENSE and NOTICE say "Copyright (c) 2026 Yusuf". Pick one wording for both.
+f. **Copyright line in the installer.** Settled on 2026-10-31: the installer, the exe metadata, LICENSE and NOTICE all say "Copyright (c) 2026 Yusuf", from the single `LICENCE` constant in `apps/desktop/scripts/release-assets.cjs`, which `release-check` compares with LICENSE.
 
-g. **Decision record (a gate).** PLAN.md §17 still says the code is kept in a private repository and that v0.1.0 is a pre-release in the private repository, and ADR 0011 relies on the repository being private. Add the 2026-10-31 decision to the decision log (public repository at release, MIT, Copyright (c) 2026 Yusuf, website on Vercel), amend the 2026-10-30 entry, and note in ADR 0011 that the private-repository constraint no longer holds. AGENTS.md asks for this before work that contradicts PLAN.md is shipped.
+g. **Decision record.** Done on 2026-10-31: PLAN.md §17 has the decision (public repository at release, MIT, Copyright (c) 2026 Yusuf, website on Vercel), the 2026-10-30 entry and the v0.1.0 entry say the private part is superseded, and ADR 0011 has an addendum.
 
 ## 4. Files in the repository
 

@@ -1,9 +1,16 @@
 // Draws the app icon from the title-bar brand mark (app.css `.mark`: a 16 px square with a 1 px
-// ink-3 border and an ink square inset 4 px inside it) on the dark canvas tile, and writes
-// build/icon.ico (16-256 px, PNG frames) and build/icon.png (512 px). Colors come from the dark
-// tokens, so the icon matches the title bar. Re-run with `pnpm icon` after the mark changes.
+// ink-3 border and an ink square inset 4 px inside it) on the dark canvas tile, and writes:
+//   build/icon.ico    Windows, 16-256 px PNG frames
+//   build/icon.png    512 px, the same square tile
+//   build/icon.icns   macOS, 16-1024 px PNG entries, the tile on Apple's app-icon grid (rounded,
+//                     with the transparent margin the Dock expects)
+//   build/icons/      Linux hicolor set, <size>x<size>.png, the square tile
+// Colors come from the dark tokens, so the icon matches the title bar. Every size is drawn, not
+// scaled, and the output is byte-for-byte reproducible: re-run with `pnpm icon` after the mark
+// changes and commit what it writes. No image library or platform tool is needed (iconutil would
+// tie the .icns to a Mac).
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { deflateSync } from "node:zlib";
 
 const here = import.meta.dirname;
@@ -24,11 +31,31 @@ const MARK = [
 /** Share of the tile the mark spans; the rest is canvas, so the icon reads as one tile at 16 px. */
 const MARK_SPAN = 0.75;
 const SAMPLES = 4;
+// Apple's macOS app-icon grid: an 824 px tile on a 1024 px canvas, corners of about 185 px. A
+// full-bleed square would sit larger than every other icon in the Dock and Finder.
+const MAC_TILE = 824 / 1024;
+const MAC_RADIUS = 185 / 824;
 
-function render(size) {
+/**
+ * One icon as a PNG. "square" fills the canvas with the tile (Windows, Linux, icon.png); "macos"
+ * draws a rounded tile on a transparent canvas. The mark always spans MARK_SPAN of the tile.
+ */
+function render(size, shape = "square") {
   const px = Buffer.alloc(size * size * 4);
-  const unit = (size * MARK_SPAN) / 16;
-  const origin = (size - unit * 16) / 2;
+  const tile = shape === "macos" ? size * MAC_TILE : size;
+  const inset = (size - tile) / 2;
+  const radius = shape === "macos" ? tile * MAC_RADIUS : 0;
+  const unit = (tile * MARK_SPAN) / 16;
+  const origin = inset + (tile - unit * 16) / 2;
+  const inTile = (x, y) => {
+    const tx = x - inset;
+    const ty = y - inset;
+    if (tx < 0 || ty < 0 || tx >= tile || ty >= tile) return false;
+    if (radius === 0) return true;
+    const cx = Math.min(Math.max(tx, radius), tile - radius);
+    const cy = Math.min(Math.max(ty, radius), tile - radius);
+    return (tx - cx) ** 2 + (ty - cy) ** 2 <= radius ** 2;
+  };
   const colorAt = (x, y) => {
     let c = CANVAS;
     const u = (x - origin) / unit;
@@ -39,15 +66,22 @@ function render(size) {
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const sum = [0, 0, 0];
+      let covered = 0;
       for (let sy = 0; sy < SAMPLES; sy++) {
         for (let sx = 0; sx < SAMPLES; sx++) {
-          const c = colorAt(x + (sx + 0.5) / SAMPLES, y + (sy + 0.5) / SAMPLES);
+          const sxp = x + (sx + 0.5) / SAMPLES;
+          const syp = y + (sy + 0.5) / SAMPLES;
+          if (!inTile(sxp, syp)) continue;
+          const c = colorAt(sxp, syp);
           for (let i = 0; i < 3; i++) sum[i] += c[i];
+          covered++;
         }
       }
+      // Color is the average over the samples inside the tile and alpha is their share, so the
+      // square tile (every sample inside) comes out exactly as it always has.
       const o = (y * size + x) * 4;
-      for (let i = 0; i < 3; i++) px[o + i] = Math.round(sum[i] / (SAMPLES * SAMPLES));
-      px[o + 3] = 255;
+      for (let i = 0; i < 3; i++) px[o + i] = covered ? Math.round(sum[i] / covered) : 0;
+      px[o + 3] = Math.round((covered / (SAMPLES * SAMPLES)) * 255);
     }
   }
   return png(size, px);
@@ -103,9 +137,51 @@ function ico(frames) {
   return Buffer.concat([header, ...frames.map((f) => f.data)]);
 }
 
+// ICNS element types that carry PNG data (macOS 10.7 and later), with the pixel size each holds.
+// The pairs mirror an .iconset folder: icon_16x16 (icp4), icon_16x16@2x (ic11), icon_32x32 (icp5),
+// icon_32x32@2x (ic12), icon_128x128 (ic07), @2x (ic13), icon_256x256 (ic08), @2x (ic14),
+// icon_512x512 (ic09), @2x (ic10).
+const ICNS_TYPES = [
+  ["icp4", 16],
+  ["ic11", 32],
+  ["icp5", 32],
+  ["ic12", 64],
+  ["ic07", 128],
+  ["ic13", 256],
+  ["ic08", 256],
+  ["ic14", 512],
+  ["ic09", 512],
+  ["ic10", 1024],
+];
+
+/** ICNS: "icns" and the file length, then one (type, length incl. 8-byte header, data) element per size. */
+function icns(elements) {
+  const parts = elements.map(({ type, data }) => {
+    const head = Buffer.alloc(8);
+    head.write(type, 0, "ascii");
+    head.writeUInt32BE(8 + data.length, 4);
+    return Buffer.concat([head, data]);
+  });
+  const head = Buffer.alloc(8);
+  head.write("icns", 0, "ascii");
+  head.writeUInt32BE(8 + parts.reduce((n, p) => n + p.length, 0), 4);
+  return Buffer.concat([head, ...parts]);
+}
+
 const out = join(here, "..", "build");
 mkdirSync(out, { recursive: true });
-const sizes = [16, 20, 24, 32, 40, 48, 64, 128, 256];
-writeFileSync(join(out, "icon.ico"), ico(sizes.map((size) => ({ size, data: render(size) }))));
+const icoSizes = [16, 20, 24, 32, 40, 48, 64, 128, 256];
+writeFileSync(join(out, "icon.ico"), ico(icoSizes.map((size) => ({ size, data: render(size) }))));
 writeFileSync(join(out, "icon.png"), render(512));
-console.log(`wrote ${join(dirname(out), "build")}/icon.ico (${sizes.join(", ")} px) and icon.png (512 px)`);
+
+const macBySize = new Map();
+const mac = (size) => macBySize.get(size) ?? macBySize.set(size, render(size, "macos")).get(size);
+writeFileSync(join(out, "icon.icns"), icns(ICNS_TYPES.map(([type, size]) => ({ type, data: mac(size) }))));
+
+// electron-builder reads a folder of <size>x<size>.png for linux.icon and installs each into the
+// hicolor theme; some docks ignore a lone large PNG, so every common size is drawn.
+const linuxSizes = [16, 24, 32, 48, 64, 128, 256, 512];
+mkdirSync(join(out, "icons"), { recursive: true });
+for (const size of linuxSizes) writeFileSync(join(out, "icons", `${size}x${size}.png`), render(size));
+
+console.log(`wrote ${out}: icon.ico (${icoSizes.join(", ")} px), icon.png (512 px), icon.icns (${[...macBySize.keys()].join(", ")} px), icons/ (${linuxSizes.join(", ")} px)`);
