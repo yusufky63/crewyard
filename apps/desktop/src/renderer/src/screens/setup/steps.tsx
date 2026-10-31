@@ -22,17 +22,29 @@ function RunnerRow({ runner, tool, series }: (typeof RUNNERS)[number]) {
   const found = Boolean(q.data?.found);
   const on = d.runners.includes(runner);
   const toggle = (v: boolean) => d.set({ runners: v ? [...d.runners, runner] : d.runners.filter((r) => r !== runner) });
+  // The color follows the version gate the same way the Start machine check does (machine.ts), so the two
+  // never disagree: green only for a gate that passed, amber with its reason for any other gate.
+  const gate = q.data?.gate;
+  const gateOk = !gate || gate.status === "ok";
   let detail = t("checking");
+  let tail: string | null = null;
   if (q.isError) detail = String(q.error);
-  else if (q.data) detail = found ? [q.data.version ? `v${q.data.version}` : t("agents.installed"), t("agents.noConformance")].join(" · ") : t("agents.notInstalled");
+  else if (q.data) {
+    detail = found ? [q.data.version ? `v${q.data.version}` : t("agents.installed"), ...(gateOk ? [] : [t(`agents.gate.${gate!.status}`)])].join(" · ") : t("agents.notInstalled");
+    if (found) tail = t("agents.noConformance");
+  }
   return (
     <div className="cl">
       <CheckBox checked={on && found} disabled={!found} onChange={toggle} label={t(`agents.names.${runner}`)} />
       <span>
         <i className="dot" style={{ "--c": `var(${series})` } as CSSProperties} aria-hidden="true" /> {t(`agents.names.${runner}`)}
       </span>
-      {/* Found in ok; a missing agent CLI stays muted, because one is enough (DESIGN.md §5 MachineStrip). */}
-      <span className={found ? "st-ok" : "muted"}>{detail}</span>
+      {/* Found in ok, an outdated or unchecked one in warn; a missing agent CLI stays muted, because one is
+          enough (DESIGN.md §5 MachineStrip). "Conformance not run yet" is not a pass, so it never takes the green. */}
+      <span>
+        <span className={found ? (gateOk ? "st-ok" : "st-wait") : "muted"}>{detail}</span>
+        {tail && <span className="muted"> · {tail}</span>}
+      </span>
       <span className="cl-act" />
     </div>
   );
