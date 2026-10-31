@@ -9,7 +9,7 @@
     "problems": "Problems"
   },
   "collapseNote": "Collapsing this panel does not stop anything.",
-  "collapseNoteAssistant": "Collapsing keeps the assistant running; only Stop and close stops it.",
+  "collapseNoteAssistant": "Collapsing keeps the assistant running; Stop and close, or Esc inside it, stops it.",
   "collapseNoteTerminal": "Collapsing keeps shells running; closing a terminal's tab ends it.",
   "collapsedNote": "Collapsed, nothing stopped. Pick a tab to expand.",
   "resize": "Resize the panel",
@@ -19,7 +19,8 @@
   "toggle": {
     "label": "Panel",
     "expand": "Expand the panel: assistant, terminal, events, logs, problems ({{keys}})",
-    "collapse": "Collapse the panel ({{keys}} or Esc). Nothing stops."
+    "collapse": "Collapse the panel ({{keys}} or Esc). Nothing stops.",
+    "collapseAssistant": "Collapse the panel ({{keys}}). The assistant keeps running."
   },
   "events": {
     "filters": "Event filters",

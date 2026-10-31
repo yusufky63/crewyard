@@ -6,7 +6,7 @@ import { useNav } from "../../nav.ts";
 import { usePrefs } from "../../prefs.ts";
 import type { StatusItemDef } from "../../registry.ts";
 import { DRAWER_TOGGLE_ID } from "../activity/focus.ts";
-import { toggleAssistant, togglePanel, togglePanelTab } from "../activity/panel.ts";
+import { toggleAssistant, togglePanel, togglePanelTab, toggleTitleKey } from "../activity/panel.ts";
 import { DRAWER_ID } from "../layout.ts";
 
 // Expands and collapses the bottom panel (DESIGN.md §4), here and with Ctrl J; Ctrl ` (or Ctrl
@@ -17,6 +17,7 @@ import { DRAWER_ID } from "../layout.ts";
 function ActivityStatus() {
   const { t } = useTranslation("activity");
   const open = usePrefs((s) => s.drawerOpen);
+  const tab = usePrefs((s) => s.drawerTab);
   const toggle = usePrefs((s) => s.toggleDrawer);
   const projectId = useNav((s) => s.projectId);
 
@@ -44,7 +45,7 @@ function ActivityStatus() {
 
   if (!projectId) return null;
   const Icon = open ? PanelBottomClose : PanelBottomOpen;
-  const title = t(open ? "toggle.collapse" : "toggle.expand", { keys: keyText("drawer") });
+  const title = t(toggleTitleKey(open, tab), { keys: keyText("drawer") });
   // A click here keeps focus on this button, so it can be pressed again; the shortcut moves focus.
   return (
     <button type="button" id={DRAWER_TOGGLE_ID} className="sb" onClick={toggle} aria-expanded={open} aria-controls={DRAWER_ID} aria-keyshortcuts={ariaKeys("drawer")} title={title}>

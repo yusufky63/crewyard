@@ -9,7 +9,7 @@ import { AssistantPanel } from "../../screens/tasks/Assistant.tsx";
 import { DRAWER, DRAWER_ID, drawerBounds } from "../layout.ts";
 import { EventsPanel } from "./EventsPanel.tsx";
 import { LogsPanel } from "./LogsPanel.tsx";
-import { collapsePanel, hideAfterAssistant, togglePanel } from "./panel.ts";
+import { collapsePanel, hideAfterAssistant, togglePanel, toggleTitleKey } from "./panel.ts";
 import { ProblemsTab, useProblems } from "./ProblemsTab.tsx";
 import { TerminalTab } from "./TerminalTab.tsx";
 import { useTerminals } from "./terminals.ts";
@@ -137,7 +137,7 @@ export function ActivityDrawer() {
     collapsePanel();
   };
 
-  const toggleTitle = t(open ? "toggle.collapse" : "toggle.expand", { keys: keyText("drawer") });
+  const toggleTitle = t(toggleTitleKey(open, tab), { keys: keyText("drawer") });
   const ToggleIcon = open ? PanelBottomClose : PanelBottomOpen;
 
   return (

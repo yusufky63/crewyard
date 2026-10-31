@@ -141,7 +141,10 @@ test("the head toggle collapses to the strip and expands; the assistant keeps ru
   // The toggle sits at the right end of the head, says what it does and its shortcut.
   const toggleButton = headToggle(page);
   await expect(toggleButton).toHaveAttribute("aria-expanded", "true");
-  await expect(toggleButton).toHaveAttribute("title", /^Collapse the panel \(Ctrl.J or Esc\)\. Nothing stops\.$/);
+  // On the Assistant tab it leaves out Esc, which inside the assistant is the assistant's own stop.
+  await expect(toggleButton).toHaveAttribute("title", /^Collapse the panel \(Ctrl.J\)\. The assistant keeps running\.$/);
+  await expect(page.locator("#activity-toggle")).toHaveAttribute("title", /^Collapse the panel \(Ctrl.J\)\. The assistant keeps running\.$/);
+  await expect(panel(page).locator(".drawer-note")).toHaveText("Collapsing keeps the assistant running; Stop and close, or Esc inside it, stops it.");
   await expect(toggleButton).toHaveAttribute("aria-keyshortcuts", /J$/);
   const head = (await panel(page).locator(".drawer-head").boundingBox())!;
   const at = (await toggleButton.boundingBox())!;
@@ -172,9 +175,22 @@ test("the head toggle collapses to the strip and expands; the assistant keeps ru
   await expect(body(page)).toBeVisible();
   await expect(tab(page, "Assistant")).toBeFocused();
 
-  // Ctrl Shift A on the assistant collapses too, and still stops nothing.
+  // Ctrl Shift A on the assistant collapses too, and still stops nothing; focus was on a tab, so it
+  // goes to the toggle.
   await page.keyboard.press("Control+Shift+A");
   await collapsed(page);
+  await expect(toggleButton).toBeFocused();
+  expect(await state()).toBe("working");
+
+  // The Tasks screen's button says it hides the assistant, and pressing it keeps focus on it.
+  const opener = page.locator("#tk-assistant-toggle");
+  await opener.click();
+  await expect(body(page)).toBeVisible();
+  await expect(opener).toHaveText("Hide assistant");
+  await opener.click();
+  await collapsed(page);
+  await expect(opener).toBeFocused();
+  await expect(opener).toHaveText("Assistant");
   expect(await state()).toBe("working");
 
   // A tab clicked in the strip expands the panel on that tab.

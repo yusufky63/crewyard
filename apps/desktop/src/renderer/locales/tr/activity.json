@@ -9,7 +9,7 @@
     "problems": "Sorunlar"
   },
   "collapseNote": "Paneli daraltmak hiçbir şeyi durdurmaz.",
-  "collapseNoteAssistant": "Daraltınca asistan çalışmaya devam eder; onu yalnızca Durdur ve kapat durdurur.",
+  "collapseNoteAssistant": "Daraltınca asistan çalışmaya devam eder; onu Durdur ve kapat ya da içindeyken Esc durdurur.",
   "collapseNoteTerminal": "Daraltınca kabuklar çalışmaya devam eder; bir terminalin sekmesini kapatmak onu sonlandırır.",
   "collapsedNote": "Daraltıldı, hiçbir şey durmadı. Açmak için bir sekme seçin.",
   "resize": "Paneli yeniden boyutlandır",
@@ -19,7 +19,8 @@
   "toggle": {
     "label": "Panel",
     "expand": "Paneli genişlet: asistan, terminal, olaylar, günlükler, sorunlar ({{keys}})",
-    "collapse": "Paneli daralt ({{keys}} ya da Esc). Hiçbir şey durmaz."
+    "collapse": "Paneli daralt ({{keys}} ya da Esc). Hiçbir şey durmaz.",
+    "collapseAssistant": "Paneli daralt ({{keys}}). Asistan çalışmaya devam eder."
   },
   "events": {
     "filters": "Olay filtreleri",

@@ -46,6 +46,15 @@ export function panelShows(tab: DrawerTab): boolean {
   return s.drawerOpen && s.drawerTab === tab;
 }
 
+/**
+ * The panel toggles' tooltip. On the Assistant tab it leaves out Esc and "nothing stops": Esc inside
+ * the assistant is its own explicit stop, so only Ctrl J is a collapse that is sure to stop nothing.
+ */
+export function toggleTitleKey(open: boolean, tab: DrawerTab): "toggle.expand" | "toggle.collapse" | "toggle.collapseAssistant" {
+  if (!open) return "toggle.expand";
+  return tab === "assistant" ? "toggle.collapseAssistant" : "toggle.collapse";
+}
+
 /** A tab's shortcut: expands the panel on it, or collapses the panel when it already shows it. */
 export function togglePanelTab(tab: DrawerTab): void {
   if (!panelShows(tab)) return openPanel(tab);
@@ -67,8 +76,9 @@ export function closeAssistant(projectId: string): void {
 }
 
 /**
- * The panel side of the assistant's own "Stop and close", once the assistant itself was asked to
- * stop, and of Ctrl Shift A or the Assistant button collapsing it: the panel collapses to its strip.
+ * The panel side of the assistant's own "Stop and close" (and Esc inside it), once the assistant
+ * itself was asked to stop: the panel collapses to its strip. Focus moves to the opener even from
+ * elsewhere, because the control that was pressed is gone with the panel's body.
  */
 export function hideAfterAssistant(): void {
   usePrefs.getState().setDrawerOpen(false);
@@ -84,6 +94,8 @@ export function hideAfterAssistant(): void {
  * the assistant keeps running (it stops only on its own `Stop and close`, or when it sits idle).
  */
 export function toggleAssistant(_projectId: string): void {
-  if (panelShows("assistant")) hideAfterAssistant();
+  // A plain collapse: focus moves only when it was inside the panel, so the shortcut never pulls it
+  // away from what you were typing elsewhere.
+  if (panelShows("assistant")) collapsePanel();
   else openPanel("assistant");
 }

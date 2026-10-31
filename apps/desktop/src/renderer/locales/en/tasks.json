@@ -35,7 +35,7 @@
     "propose": "Propose crew",
     "proposing": "Proposing…",
     "assistant": "Assistant",
-    "assistantClose": "Close assistant",
+    "assistantClose": "Hide assistant",
     "assistantTitle": "Plan tasks in a chat with a read-only agent ({{keys}})",
     "preset": "Ready-made",
     "presetNone": "Pick…",
