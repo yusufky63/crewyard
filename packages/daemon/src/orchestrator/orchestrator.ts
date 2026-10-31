@@ -4,7 +4,6 @@ import { join, resolve } from "node:path";
 import {
   type AccountSwitchSkipped,
   capEvent,
-  classifyRisk,
   estimateCost,
   EVENT_LIMITS,
   peakFactor,
@@ -12,7 +11,6 @@ import {
   type AgentAdapter,
   type AgentEvent,
   type Attachment,
-  type Answer,
   type CandidateView,
   type CrewEdit,
   type EndReason,
@@ -51,10 +49,11 @@ import { admit, admitGroup, DEFAULT_LIMITS } from "./admission.ts";
 import { BEST_OF_MAX, BEST_OF_MIN, groupFact, groupPhase, pickVariants, worktreeDiff, type DiffStat, type GroupRow } from "./best-of.ts";
 import { OrchestratorContext, type Ended, type HandoffInfo, type LaunchSpec, type Live, type OrchestratorOptions, type ProposeParams } from "./context.ts";
 import { Part } from "./part.ts";
+import { Inbox } from "./inbox.ts";
 import { accountOf, isClaudeSubscription, refusalOf, sameProviderAccounts, sourceOf, switchOrder, switchTrigger } from "./account-switch.ts";
 import { classifyTask } from "./classify.ts";
 import { eligible, estimateFor, MIN_HEADROOM, modelKey, proposeCrew, rankForRole, readOnlyConflict, sameModel, scoreCandidate, sumEstimates, type ScoringContext } from "./crew.ts";
-import { type MemberRow, type OrchestratorDb, type ProjectRow, type RequestRow, type RunRow, type TaskRow, type WorktreeRow } from "./db.ts";
+import { type MemberRow, type OrchestratorDb, type ProjectRow, type RunRow, type TaskRow, type WorktreeRow } from "./db.ts";
 import { type Candidate, type ProfileDirectory } from "./directory.ts";
 import { errorCode, errorDetail, OrchestratorError, redactDetail } from "./errors.ts";
 import { classifyFailure, RETRY, retryDelayMs, type Failure } from "./failures.ts";
@@ -66,10 +65,9 @@ import { applyResult, outputSchemaFor, type RoleResult } from "./results.ts";
 import type { LimitMonitor } from "./limits.ts";
 import { forkPrompt, handoffPackage, rolePrompt } from "./prompts.ts";
 import { projectRoles } from "./role-files.ts";
-import { onlyDocPaths } from "./roles.ts";
 import { capResetsAt, capWindow, credentialCaps, overCap, reachedCaps, recordRunSpend, reservedUsd, reserveSpend, settleReservation, spendCredential } from "./spend.ts";
 import { joinMessages } from "./queue.ts";
-import { answerAfterSleep, canHibernate, idleSince, type WakeCause } from "./hibernation.ts";
+import { canHibernate, idleSince, type WakeCause } from "./hibernation.ts";
 import { Scheduler } from "./schedules.ts";
 import { snapshotTranscript } from "./transcripts.ts";
 
@@ -116,6 +114,18 @@ export class Orchestrator extends Part {
   private tickAgain = false;
   private interval: NodeJS.Timeout | null = null;
   private readonly creating = new Map<string, Promise<WorktreeRow>>();
+  private readonly inbox = new Inbox(this.ctx, {
+    checkSeen: (run, seen) => this.checkSeen(run, seen),
+    resolveTarget: (run, profileId, payload) => this.resolveTarget(run, profileId, payload),
+    performHandoff: (sourceRunId, target, trigger) => this.performHandoff(sourceRunId, target, trigger),
+    scheduleResume: (runId, resetsAt) => this.scheduleResume(runId, resetsAt),
+    stopRun: (runId, detail, reason) => this.stopRun(runId, detail, reason),
+    continuePastCap: (runId) => this.continuePastCap(runId),
+    wakeRun: (runId, cause) => this.wakeRun(runId, cause),
+    proceed: (runId, text) => this.proceed(runId, text),
+    endRun: (runId, reason, detail) => this.endRun(runId, reason, detail),
+    tick: () => this.tick(),
+  });
 
   override get db() {
     return this.ctx.db;
@@ -166,7 +176,7 @@ export class Orchestrator extends Part {
       now: this.ctx.now,
       gitBin: opts.gitBin,
       emit: opts.emit,
-      requestApproval: (taskId, runId, payload) => this.insertRequest(taskId, runId, null, "high", payload),
+      requestApproval: (taskId, runId, payload) => this.inbox.insertRequest(taskId, runId, null, "high", payload),
       audit: (taskId, runId, kind, payload) => this.audit(taskId, runId, kind, payload),
       config: (projectId) => this.config(this.db.project(projectId)).config,
     });
@@ -432,7 +442,7 @@ export class Orchestrator extends Part {
       this.db.exec("update tasks set cancelled_at = ? where id = ?", this.iso(), task.id);
       for (const r of this.db.runs(task.id).filter((r) => r.ended_at && r.resume_at)) this.cancelAutoRetry(r.id);
       for (const r of this.db.runs(task.id).filter((r) => !r.ended_at)) await this.stopRun(r.id, "task_cancelled");
-      for (const q of this.db.requests({ taskId: task.id })) this.closeRequest(q, "system");
+      for (const q of this.db.requests({ taskId: task.id })) this.inbox.closeRequest(q, "system");
       for (const h of this.db.handoffs(task.id).filter((h) => !h.closed_at)) this.closeHandoff(h.id, "cancelled", null);
       // The variants of a Best of N group go with their task; their worktrees stay, like the task's.
       for (const id of this.bestOf.variantTasksOf(task.id)) await this.cancel(id);
@@ -902,7 +912,7 @@ export class Orchestrator extends Part {
       const live = this.live.get(runId);
       if (live) await this.safe(() => live.adapter.interrupt(live.handle));
       // Interrupting the turn cancels its pending prompts; the agent asks again after resume.
-      for (const q of this.db.openRequestsForRun(runId).filter((q) => q.kind !== "handoff")) this.closeRequest(q, "system");
+      for (const q of this.db.openRequestsForRun(runId).filter((q) => q.kind !== "handoff")) this.inbox.closeRequest(q, "system");
       this.emitTask(run.task_id, "run_paused");
       void this.tick();
     }
@@ -929,7 +939,7 @@ export class Orchestrator extends Part {
       if (pausing) await this.within(pausing.done, this.opts.stopTimeoutMs ?? 30_000);
       this.clearTimer(runId);
       this.db.exec("update runs set paused_at = null, resume_at = null, limit_reached = 0 where id = ?", runId);
-      for (const q of this.db.openRequestsForRun(runId).filter((q) => q.kind === "handoff")) this.closeRequest(q, "system");
+      for (const q of this.db.openRequestsForRun(runId).filter((q) => q.kind === "handoff")) this.inbox.closeRequest(q, "system");
       await this.proceed(runId, "Continue the task where you stopped.");
       this.emitTask(run.task_id, "run_resumed");
       return this.db.runView(this.db.run(runId));
@@ -977,7 +987,7 @@ export class Orchestrator extends Part {
     this.loops.setHandoff(handoffId, stop);
     this.cancelAutoRetry(source.id);
     // Your choice answers any limit or crash question still open for this run.
-    for (const q of this.db.openRequestsForRun(source.id).filter((q) => q.kind === "handoff")) this.closeRequest(q, "system");
+    for (const q of this.db.openRequestsForRun(source.id).filter((q) => q.kind === "handoff")) this.inbox.closeRequest(q, "system");
     this.track(this.executeHandoff(handoffId, source.id, target, "manual"));
     return this.db.runView(this.db.run(runId));
   }
@@ -996,7 +1006,7 @@ export class Orchestrator extends Part {
     if (run.ended_at) {
       this.cancelAutoRetry(run.id);
       // The crash or limit question about the old run is answered by retrying it.
-      for (const q of this.db.openRequestsForRun(run.id).filter((q) => q.kind === "handoff")) this.closeRequest(q, "system");
+      for (const q of this.db.openRequestsForRun(run.id).filter((q) => q.kind === "handoff")) this.inbox.closeRequest(q, "system");
       const id = await this.launch({ task, member: this.db.member(run.member_id), target: { profileId: run.profile_id, runner: run.runner, model: run.model }, resumedFrom: run.id });
       this.audit(task.id, id, "run.retried", { from: run.id });
       this.emitTask(task.id, "retried");
@@ -1010,7 +1020,7 @@ export class Orchestrator extends Part {
       if (reached) throw new OrchestratorError("run.still_limited", { window: reached.window, resetsAt: reached.resetsAt });
       this.clearTimer(run.id);
       this.db.exec("update runs set limit_reached = 0, paused_at = null, resume_at = null where id = ?", run.id);
-      for (const q of this.db.openRequestsForRun(run.id).filter((q) => q.kind === "handoff")) this.closeRequest(q, "system");
+      for (const q of this.db.openRequestsForRun(run.id).filter((q) => q.kind === "handoff")) this.inbox.closeRequest(q, "system");
       this.audit(task.id, run.id, "run.retried", { after: "limit" });
       try {
         await this.proceed(run.id, "Your limit has cleared. Continue the task where you stopped.");
@@ -1443,70 +1453,11 @@ export class Orchestrator extends Part {
   // ---------------------------------------------------------------- requests
 
   requests(filter: { projectId?: string; taskId?: string; includeAnswered?: boolean }): RequestView[] {
-    return this.db.requests(filter).map((q) => this.db.requestView(q));
+    return this.inbox.requests(filter);
   }
 
-  async answer(requestId: string, answer: RequestAnswer, seen?: SessionSeen & { runId: string | null }): Promise<RequestView> {
-    const q = this.db.request(requestId);
-    if (q.answered_at) throw new OrchestratorError("request.answered");
-    if (answer.kind !== "cancel" && answer.kind !== q.kind) throw new OrchestratorError("request.answer_kind");
-    const payload = JSON.parse(q.payload) as RequestPayload;
-    const run = q.run_id ? this.db.run(q.run_id) : null;
-    if (seen && seen.runId !== q.run_id) throw new OrchestratorError("run.session_changed", { runId: q.run_id ?? "" });
-    if (run) this.checkSeen(run, seen);
-    // A reason goes to the agent as typed, trimmed and bounded; an empty one is no reason.
-    if (answer.kind === "approval") answer = withReason(answer);
-    const live = run ? this.live.get(run.id) : undefined;
-
-    if (answer.kind === "approval" && answer.decision === "allow_always" && q.risk === "high") throw new OrchestratorError("request.always_high_risk");
-    // A worktree bootstrap step is answered by the daemon itself, so its run need not be live (it is held).
-    const boot = payload.kind === "approval" ? (payload.bootstrap ?? null) : null;
-    // A hibernated run takes the answer as text when it wakes, since its process is gone.
-    const asleep = run && !live && !run.ended_at ? this.hibernation.asleep(run.id) : null;
-    if ((answer.kind === "approval" || answer.kind === "question") && !live && !boot && !asleep) throw new OrchestratorError("run.not_live");
-    // A source that lost its step to a handoff takes no more answers; its requests were cancelled.
-    if (run && (answer.kind === "approval" || answer.kind === "question") && this.loops.fenced(run.id, run.member_id)) throw new OrchestratorError("run.fenced");
-    let target: CandidateView | null = null;
-    if (answer.kind === "handoff" && payload.kind === "handoff") {
-      if (answer.decision === "hand_off") {
-        target = await this.resolveTarget(run!, answer.targetProfileId ?? payload.proposedTarget?.profileId ?? null, payload);
-        if (!target) throw new OrchestratorError("request.no_target");
-      }
-      if (answer.decision === "wait_for_reset" && !payload.resetsAt) throw new OrchestratorError("request.no_reset");
-      if (answer.decision === "continue" && ((payload.trigger !== "budget" && payload.trigger !== "unpriced") || !run)) throw new OrchestratorError("request.not_budget");
-    }
-
-    this.db.exec("update requests set answered_at = ?, answer = ?, answered_by = 'user' where id = ?", this.iso(), JSON.stringify(answer), q.id);
-    this.emitRequest(q.id);
-    this.audit(q.task_id, q.run_id, "request.answered", { requestId: q.id, nativeId: q.native_id, by: "user", kind: answer.kind, ...(answer.kind === "approval" ? { decision: answer.decision, reason: Boolean(answer.message) } : {}) });
-
-    if (live && run && q.native_id && (answer.kind === "approval" || answer.kind === "question" || answer.kind === "cancel")) {
-      await this.safe(() => live.adapter.answer(live.handle, q.native_id!, toCoreAnswer(answer)));
-    }
-    if (answer.kind === "approval" && answer.decision === "allow_always" && payload.kind === "approval" && payload.command) {
-      const task = this.db.task(q.task_id);
-      this.db.exec("insert or ignore into allow_rules (project_id, command, added_at) values (?, ?, ?)", task.project_id, payload.command.trim(), this.iso());
-    }
-    if (boot && (answer.kind === "approval" || answer.kind === "cancel")) {
-      const next = this.bootstrap.answered(q.id, answer.kind === "approval" ? answer.decision : "cancel");
-      for (const id of next.ready) if (this.held.has(id) && !this.live.has(id)) this.track(this.proceed(id, ""));
-      if (next.denied && !this.db.run(next.denied).ended_at) this.endRun(next.denied, "failed", "bootstrap.denied");
-    }
-    if (asleep && run && (payload.kind === "question" || payload.kind === "approval") && answer.kind !== "handoff") {
-      // Only "allow once" grants the woken session's repeat; "allow always" uses the project allowlist, deny and cancel grant nothing.
-      if (payload.kind === "approval" && answer.kind === "approval" && answer.decision === "allow_once" && payload.command) this.hibernation.grant(run.id, { command: payload.command, cwd: payload.cwd, paths: payload.paths, network: payload.network });
-      this.turns.queue.add(run.task_id, run.member_id, answerAfterSleep(payload, answer), "note");
-      await this.wakeRun(run.id, "answer");
-    }
-    if (answer.kind === "handoff" && run && payload.kind === "handoff") {
-      if (answer.decision === "hand_off" && target) this.track(this.performHandoff(run.id, target, payload.trigger === "handoff_failed" ? "limit" : payload.trigger === "unpriced" ? "budget" : payload.trigger));
-      else if (answer.decision === "wait_for_reset" && payload.resetsAt) this.scheduleResume(run.id, payload.resetsAt);
-      else if (answer.decision === "stop" && !run.ended_at) await this.stopRun(run.id, "user_stop", "limit");
-      else if (answer.decision === "continue" && !run.ended_at) await this.continuePastCap(run.id);
-    }
-    this.emitTask(q.task_id, "request");
-    void this.tick();
-    return this.db.requestView(this.db.request(q.id));
+  answer(requestId: string, answer: RequestAnswer, seen?: SessionSeen & { runId: string | null }): Promise<RequestView> {
+    return this.inbox.answer(requestId, answer, seen);
   }
 
   // ---------------------------------------------------------------- scheduler
@@ -1944,10 +1895,10 @@ export class Orchestrator extends Part {
         if (ev.reached) await this.onLimitReached(runId, { trigger: "limit", window: ev.window, resetsAt: ev.resetsAt });
         break;
       case "request.question":
-        this.insertRequest(task.id, runId, ev.requestId, null, { kind: "question", questions: ev.questions });
+        this.inbox.insertRequest(task.id, runId, ev.requestId, null, { kind: "question", questions: ev.questions });
         break;
       case "request.approval":
-        await this.routeApproval(run, task, ev);
+        await this.inbox.routeApproval(run, task, ev);
         break;
       default:
         break;
@@ -2043,7 +1994,7 @@ export class Orchestrator extends Part {
     }
     // Nobody is left to receive these answers; they close instead of lingering as "needs input".
     // A run that finished its work needs no hand off either (e.g. a cap tripped on its last report).
-    for (const q of this.db.openRequestsForRun(runId).filter((q) => q.kind !== "handoff" || reason === "completed")) this.closeRequest(q, "system");
+    for (const q of this.db.openRequestsForRun(runId).filter((q) => q.kind !== "handoff" || reason === "completed")) this.inbox.closeRequest(q, "system");
     this.audit(run.task_id, runId, "run.finished", { reason, detail });
     this.emitTask(run.task_id, "run_ended");
     void this.tick();
@@ -2128,64 +2079,6 @@ export class Orchestrator extends Part {
   }
 
   // ---------------------------------------------------------------- approvals
-
-  /**
-   * Role permissions first (a read-only role never writes, whatever it asks), then risk. Only low
-   * risk is approved by policy; medium and high always wait for you and never time out.
-   */
-  private async routeApproval(run: RunRow, task: TaskRow, ev: Extract<AgentEvent, { type: "request.approval" }>): Promise<void> {
-    const project = this.db.project(task.project_id);
-    const { config } = this.config(project);
-    const policy = this.policyFor(this.tpl(run), config);
-    const allowlist = [...policy.allowCommands, ...this.db.allowRules(project.id)];
-    const risk = classifyRisk({ command: ev.command, cwd: ev.cwd, paths: ev.paths, network: ev.network, worktreeRoot: run.cwd, projectRoot: project.path, allowlist });
-
-    let rule: string | null = null;
-    if (policy.writes === "none" && ev.paths.length > 0) rule = "policy.role_read_only";
-    else if (policy.writes === "docs" && ev.paths.length > 0 && !onlyDocPaths(ev.paths)) rule = "policy.role_docs_only";
-    else if (policy.network === "denied" && ev.network) rule = "policy.role_no_network";
-
-    // You approved this exact call while the run was hibernated; the woken session repeats it once.
-    const approvedAsleep = !rule && this.hibernation.takeGrant(run.id, { command: ev.command, cwd: ev.cwd, paths: ev.paths, network: ev.network });
-    const decision: "deny" | "allow_once" | null = rule ? "deny" : risk === "low" || approvedAsleep ? "allow_once" : null;
-    const payload: RequestPayload = { kind: "approval", toolCallId: ev.toolCallId, command: ev.command, cwd: ev.cwd, paths: ev.paths, network: ev.network, policy: rule ?? (approvedAsleep ? "policy.approved_while_hibernated" : decision ? "policy.allowlisted" : null) };
-    const answer: RequestAnswer | null = decision ? { kind: "approval", decision } : null;
-    this.insertRequest(task.id, run.id, ev.requestId, risk, payload, answer);
-    if (decision) {
-      const live = this.live.get(run.id);
-      if (live) await this.safe(() => live.adapter.answer(live.handle, ev.requestId, { kind: "approval", decision, ...(rule ? { message: POLICY_DENIAL[rule] ?? rule } : {}) }));
-    }
-  }
-
-  private insertRequest(taskId: string, runId: string | null, nativeId: string | null, risk: RequestRow["risk"], payload: RequestPayload, answeredByPolicy: RequestAnswer | null = null): string {
-    const id = randomUUID();
-    const at = this.iso();
-    this.db.exec(
-      "insert into requests (id, task_id, run_id, native_id, kind, risk, payload, created_at, answered_at, answer, answered_by) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      id,
-      taskId,
-      runId,
-      nativeId,
-      payload.kind,
-      risk,
-      JSON.stringify(payload),
-      at,
-      answeredByPolicy ? at : null,
-      answeredByPolicy ? JSON.stringify(answeredByPolicy) : null,
-      answeredByPolicy ? "policy" : null,
-    );
-    this.emitRequest(id);
-    // The timeline pairs this with the runner's request event, so a policy answer does not read as waiting.
-    if (answeredByPolicy) this.audit(taskId, runId, "request.answered", { requestId: id, nativeId, by: "policy", kind: answeredByPolicy.kind });
-    else this.emitTask(taskId, "request");
-    return id;
-  }
-
-  private closeRequest(q: RequestRow, by: "system" | "policy"): void {
-    const closed = this.db.db.prepare("update requests set answered_at = ?, answer = ?, answered_by = ? where id = ? and answered_at is null").run(this.iso(), JSON.stringify({ kind: "cancel" }), by, q.id);
-    if (Number(closed.changes) > 0) this.audit(q.task_id, q.run_id, "request.answered", { requestId: q.id, nativeId: q.native_id, by, kind: "cancel" });
-    this.emitRequest(q.id);
-  }
 
   // ---------------------------------------------------------------- usage and limits
 
@@ -2493,7 +2386,7 @@ export class Orchestrator extends Part {
       this.track(this.performHandoff(run.id, next, info.trigger === "unpriced" ? "budget" : info.trigger));
       return;
     }
-    this.insertRequest(task.id, run.id, null, null, {
+    this.inbox.insertRequest(task.id, run.id, null, null, {
       kind: "handoff",
       trigger: detail === "handoff_failed" || detail === "handoff_interrupted" ? "handoff_failed" : info.trigger,
       window: info.window,
@@ -2911,7 +2804,7 @@ export class Orchestrator extends Part {
       const detail = r.pid !== null && alive(r.pid) ? "process_orphaned" : "process_gone";
       this.db.exec("update runs set ended_at = ?, end_reason = 'interrupted', end_detail = ?, resume_at = null where id = ?", this.iso(), detail, r.id);
       settleReservation(this.opts.store.db, r.id, this.now());
-      for (const q of this.db.openRequestsForRun(r.id)) this.closeRequest(q, "system");
+      for (const q of this.db.openRequestsForRun(r.id)) this.inbox.closeRequest(q, "system");
       this.audit(r.task_id, r.id, "run.recovered", { detail });
       tasks.add(r.task_id);
     }
@@ -2944,7 +2837,6 @@ export class Orchestrator extends Part {
 
   // ---------------------------------------------------------------- helpers
 
-
   private record(runId: string, ev: AgentEvent): void {
     const run = this.db.run(runId);
     const task = this.db.task(run.task_id);
@@ -2975,30 +2867,4 @@ export class Orchestrator extends Part {
 
 const RANK: Record<Provenance, number> = { reported: 2, estimated: 1, unknown: 0 };
 const weakest = (a: Provenance, b: Provenance): Provenance => (RANK[a] <= RANK[b] ? a : b);
-
-/** Plain words for the agent when a role policy denies a call, so it adapts instead of retrying. */
-const POLICY_DENIAL: Record<string, string> = {
-  "policy.role_read_only": "Denied by Crewyard: this role is read-only and may not change files.",
-  "policy.role_docs_only": "Denied by Crewyard: this role may only change documentation files.",
-  "policy.role_no_network": "Denied by Crewyard: this role has no network access.",
-};
-
-/** Longest deny reason passed on; a reason is a sentence or two, not a document. */
-const MAX_REASON = 2_000;
-
-function withReason(a: Extract<RequestAnswer, { kind: "approval" }>): Extract<RequestAnswer, { kind: "approval" }> {
-  const reason = a.decision === "deny" ? a.message?.trim().slice(0, MAX_REASON) : undefined;
-  return { kind: "approval", decision: a.decision, ...(reason ? { message: reason } : {}) };
-}
-
-function toCoreAnswer(a: RequestAnswer): Answer {
-  switch (a.kind) {
-    case "approval":
-      return { kind: "approval", decision: a.decision, ...(a.message ? { message: a.message } : {}) };
-    case "question":
-      return { kind: "question", answers: a.answers };
-    default:
-      return { kind: "cancel" };
-  }
-}
 
