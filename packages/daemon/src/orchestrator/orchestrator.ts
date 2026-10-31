@@ -1,6 +1,4 @@
-import { randomUUID } from "node:crypto";
 import type {
-  CandidateView,
   HandoffStop,
   HandoffTrigger,
   RequestAnswer,
@@ -15,6 +13,7 @@ import type { McpHook } from "../mcp/service.ts";
 import { Bootstrapper } from "../worktrees/bootstrap.ts";
 import { OrchestratorContext, type OrchestratorOptions, type ProposeParams } from "./context.ts";
 import { Part } from "./part.ts";
+import { TaskFlow } from "./tasks.ts";
 import { Dispatcher } from "./dispatch.ts";
 import { RunActions } from "./run-actions.ts";
 import { Messages } from "./messages.ts";
@@ -28,12 +27,8 @@ import { Fallback } from "./fallback.ts";
 import { Handoffs } from "./handoffs.ts";
 import { Budget } from "./budget.ts";
 import { Inbox } from "./inbox.ts";
-import { classifyTask } from "./classify.ts";
-import { eligible, proposeCrew, readOnlyConflict, sameModel, scoreCandidate, sumEstimates } from "./crew.ts";
 import type { ProfileDirectory } from "./directory.ts";
-import { OrchestratorError } from "./errors.ts";
 import type { LimitMonitor } from "./limits.ts";
-import { projectRoles } from "./role-files.ts";
 import { settleReservation } from "./spend.ts";
 import { Scheduler } from "./schedules.ts";
 
@@ -109,8 +104,8 @@ export class Orchestrator extends Part {
     insertRun: (spec) => this.launcher.insertRun(spec),
     boot: (runId, spec) => this.launcher.boot(runId, spec),
     stopRun: (runId, detail, reason) => this.lifecycle.stopRun(runId, detail, reason),
-    cancel: (taskId) => this.cancel(taskId),
-    get: (taskId) => this.get(taskId),
+    cancel: (taskId) => this.taskFlow.cancel(taskId),
+    get: (taskId) => this.taskFlow.get(taskId),
     tick: () => this.dispatcher.tick(),
   });
   private readonly lifecycle: RunLifecycle = new RunLifecycle(this.ctx, {
@@ -165,6 +160,16 @@ export class Orchestrator extends Part {
     startGroup: (task, m, group, project, slots, candidates) => this.bestOfRunner.startGroup(task, m, group, project, slots, candidates),
     budgetHold: (task, m, candidate) => this.budget.budgetHold(task, m, candidate),
     launch: (spec) => this.launcher.launch(spec),
+  });
+  private readonly taskFlow: TaskFlow = new TaskFlow(this.ctx, {
+    groupView: (task) => this.bestOfRunner.groupView(task),
+    groupCandidates: (members, candidates, ctx, n) => this.bestOfRunner.groupCandidates(members, candidates, ctx, n),
+    approvedVariants: (task, project, members, views, candidates, group, p) => this.bestOfRunner.approvedVariants(task, project, members, views, candidates, group, p),
+    cancelAutoRetry: (runId) => this.fallback.cancelAutoRetry(runId),
+    stopRun: (runId, detail, reason) => this.lifecycle.stopRun(runId, detail, reason),
+    closeRequest: (q, by) => this.inbox.closeRequest(q, by),
+    closeHandoff: (id, outcome, detail) => this.handoffs.closeHandoff(id, outcome, detail),
+    tick: () => this.dispatcher.tick(),
   });
 
   override get db() {
@@ -224,8 +229,8 @@ export class Orchestrator extends Part {
       db: opts.store.db,
       now: this.ctx.now,
       emit: (topic, payload) => this.emit(topic, payload),
-      propose: (p) => this.propose(p),
-      approve: (p) => this.approve(p),
+      propose: (p) => this.taskFlow.propose(p),
+      approve: (p) => this.taskFlow.approve(p),
       status: (taskId) => {
         try {
           return this.db.status(this.db.task(taskId));
@@ -302,187 +307,28 @@ export class Orchestrator extends Part {
 
   // ---------------------------------------------------------------- tasks
 
-  /** The task list; a Best of N variant's hidden task shows inside its parent, not as a row. */
   list(projectId?: string): TaskSummary[] {
-    const variants = this.bestOf.variantTaskIds();
-    return this.db
-      .tasks(projectId)
-      .filter((t) => !variants.has(t.id))
-      .map((t) => this.db.summary(t));
+    return this.taskFlow.list(projectId);
   }
 
   get(taskId: string): TaskDetail {
-    const task = this.db.task(taskId);
-    const attachments = this.attachments.taskViews(task.id);
-    return { ...this.db.detail(task, this.blocked), bestOfGroup: this.bestOfRunner.groupView(task), accountSwitch: this.switches.taskEnabled(task.id), ...(attachments.length > 0 ? { attachments } : {}) };
+    return this.taskFlow.get(taskId);
   }
 
-  /** Classifies the task and stores a draft crew. No process, worktree or network call. */
-  async propose(p: ProposeParams): Promise<TaskDetail> {
-    const project = this.db.project(p.projectId);
-    const { config, fromFile } = this.config(project);
-    const description = p.description ?? "";
-    const attachmentIds = p.attachments ?? [];
-    this.attachments.check(attachmentIds);
-    const cls = classifyTask(p.title, description, { kind: p.kind, size: p.size });
-    const budgetUsd = p.budgetUsd ?? (fromFile ? config.budget.perTaskUsd : null);
-    const candidates = await this.candidates(project);
-    const ctx = this.scoring(project.id, cls.size, budgetUsd, p.pins, p.exclude);
-    const roles = projectRoles(this.opts.dataDir, project.path, config, null);
-    const crew = proposeCrew(cls.kind, cls.security, candidates, ctx, { templates: new Map([...roles.set.roles].map(([id, r]) => [id, r.template])), steps: roles.steps });
-    for (const m of crew.members) {
-      const path = roles.set.roles.get(m.role)?.path;
-      if (path) m.reasons.unshift({ code: "role.file", params: { path } });
-    }
-    const group = p.bestOf === undefined ? null : this.bestOfRunner.groupCandidates(crew.members, candidates, ctx, p.bestOf);
-    const estimate = group ? sumEstimates(crew.members.flatMap((m, i) => (i === group.index ? group.candidates.map((c) => c.estimate) : [m.chosen?.estimate ?? { usd: null, provenance: "unknown" as const }]))) : crew.estimate;
-    const taskId = randomUUID();
-    const crewId = randomUUID();
-    const memberIds = crew.members.map(() => randomUUID());
-    const at = this.iso();
-    this.db.tx(() => {
-      this.db.exec(
-        `insert into tasks (id, project_id, title, description, kind, size, base_branch, fallback, wait_reset_minutes, budget_usd, classification, created_at)
-         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        taskId,
-        project.id,
-        p.title,
-        description,
-        cls.kind,
-        cls.size,
-        p.baseBranch ?? null,
-        p.fallback ?? config.rules.fallback,
-        p.waitResetMinutes ?? 20,
-        budgetUsd,
-        JSON.stringify(cls.reasons),
-        at,
-      );
-      this.db.exec("insert into crews (id, task_id, proposed_at, estimate_usd, estimate_provenance) values (?, ?, ?, ?, ?)", crewId, taskId, at, estimate.usd, estimate.provenance);
-      crew.members.forEach((m, i) =>
-        this.db.exec(
-          `insert into crew_members (id, crew_id, position, step, role, depends_on, required, writes_code, chosen, standby, reasons)
-           values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          memberIds[i]!,
-          crewId,
-          i,
-          m.step,
-          m.role,
-          JSON.stringify(m.dependsOn),
-          m.required ? 1 : 0,
-          m.writesCode ? 1 : 0,
-          m.chosen ? JSON.stringify(m.chosen) : null,
-          JSON.stringify(m.standby),
-          JSON.stringify(m.reasons),
-        ),
-      );
-      crew.members.forEach((m, i) => {
-        const r = roles.set.roles.get(m.role);
-        if (r && r.source !== "builtin") this.db.saveRoleTemplate(memberIds[i]!, r);
-      });
-      if (group) this.bestOf.create(taskId, memberIds[group.index]!, group.candidates);
-    });
-    if (attachmentIds.length > 0) this.attachments.claim(attachmentIds, taskId, null);
-    this.audit(taskId, null, "task.proposed", { kind: cls.kind, size: cls.size, members: crew.members.map((m) => ({ role: m.role, profileId: m.chosen?.profileId ?? null })), bestOf: group?.candidates.map((c) => c.profileId) ?? null, ...(attachmentIds.length > 0 ? { attachments: attachmentIds } : {}) });
-    this.emitTask(taskId, "proposed");
-    return this.get(taskId);
+  propose(p: ProposeParams): Promise<TaskDetail> {
+    return this.taskFlow.propose(p);
   }
 
-  /** Approves the crew, with optional edits, then lets the scheduler start ready steps. */
-  async approve(p: TasksIpc["tasks.approve"]["params"]): Promise<TaskDetail> {
-    const task = this.db.task(p.taskId);
-    if (task.cancelled_at) throw new OrchestratorError("task.cancelled");
-    const crew = this.db.crew(task.id);
-    if (!crew || crew.approved_at) throw new OrchestratorError("task.not_proposed");
-    const project = this.db.project(task.project_id);
-    const members = this.db.members(crew.id);
-    const views = new Map(members.map((m) => [m.id, m.chosen ? (JSON.parse(m.chosen) as CandidateView) : null]));
-
-    const candidates = await this.candidates(project);
-    if (p.edits?.length) {
-      const ctx = this.scoring(project.id, task.size, task.budget_usd);
-      for (const edit of p.edits) {
-        const m = members.find((x) => x.id === edit.memberId);
-        if (!m) throw new OrchestratorError("crew.member_not_found", { memberId: edit.memberId });
-        const c = candidates.find((x) => x.profile.id === edit.profileId);
-        if (c && readOnlyConflict(c, this.tpl(m))) throw new OrchestratorError("crew.read_only_profile", { profileId: c.profile.id, role: m.role });
-        if (!c || !eligible(c, this.tpl(m), ctx)) throw new OrchestratorError("crew.unknown_profile", { profileId: edit.profileId });
-        const v = scoreCandidate(c, this.tpl(m), ctx);
-        if (edit.model) v.model = edit.model;
-        views.set(m.id, v);
-      }
-    }
-
-    const group = this.bestOf.group(task.id);
-    if (p.bestOf && !group) throw new OrchestratorError("best_of.not_found");
-    const groupCands = group ? this.bestOfRunner.approvedVariants(task, project, members, views, candidates, group, p) : null;
-
-    for (const m of members) {
-      const v = views.get(m.id);
-      if (!v) throw new OrchestratorError("crew.missing_profile", { role: m.role });
-      // Checked for every member, not only edited ones: the profile may have been marked read-only after the proposal.
-      const c = candidates.find((x) => x.profile.id === v.profileId);
-      if (c && readOnlyConflict(c, this.tpl(m))) throw new OrchestratorError("crew.read_only_profile", { profileId: c.profile.id, role: m.role });
-      for (const other of this.tpl(m).independentOf) {
-        const o = members.find((x) => x.role === other);
-        const ov = o ? views.get(o.id) : null;
-        if (ov && sameModel(v, ov)) throw new OrchestratorError("crew.independence", { role: m.role });
-        // Any variant may be the one you keep, so a reviewer must be independent of all of them.
-        if (o && group?.member_id === o.id && groupCands?.some((g) => sameModel(v, g))) throw new OrchestratorError("crew.independence", { role: m.role });
-      }
-    }
-
-    this.db.tx(() => {
-      for (const edit of p.edits ?? []) {
-        const m = members.find((x) => x.id === edit.memberId)!;
-        const v = views.get(m.id)!;
-        const before = m.chosen ? (JSON.parse(m.chosen) as CandidateView) : null;
-        const standby = (JSON.parse(m.standby) as CandidateView[]).filter((s) => s.profileId !== v.profileId);
-        this.db.exec("update crew_members set chosen = ?, standby = ?, edited = 1 where id = ?", JSON.stringify(v), JSON.stringify(standby), m.id);
-        // Edits are remembered as preferences (PLAN.md §9 step 6).
-        if (before?.profileId !== v.profileId) {
-          this.db.bumpPreference(project.id, m.role, v.profileId, 1);
-          if (before) this.db.bumpPreference(project.id, m.role, before.profileId, -1);
-        }
-      }
-      if (group && groupCands) {
-        this.bestOf.replace(group.id, groupCands);
-        this.db.exec("update crew_members set chosen = ? where id = ?", JSON.stringify(groupCands[0]), group.member_id);
-      }
-      const estimate = sumEstimates([...views.entries()].flatMap(([id, v]) => (groupCands && group?.member_id === id ? groupCands.map((g) => g.estimate) : [v?.estimate ?? { usd: null, provenance: "unknown" as const }])));
-      this.db.exec("update crews set approved_at = ?, estimate_usd = ?, estimate_provenance = ? where id = ?", this.iso(), estimate.usd, estimate.provenance, crew.id);
-      if (p.fallback) this.db.exec("update tasks set fallback = ? where id = ?", p.fallback, task.id);
-      if (p.accountSwitch !== undefined) this.switches.setTask(task.id, p.accountSwitch);
-    });
-    this.audit(task.id, null, "task.approved", { edits: p.edits ?? [], bestOf: groupCands?.map((g) => g.profileId) ?? null });
-    this.emitTask(task.id, "approved");
-    await this.dispatcher.tick();
-    return this.get(task.id);
+  approve(p: TasksIpc["tasks.approve"]["params"]): Promise<TaskDetail> {
+    return this.taskFlow.approve(p);
   }
 
-  /** Lets the task's steps switch to another account of the same provider, or holds them out (docs/adr/0009). */
   setAccountSwitch(taskId: string, enabled: boolean): TaskDetail {
-    const task = this.db.task(taskId);
-    this.switches.setTask(task.id, enabled);
-    this.audit(task.id, null, "task.account_switch", { enabled });
-    this.emitTask(task.id, "account_switch");
-    return this.get(task.id);
+    return this.taskFlow.setAccountSwitch(taskId, enabled);
   }
 
-  /** Stops every run, closes open requests and handoffs. Worktrees are kept. */
-  async cancel(taskId: string): Promise<TaskDetail> {
-    const task = this.db.task(taskId);
-    if (!task.cancelled_at) {
-      this.db.exec("update tasks set cancelled_at = ? where id = ?", this.iso(), task.id);
-      for (const r of this.db.runs(task.id).filter((r) => r.ended_at && r.resume_at)) this.fallback.cancelAutoRetry(r.id);
-      for (const r of this.db.runs(task.id).filter((r) => !r.ended_at)) await this.lifecycle.stopRun(r.id, "task_cancelled");
-      for (const q of this.db.requests({ taskId: task.id })) this.inbox.closeRequest(q, "system");
-      for (const h of this.db.handoffs(task.id).filter((h) => !h.closed_at)) this.handoffs.closeHandoff(h.id, "cancelled", null);
-      // The variants of a Best of N group go with their task; their worktrees stay, like the task's.
-      for (const id of this.bestOf.variantTasksOf(task.id)) await this.cancel(id);
-      this.audit(task.id, null, "task.cancelled", {});
-      this.emitTask(task.id, "cancelled");
-    }
-    return this.get(task.id);
+  cancel(taskId: string): Promise<TaskDetail> {
+    return this.taskFlow.cancel(taskId);
   }
 
   // ---------------------------------------------------------------- hibernation
