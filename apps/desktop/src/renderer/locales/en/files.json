@@ -1,0 +1,39 @@
+{
+  "mentioned": "Mentioned by the agent",
+  "noMentions": "No file of this worktree was named in the run yet.",
+  "mentionCount_one": "{{count}}×",
+  "mentionCount_other": "{{count}}×",
+  "mentionTitle_one": "Named once, last {{time}}",
+  "mentionTitle_other": "Named {{count}} times, last {{time}}",
+  "tree": "Worktree",
+  "empty": "This worktree is empty.",
+  "loading": "Loading…",
+  "noWorktree": "This task has no worktree of its own, so there are no files to show.",
+  "ignored": "ignored",
+  "ignoredNote": "Gitignored. It stays closed until you open it.",
+  "link": "link",
+  "linkNote": "A link or junction. It is shown but never followed.",
+  "more_one": "{{count}} more entry not listed",
+  "more_other": "{{count}} more entries not listed",
+  "previewOf": "Preview of {{path}}",
+  "contentOf": "Contents of {{path}}",
+  "closePreview": "Close preview",
+  "wrap": "Wrap",
+  "source": "Source",
+  "truncated": "Truncated, {{size}}",
+  "binary": "Binary file, {{size}}. It is not shown.",
+  "imageTooLarge": "Image too large to preview, {{size}}.",
+  "imageRef": "Image: {{alt}}",
+  "error": {
+    "files": {
+      "bad_path": "That path cannot be read.",
+      "outside": "That path leads outside the worktree, so it is not shown.",
+      "not_found": "That file is no longer there.",
+      "not_folder": "That is not a folder.",
+      "not_file": "That is not a file.",
+      "missing": "The worktree folder is gone. It may be parked; resume it to see its files.",
+      "no_worktree": "This task has no worktree of its own."
+    },
+    "other": "Could not read the worktree."
+  }
+}

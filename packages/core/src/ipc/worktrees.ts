@@ -67,7 +67,61 @@ export interface WorktreeDisk {
   measuredAt: string;
 }
 
+// ---- Files tab (inspector): a read-only view of a task worktree. Paths are relative to the
+// worktree root with `/` separators; "" is the root itself. Nothing here ever writes.
+
+export interface FileEntry {
+  name: string;
+  /** A symlink or junction is shown as itself and never followed. */
+  kind: "file" | "folder" | "link";
+  /** Size of a file; null for folders and links. */
+  bytes: number | null;
+  /** Gitignored (or git's own folder): collapsed and marked in the tree. */
+  ignored: boolean;
+}
+
+export interface FolderListing {
+  path: string;
+  /** Folders first, then files, by name. */
+  entries: FileEntry[];
+  /** Entries in the folder; more than `entries.length` when the listing stopped at its cap. */
+  total: number;
+}
+
+export type FilePreview =
+  | {
+      kind: "text";
+      path: string;
+      /** The whole file size on disk. */
+      bytes: number;
+      text: string;
+      /** True when only the first `cap` bytes were read. */
+      truncated: boolean;
+      cap: number;
+    }
+  | { kind: "image"; path: string; bytes: number; mime: "image/png" | "image/jpeg" | "image/gif" | "image/webp" | "image/svg+xml"; base64: string }
+  /** A file that is not text (a NUL byte in its first bytes) or an image over the image cap. */
+  | { kind: "binary"; path: string; bytes: number; reason: "binary" | "too_large" };
+
+export interface FileMention {
+  path: string;
+  /** How many tool calls, approvals, diffs and messages named it. */
+  count: number;
+  /** When it was last named. */
+  at: string;
+}
+
 export interface WorktreesIpc {
+  /**
+   * One folder of the task's worktree, capped. Refused with `files.outside` for a path that leaves
+   * the worktree (`..`, an absolute path, or a link pointing out), `files.no_worktree` when the
+   * task has none and `files.missing` when its folder is gone (parked).
+   */
+  "worktrees.listDir": { params: { taskId: string; path: string }; result: FolderListing };
+  /** The start of one file, capped, with the same confinement as `worktrees.listDir`. */
+  "worktrees.readFile": { params: { taskId: string; path: string }; result: FilePreview };
+  /** Files of the worktree that the task's runs named in tool calls, approvals, diffs and messages, most recent first. */
+  "worktrees.mentions": { params: { taskId: string }; result: FileMention[] };
   /** What the include list would copy from this checkout, for the wizard. Reads sizes only. */
   "worktrees.includePreview": { params: { path: string; include: string[]; maxMb: number }; result: IncludePreview };
   "worktrees.disk": { params: { projectId: string }; result: WorktreeDisk };

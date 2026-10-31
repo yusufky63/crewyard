@@ -275,7 +275,7 @@
     "loading": "Loading…",
     "eyebrow": "Run · {{index}} {{role}}",
     "task": "Task",
-    "tab": { "details": "Details", "changes": "Changes", "usage": "Usage" },
+    "tab": { "details": "Details", "changes": "Changes", "usage": "Usage", "files": "Files" },
     "now": "Now",
     "plan": "Plan",
     "planStatus": { "pending": "to do", "in_progress": "in progress", "completed": "done" },

@@ -20,6 +20,8 @@ import { DiffStat } from "../screens/tasks/TaskRow.tsx";
 import { DiffReview } from "../screens/tasks/DiffReview.tsx";
 import { BestOfCompare } from "../screens/tasks/BestOfCompare.tsx";
 import { TaskTimeline } from "./timeline/TaskTimeline.tsx";
+import { FIXTURE } from "./timeline/fixture.ts";
+import { FilesTab } from "./files/FilesTab.tsx";
 import "../screens/tasks/tasks.css";
 import "./inspector.css";
 
@@ -29,7 +31,10 @@ import "./inspector.css";
 
 const INSPECTOR_ID = "app-inspector";
 
-type Tab = "details" | "changes" | "usage";
+type Tab = "details" | "changes" | "usage" | "files";
+const TABS: readonly Tab[] = ["details", "changes", "usage", "files"];
+/** Screenshot mode only: `insTab=<tab>` opens the inspector on that tab. */
+const SHOT_TAB = FIXTURE ? (new URLSearchParams(location.search).get("insTab") as Tab | null) : null;
 
 function Actions({ detail, run, onError }: { detail: TaskDetail; run: RunView; onError: (err: unknown) => void }) {
   const f = useFormat();
@@ -182,7 +187,7 @@ function Body({ detail, target }: { detail: TaskDetail; target: InspectorTarget 
   const recheck = useRecheck();
   const inspect = useInspector((s) => s.open);
   const { selectTask, go } = useNav();
-  const [tab, setTab] = useState<Tab>("details");
+  const [tab, setTab] = useState<Tab>(SHOT_TAB && TABS.includes(SHOT_TAB) ? SHOT_TAB : "details");
   const [error, setError] = useState<string | null>(null);
   const { run, memberId } = resolveTarget(detail, target);
   const members = detail.crew?.members ?? [];
@@ -233,7 +238,7 @@ function Body({ detail, target }: { detail: TaskDetail; target: InspectorTarget 
         )}
       </div>
       <div className="ins-tabs" role="tablist">
-        {(["details", "changes", "usage"] as const).map((x) => (
+        {TABS.map((x) => (
           <button key={x} type="button" role="tab" aria-selected={tab === x} onClick={() => setTab(x)}>
             {f.t(`inspector.tab.${x}`)}
           </button>
@@ -358,6 +363,7 @@ function Body({ detail, target }: { detail: TaskDetail; target: InspectorTarget 
         </div>
       )}
       {tab === "changes" && <DiffReview detail={detail} run={run} />}
+      {tab === "files" && <FilesTab detail={detail} />}
       {tab === "usage" && run && (
         <>
           <div className="ins-sec">

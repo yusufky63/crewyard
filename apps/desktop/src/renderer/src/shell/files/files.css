@@ -1,0 +1,66 @@
+/* Files tab (DESIGN.md §5 Inspector): mentioned files, the worktree tree and a read-only preview.
+   Rows follow the inspector's step list; the preview reuses the timeline's sunken mono surface. */
+.fl-mentions, .fl-tree { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+.fl-mention {
+  display: grid; grid-template-columns: 14px auto minmax(0, 1fr) auto; gap: 8px; align-items: center;
+  width: 100%; min-height: 28px; padding: 4px; text-align: left; font-size: 13px; color: var(--ink-2);
+}
+.fl-mention:hover { background: var(--raised); color: var(--ink); }
+.fl-mention[aria-current] { background: var(--raised); color: var(--ink); box-shadow: inset 2px 0 0 var(--ink); }
+.fl-mention .fl-dir { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+.fl-mention .num { font-size: 11px; }
+
+.fl-tree { max-height: 46vh; overflow: auto; scrollbar-width: thin; scrollbar-color: var(--tick) transparent; }
+.fl-row {
+  display: grid; grid-template-columns: 14px 14px minmax(0, auto) auto 1fr; gap: 6px; align-items: center;
+  min-height: 28px; padding: 2px 4px 2px calc(4px + var(--depth, 0) * 16px); font-size: 13px; color: var(--ink-2); cursor: default; user-select: none;
+}
+.fl-row > .fl-size { grid-column: 5; justify-self: end; font-size: 11px; }
+.fl-row:hover { background: var(--raised); color: var(--ink); }
+.fl-row[aria-selected="true"] { background: var(--raised); color: var(--ink); box-shadow: inset 2px 0 0 var(--ink); }
+.fl-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.fl-row.ignored, .fl-row.link { color: var(--ink-3); }
+.fl-chev { display: grid; place-items: center; color: var(--ink-3); }
+.fl-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fl-tag { font: 500 10.5px / 1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; padding: 3px 5px; border: 1px solid var(--line); color: var(--ink-3); white-space: nowrap; }
+.fl-more { font-size: 12px; padding: 4px 4px 4px calc(38px + var(--depth, 0) * 16px); }
+
+.fl-preview { gap: 8px; }
+.fl-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: start; }
+.fl-path { font-size: 12px; overflow-wrap: anywhere; color: var(--ink); }
+.fl-icon { width: 28px; height: 28px; display: grid; place-items: center; color: var(--ink-3); margin: -6px -6px 0 0; }
+.fl-icon:hover { color: var(--ink); background: var(--raised); }
+.fl-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.fl-spacer { flex: 1; }
+.fl-chip { font: 500 10.5px / 1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; padding: 4px 6px; background: var(--warn-soft); color: var(--warn); white-space: nowrap; }
+.fl-toggle { height: 28px; padding: 0 8px; font: 500 11px / 1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); border: 1px solid var(--line); }
+.fl-toggle:hover { color: var(--ink); border-color: var(--line-strong); }
+.fl-toggle[aria-pressed="true"] { color: var(--ink); border-color: var(--ink); background: var(--raised); }
+
+.fl-code, .fl-md { max-height: 60vh; overflow: auto; background: var(--sunken); border: 1px solid var(--line); scrollbar-width: thin; scrollbar-color: var(--tick) transparent; }
+.fl-code { padding: 8px 0; font: 400 12px / 1.5 var(--mono); color: var(--ink-2); }
+.fl-line { display: grid; grid-template-columns: calc(var(--ln, 2ch) + 20px) minmax(0, 1fr); }
+.fl-ln { padding: 0 10px; text-align: right; color: var(--ink-3); user-select: none; }
+.fl-lc { white-space: pre; padding-right: 12px; tab-size: 4; }
+.fl-code.wrap .fl-lc { white-space: pre-wrap; overflow-wrap: anywhere; }
+.fl-code:not(.wrap) .fl-line { width: max-content; min-width: 100%; }
+
+.fl-md { padding: 12px 14px; font-size: 13px; line-height: 1.55; color: var(--ink); overflow-wrap: anywhere; }
+.fl-md > :first-child { margin-top: 0; }
+.fl-md p, .fl-md ul, .fl-md ol, .fl-md blockquote, .fl-md .fl-pre, .fl-md hr { margin: 0 0 10px; }
+.fl-md ul, .fl-md ol { padding-left: 20px; }
+.fl-md li > p { margin: 0 0 4px; }
+.fl-md .fl-h { margin: 14px 0 8px; font-weight: 600; line-height: 1.25; }
+.fl-md .fl-h1 { font-size: 17px; }
+.fl-md .fl-h2 { font-size: 15px; }
+.fl-md .fl-h3, .fl-md .fl-h4, .fl-md .fl-h5, .fl-md .fl-h6 { font-size: 13px; }
+.fl-md code { font: 400 12px / 1.4 var(--mono); padding: 1px 4px; background: var(--raised); }
+.fl-md .fl-pre { font: 400 12px / 1.5 var(--mono); padding: 8px 10px; background: var(--surface); border: 1px solid var(--line); white-space: pre; overflow-x: auto; color: var(--ink-2); }
+.fl-md blockquote { padding-left: 10px; border-left: 2px solid var(--line-strong); color: var(--ink-2); }
+.fl-md hr { border: 0; border-top: 1px solid var(--line); }
+.fl-md .fl-link { text-decoration: underline dotted; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
+.fl-md .fl-href { font-size: 11px; color: var(--ink-3); }
+.fl-md .fl-img-ref { font: 500 11px / 1 var(--mono); padding: 3px 5px; border: 1px dashed var(--line-strong); color: var(--ink-3); }
+
+.fl-image { background: var(--sunken); border: 1px solid var(--line); padding: 12px; display: grid; place-items: center; }
+.fl-image img { max-width: 100%; max-height: 60vh; object-fit: contain; }
