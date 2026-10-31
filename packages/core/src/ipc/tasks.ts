@@ -216,6 +216,10 @@ export interface CrewMemberView {
   edited: boolean;
   /** Set while the step is ready but admission control holds it back. */
   blockedBy: Reason | null;
+  /** A step added to an approved crew (a follow-up): it waits for its own approval before it runs. */
+  pendingApproval?: boolean;
+  /** You skipped the step before it started; the steps after it go on without its result. */
+  skippedAt?: string | null;
 }
 
 export interface CrewView {
