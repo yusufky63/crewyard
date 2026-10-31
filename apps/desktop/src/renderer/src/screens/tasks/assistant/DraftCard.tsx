@@ -1,17 +1,22 @@
-import { useId, useState } from "react";
+import { useEffect, useEffectEvent, useId, useRef, useState } from "react";
 import { ArrowRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { AssistantDraftView, TaskKind, TaskSize } from "@crewyard/core";
 import { Button } from "@crewyard/ui";
 import { act } from "../data.ts";
+import { sameFields, type DraftFields } from "../draftEdits.ts";
 import { openTask, showTask } from "./openTask.ts";
 import { useAssistantError } from "./errors.ts";
 
 const KINDS: TaskKind[] = ["code", "research", "review", "docs"];
 const SIZES: Array<TaskSize | ""> = ["", "S", "M", "L"];
 
-/** One editable draft: the assistant's, a preset's, or a finished task's suggestion. `onChanged` re-reads its list. */
-export function DraftCard({ draft, index, onChanged }: { draft: AssistantDraftView; index: number; onChanged?: () => void }) {
+/**
+ * One editable draft: the assistant's, a preset's, or a finished task's suggestion. `onChanged`
+ * re-reads its list. `onEdit` hears each change, for a parent that keeps the fields outside the
+ * card (a task report shows its drafts in two places and adds them all at once).
+ */
+export function DraftCard({ draft, index, onChanged, onEdit }: { draft: AssistantDraftView; index: number; onChanged?: () => void; onEdit?: (fields: DraftFields) => void }) {
   const { t } = useTranslation("assistant");
   const tk = useTranslation("tasks").t;
   const errorText = useAssistantError();
@@ -31,6 +36,16 @@ export function DraftCard({ draft, index, onChanged }: { draft: AssistantDraftVi
     if (size === (synced.size ?? "")) setSize(draft.size ?? "");
     if (criteria === synced.acceptance.join("\n")) setCriteria(draft.acceptance.join("\n"));
   }
+  const seen = useRef<DraftFields | null>(null);
+  const reportEdit = useEffectEvent((fields: DraftFields) => {
+    // The first pass is the draft as the card opened with it; every change after that is an edit.
+    const before = seen.current;
+    seen.current = fields;
+    if (before && onEdit && !sameFields(before, fields)) onEdit(fields);
+  });
+  useEffect(() => {
+    reportEdit({ title, description, kind, size, criteria });
+  }, [title, description, kind, size, criteria]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const id = useId();

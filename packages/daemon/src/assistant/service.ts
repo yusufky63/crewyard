@@ -48,7 +48,7 @@ import { recordSpend } from "../providers/ledger.ts";
 import type { Store } from "../store.ts";
 import type { ToolOutcome } from "../mcp/session.ts";
 import { assistantPrompt, type RecapLine } from "./prompt.ts";
-import { readTaskReport, type ReadReport } from "./reports.ts";
+import { readTaskReport } from "./reports.ts";
 import type { ToolAnswer, ToolContext } from "./tools.ts";
 import { addSpend, estimateSuggest, NO_SPEND, priceUsage, ZERO_TOTALS, type Totals } from "./spend.ts";
 
@@ -186,9 +186,14 @@ function cutBytes(s: string, max: number): string {
   return Buffer.from(s, "utf8").subarray(0, max).toString("utf8").replace(/�+$/, "");
 }
 
+/** A suggested task's title as compared across results: case and spacing do not make it another task. */
+const titleKey = (title: string): string => title.trim().replace(/\s+/g, " ").toLowerCase();
+
 export class AssistantService {
   private readonly live = new Map<string, Live>();
   private readonly emitTimers = new Map<string, NodeJS.Timeout>();
+  /** Drafts whose add is waiting on propose(), so the same draft is never proposed twice at once. */
+  private readonly adding = new Set<string>();
   private readonly now: () => Date;
   private closed = false;
 
@@ -726,9 +731,18 @@ export class AssistantService {
     // Your edits go through the same checks as the agent's call.
     const parsed = parseTaskDraft(edit ?? { title: row.title, description: row.description, kind: row.kind, acceptance: parseList(row.acceptance), size: row.size });
     if (!parsed.ok) fail("assistant.draft_invalid");
+    // The status changes only after propose() returns, so a second add of the same draft in that
+    // gap (a card's own button while Add all runs) would propose a second task; it is refused.
+    if (this.adding.has(draftId)) fail("assistant.draft_adding");
+    this.adding.add(draftId);
     const d = parsed.value;
     const description = draftDescription(d);
-    const task = await this.opts.host.propose({ projectId: row.project_id, title: d.title, ...(description ? { description } : {}), kind: d.kind, ...(d.size ? { size: d.size } : {}) });
+    let task: Awaited<ReturnType<AssistantHost["propose"]>>;
+    try {
+      task = await this.opts.host.propose({ projectId: row.project_id, title: d.title, ...(description ? { description } : {}), kind: d.kind, ...(d.size ? { size: d.size } : {}) });
+    } finally {
+      this.adding.delete(draftId);
+    }
     this.db
       .prepare("update assistant_drafts set title = ?, description = ?, kind = ?, acceptance = ?, size = ?, status = 'added', task_id = ? where id = ?")
       .run(d.title, d.description, d.kind, JSON.stringify(d.acceptance), d.size, task.id, draftId);
@@ -751,6 +765,11 @@ export class AssistantService {
   /**
    * A finished non-code task's report, with its suggested drafts created once (a finding's
    * suggested task, an open follow-up). Null while the task is not done or produced nothing.
+   *
+   * Only the current result's suggestions are listed, with drafts already added kept as history.
+   * A follow-up run writes a newer result: the older result's open drafts, whose findings left the
+   * report, are no longer shown or counted, and a finding the newer result repeats reuses the
+   * older draft for the same task (matched by title) instead of making a second open one.
    */
   report(taskId: string): TaskReport | null {
     return this.readReport(taskId, true);
@@ -769,25 +788,52 @@ export class AssistantService {
     if (!task || task.kind === "code" || task.status !== "done") return null;
     const read = readTaskReport(this.db, taskId);
     if (!read) return null;
-    if (createDrafts) this.createSuggested(task.projectId, taskId, read);
-    const drafts = (this.db.prepare("select * from assistant_drafts where source_task_id = ? order by created_at, rowid").all(taskId) as unknown as DraftRow[]).map(draftView);
-    const completed = this.opts.autopilot?.completed(taskId) ?? null;
-    return { taskId, ...read.report, drafts, ...(completed ? { completed } : {}) };
-  }
-
-  /** A finished task's suggested drafts, created once each (keyed by source task and key). */
-  private createSuggested(projectId: string, taskId: string, read: ReadReport): void {
     const insert = this.db.prepare(
       `insert or ignore into assistant_drafts (id, conversation_id, project_id, source, source_task_id, source_key, title, description, kind, acceptance, size, created_at)
        values (?, null, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
+    const select = this.db.prepare("select * from assistant_drafts where source_task_id = ? order by created_at, rowid");
+    const before = select.all(taskId) as unknown as DraftRow[];
+    const byKey = new Map(before.map((r) => [r.source_key, r.id]));
+    const byTitle = new Map<string, string>();
+    for (const r of before) if (r.source === "finding" && !byTitle.has(titleKey(r.title))) byTitle.set(titleKey(r.title), r.id);
+    /** Suggestion key to the draft that stands for it. */
+    const linked = new Map<string, string>();
     let added = false;
     for (const sug of read.suggestions) {
       const d = sug.draft;
-      const res = insert.run(randomUUID(), projectId, sug.source, taskId, sug.key, d.title, d.description, d.kind, JSON.stringify(d.acceptance), d.size, this.iso());
-      added ||= Number(res.changes) > 0;
+      // This result's own draft; one made before keys named their result; or, for a finding a
+      // newer result repeats, the draft an older result made for the same task.
+      const have = byKey.get(sug.key) ?? (sug.legacyKey ? byKey.get(sug.legacyKey) : undefined) ?? (sug.source === "finding" ? byTitle.get(titleKey(d.title)) : undefined);
+      if (have) {
+        linked.set(sug.key, have);
+        continue;
+      }
+      // A read tool only links what exists; it never creates a draft.
+      if (!createDrafts) continue;
+      const id = randomUUID();
+      const res = insert.run(id, task.projectId, sug.source, taskId, sug.key, d.title, d.description, d.kind, JSON.stringify(d.acceptance), d.size, this.iso());
+      if (Number(res.changes) === 0) continue;
+      added = true;
+      linked.set(sug.key, id);
+      byKey.set(sug.key, id);
+      if (sug.source === "finding" && !byTitle.has(titleKey(d.title))) byTitle.set(titleKey(d.title), id);
     }
-    if (added) this.opts.store.appendEvent({ kind: "assistant.suggestions", source: "assistant", payload: { count: read.suggestions.length }, projectId, taskId });
+    if (added) this.opts.store.appendEvent({ kind: "assistant.suggestions", source: "assistant", payload: { count: read.suggestions.length }, projectId: task.projectId, taskId });
+    const rows = createDrafts ? (select.all(taskId) as unknown as DraftRow[]) : before;
+    // An insert another read won is found by its key.
+    for (const sug of read.suggestions) if (!linked.has(sug.key)) for (const r of rows) if (r.source_key === sug.key) linked.set(sug.key, r.id);
+    const current = new Set(linked.values());
+    const drafts = rows.filter((r) => current.has(r.id) || r.status === "added").map(draftView);
+    // Each finding links to the draft its suggested task became, so the report can jump to the
+    // card; never to a draft another finding of an older result had at the same index.
+    const findings = read.report.findings.map((f, i) => {
+      const sug = read.suggestions.find((x) => x.findingIndex === i);
+      const draftId = sug ? linked.get(sug.key) : undefined;
+      return draftId ? { ...f, draftId } : f;
+    });
+    const completed = this.opts.autopilot?.completed(taskId) ?? null;
+    return { taskId, ...read.report, findings, drafts, ...(completed ? { completed } : {}) };
   }
 
   async presets(projectId: string): Promise<AssistantPresetsView> {

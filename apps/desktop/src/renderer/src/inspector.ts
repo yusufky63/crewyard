@@ -9,8 +9,10 @@ export interface InspectorTarget {
   memberId?: string;
   /** A specific run of that step, e.g. the one before a handoff. */
   runId?: string;
-  /** Opens this tab instead of the one shown last (the Crew graph's Open changes, Open files). */
-  tab?: "details" | "changes" | "usage" | "files" | "preview";
+  /** Opens this tab instead of the one shown last (the Crew graph's Open changes, Open files; a report's suggested count). */
+  tab?: "details" | "suggested" | "changes" | "usage" | "files" | "preview";
+  /** With `tab: "files"`: previews this worktree path, e.g. a report finding's `file:line`. */
+  file?: string;
 }
 
 interface Inspector {

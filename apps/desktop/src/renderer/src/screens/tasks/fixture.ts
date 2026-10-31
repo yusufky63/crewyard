@@ -1,4 +1,5 @@
 import { reviewFixture } from "./reviewFixture.ts";
+import { fixtureReport } from "./reportFixture.ts";
 import { NO_RUN_CONTROLS, type AccountSwitchView, type AttachmentView, type CandidateView, type CrewMemberView, type IpcMethod, type IpcParams, type IpcResult, type LimitNoticePayload, type LoopDecisionView, type RequestView, type RoleId, type RunView, type StallAlertView, type TaskDetail, type TaskSummary, type UndoPreview, type BestOfVariantView, type ScheduleRunView, type ScheduleView } from "@crewyard/core";
 import { fixtureReports, fixtureServers, fixtureUsage } from "../../shell/mcpFixture.ts";
 
@@ -477,6 +478,8 @@ export function fixtureCall<M extends IpcMethod>(method: M, params: IpcParams<M>
     case "github.removeReviewComment":
     case "github.sendReview":
       return reviewFixture(method, params, task) as IpcResult<M>;
+    case "assistant.report":
+      return fixtureReport(p.taskId) as IpcResult<M>;
     case "agentfiles.forSteps":
       // Screenshot data: the first profile reads CLAUDE.md and gets AGENTS.md through the bridge (docs/adr/0015).
       return (params as { profileIds: string[] }).profileIds.map((profileId, i) => ({

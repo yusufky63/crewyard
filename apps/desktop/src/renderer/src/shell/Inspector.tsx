@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ArrowLeftRight, PanelRightClose, PanelRightOpen, Pause, Play, RotateCw, X } from "lucide-react";
+import { ArrowLeftRight, ChevronLeft, ChevronRight, PanelRightClose, PanelRightOpen, Pause, Play, RotateCw, X } from "lucide-react";
 import { readProviderError, providerErrorLine, splitEndDetail, type CandidateView, type HandoffStop, type RequestAnswer, type RunView, type TaskDetail } from "@crewyard/core";
 import { BrandIcon, Button, Label, Splitter, TickMeter } from "@crewyard/ui";
 import { useInspector, type InspectorTarget } from "../inspector.ts";
@@ -17,7 +17,7 @@ import { useActivity } from "../screens/tasks/live.ts";
 import { canChooseHandoffStop, formatDuration, handoffsOf, latestRunOf, limitBanner, profileNames, resolveTarget, runDuration, stepState } from "../screens/tasks/model.ts";
 import { ConfirmButton, ErrorLine, HandoffStopChoice, LimitBanner, useFormat, useNow } from "../screens/tasks/parts.tsx";
 import { DiffStat } from "../screens/tasks/TaskRow.tsx";
-import { ReportSection } from "../screens/tasks/TaskReport.tsx";
+import { ReportSection, SuggestedTasks, useSuggestedTab } from "../screens/tasks/TaskReport.tsx";
 import { DiffReview } from "../screens/tasks/DiffReview.tsx";
 import { BestOfCompare } from "../screens/tasks/BestOfCompare.tsx";
 import { TaskTimeline } from "./timeline/TaskTimeline.tsx";
@@ -34,8 +34,11 @@ import "./inspector.css";
 
 const INSPECTOR_ID = "app-inspector";
 
-type Tab = "details" | "changes" | "usage" | "files" | "preview";
-const TABS: readonly Tab[] = ["details", "changes", "usage", "files", "preview"];
+type Tab = "details" | "suggested" | "changes" | "usage" | "files" | "preview";
+/** Suggested sits right after Details and shows only while the task's report has drafts. */
+const TABS: readonly Tab[] = ["details", "suggested", "changes", "usage", "files", "preview"];
+/** The file a target asks the Files tab to preview, as a fresh request object each time. */
+const revealOf = (target: InspectorTarget): { path: string } | undefined => (target.tab === "files" && target.file ? { path: target.file } : undefined);
 /** Screenshot mode only: `inspectorTab=<tab>` opens the inspector on that tab. */
 const SHOT_TAB = FIXTURE ? (new URLSearchParams(location.search).get("inspectorTab") as Tab | null) : null;
 
@@ -64,13 +67,13 @@ function Actions({ detail, run, onError }: { detail: TaskDetail; run: RunView; o
       {canMessage && <MessageForm key={run.id} run={run} onError={onError} />}
       <div className="ins-buttons">
         {open && !run.pausedAt && (
-          <Button onClick={() => void go(() => act("runs.pause", { runId: run.id, sessionId: run.nativeSessionId }))}>
+          <Button tone="warn" onClick={() => void go(() => act("runs.pause", { runId: run.id, sessionId: run.nativeSessionId }))}>
             <Pause aria-hidden="true" />
             {f.t("action.pause")}
           </Button>
         )}
         {open && run.pausedAt && !run.limitReached && (
-          <Button onClick={() => void go(() => act("runs.resume", { runId: run.id }))}>
+          <Button tone="ok" onClick={() => void go(() => act("runs.resume", { runId: run.id }))}>
             <Play aria-hidden="true" />
             {f.t("action.resume")}
           </Button>
@@ -190,12 +193,56 @@ function Body({ detail, target }: { detail: TaskDetail; target: InspectorTarget 
   const recheck = useRecheck();
   const inspect = useInspector((s) => s.open);
   const { selectTask, go } = useNav();
-  const [tab, setTab] = useState<Tab>(target.tab ?? (SHOT_TAB && TABS.includes(SHOT_TAB) ? SHOT_TAB : "details"));
+  const [chosenTab, setTab] = useState<Tab>(target.tab ?? (SHOT_TAB && TABS.includes(SHOT_TAB) ? SHOT_TAB : "details"));
+  const suggested = useSuggestedTab(detail);
+  const tabs = TABS.filter((x) => x !== "suggested" || suggested.show);
+  // A Suggested tab whose drafts went away (or are not loaded yet) falls back to Details.
+  const tab: Tab = tabs.includes(chosenTab) ? chosenTab : "details";
+  // The tab row scrolls sideways when the tabs outgrow the panel; the chosen one is kept in view,
+  // and a chevron shows at each edge that has more tabs past it.
+  const tabsRef = useRef<HTMLDivElement>(null);
+  const [edges, setEdges] = useState({ start: false, end: false });
+  useEffect(() => {
+    const list = tabsRef.current;
+    const el = list?.querySelector<HTMLElement>(`[aria-selected="true"]`);
+    if (!list || !el) return;
+    if (el.offsetLeft < list.scrollLeft) list.scrollLeft = el.offsetLeft - 32;
+    else if (el.offsetLeft + el.offsetWidth > list.scrollLeft + list.clientWidth) list.scrollLeft = el.offsetLeft + el.offsetWidth - list.clientWidth + 32;
+  }, [tab]);
+  const tabKey = tabs.join(" ");
+  useEffect(() => {
+    const list = tabsRef.current;
+    if (!list) return;
+    const measure = () => {
+      const start = list.scrollLeft > 1;
+      const end = list.scrollLeft + list.clientWidth < list.scrollWidth - 1;
+      setEdges((e) => (e.start === start && e.end === end ? e : { start, end }));
+    };
+    list.addEventListener("scroll", measure, { passive: true });
+    // Fires once on observe, and again when the panel or a label (another language) changes width.
+    const ro = new ResizeObserver(measure);
+    ro.observe(list);
+    for (const child of list.children) ro.observe(child);
+    return () => {
+      list.removeEventListener("scroll", measure);
+      ro.disconnect();
+    };
+  }, [tabKey]);
+  const scrollTabs = (dir: 1 | -1) => {
+    const list = tabsRef.current;
+    if (list) list.scrollBy({ left: dir * Math.max(120, list.clientWidth * 0.6) });
+  };
+  // A report finding's `file:line` asks the Files tab to preview that file. The request lives
+  // here, not in Files, which unmounts on every tab switch: once Files has shown it, it is spent,
+  // so coming back to Files later keeps whatever you opened there since.
+  const [reveal, setReveal] = useState(() => revealOf(target));
+  const revealed = useCallback(() => setReveal(undefined), []);
   // A target that names a tab (the Crew graph's Open changes, Open files) switches to it once.
   const [seenTarget, setSeenTarget] = useState(target);
   if (seenTarget !== target) {
     setSeenTarget(target);
     if (target.tab) setTab(target.tab);
+    setReveal(revealOf(target));
   }
   const [error, setError] = useState<string | null>(null);
   const { run, memberId } = resolveTarget(detail, target);
@@ -246,12 +293,28 @@ function Body({ detail, target }: { detail: TaskDetail; target: InspectorTarget 
           </button>
         )}
       </div>
-      <div className="ins-tabs" role="tablist">
-        {TABS.map((x) => (
-          <button key={x} type="button" role="tab" aria-selected={tab === x} onClick={() => setTab(x)}>
-            {x === "preview" ? f.t("preview:tab") : f.t(`inspector.tab.${x}`)}
+      <div className="ins-tabbar">
+        {/* For the mouse only: Tab reaches every tab and the focused one scrolls into view. */}
+        {edges.start && (
+          <button type="button" className="ins-tabs-more start" tabIndex={-1} aria-hidden="true" title={f.t("inspector.tabsBack")} onClick={() => scrollTabs(-1)}>
+            <ChevronLeft size={14} strokeWidth={1.75} />
           </button>
-        ))}
+        )}
+        <div className="ins-tabs" role="tablist" ref={tabsRef}>
+          {tabs.map((x) => (
+            <button key={x} type="button" role="tab" aria-selected={tab === x} onClick={() => setTab(x)}>
+              {x === "preview" ? f.t("preview:tab") : f.t(`inspector.tab.${x}`)}
+              {/* The space keeps the accessible name "Suggested 2"; flex layout drops it visually. */}
+              {x === "suggested" && suggested.open > 0 && " "}
+              {x === "suggested" && suggested.open > 0 && <span className="badge badge-info num ins-tab-count">{suggested.open}</span>}
+            </button>
+          ))}
+        </div>
+        {edges.end && (
+          <button type="button" className="ins-tabs-more end" tabIndex={-1} aria-hidden="true" title={f.t("inspector.tabsMore")} onClick={() => scrollTabs(1)}>
+            <ChevronRight size={14} strokeWidth={1.75} />
+          </button>
+        )}
       </div>
       {banner && run && (
         <div className="ins-sec">
@@ -269,7 +332,8 @@ function Body({ detail, target }: { detail: TaskDetail; target: InspectorTarget 
       {tab === "details" && (
         <>
           {detail.kind === "code" && (detail.status === "review" || detail.status === "merged") && <TaskPullSection taskId={detail.id} className="ins-sec" />}
-          <ReportSection detail={detail} />
+          {/* Keyed by task: a filter, an open finding or an "added" note belongs to one report. */}
+          <ReportSection key={`report:${detail.id}`} detail={detail} />
           {run?.hibernatedAt && !run.endedAt && (
             <div className="ins-sec">
               <Label>{f.t("hibernation.title")}</Label>
@@ -350,8 +414,10 @@ function Body({ detail, target }: { detail: TaskDetail; target: InspectorTarget 
               <span className="muted ins-small">{f.t("inspector.transcriptNote")}</span>
             </div>
           )}
+          <SuggestedTasks key={`suggested:${detail.id}`} detail={detail} />
         </>
       )}
+      {tab === "suggested" && <SuggestedTasks key={`suggested-tab:${detail.id}`} detail={detail} inTab />}
       {tab === "changes" && (
         <div className="ins-sec">
           {diffStat ? (
@@ -373,7 +439,7 @@ function Body({ detail, target }: { detail: TaskDetail; target: InspectorTarget 
         </div>
       )}
       {tab === "changes" && <DiffReview detail={detail} run={run} />}
-      {tab === "files" && <FilesTab detail={detail} />}
+      {tab === "files" && <FilesTab detail={detail} reveal={reveal} onRevealed={revealed} />}
       {tab === "preview" && <PreviewTab detail={detail} run={run} />}
       {tab === "usage" && run && (
         <>

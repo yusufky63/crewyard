@@ -1,0 +1,60 @@
+/* Task report (DESIGN.md §6 `TaskReport`, docs/adr/0014). Loaded after assistant.css, whose older
+   .tk-report rules it refines; the findings use their own list classes so those older ones never
+   apply. Severity and verdict use the shared tone badges; the word is always there with the colour. */
+
+/* A badge that does something: same look, a pointer, and a hover that lifts it a step. */
+.tk-badge-btn { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+.tk-badge-btn:hover { border-color: currentColor; }
+.tk-badge-btn[aria-pressed="true"] { border-color: currentColor; }
+/* While one severity filters the list, the others step back to a hairline. */
+.tk-badge-btn[data-dim] { background: transparent; color: var(--ink-3); border-color: var(--line); }
+.tk-badge-btn svg { width: 12px; height: 12px; }
+
+.tk-report-line > .badge { flex: none; }
+
+.tk-report-head .tk-report-jump { margin-left: auto; }
+.tk-report-done { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+
+/* The summary reads as prose: headings, lists and code from the text-only Markdown reader. */
+.fl-md.tk-report-summary { max-height: none; overflow: visible; background: none; border: 0; padding: 0; font-size: var(--fs); line-height: 1.55; }
+.fl-md.tk-report-summary > :last-child { margin-bottom: 0; }
+
+.tk-report-findings { display: grid; gap: 8px; }
+.tk-report-bar { display: flex; align-items: center; gap: 8px 10px; flex-wrap: wrap; }
+.tk-sevbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.tk-report-bar .tk-report-expand { margin-left: auto; }
+
+.tk-finding-list { list-style: none; margin: 0; padding: 0; display: grid; border: 1px solid var(--line); }
+.tk-finding { display: grid; border-top: 1px solid var(--line); min-width: 0; }
+.tk-finding:first-child { border-top: 0; }
+.tk-finding.open { background: var(--sunken); }
+/* The whole row is the expand control, so Enter and Space work on it natively. */
+.tk-finding-toggle { display: grid; grid-template-columns: 14px auto minmax(0, 1fr); align-items: center; gap: 8px; width: 100%; padding: 9px 10px 4px; text-align: left; color: var(--ink-3); }
+.tk-finding-toggle:hover { background: var(--raised); color: var(--ink); }
+.tk-finding-toggle .badge { justify-self: start; }
+.tk-finding .tk-finding-title { font-size: var(--fs); font-weight: var(--font-weight-semibold); line-height: 1.35; color: var(--ink); overflow-wrap: anywhere; }
+.tk-finding-where { display: flex; align-items: center; gap: 8px; padding: 0 10px 8px 32px; min-width: 0; }
+.tk-finding-toggle:only-child { padding-bottom: 9px; }
+.tk-finding-file { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-width: 0; font-size: var(--font-size-meta); color: var(--ink-2); text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; text-align: left; }
+.tk-finding-file > span { overflow-wrap: anywhere; }
+.tk-finding-file:hover { color: var(--accent); text-decoration-color: currentColor; }
+.tk-finding-body { display: grid; gap: 8px; padding: 0 10px 10px 32px; min-width: 0; }
+.fl-md.tk-finding-detail { max-height: none; overflow: visible; background: none; border: 0; padding: 0; font-size: var(--fs); line-height: 1.5; color: var(--ink-2); }
+.fl-md.tk-finding-detail > :last-child { margin-bottom: 0; }
+.tk-finding-actions { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin-left: -4px; }
+.tk-finding-actions svg { width: 13px; height: 13px; }
+
+/* Suggested tasks: their own block at the bottom of Details and in the Suggested tab. */
+.tk-suggested { gap: 10px; }
+.tk-suggested-head { display: flex; align-items: center; gap: 8px 10px; flex-wrap: wrap; }
+.tk-suggested-title { margin: 0; font-size: var(--font-size-title); font-weight: var(--font-weight-semibold); color: var(--ink); }
+.tk-suggested-head .tk-suggested-all { margin-left: auto; }
+.tk-suggested > p { margin: 0; }
+.tk-suggested .banner { padding: 8px 10px; }
+/* A fieldset, so Add all can disable every card at once; it keeps no frame of its own. */
+.tk-suggested-list { display: grid; gap: 8px; border: 0; min-width: 0; }
+/* The header's count focuses the block; the ring sits inside so the panel edge never cuts it. */
+.tk-suggested:focus-visible { outline-offset: -2px; }
+.tk-suggested-slot { scroll-margin: 16px; }
+.tk-suggested-slot:focus { outline: none; }
+.tk-suggested-slot:focus-visible > .spec, .tk-suggested-slot:focus > .spec { border-color: var(--accent); --tk: var(--accent); }
