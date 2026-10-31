@@ -1,4 +1,4 @@
-import { isAbsolute, relative } from "node:path";
+import { posix, win32 } from "node:path";
 import type { AgentEvent, Answer, RolePolicy } from "@crewyard/core";
 import type { PermissionOption, RequestPermissionOutcome, SessionUpdate, ToolCallContent, ToolCallUpdate, ToolKind as AcpToolKind } from "@agentclientprotocol/sdk";
 
@@ -219,7 +219,8 @@ export function chooseOutcome(options: PermissionOption[], answer: Answer): Requ
 }
 
 /** ACP locations are absolute; only paths inside the worktree can count as docs. */
-export function isDocsPath(path: string, cwd: string): boolean {
+export function isDocsPath(path: string, cwd: string, platform: NodeJS.Platform = process.platform): boolean {
+  const { isAbsolute, relative } = platform === "win32" ? win32 : posix;
   const rel = (isAbsolute(path) ? relative(cwd, path) : path).replace(/\\/g, "/").replace(/^\.\//, "");
   if (rel === ".." || rel.startsWith("../") || isAbsolute(rel)) return false;
   return /\.(md|mdx|txt)$/i.test(rel) || rel.startsWith("docs/");

@@ -14,14 +14,15 @@ describe("repos that differ only by letter case", () => {
   const listing = (names: string[]) => () => names;
 
   it("finds siblings whose names differ only by case", () => {
-    const dir = join("C:", "My Projects", "App");
-    expect(caseTwins(dir, listing(["App", "app", "APP", "Apple", "other"]))).toEqual([join("C:", "My Projects", "app"), join("C:", "My Projects", "APP")]);
-    expect(caseTwins(dir, listing(["App", "Apple"]))).toEqual([]);
-    expect(caseTwinProblem(dir, listing(["App", "app"]))).toMatch(/differ only by letter case/);
-    expect(caseTwinProblem(dir, listing(["App"]))).toBeNull();
+    const dir = "C:\\My Projects\\App";
+    expect(caseTwins(dir, listing(["App", "app", "APP", "Apple", "other"]), "win32")).toEqual(["C:\\My Projects\\app", "C:\\My Projects\\APP"]);
+    expect(caseTwins(dir, listing(["App", "Apple"]), "win32")).toEqual([]);
+    expect(caseTwinProblem(dir, listing(["App", "app"]), "win32")).toMatch(/differ only by letter case/);
+    expect(caseTwinProblem(dir, listing(["App"]), "win32")).toBeNull();
     expect(caseTwins(dir, () => {
       throw new Error("EACCES");
-    })).toEqual([]);
+    }, "win32")).toEqual([]);
+    expect(caseTwins("/home/me/My Projects/App", listing(["App", "app"]), "linux")).toEqual(["/home/me/My Projects/app"]);
   });
 
   it("finds no twin for a real folder on a normal NTFS drive", () => {

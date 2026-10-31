@@ -19,7 +19,8 @@ describe("local endpoint path", () => {
   it("uses XDG_RUNTIME_DIR on Linux, then a per-user temp folder", () => {
     expect(socketDirs(linux)).toEqual(["/run/user/1000/crewyard", "/tmp/crewyard-1000"]);
     expect(endpointPath("mcp-42-00ff", linux)).toBe("/run/user/1000/crewyard/mcp-42-00ff.sock");
-    expect(socketDirs({ ...linux, runtimeDir: undefined })).toEqual(["/tmp/crewyard-1000"]);
+    // Empty, as when XDG_RUNTIME_DIR is unset: undefined would fall back to this machine's own value.
+    expect(socketDirs({ ...linux, runtimeDir: "" })).toEqual(["/tmp/crewyard-1000"]);
     // A relative XDG_RUNTIME_DIR is invalid by the spec and ignored.
     expect(socketDirs({ ...linux, runtimeDir: "run/user/1000" })).toEqual(["/tmp/crewyard-1000"]);
   });

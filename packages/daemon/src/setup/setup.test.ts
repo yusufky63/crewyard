@@ -130,14 +130,16 @@ describe("git detection", () => {
 
 describe("path length", () => {
   it("puts worktrees next to the projects folder", () => {
-    expect(defaultWorktreeRoot(join("C:\\Projeler", "new-rts"))).toBe(join("C:\\Projeler", ".crewyard", "worktrees", "new-rts"));
+    expect(defaultWorktreeRoot("C:\\Projeler\\new-rts", "win32")).toBe("C:\\Projeler\\.crewyard\\worktrees\\new-rts");
+    expect(defaultWorktreeRoot("/home/me/Projeler/new-rts", "linux")).toBe("/home/me/Projeler/.crewyard/worktrees/new-rts");
   });
 
   it("adds the worktree prefix and task folder to the longest relative path", () => {
     const dir = tempDir();
     const deep = join("assets", "a very long folder name for textures", "terrain", "grass_blades_variation_02.png");
     files(dir, { [deep]: "", "short.txt": "", [join("node_modules", "x".repeat(200), "y")]: "" });
-    const root = join("C:\\Projeler", ".mc", "worktrees", "new rts");
+    // Absolute on this machine: on POSIX a C:\ root would be resolved against the working folder.
+    const root = join(tempDir(), ".mc", "worktrees", "new rts");
     const res = checkPathLength(dir, root, false);
     // node_modules is reinstalled per worktree and never walked, so its 200-character folder does not count.
     expect(res.longestRelative).toBe(deep);

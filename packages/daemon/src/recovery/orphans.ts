@@ -1,4 +1,4 @@
-import { isAbsolute, join } from "node:path";
+import { join, posix, win32 } from "node:path";
 import { killTree, run } from "@crewyard/proc";
 import type { Store } from "../store.ts";
 
@@ -89,15 +89,19 @@ const image = (name: string) => {
 
 const norm = (p: string) => p.replace(/\//g, "\\").replace(/\\+$/, "").toLowerCase();
 
-/** Whether a command line names a folder. Relative or tiny paths never count. */
-function namesFolder(commandLine: string, folder: string | null): boolean {
-  if (!folder || !isAbsolute(folder)) return false;
-  const f = norm(folder);
-  return f.length >= 4 && norm(commandLine).includes(f);
+/**
+ * Whether a command line names a folder. Relative or tiny paths never count. Windows paths match in
+ * any case and slash style; POSIX paths are case-sensitive and a backslash is part of a name.
+ */
+function namesFolder(commandLine: string, folder: string | null, platform: NodeJS.Platform): boolean {
+  const windows = platform === "win32";
+  if (!folder || !(windows ? win32 : posix).isAbsolute(folder)) return false;
+  const f = windows ? norm(folder) : folder.replace(/\/+$/, "");
+  return f.length >= 4 && (windows ? norm(commandLine) : commandLine).includes(f);
 }
 
 /** Pure decision for one recorded pid; every rule from the header has a test. */
-export function verifyOrphan(run: OpenRunProcess, proc: ProcessInfo | undefined, owner: DaemonSession | null, ownerProc: ProcessInfo | undefined): Verdict {
+export function verifyOrphan(run: OpenRunProcess, proc: ProcessInfo | undefined, owner: DaemonSession | null, ownerProc: ProcessInfo | undefined, platform: NodeJS.Platform = process.platform): Verdict {
   if (!proc) return { action: "gone" };
   // The owning daemon still runs when its pid is held by a process at least as old as its start.
   const ownerAlive = Boolean(owner && ownerProc && Date.parse(ownerProc.createdAt) <= Date.parse(owner.startedAt) + CLOCK_SLACK_MS);
@@ -105,7 +109,7 @@ export function verifyOrphan(run: OpenRunProcess, proc: ProcessInfo | undefined,
   if (!(RUNNER_IMAGES[run.runner] ?? SHIM).includes(image(proc.name))) return { action: "skip", reason: "image_mismatch" };
   const created = Date.parse(proc.createdAt);
   if (!Number.isFinite(created) || created < Date.parse(run.startedAt) - CLOCK_SLACK_MS) return { action: "skip", reason: "created_before_run" };
-  if (proc.commandLine && (namesFolder(proc.commandLine, run.cwd) || namesFolder(proc.commandLine, run.configDir))) return { action: "kill", by: "command_line" };
+  if (proc.commandLine && (namesFolder(proc.commandLine, run.cwd, platform) || namesFolder(proc.commandLine, run.configDir, platform))) return { action: "kill", by: "command_line" };
   if (owner && proc.parentPid === owner.pid) {
     // A child of the old daemon was created while that daemon lived, so before anything reused its pid.
     if (ownerProc && Date.parse(ownerProc.createdAt) < created) return { action: "skip", reason: "parent_reused" };
@@ -270,7 +274,7 @@ export async function cleanOrphans(store: Store, deps: CleanupDeps = {}): Promis
   let stalled = false;
   for (const r of runs) {
     const owner = owners.get(r.runId) ?? null;
-    const verdict = verifyOrphan(r, procs.get(r.pid), owner, owner ? procs.get(owner.pid) : undefined);
+    const verdict = verifyOrphan(r, procs.get(r.pid), owner, owner ? procs.get(owner.pid) : undefined, platform);
     if (verdict.action === "gone") report.gone.push({ runId: r.runId, pid: r.pid });
     else if (verdict.action === "skip") report.skipped.push({ runId: r.runId, pid: r.pid, reason: verdict.reason });
     else if (killedPids.has(r.pid)) report.killed.push({ runId: r.runId, pid: r.pid, by: verdict.by });

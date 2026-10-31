@@ -250,7 +250,8 @@ describe("OpenCode adapter against a fake opencode serve", () => {
     expect((last(events) as { detail?: string }).detail).toContain("exited");
   });
 
-  it("ends as interrupted when Windows ends the server at shutdown", async () => {
+  // The fake exits with 0x40010004, which only Windows keeps whole (POSIX keeps the low 8 bits).
+  it.runIf(process.platform === "win32")("ends as interrupted when Windows ends the server at shutdown", async () => {
     const { adapter, req } = await setup("shutdown", "shutdown");
     const run = await adapter.start(req);
     expect(last(await collect(adapter, run))).toMatchObject({ type: "run.ended", reason: "interrupted", detail: "windows_shutdown" });

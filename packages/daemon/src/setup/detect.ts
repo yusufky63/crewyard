@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { basename, dirname, join, resolve, sep } from "node:path";
+import { join, posix, resolve, sep, win32 } from "node:path";
 import type { GitState, PackageManager, PathLengthCheck, ProjectTypeGuess } from "@crewyard/core";
 import { run, which } from "@crewyard/proc";
 import { CREWYARD_DIR } from "./config.ts";
@@ -148,9 +148,10 @@ export async function gitState(dir: string): Promise<GitState> {
 }
 
 /** PLAN.md §10: worktrees live next to the projects folder, e.g. C:\Projeler\.crewyard\worktrees\<repo>. */
-export function defaultWorktreeRoot(projectPath: string): string {
-  const abs = resolve(projectPath);
-  return join(dirname(abs), CREWYARD_DIR, "worktrees", basename(abs));
+export function defaultWorktreeRoot(projectPath: string, platform: NodeJS.Platform = process.platform): string {
+  const path = platform === "win32" ? win32 : posix;
+  const abs = path.resolve(projectPath);
+  return path.join(path.dirname(abs), CREWYARD_DIR, "worktrees", path.basename(abs));
 }
 
 /** Room left for the per-task folder under the worktree root (`<root>\<task>\`). Task slugs are cut to this. */
@@ -201,23 +202,24 @@ export function checkPathLength(dir: string, worktreeRoot: string, longPathsEnab
  * sensitivity turned on (WSL, `fsutil file setCaseSensitiveInfo`) can hold both `App` and `app`;
  * everything else here compares paths without case (the projects table, the default worktree root
  * `.mc\worktrees\<name>`), so the two would share one project and one worktree folder
- * (vibe-kanban #2164). `list` is injectable for tests.
+ * (vibe-kanban #2164). `list` and `platform` are injectable for tests.
  */
-export function caseTwins(dir: string, list: (parent: string) => string[] = readdirSync): string[] {
-  const abs = resolve(dir);
-  const name = basename(abs);
+export function caseTwins(dir: string, list: (parent: string) => string[] = readdirSync, platform: NodeJS.Platform = process.platform): string[] {
+  const path = platform === "win32" ? win32 : posix;
+  const abs = path.resolve(dir);
+  const name = path.basename(abs);
   let siblings: string[];
   try {
-    siblings = list(dirname(abs));
+    siblings = list(path.dirname(abs));
   } catch {
     return [];
   }
-  return siblings.filter((s) => s !== name && s.toLowerCase() === name.toLowerCase()).map((s) => join(dirname(abs), s));
+  return siblings.filter((s) => s !== name && s.toLowerCase() === name.toLowerCase()).map((s) => path.join(path.dirname(abs), s));
 }
 
 /** The refusal for `setup.create`, or null. Raw text like the other folder errors here. */
-export function caseTwinProblem(dir: string, list?: (parent: string) => string[]): string | null {
-  const twins = caseTwins(dir, list);
+export function caseTwinProblem(dir: string, list?: (parent: string) => string[], platform?: NodeJS.Platform): string | null {
+  const twins = caseTwins(dir, list, platform);
   return twins.length ? `${dir} and ${twins.join(", ")} differ only by letter case; rename one first, since Crewyard would treat them as one project and one worktree folder.` : null;
 }
 
