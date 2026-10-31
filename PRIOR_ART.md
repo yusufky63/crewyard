@@ -118,6 +118,12 @@ A canvas-based terminal manager for agent CLIs, under BUSL-1.1, so it is read fo
 4. memory per session;
 5. distribution details.
 
+## Subscriptions and agent apps (2026-11-01)
+
+How other agent managers run Codex, Gemini, Antigravity and Claude on subscription accounts, how desktop agent apps connect to an orchestrator, and the provider terms as of that date: [docs/research/2026-11-01-subscriptions-and-app-bridges.md](docs/research/2026-11-01-subscriptions-and-app-bridges.md).
+- **Takeaways:** Gemini CLI no longer serves personal Google plans; Codex on ChatGPT stays allowed for a local, open-source app; Antigravity's terms forbid third-party use of a consumer sign-in, and its models are available by API key.
+- **Patterns to avoid:** token reuse and swapping, GUI automation and subscription relays. These have documented bans.
+
 ## Not verified
 
 - No app was run. Windows behaviour is inferred.
