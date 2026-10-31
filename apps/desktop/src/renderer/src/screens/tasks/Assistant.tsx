@@ -6,6 +6,7 @@ import { TASK_PRESETS, type AssistantDraftView, type AssistantLine, type Assista
 import { BrandIcon, Button, Label, Panel, ProvenanceBadge } from "@crewyard/ui";
 import { matches } from "../../keys.ts";
 import { useNav } from "../../nav.ts";
+import { AutopilotStrip } from "./Autopilot.tsx";
 import { act, useWork } from "./data.ts";
 import "./assistant.css";
 
@@ -202,6 +203,8 @@ export function AssistantPanel({ projectId, onClose }: { projectId: string; onCl
         </div>
       </div>
 
+      <AutopilotStrip projectId={projectId} />
+
       <div className="as-body">
         <div className="as-term">
           <div
@@ -380,8 +383,17 @@ function Spend({ view }: { view: AssistantView }) {
   );
 }
 
+/** Crewyard's own Autopilot notices: a call it made (`autopilot.call.<outcome>.<tool>`) or a note it handed the session. */
+function AutopilotNotice({ code }: { code: string }) {
+  const { t } = useTranslation("autopilot");
+  const call = /^autopilot\.call\.(done|refused)\.(\w+)$/.exec(code);
+  const text = call ? t(`notice.call.${call[1]}`, { action: t(`log.action.${call[2]}`, { defaultValue: call[2] }) }) : t(`notice.${code.slice("autopilot.".length)}`, { defaultValue: code });
+  return <p className={`as-line as-notice as-autopilot${call?.[1] === "refused" ? " as-autopilot-refused" : ""}`}>{text}</p>;
+}
+
 function Line({ line }: { line: AssistantLine }) {
   const { t } = useTranslation("assistant");
+  if (line.role === "notice" && line.text.startsWith("autopilot.")) return <AutopilotNotice code={line.text} />;
   if (line.role === "notice") return <p className="as-line as-notice">{t(`notice.${line.text}`, { defaultValue: line.text })}</p>;
   if (line.role === "tool")
     return (

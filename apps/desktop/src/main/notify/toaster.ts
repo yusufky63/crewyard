@@ -1,8 +1,10 @@
 import { Notification } from "electron";
-import type { IpcMethod, IpcParams, IpcResult, LimitNoticePayload, NotificationSettings, RequestView, TasksTopics } from "@crewyard/core";
+import type { AssistantTopics, IpcMethod, IpcParams, IpcResult, LimitNoticePayload, NotificationSettings, RequestView, TasksTopics } from "@crewyard/core";
 import type { Translate } from "../i18n.ts";
 import {
   activationArgs,
+  AutopilotBatches,
+  AUTOPILOT_BATCH_MS,
   decideAction,
   emptyToastState,
   limitToast,
@@ -45,10 +47,37 @@ export class Toaster {
 
   constructor(private readonly deps: ToasterDeps) {}
 
-  /** Fed every daemon event; reacts to the request and limit topics only. */
+  /** Fed every daemon event; reacts to the request, limit and Autopilot topics only. */
   onEvent(topic: string, payload: unknown): void {
     if (topic === "requests.changed") void this.onRequest(payload as TasksTopics["requests.changed"]).catch(() => undefined);
     else if (topic === "limits.notice") void this.onLimit(payload as LimitNoticePayload).catch(() => undefined);
+    else if (topic === "autopilot.changed") this.onAutopilot(payload as AssistantTopics["autopilot.changed"]);
+  }
+
+  private readonly autopilot = new AutopilotBatches();
+
+  private onAutopilot(ev: AssistantTopics["autopilot.changed"]): void {
+    const projectId = ev.projectId;
+    if (!projectId) return;
+    const target: ToastTarget = { screen: "tasks", projectId, taskId: null, requestId: null };
+    const quiet = () => {
+      const s = this.deps.settings();
+      return !s || suppression(s, projectId, new Date()) !== null;
+    };
+    if (ev.halted) {
+      if (quiet()) return;
+      const t = this.deps.t();
+      this.show({ title: t("toast.autopilotHaltedTitle"), lines: [t("toast.autopilotHalted")], launch: activationArgs("open", null, target), buttons: [] });
+      return;
+    }
+    if (ev.action?.outcome !== "done" || !this.autopilot.add(projectId)) return;
+    const timer = setTimeout(() => {
+      const n = this.autopilot.flush(projectId);
+      if (n === 0 || quiet()) return;
+      const t = this.deps.t();
+      this.show({ title: t("toast.autopilotTitle"), lines: [t(n === 1 ? "toast.autopilotOne" : "toast.autopilotMany", { count: n })], launch: activationArgs("open", null, target), buttons: [] });
+    }, AUTOPILOT_BATCH_MS);
+    timer.unref?.();
   }
 
   async activate(raw: string): Promise<void> {

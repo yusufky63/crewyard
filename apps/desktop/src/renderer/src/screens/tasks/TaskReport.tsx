@@ -43,6 +43,7 @@ export function ReportLine({ detail }: { detail: TaskDetail }) {
         </span>
       )}
       {report.findings.length > 0 && <span className="lbl num">{t("report.findingsCount", { count: report.findings.length })}</span>}
+      {report.completed && <span className="lbl">{t("report.completedShort")}</span>}
       {open > 0 && <span className="lbl num">{t("report.suggestedCount", { count: open })}</span>}
       <Button
         size="sm"
@@ -60,7 +61,7 @@ export function ReportLine({ detail }: { detail: TaskDetail }) {
 
 /** In the inspector's Details: the whole report, its findings and the suggested drafts. */
 export function ReportSection({ detail }: { detail: TaskDetail }) {
-  const { t } = useTranslation("assistant");
+  const { t, i18n } = useTranslation("assistant");
   const qc = useQueryClient();
   const q = useReport(detail.id, hasReport(detail));
   const report: Report | null | undefined = q.data;
@@ -74,6 +75,16 @@ export function ReportSection({ detail }: { detail: TaskDetail }) {
         <span className="lbl">{t(`report.source.${report.source}`)}</span>
         {report.verdict && <span className={report.verdict === "pass" ? "tk-sev-ok lbl" : "tk-sev-warn lbl"}>{t(`report.verdict.${report.verdict}`)}</span>}
       </div>
+      {report.completed && (
+        <p className="tk-small tk-report-done">
+          {t("report.completed", { time: new Date(report.completed.at).toLocaleString(i18n.language, { dateStyle: "medium", timeStyle: "short" }) })}
+          {report.completed.reason && (
+            <span className="ap-quote" aria-label={t("report.completedReason")}>
+              {report.completed.reason}
+            </span>
+          )}
+        </p>
+      )}
       {report.summary && <p className="tk-report-summary">{report.summary}</p>}
       {report.truncated && <p className="muted tk-small">{t("report.truncated")}</p>}
       {report.findings.length > 0 && (

@@ -117,6 +117,9 @@
     "message": "Bu proje için görev öner. Koda göz at ve projeye en çok yarayacak üç ila beş görev öner; her birinin türü, kabul ölçütleri ve boyutu olsun."
   },
   "report": {
+    "completed": "Autopilot {{time}} tarihinde tamamlandı olarak işaretledi.",
+    "completedShort": "Autopilot tamamladı",
+    "completedReason": "Autopilot'un gerekçesi",
     "label": "Rapor",
     "open": "Raporu aç",
     "findingsCount_one": "{{count}} bulgu",

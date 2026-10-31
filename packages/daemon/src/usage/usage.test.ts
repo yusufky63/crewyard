@@ -179,6 +179,20 @@ describe("taskTimeline", () => {
     ]);
   });
 
+  it("projects Autopilot's calls on the task with their reason, allowed and refused (docs/adr/0017)", () => {
+    const s = newStore();
+    seed(s);
+    const add = (kind: string, payload: unknown) => s.appendEvent({ kind, source: "autopilot", payload, projectId: "pr", taskId: "t1" });
+    add("autopilot.approve_crew", { outcome: "done", reason: "The estimate fits.", estimate: { usd: 0.02, provenance: "estimated" } });
+    add("autopilot.refused", { tool: "complete_task", code: "report_not_read", reason: "Looks done.", detail: "Read the report first." });
+    // Your own changes are in the panel's log, not on a task.
+    add("autopilot.limits", { outcome: "changed", reason: "" });
+    expect(taskTimeline(s.db, "t1").events).toMatchObject([
+      { kind: "autopilot", action: "approve_crew", outcome: "done", code: null, reason: "The estimate fits.", runId: null },
+      { kind: "autopilot", action: "complete_task", outcome: "refused", code: "report_not_read", reason: "Looks done." },
+    ]);
+  });
+
   it("projects crew reports and leaves out rows of an unknown type", () => {
     const s = newStore();
     seed(s);

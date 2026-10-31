@@ -1,0 +1,150 @@
+{
+  "label": "Autopilot",
+  "title": "Autopilot",
+  "lead": "Asistan, belirlediğiniz sınırlar içinde görev açsın, onaylasın, takip etsin ve kapatsın. Push, pull request, birleştirme ve Gelen kutusu sizde kalır.",
+  "state": {
+    "off": "Kapalı",
+    "on": "Açık",
+    "killed": "Durduruldu",
+    "halted": "Kendini durdurdu"
+  },
+  "on": "Aç",
+  "onFirst": "Aç…",
+  "off": "Kapat",
+  "usage": {
+    "today": "Bugün {{spent}} / {{cap}}",
+    "estimated": "Tahmini",
+    "started": "Bu saat {{n}}/{{cap}} başlatıldı",
+    "active": "Etkin {{n}}/{{cap}}"
+  },
+  "killed": "Autopilot durduruldu: tüm projelerde her Autopilot işlemi reddediliyor. Çalışan adımlar sürer. Durdurmayı durum çubuğundan ya da Ayarlar'dan kaldırabilirsiniz.",
+  "halted": {
+    "text": "Autopilot burada kendini durdurdu: adımlarından ikisi aynı şekilde başarısız oldu. Hataya bakın, sonra yeniden açın.",
+    "again": "Yeniden aç"
+  },
+  "consent": {
+    "title": "Bu projede Autopilot'u aç",
+    "lead": "Görev asistanı, aşağıdaki sınırlar içinde görev akışını sizin yerinize yürütür. Her işlemi Crewyard denetler, gerekçesiyle kaydeder ve görevin zaman çizelgesinde gösterir.",
+    "may": "Yapabilecekleri",
+    "mayItems": {
+      "create": "konuşmada yazdıklarınıza dayanarak görev açmak",
+      "edit": "kendi görevlerini başlamadan düzenlemek",
+      "approve": "Tahmini maliyet sınırlara sığıyorsa ve her anahtar kendi sınırının altındaysa ekibi onaylamak",
+      "message": "çalışan adımlarının kuyruğuna mesaj eklemek",
+      "retry": "başarısız bir adımı bir kez yeniden denemek",
+      "cancel": "kendi açtığı görevleri iptal etmek",
+      "complete": "biten bir analizin raporunu okuyup tamamlandı olarak işaretlemek"
+    },
+    "yours": "Her zaman sizde kalanlar",
+    "yoursItems": {
+      "push": "push, pull request ve birleştirme",
+      "spend": "herhangi bir sınırı aşan harcama ve Bilinmeyen tahminler",
+      "inbox": "Gelen kutusundaki sorular ve onaylar, Orta ve Yüksek risk dahil",
+      "delete": "worktree ve dal silme",
+      "signin": "hesaplara giriş",
+      "limits": "bu sınırlar ve Autopilot'u açıp kapatmak"
+    },
+    "accept": "Aç",
+    "cancel": "Vazgeç",
+    "recorded": "Autopilot'a burada {{time}} tarihinde izin verdiniz."
+  },
+  "limits": {
+    "edit": "Sınırlar",
+    "save": "Sınırları kaydet",
+    "cancel": "Vazgeç",
+    "perTaskUsd": "Görev başı (USD)",
+    "perDayUsd": "Günlük (USD)",
+    "tasksPerHour": "Saatte görev",
+    "concurrent": "Aynı anda",
+    "invalid": "Sınırları kontrol edin: günlük sınır görev başı sınırın altında olamaz."
+  },
+  "log": {
+    "title": "Autopilot kaydı",
+    "refused": "Reddedildi: {{code}}",
+    "reason": "Asistanın verdiği gerekçe",
+    "action": {
+      "create_task": "Görev açtı",
+      "edit_task": "Görevi düzenledi",
+      "approve_crew": "Ekibi onayladı",
+      "queue_message": "Kuyruğa mesaj ekledi",
+      "retry_step": "Adımı yeniden denedi",
+      "cancel_task": "Görevi iptal etti",
+      "complete_task": "Analizi tamamlandı olarak işaretledi",
+      "read_task": "Görevi okudu",
+      "list_tasks": "Görevleri listeledi",
+      "enabled": "Autopilot'u açtınız",
+      "disabled": "Autopilot'u kapattınız",
+      "limits": "Sınırları değiştirdiniz",
+      "killed": "Autopilot'u durdurdunuz",
+      "resumed": "Durdurmayı kaldırdınız",
+      "halted": "Kendini durdurdu: aynı hata iki kez oldu"
+    }
+  },
+  "refusal": {
+    "off": "Autopilot kapalı",
+    "killed": "sizin tarafınızdan durduruldu",
+    "halted": "tekrarlayan hata nedeniyle durdu",
+    "invalid": "geçersiz istek",
+    "not_found": "böyle bir görev yok",
+    "not_own": "onun görevi değil",
+    "wrong_status": "uygun durumda değil",
+    "no_basis": "sizin sözlerinize dayanmıyor",
+    "estimate_unknown": "tahmin Bilinmiyor",
+    "over_task_limit": "görev başı sınırın üstünde",
+    "over_day_limit": "günlük sınırın üstünde",
+    "key_cap": "bir anahtarın sınırı",
+    "rate_created": "yeni görevler için saatlik sınır",
+    "rate_started": "başlatma için saatlik sınır",
+    "concurrent": "aynı anda çok fazla",
+    "no_crew": "ekip eksik",
+    "no_running_step": "çalışan adım yok",
+    "nothing_to_retry": "başarısız adım yok",
+    "retry_used": "zaten bir kez denendi",
+    "code_task": "kod görevleri sizi bekler",
+    "report_not_read": "rapor henüz okunmadı",
+    "not_allowed": "sizde kalır",
+    "failed": "zamanlayıcı reddetti"
+  },
+  "notice": {
+    "call": {
+      "done": "Autopilot: {{action}}.",
+      "refused": "Autopilot reddedildi: {{action}}."
+    },
+    "status": {
+      "done": "Autopilot asistana bildirdi: görevlerinden biri bitti.",
+      "failed": "Autopilot asistana bildirdi: görevlerinden biri başarısız oldu.",
+      "needs_input": "Autopilot asistana bildirdi: görevlerinden biri Gelen kutusunda sizi bekliyor.",
+      "review": "Autopilot asistana bildirdi: görevlerinden biri incelemenize hazır.",
+      "merged": "Autopilot asistana bildirdi: görevlerinden birini birleştirdiniz.",
+      "limited": "Autopilot asistana bildirdi: görevlerinden biri bir sınır yüzünden duraklatıldı.",
+      "cancelled": "Autopilot asistana bildirdi: görevlerinden biri iptal edildi."
+    },
+    "on": "Autopilot'u açtınız; asistana bildirildi.",
+    "off": "Autopilot'u kapattınız; asistana bildirildi.",
+    "killed": "Autopilot durduruldu; asistana bildirildi.",
+    "resumed": "Durdurma kaldırıldı; asistana bildirildi.",
+    "halted": "Aynı hata iki kez olunca Autopilot kendini durdurdu."
+  },
+  "status": {
+    "on_one": "Autopilot {{count}} projede açık",
+    "on_other": "Autopilot {{count}} projede açık",
+    "stop": "Autopilot'u durdur",
+    "stopped": "Autopilot durduruldu",
+    "lift": "Durdurmayı kaldır",
+    "stopTitle": "Her Autopilot işlemini anında reddeder. Çalışan ajanlar sürer."
+  },
+  "settings": {
+    "title": "Autopilot",
+    "hint": "Görev asistanında proje başına açılır. Buradaki anahtar onu her yerde anında durdurur; çalışan ajanlar sürer.",
+    "kill": "Autopilot'u durdur",
+    "killHint": "Açıkken tüm projelerde her Autopilot işlemi reddedilir.",
+    "projects": "Açık olduğu projeler",
+    "none": "Hiçbir projede Autopilot açık değil.",
+    "halted": "durdu"
+  },
+  "errors": {
+    "autopilot_consent": "Açmadan önce Autopilot'un yapabileceklerini kabul edin.",
+    "autopilot_limits_invalid": "Bu sınırlar izin verilen aralığın dışında.",
+    "other": "Autopilot değiştirilemedi: {{message}}"
+  }
+}

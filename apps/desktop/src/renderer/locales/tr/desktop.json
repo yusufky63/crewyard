@@ -23,6 +23,11 @@
     "body": "Pencereyi kapatmak ajanları durdurmaz. Crewyard'ı bildirim alanındaki simgeden yeniden açabilirsiniz."
   },
   "toast": {
+    "autopilotTitle": "Autopilot",
+    "autopilotOne": "Autopilot 1 işlem yaptı. Gerekçesi görev asistanındaki kayıtta.",
+    "autopilotMany": "Autopilot {{count}} işlem yaptı. Gerekçeleri görev asistanındaki kayıtta.",
+    "autopilotHaltedTitle": "Autopilot kendini durdurdu",
+    "autopilotHalted": "Aynı hata iki kez oldu. Hataya bakın, sonra Autopilot'u yeniden açın.",
     "approvalTitle": {
       "low": "Düşük riskli onay",
       "medium": "Orta riskli onay",

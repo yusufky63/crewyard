@@ -108,5 +108,20 @@
   "switch": {
     "switched": "{{who}} moved to another account of the provider",
     "refused": "{{who}}: no other account of the provider passed the checks, so the task's fallback mode decides"
+  },
+  "autopilot": {
+    "done": "Autopilot: {{action}}",
+    "refused": "Autopilot was refused: {{action}} ({{code}})",
+    "action": {
+      "create_task": "created this task",
+      "edit_task": "edited this task",
+      "approve_crew": "approved the crew within its budget",
+      "queue_message": "queued a message to the running step",
+      "retry_step": "retried the failed step",
+      "cancel_task": "cancelled this task",
+      "complete_task": "marked this analysis done",
+      "read_task": "read this task",
+      "list_tasks": "listed the tasks"
+    }
   }
 }

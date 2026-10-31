@@ -37,6 +37,15 @@ describe("buildTimeline", () => {
     ]);
   });
 
+  it("lists Autopilot's calls as their own entries, outside any lane", () => {
+    const events = [ev(2, null, { kind: "autopilot", action: "approve_crew", outcome: "done", code: null, reason: "fits" }), ev(50, null, { kind: "autopilot", action: "complete_task", outcome: "refused", code: "report_not_read", reason: "done?" })];
+    const tl = buildTimeline([run("r1", 1, 40)], events, ms(60));
+    expect(tl.entries.filter((e) => e.kind === "autopilot").map((e) => (e.kind === "autopilot" ? [e.action, e.outcome, e.code, (e.at - ms(0)) / 60_000] : null))).toEqual([
+      ["approve_crew", "done", null, 2],
+      ["complete_task", "refused", "report_not_read", 50],
+    ]);
+  });
+
   it("lists an account switch with its labels between the runs it joins, and a refusal on its own", () => {
     const source = { window: "5h", usedPct: 100, provenance: "reported" };
     const events = [

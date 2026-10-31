@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CandidateView, LimitNoticePayload, NotificationSettings, RequestPayload, RequestView } from "@crewyard/core";
 import {
   activationArgs,
+  AutopilotBatches,
   decideAction,
   emptyToastState,
   escapeXml,
@@ -227,5 +228,19 @@ describe("toast XML", () => {
     expect(toastXml({ title: "t", lines: [], launch: "x", buttons: [] })).not.toContain("<actions>");
     const many = Array.from({ length: 7 }, (_, i) => ({ label: `b${i}`, args: `a${i}` }));
     expect(toastXml({ title: "t", lines: [], launch: "x", buttons: many }).match(/<action /g)).toHaveLength(5);
+  });
+});
+
+describe("Autopilot toasts (docs/adr/0017)", () => {
+  it("batches a burst of actions per project into one toast", () => {
+    const b = new AutopilotBatches();
+    expect(b.add("p1")).toBe(true);
+    expect(b.add("p1")).toBe(false);
+    expect(b.add("p2")).toBe(true);
+    expect(b.add("p1")).toBe(false);
+    expect(b.flush("p1")).toBe(3);
+    expect(b.flush("p1")).toBe(0);
+    expect(b.add("p1")).toBe(true);
+    expect(b.flush("p2")).toBe(1);
   });
 });
