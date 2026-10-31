@@ -102,11 +102,11 @@ export class AttachmentStore {
 
   /** The description's attachments, in the order you added them. */
   forTask(taskId: string): Attachment[] {
-    return this.rows("select * from attachments where task_id = ? and outbox_id is null order by created_at, id", taskId).map((r) => this.toAttachment(r));
+    return this.rows("select * from attachments where task_id = ? and outbox_id is null order by created_at, rowid", taskId).map((r) => this.toAttachment(r));
   }
 
   forMessage(outboxId: string): Attachment[] {
-    return this.rows("select * from attachments where outbox_id = ? order by created_at, id", outboxId).map((r) => this.toAttachment(r));
+    return this.rows("select * from attachments where outbox_id = ? order by created_at, rowid", outboxId).map((r) => this.toAttachment(r));
   }
 
   /** Several messages' attachments, in message order, for one turn. */
@@ -137,11 +137,11 @@ export class AttachmentStore {
 
   /** What the renderer shows for the description. */
   taskViews(taskId: string): AttachmentView[] {
-    return this.rows("select * from attachments where task_id = ? and outbox_id is null order by created_at, id", taskId).map(toView);
+    return this.rows("select * from attachments where task_id = ? and outbox_id is null order by created_at, rowid", taskId).map(toView);
   }
 
   messageViews(outboxId: string): AttachmentView[] {
-    return this.rows("select * from attachments where outbox_id = ? order by created_at, id", outboxId).map(toView);
+    return this.rows("select * from attachments where outbox_id = ? order by created_at, rowid", outboxId).map(toView);
   }
 
   private toAttachment(r: Row): Attachment {

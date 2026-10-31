@@ -274,8 +274,12 @@ describe("CodexAdapter against a fake app-server", () => {
     const crashDir = home({ scenario: "crash" });
     const crashed = await collect(adapter, await adapter.start(request(crashDir)));
     expect(crashed.at(-1)).toMatchObject({ type: "run.ended", reason: "failed" });
+  });
 
-    // Windows ends children with 0x40010004 at sign-out or restart: interrupted, so it can resume.
+  // Windows ends children with 0x40010004 at sign-out or restart: interrupted, so it can resume.
+  // Only Windows keeps that status whole; POSIX keeps the low 8 bits.
+  it.runIf(process.platform === "win32")("ends as interrupted when Windows ends codex at shutdown", async () => {
+    const adapter = new CodexAdapter(launcher);
     const shutdown = await collect(adapter, await adapter.start(request(home({ scenario: "shutdown" }))));
     expect(shutdown.at(-1)).toMatchObject({ type: "run.ended", reason: "interrupted", detail: "windows_shutdown" });
   });

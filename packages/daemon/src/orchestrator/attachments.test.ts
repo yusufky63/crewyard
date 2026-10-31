@@ -93,6 +93,18 @@ describe("attachment storage", () => {
     expect(files.forMessage("message-1")).toEqual([]);
   });
 
+  it("keeps the order you added them in, even within one clock tick", () => {
+    // The clock is fixed, as on a fast machine where every upload lands in the same millisecond.
+    const { store, files } = storage();
+    store.db.prepare("insert into projects (id, name, path, added_at) values ('p', 'p', 'C:\\\\p', 'now')").run();
+    store.db.prepare("insert into tasks (id, project_id, title, description, kind, size, fallback, wait_reset_minutes, classification, created_at) values ('t', 'p', 'x', '', 'code', 'S', 'ask', 20, '[]', 'now')").run();
+    const names = ["e.txt", "d.txt", "c.txt", "b.txt", "a.txt", "f.txt", "g.txt", "h.txt"];
+    const ids = names.map((n) => files.add(n, b64(Buffer.from(n))).id);
+    files.claim(ids, "t", null);
+    expect(files.taskViews("t").map((v) => v.name)).toEqual(names);
+    expect(files.forTask("t").map((v) => v.name)).toEqual(names);
+  });
+
   it("discards an unused upload, and sweeps uploads nothing took within a day", () => {
     let now = new Date("2026-10-31T10:00:00Z");
     const { dataDir, files } = storage(() => now);

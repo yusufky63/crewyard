@@ -1,4 +1,4 @@
-import { basename, dirname, join } from "node:path";
+import { join, posix, win32 } from "node:path";
 import { GEMINI_ISOLATION_MIN, versionAtLeast } from "@crewyard/adapter-acp";
 import { SDK_CLI_VERSION } from "@crewyard/adapter-claude";
 import { MIN_CODEX_VERSION } from "@crewyard/adapter-codex";
@@ -120,8 +120,10 @@ const NPM_PACKAGES: Partial<Record<ToolId, string>> = {
  * and a `.ps1` side by side for one install; only the startable one comes back from whichAll, so
  * one install is one entry.
  */
-export function otherCopies(inUse: string, hits: readonly string[]): string[] {
-  const same = (a: string, b: string) => (process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b);
+export function otherCopies(inUse: string, hits: readonly string[], platform: NodeJS.Platform = process.platform): string[] {
+  const windows = platform === "win32";
+  const { dirname } = windows ? win32 : posix;
+  const same = (a: string, b: string) => (windows ? a.toLowerCase() === b.toLowerCase() : a === b);
   return hits.filter((p) => !same(p, inUse) && !same(dirname(p), dirname(inUse)));
 }
 
@@ -174,9 +176,10 @@ const norm = (p: string) => p.replace(/\//g, "\\").replace(/\\+$/, "").toLowerCa
  * Where agents write: each project's worktree root. Roots in the default layout
  * (<projects>\.crewyard\worktrees\<repo>, or `.mc` from before the rename) collapse into their
  * shared worktrees folder, so one exclusion covers every project in that projects folder, including
- * ones added later.
+ * ones added later. Defender is Windows-only, so these are Windows paths on every platform.
  */
 export function defenderFolders(worktreeRoots: string[]): string[] {
+  const { basename, dirname } = win32;
   const out = new Map<string, string>();
   for (const root of worktreeRoots) {
     const parent = dirname(root);

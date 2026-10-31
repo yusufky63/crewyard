@@ -271,7 +271,8 @@ describe("ACP adapter against a fake Gemini agent", () => {
     expect((ended as { detail?: string }).detail).toMatch(/exited|closed/i);
   });
 
-  it("ends as interrupted when Windows ends the agent at shutdown", async () => {
+  // The fake exits with 0x40010004, which only Windows keeps whole (POSIX keeps the low 8 bits).
+  it.runIf(process.platform === "win32")("ends as interrupted when Windows ends the agent at shutdown", async () => {
     const { adapter, req } = await setup("shutdown", "shutdown");
     const run = await adapter.start(req);
     expect(last(await collect(adapter, run))).toMatchObject({ type: "run.ended", reason: "interrupted", detail: "windows_shutdown" });

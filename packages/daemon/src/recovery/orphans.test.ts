@@ -32,9 +32,18 @@ describe("verifyOrphan", () => {
 
   it("kills a process whose command line names the run's folder, in any case and slash style", () => {
     const cmd = `"C:\\Program Files\\nodejs\\node.exe" agent.js --cwd ${WT.replace(/\\/g, "/").toUpperCase()}`;
-    expect(verifyOrphan(runRow(), proc({ parentPid: 1, name: "node.exe", commandLine: cmd }), null, undefined)).toEqual({ action: "kill", by: "command_line" });
+    expect(verifyOrphan(runRow(), proc({ parentPid: 1, name: "node.exe", commandLine: cmd }), null, undefined, "win32")).toEqual({ action: "kill", by: "command_line" });
     const profile = "claude.exe --settings C:\\Users\\me\\AppData\\Roaming\\Crewyard\\profiles\\codex-work\\settings.json";
-    expect(verifyOrphan(runRow({ runner: "claude-code" }), proc({ parentPid: 1, name: "claude.exe", commandLine: profile }), null, undefined)).toEqual({ action: "kill", by: "command_line" });
+    expect(verifyOrphan(runRow({ runner: "claude-code" }), proc({ parentPid: 1, name: "claude.exe", commandLine: profile }), null, undefined, "win32")).toEqual({ action: "kill", by: "command_line" });
+  });
+
+  it("matches a POSIX run's folder with its exact case only", () => {
+    const row = runRow({ cwd: "/home/me/Crewyard worktrees/demo repo/task-1", configDir: null });
+    const named = (commandLine: string) => verifyOrphan(row, proc({ parentPid: 1, name: "node", commandLine }), null, undefined, "linux");
+    expect(named("node agent.js --cwd /home/me/Crewyard worktrees/demo repo/task-1")).toEqual({ action: "kill", by: "command_line" });
+    expect(named("node agent.js --cwd /HOME/ME/CREWYARD WORKTREES/DEMO REPO/TASK-1")).toEqual({ action: "skip", reason: "identity_unverified" });
+    // A Windows folder is relative on POSIX, so it never counts there.
+    expect(verifyOrphan(runRow(), proc({ parentPid: 1, name: "node", commandLine: `node --cwd ${WT}` }), null, undefined, "linux")).toEqual({ action: "skip", reason: "identity_unverified" });
   });
 
   it("reports a pid that is not running as gone", () => {

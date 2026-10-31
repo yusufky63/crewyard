@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, win32 } from "node:path";
 import type { SessionUpdate } from "@agentclientprotocol/sdk";
 import type { Profile, RolePolicy } from "@crewyard/core";
 import { describe, expect, it } from "vitest";
@@ -61,10 +61,14 @@ describe("ACP mapping", () => {
   });
 
   it("only counts docs inside the worktree", () => {
-    const cwd = join("C:", "Users", "me", "docs", "project");
-    expect(isDocsPath(join(cwd, "src", "a.ts"), cwd)).toBe(false);
-    expect(isDocsPath(join(cwd, "README.md"), cwd)).toBe(true);
-    expect(isDocsPath(join("C:", "elsewhere", "notes.md"), cwd)).toBe(false);
+    const cwd = win32.join("C:", "Users", "me", "docs", "project");
+    expect(isDocsPath(win32.join(cwd, "src", "a.ts"), cwd, "win32")).toBe(false);
+    expect(isDocsPath(win32.join(cwd, "README.md"), cwd, "win32")).toBe(true);
+    expect(isDocsPath(win32.join("C:", "elsewhere", "notes.md"), cwd, "win32")).toBe(false);
+    const home = "/home/me/docs/project";
+    expect(isDocsPath("/home/me/docs/project/src/a.ts", home, "linux")).toBe(false);
+    expect(isDocsPath("/home/me/docs/project/README.md", home, "linux")).toBe(true);
+    expect(isDocsPath("/home/me/elsewhere/notes.md", home, "linux")).toBe(false);
   });
 
   it("emits tool status changes once and ignores non-text chunks", () => {

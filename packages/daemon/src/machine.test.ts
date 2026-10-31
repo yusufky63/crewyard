@@ -119,13 +119,16 @@ describe("other copies of a CLI", () => {
   const npm = "C:\\Users\\Ada Lovelace\\AppData\\Roaming\\npm\\claude.cmd";
 
   it("lists every copy on PATH except the one in use", () => {
-    expect(otherCopies(native, [native, npm])).toEqual([npm]);
-    expect(otherCopies(npm, [native, npm])).toEqual([native]);
-    expect(otherCopies(native, [native])).toEqual([]);
+    expect(otherCopies(native, [native, npm], "win32")).toEqual([npm]);
+    expect(otherCopies(npm, [native, npm], "win32")).toEqual([native]);
+    expect(otherCopies(native, [native], "win32")).toEqual([]);
+    expect(otherCopies(native, [native.toUpperCase()], "win32")).toEqual([]);
+    expect(otherCopies("/home/ada/.local/bin/claude", ["/home/ada/.local/bin/claude", "/usr/lib/node_modules/.bin/claude"], "linux")).toEqual(["/usr/lib/node_modules/.bin/claude"]);
+    expect(otherCopies("/home/ada/bin/claude", ["/home/ada/BIN/claude"], "linux")).toEqual(["/home/ada/BIN/claude"]);
   });
 
   it("counts two entries in the same folder as one install", () => {
-    expect(otherCopies(npm, [npm, npm.replace(".cmd", ".exe")])).toEqual([]);
+    expect(otherCopies(npm, [npm, npm.replace(".cmd", ".exe")], "win32")).toEqual([]);
   });
 
   it("names the npm uninstall for a copy in npm's global folder only", () => {

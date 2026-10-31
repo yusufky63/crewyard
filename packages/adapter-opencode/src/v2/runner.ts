@@ -136,7 +136,11 @@ export class OpenCodeV2Runner {
     const run = this.live(handle);
     run.interrupted = true;
     if (!run.awaiting) return this.end(run, "interrupted");
-    await run.client.interrupt(run.mapper.rootSession);
+    await run.client.interrupt(run.mapper.rootSession).catch((err: unknown) => {
+      // The server can announce the interruption before it answers the POST; the run then ends and
+      // its server is closed, which drops the reply. The interrupt took effect, so that is no error.
+      if (!run.ended) throw err;
+    });
     // `session.execution.interrupted` ends the run; this covers a server that never sends it.
     setTimeout(() => this.end(run, "interrupted"), 5_000).unref();
   }
