@@ -71,6 +71,10 @@ function checkNativeModule(build, paths) {
   };
   need("lib/index.js");
   need("LICENSE");
+  // node-pty loads build/Release before prebuilds, so a stray local build would win over the prebuild.
+  const builtDir = join(pty, "build", "Release");
+  const built = existsSync(builtDir) ? readdirSync(builtDir).filter((f) => f.endsWith(".node")) : [];
+  if (build.platform !== "linux" && built.length > 0) fail(`${build.id}: a locally built node-pty would shadow the prebuild: ${built.join(", ")}`);
 
   if (build.platform === "win") {
     const dir = `prebuilds/win32-${build.arch}`;

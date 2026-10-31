@@ -29,8 +29,8 @@ const release = releaseOptions(process.env);
 const REPOSITORY = "https://github.com/yusufky63/crewyard";
 // The licences of everything bundled (scripts/third-party-licenses.mjs) and NOTICE. Windows and Linux
 // keep them next to the executable, beside Electron's own LICENSE.electron.txt and
-// LICENSES.chromium.html. A macOS bundle may not hold loose files outside Contents/Resources (the
-// signature would not cover them), so there they go to Resources.
+// LICENSES.chromium.html. A macOS bundle keeps resources in Contents/Resources, and a loose file
+// directly in Contents puts code signing at risk, so there they go to Resources.
 const LICENCE_FILES = { from: "out/third-party", to: ".", filter: ["NOTICE.txt", "THIRD-PARTY-LICENSES.txt"] };
 
 /** @type {import("electron-builder").Configuration} */
