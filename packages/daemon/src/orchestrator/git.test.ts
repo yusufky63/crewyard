@@ -1,7 +1,26 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { checkpoint, defaultWorktreeRoot, ensureWorktree, isValidBranchName, parseWorktreeList, resolveBase, sameDir, taskSlug, unindexedFiles } from "./git.ts";
+import {
+  branchSha,
+  checkpoint,
+  commitsBetween,
+  defaultWorktreeRoot,
+  ensureWorktree,
+  gitAtLeast,
+  gitVersion,
+  isAncestor,
+  isValidBranchName,
+  mergeNoFf,
+  mergeTreeCheck,
+  MIN_GIT_MERGE_TREE,
+  parseMergeTree,
+  parseWorktreeList,
+  resolveBase,
+  sameDir,
+  taskSlug,
+  unindexedFiles,
+} from "./git.ts";
 import { holdExclusive } from "./locked-file.testkit.ts";
 import { cleanTemps, git, tempDir, tempRepo } from "./testing.ts";
 
@@ -107,5 +126,58 @@ describe("checkpoint with a locked file", { timeout: 30_000 }, () => {
       await lock.release();
     }
     expect((await git(repo, "status", "--porcelain")).trim()).toBe("?? \"held open.txt\"");
+  });
+});
+
+describe("goal branch merges (docs/adr/0019)", { timeout: 60_000 }, () => {
+  it("reads merge-tree's -z --name-only output: the tree, then the conflicted names", () => {
+    expect(parseMergeTree("abc123\0")).toEqual({ tree: "abc123", paths: [] });
+    const out = ["def456", "src/giriş sayfası.ts", "docs/kullanım kılavuzu.md", "src/giriş sayfası.ts", "", "Auto-merging src/giriş sayfası.ts", "CONFLICT (content): ...", ""].join("\0");
+    expect(parseMergeTree(out)).toEqual({ tree: "def456", paths: ["src/giriş sayfası.ts", "docs/kullanım kılavuzu.md"] });
+  });
+
+  it("compares Git versions numerically and ignores the Windows suffix", () => {
+    expect(MIN_GIT_MERGE_TREE).toBe("2.38.0");
+    for (const ok of ["2.38.0", "2.56.0.windows.3", "3.0", "2.38.1"]) expect(gitAtLeast(ok), ok).toBe(true);
+    for (const old of ["2.37.9", "2.9.0", "1.99", null, ""]) expect(gitAtLeast(old), String(old)).toBe(false);
+  });
+
+  it("test-merges without a worktree, merges with --no-ff, and leaves a refused merge as it was", async () => {
+    expect(gitAtLeast(await gitVersion())).toBe(true);
+    const repo = await tempRepo(tempDir("crewyard goal git-"), "demo repo with spaces");
+    const file = join(repo, "kılavuz notları.md");
+    const goal = "crewyard/goal/demo-abc123";
+    await git(repo, "checkout", "-q", "-b", goal);
+    await git(repo, "checkout", "-q", "-b", "crewyard/task-a");
+    writeFileSync(file, "A satırı\n");
+    await git(repo, "add", "-A");
+    await git(repo, "commit", "-q", "-m", "a: kılavuz");
+    await git(repo, "checkout", "-q", goal);
+    await git(repo, "checkout", "-q", "-b", "crewyard/task-b");
+    writeFileSync(file, "B satırı\n");
+    await git(repo, "add", "-A");
+    await git(repo, "commit", "-q", "-m", "b: kılavuz");
+    await git(repo, "checkout", "-q", goal);
+
+    const before = (await branchSha(repo, goal))!;
+    expect(await mergeTreeCheck(repo, goal, "crewyard/task-a")).toMatchObject({ clean: true });
+    expect((await mergeNoFf(repo, "crewyard/task-a")).ok).toBe(true);
+    const after = (await branchSha(repo, goal))!;
+    expect(after).not.toBe(before);
+    // --no-ff: a merge commit with two parents, and the task's commit is now in the goal branch.
+    expect((await git(repo, "rev-list", "--parents", "-n", "1", after)).trim().split(" ")).toHaveLength(3);
+    expect(await isAncestor(repo, (await branchSha(repo, "crewyard/task-a"))!, after)).toBe(true);
+    expect(await commitsBetween(repo, before, after)).toEqual(expect.arrayContaining([expect.stringContaining("a: kılavuz")]));
+
+    // The second task changed the same lines: a conflict with its file named; exit 1 is not an error.
+    expect(await mergeTreeCheck(repo, goal, "crewyard/task-b")).toEqual({ clean: false, paths: ["kılavuz notları.md"] });
+    const refused = await mergeNoFf(repo, "crewyard/task-b");
+    expect(refused.ok).toBe(false);
+    expect(await branchSha(repo, goal)).toBe(after);
+    expect((await git(repo, "status", "--porcelain")).trim()).toBe("");
+    // The checkout may write CRLF (core.autocrlf); the content is what matters.
+    expect(readFileSync(file, "utf8").replace(/\r\n/g, "\n")).toBe("A satırı\n");
+    await expect(mergeTreeCheck(repo, goal, "no-such-branch")).rejects.toThrow("git.failed");
+    await expect(mergeTreeCheck(repo, "--output=x", "crewyard/task-b")).rejects.toThrow("git.failed");
   });
 });

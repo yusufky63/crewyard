@@ -256,8 +256,11 @@ export function parseMergeTree(out: string): { tree: string; paths: string[] } {
 export async function mergeTreeCheck(repoPath: string, ours: string, theirs: string, bin = "git"): Promise<MergeTreeResult> {
   for (const ref of [ours, theirs]) if (ref.startsWith("-")) throw new OrchestratorError("git.failed", { command: "merge-tree", detail: `bad ref ${ref}` });
   const res = await run(bin, ["merge-tree", "--write-tree", "-z", "--name-only", ours, theirs], { cwd: repoPath, timeoutMs: 60_000, env: GIT_ENV });
-  if (res.code === 0) return { clean: true, tree: parseMergeTree(res.stdout).tree };
-  if (res.code === 1) return { clean: false, paths: parseMergeTree(res.stdout).paths };
+  const parsed = parseMergeTree(res.stdout);
+  // A real answer always starts with the tree it wrote; a ref git cannot read can also exit 1.
+  const answered = /^[0-9a-f]{40,64}$/.test(parsed.tree);
+  if (res.code === 0 && answered) return { clean: true, tree: parsed.tree };
+  if (res.code === 1 && answered) return { clean: false, paths: parsed.paths };
   throw new OrchestratorError("git.failed", { command: "merge-tree", detail: (res.stderr || res.stdout).trim().slice(0, 400) });
 }
 

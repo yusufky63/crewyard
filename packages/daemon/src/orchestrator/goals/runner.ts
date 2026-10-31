@@ -658,7 +658,7 @@ export class GoalRunner extends Part {
   private async release(goal: GoalRow, facts: GoalTaskFacts[]): Promise<void> {
     const ready = readySet(facts);
     let room = releaseRoom(facts, goal.max_parallel);
-    const running = releasedUnfinished(facts);
+    let running = releasedUnfinished(facts);
     for (const f of facts.filter((x) => isLive(x) && !x.released && !ready.includes(x.id))) {
       const why = prerequisiteHold(f, facts);
       if (why) this.hold(goal, f.id, why);
@@ -669,7 +669,10 @@ export class GoalRunner extends Part {
         this.hold(goal, id, { code: "goal.parallel_cap", params: { running, max: goal.max_parallel } });
         continue;
       }
-      if (await this.releaseTask(goal, f)) room--;
+      if (await this.releaseTask(goal, f)) {
+        room--;
+        running++;
+      }
     }
   }
 
@@ -1043,7 +1046,7 @@ export class GoalRunner extends Part {
     }
     for (const r of this.goalRuns(goal).filter((x) => x.ended_at === null && x.paused_at === null)) await this.deps.pauseRun(r.id).catch(() => undefined);
     this.announce(goal.id, "paused", true);
-    void this.deps.tick();
+    await this.deps.tick();
   }
 
   /** Lifts your Pause: the steps it paused go on, and the scheduler releases again. */
@@ -1055,7 +1058,7 @@ export class GoalRunner extends Part {
     this.events.append(goal.project_id, goal.id, "goal.resumed", {});
     if (!this.pausedAll().on) for (const r of this.goalRuns(goal).filter((x) => x.ended_at === null && x.paused_at !== null && x.paused_at >= goal.paused_at!)) await this.deps.resumeRun(r.id).catch(() => undefined);
     this.announce(goal.id, "resumed", true);
-    void this.deps.tick();
+    await this.deps.tick();
   }
 
   /** `Pause all goals`, the global kill switch (design §5.2); lifting it is your click too. */
@@ -1072,7 +1075,7 @@ export class GoalRunner extends Part {
       this.events.append(goal.project_id, goal.id, "goal.paused_all", { on });
       this.announce(goal.id, on ? "paused" : "resumed", true);
     }
-    void this.deps.tick();
+    await this.deps.tick();
     return { pausedAll: on };
   }
 
@@ -1194,7 +1197,7 @@ export class GoalRunner extends Part {
     this.events.append(goal.project_id, goal.id, "goal.decided", { decisionId: d.id, kind: d.kind, taskId: d.task_id, action, closed: close });
     if (action === "check_again" && d.task_id) await this.checkMergeNow(this.rows.goal(goal.id), d.task_id);
     this.announce(goal.id, "decided", true);
-    void this.deps.tick();
+    await this.deps.tick();
   }
 
   /** `Check again` on a conflicted merge: closes its open conflict and tries the merge now. */
@@ -1209,7 +1212,7 @@ export class GoalRunner extends Part {
     }
     await this.checkMergeNow(goal, taskId);
     this.announce(goal.id, "decided", true);
-    void this.deps.tick();
+    await this.deps.tick();
   }
 
   private async checkMergeNow(goal: GoalRow, taskId: string): Promise<void> {
