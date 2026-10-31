@@ -289,10 +289,10 @@ Until this update nothing had been built for macOS or Linux, and v0.1.0 was a Wi
   - With no electron-builder publish config, no `app-update.yml` points the app at GitHub. ADR 0011 allows an update feed only for signed builds.
   - The set of files is checked as a whole before anything is public.
   - Only one job holds a write token.
-- This also departs from the first plan, where build jobs uploaded to the draft themselves. The build jobs run dependency install scripts (Electron, esbuild, node-pty), and an install script can reach any token in its job. setup-node's own advanced-usage guide keeps install scripts and caches away from publishing credentials for the same reason. So build jobs are `contents: read` and pass their files on as workflow artifacts (kept one day).
+- This also departs from the first plan, where build jobs uploaded to the draft themselves. The build jobs run dependency install scripts (Electron, esbuild, node-pty), and an install script can reach any token in its job. setup-node's own advanced-usage guide keeps install scripts and caches away from publishing credentials for the same reason. So build jobs are `contents: read` and pass their files on as workflow artifacts, kept five days so that a re-run of a failed publish job still finds them.
 - There are no caches: dependencies come from the registry and Electron from its checksummed download on every run.
 - `workflow_dispatch` runs the same builds as a dry run: nothing is published, and the artifacts are kept three days.
-- The workflow has `concurrency` per tag with `cancel-in-progress`, `timeout-minutes` on every job, and no `schedule`. It never runs on a branch push or a pull request. Crewyard's own workflow check (`packages/daemon/src/github/workflows.ts`) passes it.
+- The workflow has `concurrency` per event and tag with `cancel-in-progress` (so a manual dry run on a tag ref never cancels that tag's real run), `timeout-minutes` on every job, and no `schedule`. Every step runs as `bash -eo pipefail`, so `release-check | tee` fails when the check does. The tag check also refuses a build when `LICENSE` is missing or does not match the MIT licence and copyright the packages declare. It never runs on a branch push or a pull request. Crewyard's own workflow check (`packages/daemon/src/github/workflows.ts`) passes it.
 
 **macOS signing.**
 
@@ -306,6 +306,7 @@ Until this update nothing had been built for macOS or Linux, and v0.1.0 was a Wi
   - electron-builder 26.17.0 itself warns that ad-hoc signing with hardened runtime needs `disable-library-validation` (`MacTargetHelper.findSigningIdentity`);
   - hardened runtime only matters for notarization, which needs a Developer ID anyway.
 - `darkModeSupport: true`, so the app follows the system appearance.
+- `minimumSystemVersion: "13.0"`: Electron 45 supports macOS 13 Ventura and later (its README, "Platform support"), so the bundle says the same and an older Mac refuses it up front. The README, the release notes and docs/release.md name macOS 13 too.
 - `codesign --verify --deep --strict` and `Signature=adhoc` are checked on the runner.
 
 **The Intel Mac build.**
@@ -390,14 +391,16 @@ Until this update nothing had been built for macOS or Linux, and v0.1.0 was a Wi
 ### What was verified, and how (2026-10-31, on Windows 11)
 
 - **Windows package.** `pnpm package` still builds `dist/Crewyard-Setup-0.1.0-x64.exe` with the same layout: `NOTICE.txt` and `THIRD-PARTY-LICENSES.txt` next to the exe, and `resources/native/node-pty` with only the win32-x64 prebuild, including `conpty/conpty.dll`.
+- **Windows exe metadata.** `Crewyard.exe` reads `LegalCopyright: Copyright 2026 Yusuf` and `CompanyName: Yusuf`. Before, `extraMetadata.author` was a string, electron-builder (which reads `author.name`) set no company, and the exe kept Electron's own "GitHub, Inc."; author is now an object.
 - **Release checks on Windows.**
   - `release-check.mjs build windows-x64` passes: it started `cmd.exe` through the packaged node-pty and ConPTY.
   - `release-check.mjs smoke windows-x64` passes: the packaged app started on a throwaway profile, its daemon answered `daemon.status` and `machine.check`, and it exited 0.
   - The installer was not run, because it would replace the installed Crewyard on this machine.
+- **Tag check.** `release-check.mjs version` refuses a missing `LICENSE`. Run the way the workflow now runs it (`bash --noprofile --norc -eo pipefail`), `release-check version v9.9.9 | tee` fails the step; under plain `bash -e`, GitHub's default before, the same line passed.
 - **Checksums and asset sets.** On a fake set of files, `release` writes sums that verify, and refuses an extra `.blockmap`. `published` refuses a missing file, a size difference and an asset still uploading.
 - **Configuration.**
   - The config passes electron-builder's schema check; a test now runs it.
-  - js-yaml parses all three workflows, and Crewyard's workflow check finds nothing.
+  - js-yaml parses all three workflows, and Crewyard's workflow check (`checkWorkflows`, private repository, default branch `main`) finds nothing; `triggeredBy` gives only `ci.yml` for a push to `main` and for a pull request.
   - A push to `main` or to a pull-request branch starts only `ci.yml`.
 
 ### What was not verified
@@ -452,7 +455,7 @@ Numbered as in the first version of this list; done items are struck through.
 9. Wording that names Windows or DPAPI (Settings → Data, the provider dialog) needs per-platform text, in English and Turkish.
 10. `safeStorage`'s `shouldReEncrypt` is ignored; blobs are not rewritten after a keychain key rotation.
 11. Case-sensitive project paths on Linux (store collation).
-12. Settings → About opens `THIRD-PARTY-LICENSES.txt` from the executable's folder (`main/index.ts`). On macOS the file is in `Contents/Resources` (`process.resourcesPath`), so that link finds nothing there. It is a one-line change in main, left to the owner of that file.
+12. ~~Settings → About opens `THIRD-PARTY-LICENSES.txt` from the executable's folder, but on macOS the file is in `Contents/Resources`.~~ Done 2026-10-31: `main/index.ts` looks in `process.resourcesPath` on macOS.
 13. `pnpm dev` on a Mac: the `spawn-helper` in `node_modules` is 0644 too, so the terminal fails in development. `afterPack` fixes packaged builds only. A `postinstall` chmod, or the pty host checking the mode, would fix it.
 14. **AppImage:**
     - it needs FUSE 2 (`libfuse2`, which Ubuntu 22.04 and later no longer install by default);

@@ -58,6 +58,10 @@ const BUILDS = [
 
 const CHECKSUMS = "SHA256SUMS.txt";
 
+// What the packages say about their licence (electron-builder.config.cjs copyright and
+// extraMetadata.license, which also reaches the deb control file). Decided 2026-10-31 (PLAN.md §17).
+const LICENCE = { license: "MIT", copyright: "Copyright 2026 Yusuf" };
+
 // Semantic version with an optional pre-release part; nothing else may reach a shell or a file name.
 const TAG = /^v((0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?)$/;
 
@@ -84,6 +88,20 @@ function checkVersions({ tag, desktopVersion, rootVersion }) {
   return parsed;
 }
 
+/**
+ * The packages declare LICENCE. A tag must not ship that claim while the repository's LICENSE says
+ * something else, or before it exists.
+ * @param {string | undefined} text the repository's LICENSE file, undefined when it is missing
+ * @param {{ license: string, copyright: string }} declared
+ */
+function checkLicence(text, { license, copyright } = LICENCE) {
+  if (license !== "MIT") throw new Error(`the packages declare ${license}; only MIT is checked here`);
+  if (text === undefined) throw new Error("LICENSE is missing at the repository root, but the packages declare MIT");
+  const lines = text.split(/\r?\n/);
+  if (lines[0] !== "MIT License") throw new Error(`LICENSE does not start with "MIT License": ${JSON.stringify(lines[0])}`);
+  if (!lines.includes(copyright)) throw new Error(`LICENSE does not carry the packages' copyright line "${copyright}"`);
+}
+
 /** @param {string} id */
 function buildById(id) {
   const build = BUILDS.find((b) => b.id === id);
@@ -96,4 +114,4 @@ function releaseAssets(version) {
   return [...BUILDS.flatMap((b) => b.files(version)), CHECKSUMS];
 }
 
-module.exports = { ARTIFACT_NAMES, BUILDS, CHECKSUMS, parseTag, checkVersions, buildById, releaseAssets };
+module.exports = { ARTIFACT_NAMES, BUILDS, CHECKSUMS, LICENCE, parseTag, checkVersions, checkLicence, buildById, releaseAssets };

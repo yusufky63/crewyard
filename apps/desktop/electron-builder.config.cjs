@@ -19,7 +19,7 @@
 // Artifact names come from scripts/release-assets.cjs: the release workflow and the website match
 // downloads by them.
 const { releaseOptions } = require("./scripts/release.cjs");
-const { ARTIFACT_NAMES } = require("./scripts/release-assets.cjs");
+const { ARTIFACT_NAMES, LICENCE } = require("./scripts/release-assets.cjs");
 const { afterPack } = require("./scripts/after-pack.cjs");
 const { dirname } = require("node:path");
 const { realpathSync } = require("node:fs");
@@ -37,7 +37,7 @@ const LICENCE_FILES = { from: "out/third-party", to: ".", filter: ["NOTICE.txt",
 module.exports = {
   appId: "dev.crewyard.app", // same as app.setAppUserModelId in src/main/index.ts, so toasts and the taskbar match
   productName: "Crewyard",
-  copyright: "Copyright 2026 Crewyard contributors",
+  copyright: LICENCE.copyright,
   directories: { output: "dist", buildResources: "build" },
   // Main, daemon, preload and renderer are bundled by electron-vite and use only Node and Electron
   // built-ins at runtime, so no node_modules ship.
@@ -65,9 +65,11 @@ module.exports = {
     name: "crewyard",
     productName: "Crewyard",
     description: "Crewyard",
-    author: "Crewyard contributors",
+    // An object, not a string: electron-builder reads author.name for the exe's CompanyName and the
+    // uninstall entry's Publisher; a plain string left Electron's own "GitHub, Inc." there.
+    author: { name: "Yusuf", email: "yusufky63@users.noreply.github.com" },
     homepage: REPOSITORY,
-    license: "MIT",
+    license: LICENCE.license,
     desktopName: "crewyard.desktop",
     ...release.metadata,
   },
@@ -137,6 +139,9 @@ module.exports = {
     notarize: false,
     // Follow the system's light or dark appearance, as the app's own theme does.
     darkModeSupport: true,
+    // Electron 45 runs on macOS 13 Ventura and later; the bundle says so, so an older Mac refuses it
+    // up front instead of failing to start.
+    minimumSystemVersion: "13.0",
     extraResources: [LICENCE_FILES],
     artifactName: ARTIFACT_NAMES.macZip,
   },

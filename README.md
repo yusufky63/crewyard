@@ -11,8 +11,8 @@ Download from this repository's [Releases](https://github.com/yusufky63/crewyard
 | System | File | First start |
 |---|---|---|
 | Windows 11, x64 | `Crewyard-Setup-<version>-x64.exe`: installs for your user, no admin prompt | SmartScreen: More info, then Run anyway |
-| macOS 12 or later, Apple silicon | `Crewyard-<version>-arm64.dmg` (or `-arm64-mac.zip`) | not notarized: System Settings → Privacy & Security → Open Anyway |
-| macOS 12 or later, Intel | `Crewyard-<version>-x64.dmg` (or `-x64-mac.zip`) | as above |
+| macOS 13 (Ventura) or later, Apple silicon | `Crewyard-<version>-arm64.dmg` (or `-arm64-mac.zip`) | not notarized: System Settings → Privacy & Security → Open Anyway |
+| macOS 13 (Ventura) or later, Intel | `Crewyard-<version>-x64.dmg` (or `-x64-mac.zip`) | as above |
 | Debian, Ubuntu (x64) | `crewyard_<version>_amd64.deb`: `sudo apt install ./crewyard_<version>_amd64.deb` | from the app menu, or `crewyard` |
 | Other Linux (x64) | `Crewyard-<version>-x86_64.AppImage`: `chmod +x`, then run it | needs FUSE 2 (`libfuse2`) |
 
@@ -67,7 +67,7 @@ The same steps are at the top of every release's notes ([docs/release-notes/inst
 
 ## Requirements
 
-- Windows 11 for development and the tested build. Windows 10 has not been tried. macOS 12+ and Linux x64 run the pre-release packages (see Install); development there is untested.
+- Windows 11 for development and the tested build. Windows 10 has not been tried. macOS 13 (Ventura) or later and Linux x64 run the pre-release packages (see Install); development there is untested.
 - Node.js 24 or newer, pnpm 9 (`corepack enable` gives the pinned version).
 - Git.
 - The GitHub CLI (`gh`), for the GitHub features.
@@ -138,6 +138,7 @@ Live tests with real runners and keys cost a few cents and run only when asked. 
 | [DESIGN.md](DESIGN.md) | Design system: tokens, components, screens, interaction rules |
 | [PRIOR_ART.md](PRIOR_ART.md) | What the strongest open-source projects in this space do, and what we take or avoid |
 | [AGENTS.md](AGENTS.md) | Rules for coding agents working in this repo |
+| [LICENSE](LICENSE) | The MIT licence |
 | [NOTICE](NOTICE) | Third-party material and its licences |
 | [docs/release.md](docs/release.md) | Cutting a release: version, tag, the release workflow, and the file names the website matches |
 
@@ -161,7 +162,7 @@ The running app also refreshes it from models.dev once a day. Providers → Vers
 
 ## Licence
 
-This is a private repository with no open-source licence; all rights are reserved. Third-party material and its licences are listed in [NOTICE](NOTICE).
+Crewyard is released under the [MIT licence](LICENSE), Copyright 2026 Yusuf. Third-party material and its licences are listed in [NOTICE](NOTICE); every installed build also carries `THIRD-PARTY-LICENSES.txt`, which Settings → About opens.
 
 
 ## Building the Windows installer

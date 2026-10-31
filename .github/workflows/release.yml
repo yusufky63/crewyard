@@ -12,14 +12,23 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
-# A tag pushed again replaces the run still going for it; the draft it made is reused.
+# A tag pushed again replaces the run still going for it; the draft it made is reused. The event is
+# part of the group, so a dry run started by hand on a tag ref never cancels that tag's real run
+# (in the middle of publishing, say).
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 # Read-only unless a job says otherwise. GITHUB_TOKEN is the only credential this workflow uses.
 permissions:
   contents: read
+
+# Every run step, on every OS, as `bash --noprofile --norc -eo pipefail`. GitHub's default for a
+# plain `run` on Linux is `bash -e` without pipefail, which would let `release-check | tee` pass when
+# release-check refuses the tag.
+defaults:
+  run:
+    shell: bash
 
 jobs:
   # Checks the tag before any build minute is spent and opens the draft the files will go to.
@@ -120,9 +129,6 @@ jobs:
     timeout-minutes: 45
     permissions:
       contents: read
-    defaults:
-      run:
-        shell: bash
     env:
       # The macOS build is ad-hoc signed by its config; never look for a keychain identity.
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
@@ -167,7 +173,9 @@ jobs:
           if-no-files-found: error
           # dmg, zip, AppImage and deb are compressed already.
           compression-level: 0
-          retention-days: ${{ github.event_name == 'push' && 1 || 3 }}
+          # Long enough for "Re-run failed jobs" on publish a few days later to still find the
+          # files of the builds that passed (docs/release.md).
+          retention-days: ${{ github.event_name == 'push' && 5 || 3 }}
 
   # Runs only when every build passed: one checked set of files, SHA256SUMS.txt, then the draft
   # becomes the published release.

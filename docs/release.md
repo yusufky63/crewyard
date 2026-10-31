@@ -9,8 +9,8 @@ GitHub Releases is the download host. The website lists releases from GitHub's p
 | Platform | File | Built on |
 |---|---|---|
 | Windows 11, x64 | `Crewyard-Setup-<version>-x64.exe` (per-user NSIS installer) | `windows-latest` |
-| macOS, Apple silicon | `Crewyard-<version>-arm64.dmg`, `Crewyard-<version>-arm64-mac.zip` | `macos-15` |
-| macOS, Intel | `Crewyard-<version>-x64.dmg`, `Crewyard-<version>-x64-mac.zip` | `macos-15-intel` |
+| macOS 13 or later, Apple silicon | `Crewyard-<version>-arm64.dmg`, `Crewyard-<version>-arm64-mac.zip` | `macos-15` |
+| macOS 13 or later, Intel | `Crewyard-<version>-x64.dmg`, `Crewyard-<version>-x64-mac.zip` | `macos-15-intel` |
 | Linux, x64 | `Crewyard-<version>-x86_64.AppImage`, `crewyard_<version>_amd64.deb` | `ubuntu-22.04` |
 | all | `SHA256SUMS.txt` (`<sha256>  <file>` per line) | |
 
@@ -42,7 +42,7 @@ Read releases from `GET https://api.github.com/repos/yusufky63/crewyard/releases
 
 ## Before the first release (once)
 
-1. Make the repository public and add the MIT `LICENSE` (Copyright 2026 Yusuf), as decided on 2026-10-31. While the repository is private, macOS minutes count ten times and Windows minutes twice against the 2,000 free minutes a month. One run has two macOS jobs of very roughly 15 minutes each, so about 300 billed minutes before Windows and Linux. On a public repository these minutes are free.
+1. Make the repository public, as decided on 2026-10-31. The MIT `LICENSE` (Copyright 2026 Yusuf) is already in the repository; the workflow refuses to build when it is missing or no longer matches the licence and copyright the packages declare (`LICENCE` in `apps/desktop/scripts/release-assets.cjs`). While the repository is private, macOS minutes count ten times and Windows minutes twice against the 2,000 free minutes a month. One run has two macOS jobs of very roughly 15 minutes each, so about 300 billed minutes before Windows and Linux. On a public repository these minutes are free.
 2. Do a dry run: GitHub → Actions → release → Run workflow, on `main`. It builds and checks all four packages and keeps them as workflow artifacts for three days. It creates no release and no tag. Nothing has ever been built on macOS or Linux before this, so try each package on a real machine:
    - start it;
    - open a project;
@@ -104,7 +104,7 @@ There are no caches (dependencies and Electron come from the registry and Electr
   - move the tag: `git tag -d v0.2.0; git push --delete origin v0.2.0`, then tag the fixed commit and push again;
   - the draft is reused and its files are replaced.
 
-  A flaky runner needs no new commit: use "Re-run failed jobs".
+  A flaky runner needs no new commit: use "Re-run failed jobs". The builds keep their files for five days, so within that time a re-run of a failed publish job reuses them; after that, use "Re-run all jobs".
 - **"already published":** a published release is never rebuilt. Bump the version and tag again.
 - **"unexpected" files on the draft:** someone added files by hand. Delete them from the draft and re-run the failed jobs.
 - **The tag does not match the versions:** delete the tag, fix the versions, commit, and tag again.

@@ -2,8 +2,9 @@
 // built-ins only, so it runs before or without `pnpm install`. Each command exits non-zero with a
 // reason when something is wrong, which stops the release before anything is published.
 //
-//   version <tag> | --dry-run       tag matches both package.json versions; prints version= and
-//                                   prerelease= lines for $GITHUB_OUTPUT
+//   version <tag> | --dry-run       tag matches both package.json versions and LICENSE matches the
+//                                   licence the packages declare; prints version= and prerelease=
+//                                   lines for $GITHUB_OUTPUT
 //   build <build-id> <dist> <stage> this build's files exist, its native terminal module is the one
 //                                   for its OS and CPU and works, then copies the files into <stage>
 //   smoke <build-id> <dist>         starts the packaged app (throwaway profile), checks the daemon
@@ -19,7 +20,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 const require = createRequire(import.meta.url);
-const { BUILDS, CHECKSUMS, buildById, checkVersions, parseTag, releaseAssets } = require("./release-assets.cjs");
+const { BUILDS, CHECKSUMS, buildById, checkLicence, checkVersions, parseTag, releaseAssets } = require("./release-assets.cjs");
 
 const appDir = join(import.meta.dirname, "..");
 const PRODUCT = "Crewyard";
@@ -42,6 +43,8 @@ function version(arg) {
   const tag = arg === "--dry-run" ? `v${desktopVersion}` : arg;
   if (!tag) fail("version needs a tag or --dry-run");
   const { version: v, prerelease } = checkVersions({ tag, desktopVersion, rootVersion });
+  const licenceFile = join(appDir, "..", "..", "LICENSE");
+  checkLicence(existsSync(licenceFile) ? readFileSync(licenceFile, "utf8") : undefined);
   console.log(`version=${v}`);
   console.log(`prerelease=${prerelease}`);
 }

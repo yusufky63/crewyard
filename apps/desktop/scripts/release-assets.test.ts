@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ARTIFACT_NAMES, BUILDS, CHECKSUMS, buildById, checkVersions, parseTag, releaseAssets } from "./release-assets.cjs";
+import { ARTIFACT_NAMES, BUILDS, CHECKSUMS, LICENCE, buildById, checkLicence, checkVersions, parseTag, releaseAssets } from "./release-assets.cjs";
 
 const require = createRequire(import.meta.url);
 const appDir = join(import.meta.dirname, "..");
@@ -50,6 +50,25 @@ describe("release tags", () => {
   });
 });
 
+describe("licence", () => {
+  const declared = { license: "MIT", copyright: "Copyright 2026 Yusuf" };
+
+  it("refuses a missing, different or mismatched LICENSE", () => {
+    expect(() => checkLicence(undefined, declared)).toThrow(/missing/);
+    expect(() => checkLicence("Apache License\nVersion 2.0\n", declared)).toThrow(/MIT License/);
+    expect(() => checkLicence("MIT License\n\nCopyright 2026 Someone\n", declared)).toThrow(/copyright/);
+    expect(() => checkLicence("MIT License\r\n\r\nCopyright 2026 Yusuf\r\n", declared)).not.toThrow();
+    expect(() => checkLicence("MIT License\n\nCopyright 2026 Yusuf\n", { license: "Apache-2.0", copyright: "x" })).toThrow(/only MIT/);
+  });
+
+  it("matches the repository's LICENSE to what the packages declare", () => {
+    const text = readFileSync(join(appDir, "..", "..", "LICENSE"), "utf8");
+    expect((config.extraMetadata as { license: string }).license).toBe(LICENCE.license);
+    expect(config.copyright as unknown).toBe(LICENCE.copyright);
+    expect(() => checkLicence(text)).not.toThrow();
+  });
+});
+
 describe("release assets", () => {
   it("lists the files the website matches, checksums last", () => {
     expect(releaseAssets("0.2.0")).toEqual([
@@ -90,7 +109,9 @@ describe("electron-builder config", () => {
   });
 
   it("ad-hoc signs macOS without hardened runtime and gives deb its maintainer and homepage", () => {
-    expect(config.mac).toMatchObject({ identity: "-", hardenedRuntime: false, notarize: false, icon: "build/icon.icns" });
+    expect(config.mac).toMatchObject({ identity: "-", hardenedRuntime: false, notarize: false, icon: "build/icon.icns", minimumSystemVersion: "13.0" });
+    // electron-builder takes the exe's CompanyName from author.name, so a string author leaves Electron's own.
+    expect(config.extraMetadata).toMatchObject({ author: { name: "Yusuf" } });
     expect(config.linux).toMatchObject({ maintainer: "Yusuf <yusufky63@users.noreply.github.com>", category: "Development", icon: "build/icons" });
     expect(config.extraMetadata).toMatchObject({ homepage: "https://github.com/yusufky63/crewyard", desktopName: "crewyard.desktop" });
   });
