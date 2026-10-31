@@ -186,6 +186,7 @@
     "admission_memory": "Not enough free memory to start another agent.",
     "assistant_draft_discarded": "That draft was discarded.",
     "assistant_draft_added": "That draft is already a task.",
+    "assistant_draft_adding": "That draft is being added already.",
     "assistant_draft_invalid": "Check the draft: a one-line title of at most 120 bytes, at most 12 short criteria.",
     "assistant_draft_not_found": "That draft no longer exists.",
     "project_not_found": "The project is gone.",

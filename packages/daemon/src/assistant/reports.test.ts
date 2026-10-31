@@ -106,6 +106,40 @@ describe("task reports", () => {
     expect(s.a.report(taskId)!.drafts.map((d) => d.status)).toEqual(["added", "open", "added"]);
   });
 
+  it("links a follow-up run's newer findings to their own drafts, and keeps drafts made under the older key", async () => {
+    const s = await setup(() => [running], (role) => (role === "researcher" ? FINDINGS : undefined));
+    const taskId = await runToDone(s, "research", "Find security issues");
+    const projectId = s.project.id;
+    // A draft from before keys named their result: the first result's finding 0 already has it.
+    s.store.db
+      .prepare("insert into assistant_drafts (id, conversation_id, project_id, source, source_task_id, source_key, title, description, kind, acceptance, size, created_at) values ('legacy', null, ?, 'finding', ?, 'finding:0', 'Old redact task', '', 'code', '[]', null, ?)")
+      .run(projectId, taskId, new Date().toISOString());
+    const first = s.a.report(taskId)!;
+    expect(first.drafts.map((d) => d.title)).toEqual(["Old redact task", "Cap retries at five"]);
+    expect(first.findings.map((f) => f.draftId ?? null)).toEqual(["legacy", first.drafts[1]!.id, null]);
+
+    // A follow-up run writes a newer result; its finding 0 suggests something else.
+    const newer = { summary: "One more thing.", findings: [{ title: "Session cookie lacks Secure", severity: "high", file: "src/cookie.ts", line: 7, detail: "Set Secure.", suggestedTask: { title: "Mark the session cookie Secure", description: "", kind: "code", acceptanceCriteria: [] } }] };
+    s.store.appendEvent({ kind: "research.findings", source: "daemon", payload: newer, projectId, taskId });
+    const second = s.a.report(taskId)!;
+    const fresh = second.drafts.find((d) => d.title === "Mark the session cookie Secure")!;
+    expect(fresh).toBeDefined();
+    // Not the old result's draft at the same index.
+    expect(second.findings.map((f) => f.draftId ?? null)).toEqual([fresh.id]);
+    // Read again: still one draft for it.
+    expect(s.a.report(taskId)!.drafts.filter((d) => d.title === fresh.title)).toHaveLength(1);
+  });
+
+  it("refuses a second add of a draft while the first is still proposing it", async () => {
+    const s = await setup(() => [running], (role) => (role === "researcher" ? FINDINGS : undefined));
+    const taskId = await runToDone(s, "research", "Find security issues");
+    const draft = s.a.report(taskId)!.drafts[0]!;
+    const [a, b] = await Promise.allSettled([s.a.addDraft(draft.id), s.a.addDraft(draft.id)]);
+    expect(a.status).toBe("fulfilled");
+    expect(b).toMatchObject({ status: "rejected", reason: expect.objectContaining({ message: expect.stringContaining("assistant.draft_adding") }) });
+    expect(s.o.list(s.project.id).filter((t) => t.title === draft.title)).toHaveLength(1);
+  });
+
   it("shows a reviewer's verdict with its comments, and nothing for a task that is not done", async () => {
     const verdict = { verdict: "pass", summary: "The project is in good shape.", comments: [{ file: "src/a.ts", line: 3, severity: "minor", body: "Rename x." }] };
     const s = await setup(() => [running], (role) => (role === "reviewer" ? verdict : undefined));

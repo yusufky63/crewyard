@@ -23,8 +23,14 @@ import { classifyTask } from "../orchestrator/classify.ts";
 
 export interface ReadReport {
   report: Omit<TaskReport, "drafts" | "taskId">;
-  /** Draft suggestions, keyed so each is created once per task. */
-  suggestions: Array<{ key: string; source: "finding" | "followup"; draft: TaskDraftInput; followupId?: string }>;
+  /**
+   * Draft suggestions, keyed so each is created once per task. A finding's key names the result
+   * event it came from (`finding:<seq>:<index>`), so a follow-up run's newer findings get their
+   * own drafts and links instead of landing on an older result's draft at the same index.
+   * `legacyKey` is the key drafts had before (`finding:<index>`), offered only when this result is
+   * the task's first, the one those drafts can only have come from.
+   */
+  suggestions: Array<{ key: string; source: "finding" | "followup"; draft: TaskDraftInput; followupId?: string; findingIndex?: number; legacyKey?: string }>;
 }
 
 const RESULT_KINDS = ["research.findings", "review.verdict", "plan.result"] as const;
@@ -50,8 +56,8 @@ function parse(payload: string): unknown {
 }
 
 export function readTaskReport(db: DatabaseSync, taskId: string): ReadReport | null {
-  const row = db.prepare(`select kind, payload, at from events where task_id = ? and kind in (${RESULT_KINDS.map(() => "?").join(", ")}) order by seq desc limit 1`).get(taskId, ...RESULT_KINDS) as
-    | { kind: (typeof RESULT_KINDS)[number]; payload: string; at: string }
+  const row = db.prepare(`select seq, kind, payload, at from events where task_id = ? and kind in (${RESULT_KINDS.map(() => "?").join(", ")}) order by seq desc limit 1`).get(taskId, ...RESULT_KINDS) as
+    | { seq: number; kind: (typeof RESULT_KINDS)[number]; payload: string; at: string }
     | undefined;
   let truncated = false;
   const cut = (s: string, max: number) => {
@@ -74,6 +80,7 @@ export function readTaskReport(db: DatabaseSync, taskId: string): ReadReport | n
         line: f.line !== null && Number.isFinite(f.line) ? Math.max(0, Math.trunc(f.line)) : null,
         detail: cut(f.detail, ASSISTANT_LIMITS.findingBytes),
       }));
+      const first = !db.prepare(`select 1 from events where task_id = ? and kind in (${RESULT_KINDS.map(() => "?").join(", ")}) and seq < ? limit 1`).get(taskId, ...RESULT_KINDS, row.seq);
       list.forEach((f, i) => {
         if (!f.suggestedTask) return;
         const where = f.file ? ` (${f.file}${f.line !== null ? `:${f.line}` : ""})` : "";
@@ -84,7 +91,7 @@ export function readTaskReport(db: DatabaseSync, taskId: string): ReadReport | n
           kind: f.suggestedTask.kind,
           acceptance: f.suggestedTask.acceptanceCriteria.slice(0, ASSISTANT_LIMITS.criteria).map((c) => oneLine(c, ASSISTANT_LIMITS.criterionBytes - 4)),
         });
-        if (draft.ok) suggestions.push({ key: `finding:${i}`, source: "finding", draft: draft.value });
+        if (draft.ok) suggestions.push({ key: `finding:${row.seq}:${i}`, source: "finding", draft: draft.value, findingIndex: i, ...(first ? { legacyKey: `finding:${i}` } : {}) });
       });
       report = { source: "findings", verdict: null, summary: cut(res.data.summary, ASSISTANT_LIMITS.reportBytes), findings, truncated: false, at: row.at };
     }

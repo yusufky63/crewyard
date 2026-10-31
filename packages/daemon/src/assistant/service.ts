@@ -177,6 +177,8 @@ function cutBytes(s: string, max: number): string {
 export class AssistantService {
   private readonly live = new Map<string, Live>();
   private readonly emitTimers = new Map<string, NodeJS.Timeout>();
+  /** Drafts whose add is waiting on propose(), so the same draft is never proposed twice at once. */
+  private readonly adding = new Set<string>();
   private readonly now: () => Date;
   private closed = false;
 
@@ -693,9 +695,18 @@ export class AssistantService {
     // Your edits go through the same checks as the agent's call.
     const parsed = parseTaskDraft(edit ?? { title: row.title, description: row.description, kind: row.kind, acceptance: parseList(row.acceptance), size: row.size });
     if (!parsed.ok) fail("assistant.draft_invalid");
+    // The status changes only after propose() returns, so a second add of the same draft in that
+    // gap (a card's own button while Add all runs) would propose a second task; it is refused.
+    if (this.adding.has(draftId)) fail("assistant.draft_adding");
+    this.adding.add(draftId);
     const d = parsed.value;
     const description = draftDescription(d);
-    const task = await this.opts.host.propose({ projectId: row.project_id, title: d.title, ...(description ? { description } : {}), kind: d.kind, ...(d.size ? { size: d.size } : {}) });
+    let task: Awaited<ReturnType<AssistantHost["propose"]>>;
+    try {
+      task = await this.opts.host.propose({ projectId: row.project_id, title: d.title, ...(description ? { description } : {}), kind: d.kind, ...(d.size ? { size: d.size } : {}) });
+    } finally {
+      this.adding.delete(draftId);
+    }
     this.db
       .prepare("update assistant_drafts set title = ?, description = ?, kind = ?, acceptance = ?, size = ?, status = 'added', task_id = ? where id = ?")
       .run(d.title, d.description, d.kind, JSON.stringify(d.acceptance), d.size, task.id, draftId);
@@ -728,8 +739,11 @@ export class AssistantService {
       `insert or ignore into assistant_drafts (id, conversation_id, project_id, source, source_task_id, source_key, title, description, kind, acceptance, size, created_at)
        values (?, null, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
+    const legacy = this.db.prepare("select 1 from assistant_drafts where source_task_id = ? and source_key = ?");
     let added = false;
     for (const sug of read.suggestions) {
+      // A draft made before keys named their result already stands for this suggestion.
+      if (sug.legacyKey && legacy.get(taskId, sug.legacyKey)) continue;
       const d = sug.draft;
       const res = insert.run(randomUUID(), task.projectId, sug.source, taskId, sug.key, d.title, d.description, d.kind, JSON.stringify(d.acceptance), d.size, this.iso());
       added ||= Number(res.changes) > 0;
@@ -737,10 +751,17 @@ export class AssistantService {
     if (added) this.opts.store.appendEvent({ kind: "assistant.suggestions", source: "assistant", payload: { count: read.suggestions.length }, projectId: task.projectId, taskId });
     const rows = this.db.prepare("select * from assistant_drafts where source_task_id = ? order by created_at, rowid").all(taskId) as unknown as DraftRow[];
     const drafts = rows.map(draftView);
-    // A finding's draft was created under the key `finding:<index>`; the report links the two.
+    // Each finding links to the draft its suggested task became, under this result's key (or the
+    // older key form), so the report can jump to the card; never to another result's draft.
     const byKey = new Map(rows.map((r) => [r.source_key, r.id]));
+    const draftFor = new Map<number, string>();
+    for (const sug of read.suggestions) {
+      if (sug.findingIndex === undefined) continue;
+      const id = byKey.get(sug.key) ?? (sug.legacyKey ? byKey.get(sug.legacyKey) : undefined);
+      if (id) draftFor.set(sug.findingIndex, id);
+    }
     const findings = read.report.findings.map((f, i) => {
-      const draftId = byKey.get(`finding:${i}`);
+      const draftId = draftFor.get(i);
       return draftId ? { ...f, draftId } : f;
     });
     const completed = this.opts.autopilot?.completed(taskId) ?? null;

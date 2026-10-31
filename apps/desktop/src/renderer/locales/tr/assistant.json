@@ -186,6 +186,7 @@
     "admission_memory": "Yeni bir ajan başlatmaya yetecek boş bellek yok.",
     "assistant_draft_discarded": "Bu taslaktan vazgeçildi.",
     "assistant_draft_added": "Bu taslak zaten bir görev.",
+    "assistant_draft_adding": "Bu taslak şu anda zaten ekleniyor.",
     "assistant_draft_invalid": "Taslağı kontrol et: en fazla 120 baytlık tek satırlık bir başlık, en fazla 12 kısa ölçüt.",
     "assistant_draft_not_found": "Bu taslak artık yok.",
     "project_not_found": "Proje artık yok.",
