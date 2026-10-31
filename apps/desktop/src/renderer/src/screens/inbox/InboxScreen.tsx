@@ -98,8 +98,8 @@ function Approval({ q, p, task, answer }: { q: RequestView; p: Payload<"approval
           </>
         )}
         <dt>{t("detail.scope")}</dt>
-        <dd className="ib-scope">
-          <RiskBadge risk={risk} /> {t(`scope.${risk}`)} {p.network ? t("scope.network") : t("scope.noNetwork")}
+        <dd>
+          {t(`scope.${risk}`)} {p.network ? t("scope.network") : t("scope.noNetwork")}
         </dd>
         <dt>{t("detail.policy")}</dt>
         <dd>{p.policy ? t(`policy.${p.policy.replace(/\./g, "_")}`, { defaultValue: p.policy }) : t("policy.notAllowlisted")}</dd>
