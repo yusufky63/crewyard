@@ -354,9 +354,13 @@ async function runV1() {
       }
       if (req.method === "POST" && parts[2] === "abort") {
         log({ kind: "abort", session: s.id });
-        // The real server publishes the aborted turn's idle before it answers the abort request.
+        // The real server publishes the aborted turn's idle before it answers the abort request:
+        // POST /session/{id}/abort awaits SessionRunState.cancel, which ends the turn, and only then
+        // returns true (opencode v1.19.5, server/routes/instance/httpapi/handlers/session.ts and
+        // session/run-state.ts). The gap here is long enough that a client closing the server on
+        // that idle always loses the response.
         s.onAbort?.();
-        await sleep(20);
+        await sleep(1_500);
         return json(res, 200, true);
       }
     }

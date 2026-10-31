@@ -223,10 +223,14 @@ describe("OpenCode adapter against a fake opencode serve", () => {
   it("interrupts a running turn", async () => {
     const { adapter, req, logFile } = await setup("interrupt", "slow");
     const run = await adapter.start(req);
-    const events = await collect(adapter, run, async (ev) => {
-      if (ev.type === "message.delta") await adapter.interrupt(run);
+    let interrupted: Promise<void> | null = null;
+    const events = await collect(adapter, run, (ev) => {
+      if (ev.type === "message.delta") interrupted ??= adapter.interrupt(run);
     });
     expect(last(events)).toMatchObject({ type: "run.ended", reason: "interrupted" });
+    // The fake answers the abort 1.5 s after the idle that ends the run, as OpenCode 1.19.5 answers
+    // only once the turn is over; closing the server on that idle used to reset the connection.
+    await expect(interrupted).resolves.toBeUndefined();
     expect((await readLog(logFile)).some((l) => l.kind === "abort")).toBe(true);
     expect(await gone(run.pid)).toBe(true);
   });
