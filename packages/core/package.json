@@ -2,6 +2,7 @@
   "name": "@crewyard/core",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "Domain types, event model, adapter contract and state derivation. Pure, no IO.",
   "exports": {

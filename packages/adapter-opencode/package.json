@@ -2,6 +2,7 @@
   "name": "@crewyard/adapter-opencode",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "OpenCode through opencode serve (HTTP + SSE).",
   "exports": {

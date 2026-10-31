@@ -2,6 +2,7 @@
   "name": "@crewyard/adapter-codex",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "Codex through the codex app-server JSON-RPC protocol.",
   "exports": {

@@ -2,6 +2,7 @@
   "name": "@crewyard/desktop",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "Electron app: main process, preload bridge and React renderer.",
   "main": "./out/main/index.js",

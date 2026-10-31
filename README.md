@@ -1,5 +1,7 @@
 # Crewyard
 
+License: [MIT](LICENSE) · [Contributing](CONTRIBUTING.md) · [Security policy](SECURITY.md)
+
 A local, Windows-first desktop app that runs and supervises coding agents (Claude Code, Codex, Gemini CLI, OpenCode) across several of your own accounts and API keys. It proposes a crew for each task, waits for your approval, watches limits and spend, hands work to a backup agent when you allow it, and keeps GitHub under your control.
 
 Status: pre-release. It is built and tested on Windows 11. Linux and macOS are prepared for but not shipped. v0.1.0 is an unsigned pre-release under this repository's GitHub releases: Windows SmartScreen warns about an unknown publisher, and that build never checks for updates (PLAN.md §17).
@@ -142,7 +144,9 @@ The running app also refreshes it from models.dev once a day. Providers → Vers
 
 ## Licence
 
-This is a private repository with no open-source licence; all rights are reserved. Third-party material and its licences are listed in [NOTICE](NOTICE).
+Crewyard is released under the [MIT License](LICENSE), Copyright (c) 2026 Yusuf. Third-party material and its licences are listed in [NOTICE](NOTICE), which also repeats the MIT text because the installer ships it as `NOTICE.txt`, next to `THIRD-PARTY-LICENSES.txt` with every bundled npm package.
+
+Contributions are accepted under the same licence; [CONTRIBUTING.md](CONTRIBUTING.md) has the rules. Report a vulnerability privately as [SECURITY.md](SECURITY.md) describes, never in a public issue.
 
 
 ## Building the Windows installer

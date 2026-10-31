@@ -2,6 +2,7 @@
   "name": "@crewyard/adapter-fake",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "Scripted adapter for tests and UI development.",
   "exports": {

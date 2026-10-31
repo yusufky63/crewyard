@@ -2,6 +2,7 @@
   "name": "@crewyard/adapter-claude",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "Claude Code through the Claude Agent SDK.",
   "exports": {
