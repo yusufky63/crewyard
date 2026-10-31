@@ -48,7 +48,24 @@ export function AgentsStep() {
           <RunnerRow key={r.runner} {...r} />
         ))}
       </div>
+      <BridgeRow />
     </>
+  );
+}
+
+/** The project bridge (docs/adr/0015): off unless you tick it; changeable later in Settings. */
+function BridgeRow() {
+  const { t } = useTranslation("setup");
+  const d = useDraft();
+  return (
+    <div className="check-list">
+      <div className="cl cl-bridge">
+        <CheckBox checked={d.bridgeInstructions} onChange={(v) => d.set({ bridgeInstructions: v })} label={t("agents.bridge")} />
+        <span>{t("agents.bridge")}</span>
+        <span className="muted">{t("agents.bridgeHint")}</span>
+        <span className="cl-act" />
+      </div>
+    </div>
   );
 }
 

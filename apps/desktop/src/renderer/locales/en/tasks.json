@@ -671,5 +671,16 @@
     "outcome": { "pending": "switching", "completed": "continued", "failed": "switch failed, waits for you" },
     "proposal": "Same-provider accounts may take over",
     "proposalHint": "On a limit, an empty credit or the key's spend cap, the next account of the same provider that passes the checks continues this task."
+  },
+  "agentFiles": {
+    "title": "Instructions and skills each step reads",
+    "project": "project: {{list}}",
+    "bridged": "bridged: {{list}}",
+    "stale": "{{name}} (changed since the copy)",
+    "shared": {
+      "instructions": "your instructions: {{list}}",
+      "skill": "skills: {{list}}",
+      "command": "commands: {{list}}"
+    }
   }
 }

@@ -28,7 +28,8 @@
     "mcp": "MCP servers",
     "fallback": "Fallback",
     "updates": "Updates",
-    "roles": "Roles"
+    "roles": "Roles",
+    "agentfiles": "Instructions and skills"
   },
   "on": "On",
   "off": "Off",
@@ -410,6 +411,131 @@
       "config_invalid": "project.json could not be used, so its customRoles are not used either. {{detail}}",
       "step_invalid": "customRoles in project.json is invalid, so none of it is used: {{detail}}",
       "step_unknown_role": "customRoles lists {{role}}, which has no usable role file."
+    }
+  },
+  "agentfiles": {
+    "title": "Your agent files",
+    "hint": "Instruction files, skills, commands and subagents you wrote for Claude Code, Codex, Gemini CLI, OpenCode, Cursor, Windsurf, Copilot and Cline, found in their usual places. Each profile runs in a folder of its own, so none of this reaches a run until you share it. Sharing copies the files into the profile folder; it never links them and never changes the originals.",
+    "rescan": "Look again",
+    "trust": "These files are instructions, not permissions. A copy never grants a tool, an approval, a command or more spend: pre-approved tools, hooks and a model of its own are taken out of every copy, and settings files, keys and sign-ins are never opened.",
+    "found_one": "Found {{count}} file or folder in {{places}} places under",
+    "found_other": "Found {{count}} files and folders in {{places}} places under",
+    "skippedTotal_one": "{{count}} not read (a key or settings file, a link or over the size cap)",
+    "skippedTotal_other": "{{count}} not read (keys or settings files, links or over the size cap)",
+    "scanFailed": "Could not read the folders. Look again in a moment.",
+    "foundLabel": "Found files by tool",
+    "empty": "Nothing found in the usual places. Claude Code keeps your files in .claude, Codex in .codex, Gemini CLI in .gemini, OpenCode in .config/opencode, and skills for several tools in .agents/skills under your home folder.",
+    "tool": {
+      "claude": "Claude Code",
+      "codex": "Codex",
+      "gemini": "Gemini CLI",
+      "opencode": "OpenCode",
+      "agents": "AGENTS.md and .agents",
+      "cursor": "Cursor",
+      "windsurf": "Windsurf",
+      "copilot": "GitHub Copilot",
+      "cline": "Cline"
+    },
+    "kind": {
+      "instructions": "Instructions",
+      "skill": "Skill",
+      "command": "Command",
+      "agent": "Subagent"
+    },
+    "count": {
+      "instructions_one": "{{count}} instruction file",
+      "instructions_other": "{{count}} instruction files",
+      "skill_one": "{{count}} skill",
+      "skill_other": "{{count}} skills",
+      "command_one": "{{count}} command",
+      "command_other": "{{count}} commands",
+      "agent_one": "{{count}} subagent",
+      "agent_other": "{{count}} subagents"
+    },
+    "scope": {
+      "user": "Yours",
+      "project": "This project"
+    },
+    "files": "{{count}} files, {{size}}",
+    "flag": {
+      "scripts_one": "Ships {{count}} script: {{list}}. Copied only if you tick it.",
+      "scripts_other": "Ships {{count}} scripts: {{list}}. Copied only if you tick it.",
+      "shell": "Runs a shell command when used. Copied only if you tick it.",
+      "stripped": "A copy leaves out: {{keys}}.",
+      "imports": "Imports other files that a copy does not bring along: {{list}}.",
+      "capped": "Larger than a copy may be (5 MB, 200 files, 4 folders deep), so it cannot be shared.",
+      "skipped_one": "{{count}} file inside was not read: a key, a settings file or a link.",
+      "skipped_other": "{{count}} files inside were not read: keys, settings files or links."
+    },
+    "canShare": "Can be shared with {{runners}}.",
+    "agentNote": "Not shared: Crewyard runs every agent without subagents, because their work would bypass the crew's plan, approvals and spend caps.",
+    "projectNote": "Read from the project by its own tool. To offer it to the other runners, use the bridge below.",
+    "notShareable": "No runner can use this kind of file from its config folder.",
+    "preview": "Preview",
+    "hidePreview": "Hide preview",
+    "previewLabel": "Start of {{name}}",
+    "previewCut": "Only the start is shown.",
+    "emptyFile": "(empty)",
+    "shareOpen": "Share",
+    "shareTitle": "Share {{name}}",
+    "runner": "Runner",
+    "target": "Profiles",
+    "allProfiles": "Every {{runner}} profile, also ones added later",
+    "copiedAsIs": "Copied as it is, minus the keys listed above.",
+    "converted": {
+      "instructions": "Added to the profile's own memory file for {{runner}}, with a line naming where it came from.",
+      "command": "Converted to the command format {{runner}} reads: the description and the prompt, with the arguments placeholder.",
+      "skill": "Copied as a skill folder for {{runner}}."
+    },
+    "noProfiles": "There is no {{runner}} profile yet. The share waits and copies when you add one and press Sync.",
+    "allowScripts": "Copy its scripts too. I have read them; they run only when the agent uses this, and every command still asks for approval.",
+    "share": "Share and copy",
+    "sharedTitle": "Shared",
+    "syncAll_one": "Sync {{count}} copy",
+    "syncAll_other": "Sync {{count}} copies",
+    "allCurrent": "All up to date",
+    "noShares": "Nothing shared yet.",
+    "copiesLabel": "Copies of {{name}}",
+    "noTargets": "No profile to copy to yet.",
+    "copiedAt": "copied {{when}}",
+    "scriptsAllowed": "You allowed its scripts.",
+    "state": {
+      "current": "Up to date",
+      "outdated": "Changed since the copy",
+      "missing": "Not copied",
+      "modified": "Changed in the profile",
+      "source_missing": "Original is gone"
+    },
+    "sync": "Sync",
+    "unshare": "Stop sharing",
+    "unshareConfirm": "Remove the copies of {{name}} that Crewyard made? The original stays.",
+    "error": {
+      "unknown_item": "Look again first; this file is not in the last list.",
+      "unknown_share": "This share no longer exists.",
+      "unknown_profile": "That profile is gone or runs another runner.",
+      "unknown_runner": "Unknown runner.",
+      "unknown_project": "The project is gone.",
+      "not_shareable": "Project files are not copied; use the bridge.",
+      "not_supported": "This runner cannot use this kind of file.",
+      "subagents_off": "Subagents are not shared.",
+      "too_large": "Too large to copy.",
+      "bad_name": "The name cannot be a file name on every system.",
+      "scripts_need_tick": "It runs scripts or shell commands; tick the box to copy it.",
+      "dest_exists": "The profile already has a file there that Crewyard did not write. It was left as it is.",
+      "source_missing": "The original is gone.",
+      "unreadable": "The original could not be read.",
+      "write_failed": "Could not write into the profile folder."
+    },
+    "bridgeTitle": "Offer this project's instruction files to every runner",
+    "bridgeHint": "Off by default. A runner that does not read a file by itself gets it through its own setting at the start of each run. The files stay as they are; nothing is written into the project.",
+    "bridgeNone": "This project has no instruction file another runner could take (AGENTS.md, CLAUDE.md, GEMINI.md, .github/copilot-instructions.md, .cursorrules, .windsurfrules).",
+    "bridgeNoProject": "Open a project to offer its instruction files to the other runners.",
+    "how": {
+      "native": "reads it",
+      "prompt": "in its system prompt",
+      "setting": "through its settings",
+      "fallback": "where a folder has no AGENTS.md",
+      "none": "cannot take a path"
     }
   }
 }

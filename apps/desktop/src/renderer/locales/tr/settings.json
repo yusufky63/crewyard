@@ -28,7 +28,8 @@
     "mcp": "MCP sunucuları",
     "fallback": "Yedeğe geçiş",
     "updates": "Güncellemeler",
-    "roles": "Roller"
+    "roles": "Roller",
+    "agentfiles": "Talimatlar ve skill'ler"
   },
   "on": "Açık",
   "off": "Kapalı",
@@ -410,6 +411,131 @@
       "config_invalid": "project.json kullanılamadı, bu yüzden içindeki customRoles da kullanılmıyor. {{detail}}",
       "step_invalid": "project.json içindeki customRoles geçersiz olduğu için hiçbiri kullanılmıyor: {{detail}}",
       "step_unknown_role": "customRoles, kullanılabilir bir rol dosyası olmayan {{role}} rolünü listeliyor."
+    }
+  },
+  "agentfiles": {
+    "title": "Kendi ajan dosyalarınız",
+    "hint": "Claude Code, Codex, Gemini CLI, OpenCode, Cursor, Windsurf, Copilot ve Cline için yazdığınız talimat dosyaları, skill'ler, komutlar ve alt ajanlar; her biri her zamanki yerinde bulunur. Her profil kendi klasöründe çalıştığı için bunların hiçbiri siz paylaşmadan bir çalışmaya ulaşmaz. Paylaşınca dosyalar profil klasörüne kopyalanır; bağlantı kurulmaz, asıl dosyalara dokunulmaz.",
+    "rescan": "Yeniden bak",
+    "trust": "Bu dosyalar talimattır, izin değildir. Bir kopya hiçbir araca, onaya, komuta ya da ek harcamaya izin vermez: önceden onaylanmış araçlar, hook'lar ve kendi model seçimi her kopyadan çıkarılır; ayar dosyaları, anahtarlar ve oturum bilgileri hiç açılmaz.",
+    "found_one": "Şu klasörün altında {{places}} yerde {{count}} dosya ya da klasör bulundu:",
+    "found_other": "Şu klasörün altında {{places}} yerde {{count}} dosya ve klasör bulundu:",
+    "skippedTotal_one": "{{count}} tanesi okunmadı (anahtar ya da ayar dosyası, bağlantı veya boyut sınırının üstünde)",
+    "skippedTotal_other": "{{count}} tanesi okunmadı (anahtar ya da ayar dosyaları, bağlantılar veya boyut sınırının üstünde)",
+    "scanFailed": "Klasörler okunamadı. Birazdan yeniden bakın.",
+    "foundLabel": "Araca göre bulunan dosyalar",
+    "empty": "Her zamanki yerlerde bir şey bulunamadı. Ev klasörünüzde Claude Code dosyalarını .claude, Codex .codex, Gemini CLI .gemini, OpenCode .config/opencode içinde tutar; birden çok aracın skill'leri de .agents/skills içindedir.",
+    "tool": {
+      "claude": "Claude Code",
+      "codex": "Codex",
+      "gemini": "Gemini CLI",
+      "opencode": "OpenCode",
+      "agents": "AGENTS.md ve .agents",
+      "cursor": "Cursor",
+      "windsurf": "Windsurf",
+      "copilot": "GitHub Copilot",
+      "cline": "Cline"
+    },
+    "kind": {
+      "instructions": "Talimat",
+      "skill": "Skill",
+      "command": "Komut",
+      "agent": "Alt ajan"
+    },
+    "count": {
+      "instructions_one": "{{count}} talimat dosyası",
+      "instructions_other": "{{count}} talimat dosyası",
+      "skill_one": "{{count}} skill",
+      "skill_other": "{{count}} skill",
+      "command_one": "{{count}} komut",
+      "command_other": "{{count}} komut",
+      "agent_one": "{{count}} alt ajan",
+      "agent_other": "{{count}} alt ajan"
+    },
+    "scope": {
+      "user": "Sizin",
+      "project": "Bu proje"
+    },
+    "files": "{{count}} dosya, {{size}}",
+    "flag": {
+      "scripts_one": "İçinde {{count}} betik var: {{list}}. Ancak kutuyu işaretlerseniz kopyalanır.",
+      "scripts_other": "İçinde {{count}} betik var: {{list}}. Ancak kutuyu işaretlerseniz kopyalanır.",
+      "shell": "Kullanıldığında bir kabuk komutu çalıştırıyor. Ancak kutuyu işaretlerseniz kopyalanır.",
+      "stripped": "Kopyaya alınmayanlar: {{keys}}.",
+      "imports": "Kopyanın getirmediği başka dosyaları içe aktarıyor: {{list}}.",
+      "capped": "Bir kopyanın sınırından büyük (5 MB, 200 dosya, 4 klasör derinliği); bu yüzden paylaşılamaz.",
+      "skipped_one": "İçindeki {{count}} dosya okunmadı: bir anahtar, ayar dosyası ya da bağlantı.",
+      "skipped_other": "İçindeki {{count}} dosya okunmadı: anahtarlar, ayar dosyaları ya da bağlantılar."
+    },
+    "canShare": "Şunlarla paylaşılabilir: {{runners}}.",
+    "agentNote": "Paylaşılmaz: Crewyard her ajanı alt ajansız çalıştırır, çünkü onların işi ekibin planını, onayları ve harcama sınırlarını atlar.",
+    "projectNote": "Projeden kendi aracı okur. Diğer çalıştırıcılara sunmak için aşağıdaki köprüyü kullanın.",
+    "notShareable": "Hiçbir çalıştırıcı bu tür dosyayı kendi ayar klasöründen kullanamıyor.",
+    "preview": "Önizle",
+    "hidePreview": "Önizlemeyi gizle",
+    "previewLabel": "{{name}} dosyasının başı",
+    "previewCut": "Yalnızca başı gösteriliyor.",
+    "emptyFile": "(boş)",
+    "shareOpen": "Paylaş",
+    "shareTitle": "{{name}} paylaşımı",
+    "runner": "Çalıştırıcı",
+    "target": "Profiller",
+    "allProfiles": "Tüm {{runner}} profilleri, sonradan eklenenler de",
+    "copiedAsIs": "Yukarıda sayılan anahtarlar dışında olduğu gibi kopyalanır.",
+    "converted": {
+      "instructions": "{{runner}} profilinin kendi bellek dosyasına, nereden geldiğini yazan bir satırla eklenir.",
+      "command": "{{runner}} uygulamasının okuduğu komut biçimine çevrilir: açıklama ve istem, argüman yer tutucusuyla birlikte.",
+      "skill": "{{runner}} için skill klasörü olarak kopyalanır."
+    },
+    "noProfiles": "Henüz {{runner}} profili yok. Paylaşım bekler; profil ekleyip Eşitle'ye bastığınızda kopyalanır.",
+    "allowScripts": "Betiklerini de kopyala. Onları okudum; yalnızca ajan bunu kullandığında çalışırlar ve her komut yine onay ister.",
+    "share": "Paylaş ve kopyala",
+    "sharedTitle": "Paylaşılanlar",
+    "syncAll_one": "{{count}} kopyayı eşitle",
+    "syncAll_other": "{{count}} kopyayı eşitle",
+    "allCurrent": "Hepsi güncel",
+    "noShares": "Henüz paylaşılan bir şey yok.",
+    "copiesLabel": "{{name}} kopyaları",
+    "noTargets": "Kopyalanacak profil henüz yok.",
+    "copiedAt": "{{when}} kopyalandı",
+    "scriptsAllowed": "Betiklerine izin verdiniz.",
+    "state": {
+      "current": "Güncel",
+      "outdated": "Kopyadan sonra değişti",
+      "missing": "Kopyalanmadı",
+      "modified": "Profilde değiştirilmiş",
+      "source_missing": "Asıl dosya yok"
+    },
+    "sync": "Eşitle",
+    "unshare": "Paylaşmayı bırak",
+    "unshareConfirm": "Crewyard'ın yaptığı {{name}} kopyaları silinsin mi? Asıl dosya kalır.",
+    "error": {
+      "unknown_item": "Önce yeniden bakın; bu dosya son listede yok.",
+      "unknown_share": "Bu paylaşım artık yok.",
+      "unknown_profile": "O profil silinmiş ya da başka bir çalıştırıcı kullanıyor.",
+      "unknown_runner": "Bilinmeyen çalıştırıcı.",
+      "unknown_project": "Proje artık yok.",
+      "not_shareable": "Proje dosyaları kopyalanmaz; köprüyü kullanın.",
+      "not_supported": "Bu çalıştırıcı bu tür dosyayı kullanamıyor.",
+      "subagents_off": "Alt ajanlar paylaşılmaz.",
+      "too_large": "Kopyalanamayacak kadar büyük.",
+      "bad_name": "Bu ad her sistemde dosya adı olamıyor.",
+      "scripts_need_tick": "Betik ya da kabuk komutu çalıştırıyor; kopyalamak için kutuyu işaretleyin.",
+      "dest_exists": "Profilde orada Crewyard'ın yazmadığı bir dosya zaten var. Olduğu gibi bırakıldı.",
+      "source_missing": "Asıl dosya yok.",
+      "unreadable": "Asıl dosya okunamadı.",
+      "write_failed": "Profil klasörüne yazılamadı."
+    },
+    "bridgeTitle": "Bu projenin talimat dosyalarını tüm çalıştırıcılara sun",
+    "bridgeHint": "Varsayılan olarak kapalı. Bir dosyayı kendiliğinden okumayan çalıştırıcı, her çalışmanın başında onu kendi ayarı üzerinden alır. Dosyalar olduğu gibi kalır; projeye hiçbir şey yazılmaz.",
+    "bridgeNone": "Bu projede başka bir çalıştırıcının alabileceği bir talimat dosyası yok (AGENTS.md, CLAUDE.md, GEMINI.md, .github/copilot-instructions.md, .cursorrules, .windsurfrules).",
+    "bridgeNoProject": "Talimat dosyalarını diğer çalıştırıcılara sunmak için bir proje açın.",
+    "how": {
+      "native": "kendisi okur",
+      "prompt": "sistem isteminde",
+      "setting": "kendi ayarıyla",
+      "fallback": "AGENTS.md olmayan klasörlerde",
+      "none": "yol alamıyor"
     }
   }
 }

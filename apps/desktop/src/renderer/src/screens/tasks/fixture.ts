@@ -477,6 +477,15 @@ export function fixtureCall<M extends IpcMethod>(method: M, params: IpcParams<M>
     case "github.removeReviewComment":
     case "github.sendReview":
       return reviewFixture(method, params, task) as IpcResult<M>;
+    case "agentfiles.forSteps":
+      // Screenshot data: the first profile reads CLAUDE.md and gets AGENTS.md through the bridge (docs/adr/0015).
+      return (params as { profileIds: string[] }).profileIds.map((profileId, i) => ({
+        profileId,
+        runner: null,
+        project: i === 0 ? ["CLAUDE.md"] : ["AGENTS.md"],
+        bridged: i === 0 ? ["AGENTS.md"] : ["CLAUDE.md"],
+        shared: i === 0 ? [{ kind: "skill", name: "release-notes", state: "current" }] : [],
+      })) as IpcResult<M>;
     default:
       return task(p.taskId) as IpcResult<M>;
   }

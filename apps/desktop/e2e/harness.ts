@@ -61,7 +61,8 @@ function killTree(pid: number | undefined): void {
   }
 }
 
-export async function launch(): Promise<Harness> {
+/** `env` adds variables for this launch, such as CREWYARD_E2E_HOME for agent file discovery. */
+export async function launch(opts: { env?: Record<string, string> } = {}): Promise<Harness> {
   // The "shoot-" prefix also lets the machine's scheduled headless cleanup sweep a crashed run.
   const root = mkdtempSync(join(tmpdir(), "shoot-crewyard-e2e "));
   const profile = join(root, "profile");
@@ -77,7 +78,7 @@ export async function launch(): Promise<Harness> {
     app = await electron.launch({
       executablePath: electronExe,
       args: [appDir],
-      env: { ...env, CREWYARD_E2E: "1", CREWYARD_E2E_SCRIPT: script, CREWYARD_E2E_PROFILE: profile },
+      env: { ...env, ...opts.env, CREWYARD_E2E: "1", CREWYARD_E2E_SCRIPT: script, CREWYARD_E2E_PROFILE: profile },
       timeout: 60_000,
     });
     const page = await app.firstWindow();

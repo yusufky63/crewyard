@@ -46,6 +46,8 @@ export interface Draft {
   loop: ProjectConfig["loop"];
   gitInit: boolean;
   createRepo: boolean;
+  /** Offer the project's instruction files to every runner (docs/adr/0015); saved in Crewyard's database, not project.json. */
+  bridgeInstructions: boolean;
   repoName: string;
   ci: boolean;
 }
@@ -74,6 +76,7 @@ const blank = (): Draft => {
     loop: defaultLoop(),
     gitInit: false,
     createRepo: false,
+    bridgeInstructions: false,
     repoName: "",
     ci: false,
   };

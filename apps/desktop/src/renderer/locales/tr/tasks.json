@@ -671,5 +671,16 @@
     "outcome": { "pending": "geçiliyor", "completed": "devam etti", "failed": "geçiş olmadı, sizi bekliyor" },
     "proposal": "Aynı sağlayıcının diğer hesapları devralabilir",
     "proposalHint": "Limit dolunca, kredi bitince ya da anahtarın harcama sınırı dolunca, kontrollerden geçen sıradaki hesap bu görevi sürdürür."
+  },
+  "agentFiles": {
+    "title": "Her adımın okuduğu talimatlar ve skill'ler",
+    "project": "proje: {{list}}",
+    "bridged": "köprüyle: {{list}}",
+    "stale": "{{name}} (kopyadan sonra değişti)",
+    "shared": {
+      "instructions": "talimatlarınız: {{list}}",
+      "skill": "skill'ler: {{list}}",
+      "command": "komutlar: {{list}}"
+    }
   }
 }

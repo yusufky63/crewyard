@@ -6,7 +6,7 @@ import { Button } from "@crewyard/ui";
 import type { BackupEntry } from "@crewyard/core";
 import { call, useDaemon } from "../../ipc.ts";
 import { Modal } from "../providers/Modal.tsx";
-import { errorCode, exportName, formatBytes } from "./model.ts";
+import { errorCode, exportName, formatBytes, SECTIONS } from "./model.ts";
 import { Fact, Row, Section } from "./parts.tsx";
 
 type Outcome = { kind: "ok" | "error" | "busy"; text: string } | null;
@@ -109,7 +109,7 @@ export function DataSection() {
   const busy = outcome?.kind === "busy" || restoring !== null;
   const blocked = (d?.activeRuns ?? 0) > 0;
   return (
-    <Section id="data" index={8} title={t("sections.data")}>
+    <Section id="data" index={SECTIONS.indexOf("data") + 1} title={t("sections.data")}>
       {d && (
         <Fact
           label={t("data.db")}
@@ -186,7 +186,7 @@ export function AboutSection() {
     </Button>
   );
   return (
-    <Section id="about" index={10} title={t("sections.about")}>
+    <Section id="about" index={SECTIONS.indexOf("about") + 1} title={t("sections.about")}>
       {a && (
         <>
           <Fact label={t("about.version")} value={`${a.version} · ${a.packaged ? t("about.packaged") : t("about.development")}`} />

@@ -4,6 +4,7 @@ import type { BuiltinRoleId, CandidateView, CrewEdit, CrewMemberView, FallbackMo
 import { Button, Label, TickMeter } from "@crewyard/ui";
 import { ProvBadge } from "../providers/shared.tsx";
 import { useAccountSwitchOn } from "./AccountSwitch.tsx";
+import { AgentFilesNotes } from "./AgentFilesNotes.tsx";
 import { AttachmentList } from "./Attachments.tsx";
 import { act, useErrorText } from "./data.ts";
 import { IssueNote } from "./IssuePicker.tsx";
@@ -267,6 +268,7 @@ export function CrewProposal({ task, onClose }: { task: TaskDetail; onClose: () 
           <RoleTile key={m.id} index={i} member={m} chosen={chosenOf(m)} budget={task.budgetUsd} hideReasons={hideReasons} onSwap={(profileId) => setEdits((e) => ({ ...e, [m.id]: profileId }))} />
         ))}
       </div>
+      <AgentFilesNotes projectId={task.projectId} members={members} chosenOf={chosenOf} />
       {task.bestOfGroup && <Variants task={task} picks={picks} onPick={(i, id) => setPicks((p) => p.map((x, j) => (j === i ? id : x)))} />}
       <div className="tk-fallback">
         <Label>{f.t("proposal.ifLimit")}</Label>
