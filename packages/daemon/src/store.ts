@@ -966,8 +966,9 @@ export const MIGRATIONS: Migration[] = [
   // Orchestra goals (docs/adr/0019): your goal, its plan revisions, the ordinary tasks they became
   // with their dependencies, merges into the goal branch and the decisions the scheduler leaves to
   // you. No status column anywhere: plan and goal status are derived (D5). Each task's share of the
-  // goal budget is its own tasks.budget_usd. The settings row turns Orchestra on by default; an
-  // existing row (your choice) is left as it is.
+  // goal budget is its own tasks.budget_usd. No orchestra.enabled row is written: a missing row
+  // reads as ORCHESTRA_ENABLED_DEFAULT in core, so the default stays a code constant the rollout
+  // can flip (design §6.5), and a stored row always means you chose it.
   {
     id: "goals",
     sql: `create table if not exists goals (
@@ -1060,8 +1061,7 @@ export const MIGRATIONS: Migration[] = [
      answered_at text,
      answer text
    );
-   create index if not exists goal_decisions_open on goal_decisions(goal_id, answered_at);
-   insert or ignore into settings (key, value) values ('orchestra.enabled', 'true');`,
+   create index if not exists goal_decisions_open on goal_decisions(goal_id, answered_at);`,
   },
 ];
 

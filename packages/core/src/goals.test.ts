@@ -206,6 +206,42 @@ describe("parseGoalTask (Add task and tile edits)", () => {
     expect(parseGoalTask(task("docs", { paths: ["C:/x"] }), others)).toMatchObject({ ok: false });
     expect(parseGoalTask({ ...task("docs"), run: "now" }, others)).toMatchObject({ ok: false, error: 'task has an unknown field "run"' });
   });
+
+  // A GoalTaskDraft as `Add task` sends it, with the key the daemon assigns.
+  const draft = { key: "ek-1", title: "Kullanım kılavuzunu güncelle", kind: "code", mode: "solo" };
+
+  it("accepts a task you write with only title, kind and mode, filling the defaults", () => {
+    expect(parseGoalTask(draft, new Set(["server"]), "task", { origin: "user" })).toEqual({
+      ok: true,
+      value: { ...draft, size: "M", priority: "medium", description: "", acceptance: [], basis: "", reason: "", dependsOn: [], paths: [] },
+    });
+    const full = { ...draft, size: "S", priority: "high", description: "Yeni adımları anlat.", acceptance: ["Kılavuz yeni akışı anlatıyor"], paths: ["docs/user guide/"], dependsOn: ["server"] };
+    expect(parseGoalTask(full, new Set(["server"]), "task", { origin: "user" })).toMatchObject({ ok: true, value: { size: "S", priority: "high", paths: ["docs/user guide/"], dependsOn: ["server"] } });
+  });
+
+  it("still requires every field from the planner, and every bound from you", () => {
+    expect(parseGoalTask(draft, new Set())).toMatchObject({ ok: false, error: "task.size must be one of S, M, L" });
+    expect(parseGoalTask({ ...task("a"), acceptance: [] }, new Set())).toMatchObject({ ok: false, error: "task.acceptance needs at least 1 line" });
+    expect(parseGoalTask({ ...task("a"), paths: [] }, new Set())).toMatchObject({ ok: false, error: "task.paths must list at least one path for a code task" });
+    expect(parseGoalTask({ ...task("a"), reason: "" }, new Set())).toMatchObject({ ok: false, error: "task.reason must not be empty" });
+    const user = (over: Record<string, unknown>) => parseGoalTask({ ...draft, ...over }, new Set(), "task", { origin: "user" });
+    expect(user({ title: undefined })).toMatchObject({ ok: false, error: "task.title is required" });
+    expect(user({ paths: ["../dışarı"] })).toMatchObject({ ok: false });
+    expect(user({ description: "ş".repeat(2_001) })).toMatchObject({ ok: false, error: "task.description is 4002 bytes; the limit is 4000" });
+    expect(user({ acceptance: Array.from({ length: 13 }, (_, i) => `satır ${i}`) })).toMatchObject({ ok: false });
+    expect(user({ dependsOn: ["ghost"] })).toMatchObject({ ok: false, error: expect.stringContaining('"ghost"') });
+    expect(user({ spawn: true })).toMatchObject({ ok: false, error: 'task has an unknown field "spawn"' });
+  });
+
+  it("orders a writing task you added with no paths after the other writing tasks", () => {
+    const added = parseGoalTask(draft, new Set(["server"]), "task", { origin: "user" });
+    if (!added.ok) throw new Error(added.error);
+    const edges = overlapPairs([
+      { id: "server", position: 0, writes: true, paths: ["src/server/"], dependsOn: [] },
+      { id: added.value.key, position: 1, writes: true, paths: added.value.paths, dependsOn: added.value.dependsOn },
+    ]);
+    expect(edges).toEqual([{ taskId: "ek-1", dependsOn: "server", cause: "no_paths" }]);
+  });
 });
 
 describe("notes and report excerpts", () => {
@@ -290,6 +326,16 @@ describe("task graph", () => {
     expect(skippedDependency(graph, new Set(["01", "02", "04"]))).toEqual({ taskId: "04", dependsOn: "03" });
     expect(skippedDependency(graph, new Set(["01", "03"]))).toBeNull();
   });
+
+  it("does not cascade a skip, or refuse approval, through an overlap-only ordering, but keeps it for loops and steps", () => {
+    // 02 only planned to touch the same files as 01 (overlap); 03 builds on 01's work (plan).
+    const g2 = [node("01"), { id: "02", dependsOn: ["01"], overlap: ["01"] }, node("03", ["01"])];
+    expect(goalDependents(g2, "01")).toEqual(["03"]);
+    expect(skippedDependency(g2, new Set(["02"]))).toBeNull();
+    expect(skippedDependency(g2, new Set(["02", "03"]))).toEqual({ taskId: "03", dependsOn: "01" });
+    expect(wouldCycle(g2, "01", "02")).toEqual(["01", "02", "01"]);
+    expect(layers(g2)).toEqual([["01"], ["02", "03"]]);
+  });
 });
 
 // ---------------------------------------------------------------- readiness (design §4.6)
@@ -356,6 +402,30 @@ describe("readySet and holds", () => {
     const first = facts("01", { released: true, status: "running" });
     const next = facts("02", { deps: [dep("01", "overlap")] });
     expect(prerequisiteHold(next, [first, next])?.code).toBe("goal.waits_overlap");
+  });
+
+  it("drops an overlap ordering on a task that left the goal, but still holds on a failed or cancelled one", () => {
+    const next = facts("02", { deps: [dep("01", "overlap")] });
+    for (const over of [{ accepted: false }, { discarded: true }] as Array<Partial<GoalTaskFacts>>) {
+      const pre = facts("01", over);
+      expect(readySet([pre, next])).toEqual(["02"]);
+      expect(prerequisiteHold(next, [pre, next])).toBeNull();
+    }
+    expect(readySet([next])).toEqual(["02"]);
+    expect(prerequisiteHold(next, [facts("01", { released: true, status: "failed" }), next])?.code).toBe("goal.prereq_failed");
+    expect(prerequisiteHold(next, [facts("01", { released: true, status: "cancelled" }), next])?.code).toBe("goal.prereq_cancelled");
+    // A plan edge on a skipped task still holds next to the dropped ordering.
+    const planned = facts("03", { deps: [dep("01", "overlap"), dep("00")] });
+    expect(prerequisiteHold(planned, [facts("00", { accepted: false }), facts("01", { accepted: false }), planned])).toMatchObject({ code: "goal.prereq_skipped", params: { taskId: "00" } });
+  });
+
+  it("holds only the dependents of a failed task; independent tasks go on", () => {
+    const failed = facts("01", { released: true, status: "failed" });
+    const dependent = facts("02", { deps: [dep("01")] });
+    const independent = facts("03");
+    expect(readySet([failed, dependent, independent])).toEqual(["03"]);
+    expect(prerequisiteHold(dependent, [failed, dependent, independent])?.code).toBe("goal.prereq_failed");
+    expect(prerequisiteHold(independent, [failed, dependent, independent])).toBeNull();
   });
 
   it("leaves out released, discarded, skipped and undecided tasks, and orders by priority, fewer prerequisites, then position", () => {
@@ -584,6 +654,9 @@ describe("splitBudget", () => {
     expect(planningBudget(0.36, 0.5)).toBe(0.5);
     expect(planningBudget(0.01, null)).toBe(0.25);
     expect(planningBudget(null, 2)).toBe(0.25);
+    // A $0 per-task cap is a setting, not "no cap": the planning run gets $0 and asks before it spends.
+    expect(planningBudget(0.36, 0)).toBe(0);
+    expect(planningBudget(null, 0)).toBe(0);
   });
 
   it("checks the limits you set: a positive budget and 1 to 4 at once", () => {
@@ -621,7 +694,7 @@ describe("goalStopRule", () => {
 // ---------------------------------------------------------------- status (design §4.2)
 
 describe("derivePlanState", () => {
-  const p = { hasPlan: false, error: null, supersededAt: null, approvedAt: null, runs: [] as Array<{ endedAt: string | null }> };
+  const p = { hasPlan: false, error: null, supersededAt: null, approvedAt: null, runs: [] as Array<{ endedAt: string | null }>, taskCancelled: false };
   it("derives planning, failed, ready, approved and superseded from facts", () => {
     expect(derivePlanState(p)).toBe("planning");
     expect(derivePlanState({ ...p, runs: [{ endedAt: null }] })).toBe("planning");
@@ -632,6 +705,18 @@ describe("derivePlanState", () => {
     expect(derivePlanState({ ...p, hasPlan: true, approvedAt: "t" })).toBe("approved");
     expect(derivePlanState({ ...p, hasPlan: true, supersededAt: "t" })).toBe("superseded");
     expect(derivePlanState({ ...p, hasPlan: true, runs: null })).toBe("ready");
+  });
+
+  it("fails a planning task cancelled before its first run instead of planning for good", () => {
+    expect(derivePlanState({ ...p, taskCancelled: true })).toBe("failed");
+    expect(derivePlanState({ ...p, runs: null })).toBe("failed");
+    // The daemon sets the error when it cannot launch the planner (its profile went away).
+    expect(derivePlanState({ ...p, error: "the planner profile was removed" })).toBe("failed");
+  });
+
+  it("reads planning while the corrective turn runs, even with the first refusal's error stored", () => {
+    expect(derivePlanState({ ...p, error: "the plan has 15 tasks; the limit is 8", runs: [{ endedAt: "t" }, { endedAt: null }] })).toBe("planning");
+    expect(derivePlanState({ ...p, error: "the plan has 15 tasks; the limit is 8", runs: [{ endedAt: "t" }, { endedAt: "t2" }] })).toBe("failed");
   });
 });
 
@@ -649,6 +734,28 @@ describe("deriveGoalStatus", () => {
     ...over,
   });
   const joined = (id: string, deps: string[] = []) => facts(id, { released: true, status: "review", joined: true, deps: deps.map((d) => dep(d)) });
+
+  it("never reads a goal with no revision as finished or planning", () => {
+    expect(deriveGoalStatus(g({ latestPlan: null }))).toMatchObject({ status: "needs_you", reason: "plan_failed" });
+    expect(deriveGoalStatus(g({ latestPlan: null, stopped: true })).status).toBe("stopped");
+  });
+
+  it("needs you, never finished, when no counted task is left", () => {
+    const cancelled = (id: string, over: Partial<GoalTaskFacts> = {}) => facts(id, { released: true, status: "cancelled", ...over });
+    // No integration task, every accepted task cancelled: 0 of 0 is not done.
+    expect(deriveGoalStatus(g({ tasks: [cancelled("01", { writes: false })] }))).toMatchObject({ status: "needs_you", reason: "empty", total: 0 });
+    // Every writer left out of a goal with a branch: the last review would wait forever.
+    const integrations: Array<GoalStatusFacts["integration"]> = [{ status: "proposed", reviewPassed: false }, { status: "cancelled", reviewPassed: false }];
+    for (const integration of integrations) {
+      expect(deriveGoalStatus(g({ tasks: [cancelled("01")], integration }))).toMatchObject({ status: "needs_you", reason: "empty" });
+      const research = facts("02", { writes: false, released: true, status: "done" });
+      expect(deriveGoalStatus(g({ tasks: [cancelled("01"), facts("03", { discarded: true }), research], integration }))).toMatchObject({ status: "needs_you", reason: "empty", done: 1, total: 1 });
+    }
+  });
+
+  it("needs you when the last review was cancelled after every writer joined", () => {
+    expect(deriveGoalStatus(g({ tasks: [joined("01")], integration: { status: "cancelled", reviewPassed: false } }))).toMatchObject({ status: "needs_you", reason: "stuck" });
+  });
 
   it("goes stopped, planning, then the plan's own state first", () => {
     expect(deriveGoalStatus(g({ stopped: true, latestPlan: "planning" })).status).toBe("stopped");

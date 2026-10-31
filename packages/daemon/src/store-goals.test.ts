@@ -3,11 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
-import { GOAL_SETTINGS, ORCHESTRA_ENABLED_DEFAULT } from "@crewyard/core";
+import { GOAL_SETTINGS } from "@crewyard/core";
 import { applyMigrations, MIGRATIONS, Store } from "./store.ts";
 
-// The Orchestra migration (docs/adr/0019): self-contained, idempotent, and leaves your own
-// orchestra.enabled choice alone.
+// The Orchestra migration (docs/adr/0019): self-contained, idempotent, and writes no
+// orchestra.enabled row, so the default stays a code constant and a stored row is always yours.
 
 const temps: string[] = [];
 const stores: Store[] = [];
@@ -45,8 +45,9 @@ function seed(db: DatabaseSync): void {
 }
 
 describe("goals migration", () => {
-  it("is the last migration and applies twice cleanly", () => {
-    expect(MIGRATIONS.at(-1)?.id).toBe("goals");
+  it("exists once and applies twice cleanly", () => {
+    // Its position is not asserted: parallel sessions append migrations, and a merge only reorders them.
+    expect(MIGRATIONS.filter((m) => m.id === "goals")).toHaveLength(1);
     const path = file();
     stores.push(new Store(path));
     stores.splice(0).forEach((s) => s.close());
@@ -68,13 +69,13 @@ describe("goals migration", () => {
     expect((store.db.prepare("select title from goals where id = 'g1'").get() as { title: string }).title).toBe("Giriş sayfasına iki adımlı doğrulama ekle");
   });
 
-  it("turns Orchestra on by default, matching the core default, and keeps a value you set", () => {
+  it("writes no orchestra.enabled row and keeps a value you set when its SQL runs again", () => {
     const store = new Store(file());
     stores.push(store);
-    expect(JSON.parse(setting(store.db, GOAL_SETTINGS.enabled)!)).toBe(ORCHESTRA_ENABLED_DEFAULT);
-    store.db.prepare("update settings set value = 'false' where key = ?").run(GOAL_SETTINGS.enabled);
+    expect(setting(store.db, GOAL_SETTINGS.enabled)).toBeUndefined();
+    store.db.prepare("insert into settings (key, value) values (?, 'true')").run(GOAL_SETTINGS.enabled);
     store.db.exec(goals.sql);
-    expect(setting(store.db, GOAL_SETTINGS.enabled)).toBe("false");
+    expect(setting(store.db, GOAL_SETTINGS.enabled)).toBe("true");
   });
 
   it("enforces keys: one revision number per goal, one key per revision, one edge per pair, known tasks", () => {

@@ -12,7 +12,11 @@ import type { TaskStatus } from "./state.ts";
 // The planner's output is untrusted text: it is cleaned and capped here, refused rather than cut,
 // and shown as plain text.
 
-/** Every number a goal is held to (design §5.1). Each one has a test that proves it is enforced. */
+/**
+ * Every number a goal is held to (design §5.1). Each one a core function enforces has a test in
+ * goals.test.ts. `correctiveTurns`, `plannerTokensIn`/`Out` and `eventsPage` are only defined here;
+ * the daemon parts that enforce them (planner, preview, goal view) carry their tests.
+ */
 export const GOAL_LIMITS = {
   /** Tasks per goal: the default, and the hard maximum (the same as a crew's steps). */
   maxTasks: 8,
@@ -71,8 +75,12 @@ export const GOAL_SETTINGS = {
   introduced: (projectId: string) => `orchestra.introduced.${projectId}`,
 } as const;
 
-/** What a missing `orchestra.enabled` row means. The migration writes the same value. */
-export const ORCHESTRA_ENABLED_DEFAULT = true;
+/**
+ * What a missing `orchestra.enabled` row means; a row exists only once you flip the switch. It
+ * stays false until work item 6 (the project daily cap, which bounds goal spend, design §5.1) has
+ * merged: §6.5 lets the default turn on only then, and that merge flips this one constant.
+ */
+export const ORCHESTRA_ENABLED_DEFAULT = false;
 
 export type GoalPriority = "high" | "medium" | "low";
 export const GOAL_PRIORITIES: readonly GoalPriority[] = ["high", "medium", "low"];
@@ -175,7 +183,8 @@ export function plannedPathError(p: string): string | null {
   return null;
 }
 
-function paths(v: unknown, field: string, kind: TaskKind): Parsed<string[]> {
+function paths(v: unknown, field: string, kind: TaskKind, origin: GoalTaskOrigin): Parsed<string[]> {
+  if (v === undefined && origin === "user") return { ok: true, value: [] };
   if (!Array.isArray(v)) return { ok: false, error: `${field} must be an array of strings` };
   const out: string[] = [];
   const seen = new Set<string>();
@@ -191,11 +200,14 @@ function paths(v: unknown, field: string, kind: TaskKind): Parsed<string[]> {
   }
   if (out.length > GOAL_LIMITS.paths) return { ok: false, error: `${field} has ${out.length} paths; the limit is ${GOAL_LIMITS.paths}` };
   // Code and docs tasks commit files; without their paths the overlap ordering has nothing to compare.
-  if ((kind === "code" || kind === "docs") && out.length === 0) return { ok: false, error: `${field} must list at least one path for a ${kind} task` };
+  // The planner must name them. A task you write may leave them out: overlapPairs then orders it
+  // after the other writing tasks (cause no_paths), which costs throughput but never a conflict.
+  if (origin === "planner" && (kind === "code" || kind === "docs") && out.length === 0) return { ok: false, error: `${field} must list at least one path for a ${kind} task` };
   return { ok: true, value: out };
 }
 
-function acceptance(v: unknown, field: string): Parsed<string[]> {
+function acceptance(v: unknown, field: string, origin: GoalTaskOrigin): Parsed<string[]> {
+  if (v === undefined && origin === "user") return { ok: true, value: [] };
   if (!Array.isArray(v)) return { ok: false, error: `${field} must be an array of strings` };
   const out: string[] = [];
   for (const c of v) {
@@ -203,7 +215,8 @@ function acceptance(v: unknown, field: string): Parsed<string[]> {
     if (!s.ok) return s;
     if (s.value && !out.includes(s.value)) out.push(s.value);
   }
-  if (out.length < GOAL_LIMITS.criteriaMin) return { ok: false, error: `${field} needs at least ${GOAL_LIMITS.criteriaMin} line` };
+  // The planner must say how its task is judged; a task you write may rest on its title and description.
+  if (origin === "planner" && out.length < GOAL_LIMITS.criteriaMin) return { ok: false, error: `${field} needs at least ${GOAL_LIMITS.criteriaMin} line` };
   if (out.length > GOAL_LIMITS.criteria) return { ok: false, error: `${field} has ${out.length} lines; the limit is ${GOAL_LIMITS.criteria}` };
   return { ok: true, value: out };
 }
@@ -242,11 +255,21 @@ export function parseGoalPlan(value: unknown, opts: { maxTasks?: number | null }
 }
 
 /**
+ * Who wrote a task: the planner (every field required, as GOAL_PLAN_OUTPUT asks) or you, through
+ * `Add task` or a tile edit. Your own task may leave out size and priority (M, medium), description,
+ * acceptance, basis, reason, dependencies and paths. Every bound and refusal still applies.
+ */
+export type GoalTaskOrigin = "planner" | "user";
+
+/**
  * Checks one plan task with the same rules as parseGoalPlan. `earlier` holds the keys it may depend
  * on: the tasks listed before it, or for `Add task` and tile edits, the goal's other tasks (the
- * caller still refuses a loop with wouldCycle). Its own key must not be among them.
+ * caller still refuses a loop with wouldCycle). Its own key must not be among them; for a task you
+ * write, the daemon assigns the key (GoalTaskDraft has none) before calling this with origin "user".
  */
-export function parseGoalTask(value: unknown, earlier: ReadonlySet<string>, at = "task"): Parsed<GoalPlanTask> {
+export function parseGoalTask(value: unknown, earlier: ReadonlySet<string>, at = "task", opts: { origin?: GoalTaskOrigin } = {}): Parsed<GoalPlanTask> {
+  const origin = opts.origin ?? "planner";
+  const user = origin === "user";
   const t = rec(value);
   if (!t) return { ok: false, error: `${at} must be an object` };
   const ex = unknownKey(t, TASK_KEYS, at);
@@ -254,34 +277,38 @@ export function parseGoalTask(value: unknown, earlier: ReadonlySet<string>, at =
   if (typeof t.key !== "string" || !GOAL_TASK_KEY.test(t.key)) return { ok: false, error: `${at}.key must be 1 to 16 lowercase letters, digits or dashes` };
   const key = t.key;
   if (earlier.has(key)) return { ok: false, error: `${at}.key "${key}" is used twice` };
+  // A field you left out of your own task reads as its default; the planner must send every field.
+  const or = (v: unknown, fallback: unknown): unknown => (user && v === undefined ? fallback : v);
   const title = text(t.title, `${at}.title`, GOAL_LIMITS.titleBytes, { required: true, oneLine: true });
   if (!title.ok) return title;
   const kind = oneOf(t.kind, `${at}.kind`, GOAL_TASK_KINDS);
   if (!kind.ok) return kind;
   const mode = oneOf(t.mode, `${at}.mode`, GOAL_TASK_MODES);
   if (!mode.ok) return mode;
-  const size = oneOf(t.size, `${at}.size`, GOAL_TASK_SIZES);
+  const size = oneOf(or(t.size, "M"), `${at}.size`, GOAL_TASK_SIZES);
   if (!size.ok) return size;
-  const priority = oneOf(t.priority, `${at}.priority`, GOAL_PRIORITIES);
+  const priority = oneOf(or(t.priority, "medium"), `${at}.priority`, GOAL_PRIORITIES);
   if (!priority.ok) return priority;
-  const description = text(t.description, `${at}.description`, GOAL_LIMITS.descriptionBytes, { required: false });
+  const description = text(or(t.description, ""), `${at}.description`, GOAL_LIMITS.descriptionBytes, { required: false });
   if (!description.ok) return description;
-  const acc = acceptance(t.acceptance, `${at}.acceptance`);
+  const acc = acceptance(t.acceptance, `${at}.acceptance`, origin);
   if (!acc.ok) return acc;
-  const basis = text(t.basis, `${at}.basis`, GOAL_LIMITS.basisBytes, { required: false });
+  const basis = text(or(t.basis, ""), `${at}.basis`, GOAL_LIMITS.basisBytes, { required: false });
   if (!basis.ok) return basis;
-  const reason = text(t.reason, `${at}.reason`, GOAL_LIMITS.reasonBytes, { required: true });
+  // The planner must say why its task exists; you need not explain a task you wrote yourself.
+  const reason = text(or(t.reason, ""), `${at}.reason`, GOAL_LIMITS.reasonBytes, { required: !user });
   if (!reason.ok) return reason;
-  if (!Array.isArray(t.dependsOn)) return { ok: false, error: `${at}.dependsOn must be an array of keys` };
+  const rawDeps = or(t.dependsOn, []);
+  if (!Array.isArray(rawDeps)) return { ok: false, error: `${at}.dependsOn must be an array of keys` };
   const deps: string[] = [];
-  for (const d of t.dependsOn) {
+  for (const d of rawDeps) {
     if (typeof d !== "string") return { ok: false, error: `${at}.dependsOn must be an array of keys` };
     if (d === key) return { ok: false, error: `${at} ("${key}") must not depend on itself` };
     // Only keys listed earlier: task-master's "lower ids" rule, which makes a cycle impossible.
     if (!earlier.has(d)) return { ok: false, error: `${at} ("${key}") depends on "${d}", which is not a task listed before it` };
     if (!deps.includes(d)) deps.push(d);
   }
-  const p = paths(t.paths, `${at}.paths`, kind.value);
+  const p = paths(t.paths, `${at}.paths`, kind.value, origin);
   if (!p.ok) return p;
   return {
     ok: true,
@@ -364,7 +391,15 @@ export function goalTitle(goalText: string): string {
 export interface DagNode {
   id: string;
   dependsOn: readonly string[];
+  /**
+   * The ids in `dependsOn` that come only from the file-overlap ordering (source `overlap`). They
+   * count for cycles and layers, since they order runs, but not as work this task builds on.
+   */
+  overlap?: readonly string[];
 }
+
+/** The prerequisites a task builds on: its dependencies minus overlap-only orderings. */
+const workDeps = (n: DagNode): readonly string[] => (n.overlap?.length ? n.dependsOn.filter((d) => !n.overlap!.includes(d)) : n.dependsOn);
 
 const depsMap = (nodes: readonly DagNode[]) => new Map(nodes.map((n) => [n.id, n.dependsOn]));
 
@@ -382,7 +417,10 @@ export function ancestorsOf(nodes: readonly DagNode[], id: string): Set<string> 
   return out;
 }
 
-/** Every task that waits for `id`, directly or through others, in input order (skipping cascades to these). */
+/**
+ * Every task that builds on `id`, directly or through others, in input order (skipping cascades to
+ * these). An overlap-only ordering does not cascade: that task only planned to touch the same files.
+ */
 export function goalDependents(nodes: readonly DagNode[], id: string): string[] {
   const out = new Set<string>();
   let grew = true;
@@ -390,7 +428,7 @@ export function goalDependents(nodes: readonly DagNode[], id: string): string[] 
     grew = false;
     for (const n of nodes) {
       if (out.has(n.id)) continue;
-      if (n.dependsOn.some((d) => d === id || out.has(d))) {
+      if (workDeps(n).some((d) => d === id || out.has(d))) {
         out.add(n.id);
         grew = true;
       }
@@ -452,11 +490,15 @@ export function layers(nodes: readonly DagNode[]): string[][] {
   return out.filter((l) => l !== undefined);
 }
 
-/** The first accepted task that waits for a skipped one, or null. A goal with that shape cannot be approved. */
+/**
+ * The first accepted task that builds on a skipped one, or null. A goal with that shape cannot be
+ * approved. An overlap-only ordering on a skipped task is ignored: with that task gone there is
+ * nothing to order against (design §4.8, "a false positive costs throughput, not a click").
+ */
 export function skippedDependency(nodes: readonly DagNode[], accepted: ReadonlySet<string>): { taskId: string; dependsOn: string } | null {
   for (const n of nodes) {
     if (!accepted.has(n.id)) continue;
-    const d = n.dependsOn.find((x) => !accepted.has(x));
+    const d = workDeps(n).find((x) => !accepted.has(x));
     if (d !== undefined) return { taskId: n.id, dependsOn: d };
   }
   return null;
@@ -504,20 +546,23 @@ export type GoalUnmet = "finish" | "report" | "join" | "failed" | "cancelled" | 
 
 /**
  * The prerequisites of `task` that are not satisfied, with why (design §4.6). A failed, cancelled
- * or skipped prerequisite is never satisfied: its dependents hold and you choose.
+ * or skipped prerequisite is never satisfied: its dependents hold and you choose. An overlap
+ * ordering is not a prerequisite but an order between two writers (§4.8): once the earlier task
+ * has left the goal (skipped or discarded) it is dropped. A failed or cancelled one still holds,
+ * since a retry or `Run without it` is your call.
  */
 export function unmetPrerequisites(task: GoalTaskFacts, byId: ReadonlyMap<string, GoalTaskFacts>): Array<{ on: string; source: GoalDepSource; why: GoalUnmet }> {
   const out: Array<{ on: string; source: GoalDepSource; why: GoalUnmet }> = [];
   for (const d of task.deps) {
     const p = byId.get(d.on);
-    const why = unmetWhy(p, task);
+    const why = unmetWhy(p, task, d.source);
     if (why) out.push({ on: d.on, source: d.source, why });
   }
   return out;
 }
 
-function unmetWhy(p: GoalTaskFacts | undefined, dependent: GoalTaskFacts): GoalUnmet | null {
-  if (!p || p.accepted !== true || p.discarded) return "skipped";
+function unmetWhy(p: GoalTaskFacts | undefined, dependent: GoalTaskFacts, source: GoalDepSource): GoalUnmet | null {
+  if (!p || p.accepted !== true || p.discarded) return source === "overlap" ? null : "skipped";
   if (p.status === "cancelled") return "cancelled";
   if (p.status === "failed") return "failed";
   if (p.writes) {
@@ -642,7 +687,8 @@ const pairKey = (a: string, b: string) => (a < b ? `${a}\n${b}` : `${b}\n${a}`);
  * paths put the later task after the earlier one, as Spec Kit's "same files run sequentially".
  * A writing task with no planned paths goes after the other writing tasks. Edges are added one
  * at a time against the graph so far, so the result never closes a loop. `sideBySide` holds the
- * pairs you chose to run side by side anyway.
+ * pairs you chose to run side by side anyway. Run it again with the accepted set at approval:
+ * skipped tasks drop out, and a pair that was ordered only through a skipped task gets its edge.
  */
 export function overlapPairs(tasks: readonly OverlapTask[], opts: { sideBySide?: ReadonlyArray<readonly [string, string]> } = {}): OverlapEdge[] {
   const allowed = new Set((opts.sideBySide ?? []).map(([a, b]) => pairKey(a, b)));
@@ -835,10 +881,14 @@ export function defaultGoalBudget(knownTotalUsd: number, projectDefaultUsd: numb
   return Math.min(GOAL_LIMITS.budgetMaxUsd, Math.max(projectDefaultUsd ?? 0, prefill));
 }
 
-/** The planning run's own budget, the ceiling the composer states: min(project per-task cap, max(3 x estimate, $0.25)). */
+/**
+ * The planning run's own budget, the ceiling the composer states: min(project per-task cap,
+ * max(3 x estimate, $0.25)). Only a missing cap (null) skips the min: a $0 cap is a real setting
+ * that the task-budget cap enforces, so the planning run gets $0 and asks before it spends.
+ */
 export function planningBudget(estimateUsd: number | null, perTaskCapUsd: number | null): number {
   const base = Math.max(GOAL_LIMITS.planningMultiplier * Math.max(0, estimateUsd ?? 0), GOAL_LIMITS.planningFloorUsd);
-  return r6(perTaskCapUsd !== null && perTaskCapUsd > 0 ? Math.min(perTaskCapUsd, base) : base);
+  return r6(perTaskCapUsd !== null ? Math.min(Math.max(0, perTaskCapUsd), base) : base);
 }
 
 /** Checks the goal limits you set on approval or later: a budget, and how many tasks run at once. */
@@ -921,26 +971,36 @@ export interface PlanRevisionFacts {
   approvedAt: string | null;
   /** The planning task's runs; null for an `add` revision, which has no planner. */
   runs: ReadonlyArray<{ endedAt: string | null }> | null;
+  /**
+   * The planning task was cancelled (or failed) and will start no run of its own. The daemon also
+   * sets `error` when it cannot launch the planner at all (its profile went away), so a revision
+   * that never got a run does not read "Planning" for good.
+   */
+  taskCancelled: boolean;
 }
 
 /**
- * planning: its planning task has an unfinished run (or none has started yet); failed: its error
- * is set, or its planning task's last run ended without a result. A restart mid-planning marks the
- * run interrupted, so the plan reads failed and never stays "Planning" forever.
+ * planning: its planning task has an unfinished run, or none has started yet and the task is still
+ * waiting for a slot; failed: its error is set, its planning task was cancelled, or its last run
+ * ended without a result. An unfinished run wins over a stored error, as §4.2 orders them, so the
+ * corrective turn after a refusal reads planning, not failed with a paid Retry. A restart
+ * mid-planning marks the run interrupted, so the plan reads failed and never stays "Planning" forever.
  */
 export function derivePlanState(p: PlanRevisionFacts): PlanState {
   if (p.approvedAt) return "approved";
   if (p.supersededAt) return "superseded";
+  if (p.runs?.some((r) => r.endedAt === null)) return "planning";
   if (p.error) return "failed";
   if (p.hasPlan) return "ready";
-  if (p.runs === null) return "failed";
-  if (p.runs.length === 0 || p.runs.some((r) => r.endedAt === null)) return "planning";
+  if (p.runs === null || p.taskCancelled) return "failed";
+  if (p.runs.length === 0) return "planning";
   return "failed";
 }
 
 /** Seven states (design §3.9); everything else is a reason line inside `needs_you`. */
 export type GoalStatus = "planning" | "needs_you" | "running" | "paused" | "ready_for_review" | "finished" | "stopped";
-export type GoalNeedsReason = "plan_ready" | "plan_failed" | "halted" | "decision" | "request" | "failed" | "report" | "stuck";
+/** `empty`: no accepted task the goal counts is left, or a goal branch has no writing task left to review. */
+export type GoalNeedsReason = "plan_ready" | "plan_failed" | "halted" | "decision" | "request" | "failed" | "report" | "stuck" | "empty";
 /** `finished` as Merged (the goal's PR merged), Done (a goal with no branch), or collapsed into one ordinary task. */
 export type GoalOutcome = "merged" | "done" | "collapsed";
 
@@ -951,7 +1011,7 @@ export interface GoalStatusFacts {
   pausedAll: boolean;
   halted: boolean;
   collapsed: boolean;
-  /** The latest revision's state; null before the first revision exists. */
+  /** The latest revision's state; null before the first revision exists, which reads as a failed plan. */
   latestPlan: PlanState | null;
   openDecisions: ReadonlyArray<{ kind: GoalDecisionKind; taskId?: string | null }>;
   /** Every goal task of the goal; skipped, discarded and cancelled ones are filtered here. */
@@ -983,6 +1043,9 @@ export function deriveGoalStatus(f: GoalStatusFacts): GoalState {
   const base = { done, total: counted.length, stuck: null } as const;
   const state = (status: GoalStatus, reason: GoalNeedsReason | null = null, outcome: GoalOutcome | null = null): GoalState => ({ ...base, status, reason, outcome });
   if (f.stopped) return state("stopped");
+  // goals.create writes the goal and its first revision together, so a goal with none lost its
+  // plan: it offers Retry planning rather than reading as finished or planning for good.
+  if (f.latestPlan === null) return state("needs_you", "plan_failed");
   if (f.latestPlan === "planning") return state("planning");
   if (f.collapsed) return state("finished", null, "collapsed");
   if (f.latestPlan === "failed") return state("needs_you", "plan_failed");
@@ -995,6 +1058,13 @@ export function deriveGoalStatus(f: GoalStatusFacts): GoalState {
   const byId = new Map(f.tasks.map((t) => [t.id, t]));
   const waitingReport = counted.some((t) => unmetPrerequisites(t, byId).some((u) => u.why === "report") && !t.released);
   if (waitingReport) return state("needs_you", "report");
+  // A status comes only from run facts (D5): with every accepted task cancelled or left out, or a
+  // goal branch whose writers are all gone, "all done" would be vacuously true and nothing would
+  // ever run again. You choose: Replan or Stop.
+  const writersLeft = counted.some((t) => t.writes);
+  if (counted.length === 0 || (f.integration !== null && !writersLeft && f.integration.status !== "merged")) return state("needs_you", "empty");
+  // A cancelled last review never passes by itself; without this the goal would read running forever.
+  if (f.integration?.status === "cancelled") return state("needs_you", "stuck");
   const unfinished = counted.filter((t) => !goalTaskFinished(t));
   const active = counted.some((t) => (t.released && ACTIVE.has(t.status)) || awaitingJoin(t));
   const integrationBusy = f.integration !== null && ACTIVE.has(f.integration.status);

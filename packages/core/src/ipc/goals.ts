@@ -243,7 +243,12 @@ export interface GoalStopPreview {
   spend: CostEstimate;
 }
 
-/** A task you add to a running goal, or the edits you make to a plan tile. Checked like a planned task. */
+/**
+ * A task you add to a running goal. The daemon assigns its key and checks it with
+ * parseGoalTask(..., { origin: "user" }): every bound of a planned task, but size and priority
+ * default to M and medium, and acceptance and paths may be empty (a writing task with no paths is
+ * then ordered after the other writing tasks).
+ */
 export interface GoalTaskDraft {
   title: string;
   kind: TaskKind;
@@ -255,6 +260,7 @@ export interface GoalTaskDraft {
   priority?: GoalPriority;
 }
 
+/** Your edits to a plan tile, merged onto the task and checked again with origin "user". */
 export type GoalTaskPatch = Partial<Pick<GoalPlanTask, "title" | "kind" | "mode" | "size" | "description" | "acceptance" | "paths" | "priority">>;
 
 export interface GoalsIpc {
