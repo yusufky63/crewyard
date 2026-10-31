@@ -191,7 +191,7 @@ function customRolesOnDisk(projectPath: string): unknown {
   const file = configFile(projectPath);
   if (!existsSync(file)) return undefined;
   try {
-    const raw = JSON.parse(readFileSync(file, "utf8").replace(/^﻿/, "")) as Record<string, unknown> | null;
+    const raw = JSON.parse(readFileSync(file, "utf8").replace(/^\uFEFF/, "")) as Record<string, unknown> | null;
     return raw && typeof raw === "object" ? raw.customRoles : undefined;
   } catch {
     return undefined;
