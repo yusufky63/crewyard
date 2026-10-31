@@ -33,6 +33,15 @@ const api: CrewyardApi = {
   // File.path is gone since Electron 32; webUtils is the sandbox-safe way to read a drop's path.
   pathForFile: (file) => webUtils.getPathForFile(file),
   openFolder: (path) => ipcRenderer.send("crewyard:open-folder", path),
+  previewOpen: (taskId, url) => ipcRenderer.invoke("crewyard:preview-open", taskId, url),
+  previewBounds: (rect) => ipcRenderer.send("crewyard:preview-bounds", rect),
+  previewReload: () => ipcRenderer.send("crewyard:preview", "reload"),
+  previewFocus: () => ipcRenderer.send("crewyard:preview", "focus"),
+  previewOpenExternal: () => ipcRenderer.send("crewyard:preview", "external"),
+  previewClose: () => ipcRenderer.send("crewyard:preview", "close"),
+  previewState: () => ipcRenderer.invoke("crewyard:preview-state"),
+  previewPick: (color) => ipcRenderer.invoke("crewyard:preview-pick", color),
+  previewCancelPick: () => ipcRenderer.send("crewyard:preview", "cancel-pick"),
 };
 
 contextBridge.exposeInMainWorld("crewyard", api);

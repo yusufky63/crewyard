@@ -22,6 +22,8 @@ import { BestOfCompare } from "../screens/tasks/BestOfCompare.tsx";
 import { TaskTimeline } from "./timeline/TaskTimeline.tsx";
 import { FIXTURE } from "./timeline/fixture.ts";
 import { FilesTab } from "./files/FilesTab.tsx";
+import { PreviewTab } from "./preview/PreviewTab.tsx";
+import { usePreviewLifecycle } from "./preview/store.ts";
 import "../screens/tasks/tasks.css";
 import "./inspector.css";
 
@@ -31,10 +33,10 @@ import "./inspector.css";
 
 const INSPECTOR_ID = "app-inspector";
 
-type Tab = "details" | "changes" | "usage" | "files";
-const TABS: readonly Tab[] = ["details", "changes", "usage", "files"];
-/** Screenshot mode only: `insTab=<tab>` opens the inspector on that tab. */
-const SHOT_TAB = FIXTURE ? (new URLSearchParams(location.search).get("insTab") as Tab | null) : null;
+type Tab = "details" | "changes" | "usage" | "files" | "preview";
+const TABS: readonly Tab[] = ["details", "changes", "usage", "files", "preview"];
+/** Screenshot mode only: `inspectorTab=<tab>` opens the inspector on that tab. */
+const SHOT_TAB = FIXTURE ? (new URLSearchParams(location.search).get("inspectorTab") as Tab | null) : null;
 
 function Actions({ detail, run, onError }: { detail: TaskDetail; run: RunView; onError: (err: unknown) => void }) {
   const f = useFormat();
@@ -240,7 +242,7 @@ function Body({ detail, target }: { detail: TaskDetail; target: InspectorTarget 
       <div className="ins-tabs" role="tablist">
         {TABS.map((x) => (
           <button key={x} type="button" role="tab" aria-selected={tab === x} onClick={() => setTab(x)}>
-            {f.t(`inspector.tab.${x}`)}
+            {x === "preview" ? f.t("preview:tab") : f.t(`inspector.tab.${x}`)}
           </button>
         ))}
       </div>
@@ -364,6 +366,7 @@ function Body({ detail, target }: { detail: TaskDetail; target: InspectorTarget 
       )}
       {tab === "changes" && <DiffReview detail={detail} run={run} />}
       {tab === "files" && <FilesTab detail={detail} />}
+      {tab === "preview" && <PreviewTab detail={detail} run={run} />}
       {tab === "usage" && run && (
         <>
           <div className="ins-sec">
@@ -468,6 +471,8 @@ export function Inspector() {
   const setCollapsed = usePrefs((s) => s.setInspectorCollapsed);
   const f = useFormat();
   const detail = useWork("tasks.get", { taskId: target?.taskId ?? "" }, { enabled: Boolean(target) });
+  // The preview page belongs to the task shown here; another task or a closed panel unloads it.
+  usePreviewLifecycle(target?.taskId ?? null);
 
   useEffect(() => {
     if (!target) return;

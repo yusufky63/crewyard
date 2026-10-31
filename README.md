@@ -28,6 +28,7 @@ Status: pre-release. It is built and tested on Windows 11. Linux and macOS are p
   - turn control (queue, steer, undo);
   - images and files on a task or a queued message (paste, drop or pick), passed to each runner its own way;
   - Best of N;
+  - a Preview tab that shows the dev server a task's run serves on localhost and sends a picked element's HTML and styles to the agent's queue;
   - scheduled tasks;
   - idle agents that sleep and wake with your answer;
   - an MCP report server agents use to send checkpoints and follow-up proposals.
@@ -36,6 +37,7 @@ Status: pre-release. It is built and tested on Windows 11. Linux and macOS are p
 
 - API keys are encrypted with Windows DPAPI and reach a runner only as an environment variable of its process. They never go on a command line, into a log, into git or into a URL, and agent shells cannot see them.
 - Subscription tokens are never read; each CLI signs in through its own login.
+- The dev-server preview loads only loopback addresses on the task's own ports, in an isolated in-memory session without access to the app.
 - The app opens no TCP listener. The UI talks to the daemon over IPC; outside callers use a per-user named pipe with a token.
 - Outward actions (push, pull request, merge, delete, spend past a cap) always wait for your approval in the app.
 
