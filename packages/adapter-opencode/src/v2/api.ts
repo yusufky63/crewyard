@@ -131,14 +131,17 @@ export type ServerEvent =
   | { type: "form.replied" | "form.cancelled"; data: { id: string; sessionID: string } }
   | { type: "other"; data: unknown };
 
+// Plain fields, not parameter properties: the live scripts load this file through Node's type
+// stripping, which refuses syntax that emits code.
 export class ServerError extends Error {
-  constructor(
-    readonly tag: string,
-    message: string,
-    readonly status: number,
-  ) {
+  readonly tag: string;
+  readonly status: number;
+
+  constructor(tag: string, message: string, status: number) {
     super(message);
     this.name = tag;
+    this.tag = tag;
+    this.status = status;
   }
 }
 
@@ -155,11 +158,15 @@ interface Call {
 
 /** One client per server launch. No retries: the adapter decides what a failed call means. */
 export class V2Client {
-  constructor(
-    private readonly baseUrl: string,
-    private readonly authorization: string,
-    private readonly directory: string,
-  ) {}
+  private readonly baseUrl: string;
+  private readonly authorization: string;
+  private readonly directory: string;
+
+  constructor(baseUrl: string, authorization: string, directory: string) {
+    this.baseUrl = baseUrl;
+    this.authorization = authorization;
+    this.directory = directory;
+  }
 
   private url(path: string, query: Record<string, string> = {}): URL {
     const url = new URL(path, this.baseUrl);
@@ -187,7 +194,7 @@ export class V2Client {
   }
 
   /** The location every per-directory list is scoped to: the run's worktree. */
-  private get location(): Record<string, string> {
+  private get locationQuery(): Record<string, string> {
     return { "location[directory]": this.directory };
   }
 
@@ -220,9 +227,10 @@ export class V2Client {
   async messages(sessionID: string): Promise<SessionMessage[]> {
     const out: SessionMessage[] = [];
     let cursor: string | null | undefined;
-    // Paged; a long session takes several pages.
+    // Paged; a long session takes several pages. A cursor carries the order of the first page, and
+    // 2.2.4 refuses the two together ("Cursor cannot be combined with order", seen live 2026-10-31).
     for (let page = 0; page < 100; page++) {
-      const query: Record<string, string> = { order: "asc", limit: "200", ...(cursor ? { cursor } : {}) };
+      const query: Record<string, string> = cursor ? { cursor, limit: "200" } : { order: "asc", limit: "200" };
       const body = (await this.call({ method: "GET", path: `/api/session/${encodeURIComponent(sessionID)}/message`, query })) as { data: SessionMessage[]; cursor?: { next?: string | null } };
       out.push(...body.data);
       cursor = body.cursor?.next;
@@ -262,8 +270,13 @@ export class V2Client {
     await this.call({ method: "POST", path: `/api/session/${encodeURIComponent(sessionID)}/revert/commit` });
   }
 
+  /** Reading the location makes the server load it (config, plugins) if it has not yet. */
+  async location(): Promise<void> {
+    await this.call({ method: "GET", path: "/api/location", query: this.locationQuery });
+  }
+
   async plugins(): Promise<PluginInfo[]> {
-    const body = (await this.call({ method: "GET", path: "/api/plugin", query: this.location })) as { data: PluginInfo[] };
+    const body = (await this.call({ method: "GET", path: "/api/plugin", query: this.locationQuery })) as { data: PluginInfo[] };
     return body.data;
   }
 

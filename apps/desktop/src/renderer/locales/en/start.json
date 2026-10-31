@@ -32,7 +32,7 @@
     "gateShort": {
       "outdated": "update needed",
       "untested": "not the checked version",
-      "pending": "2.x not offered yet",
+      "pending": "not the checked 2.x",
       "isolation": "too old to keep profiles apart",
       "unknown": "version unknown"
     },
@@ -45,7 +45,7 @@
       },
       "outdated": "Crewyard was checked with {{tool}} {{need}}. Older versions may miss events or fail to start. Update it in a terminal:",
       "untested": "Only {{tool}} {{verified}} has passed Crewyard's conformance checks. Other versions may change the protocol without notice. Switch to the checked version:",
-      "pending": "Crewyard has a client for {{tool}} 2.x, but it has not passed its conformance and live checks yet, so crews keep to {{tool}} {{verified}} for now. To use {{tool}} now, install the checked version:",
+      "pending": "Only {{tool}} {{verified}} of the 2.x line has passed Crewyard's conformance and live checks, so crews do not use this version. Switch to the checked version:",
       "isolation": "{{tool}} older than {{verified}} ignores the per-profile folder, so every run would use your own ~/.gemini sign-in and settings. Crewyard will not start it until you update:",
       "unknown": "The installed version could not be read. Crewyard needs {{tool}} {{need}}. To be sure, run:"
     },

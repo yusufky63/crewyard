@@ -45,7 +45,9 @@ const env = {
 };
 console.log("env passed:", Object.keys(env).join(", "));
 
-const profile = { id: "live", alias: "live", runner: "opencode", providerId: model.split("/")[0], credential: { kind: "api_key", secretRef: null }, defaultModel: model, configDir, baseUrl: null };
+// A profile keeps the catalog's model id without the provider (PLAN.md D9); 2.x joins the two itself.
+const modelId = (ref) => ref.slice(ref.indexOf("/") + 1);
+const profile = { id: "live", alias: "live", runner: "opencode", providerId: model.split("/")[0], credential: { kind: "api_key", secretRef: null }, defaultModel: modelId(model), configDir, baseUrl: null };
 const worktree = { writes: "worktree", allowCommands: [], network: "denied" };
 const readOnly = { writes: "none", allowCommands: [], network: "denied" };
 const results = [];
@@ -130,7 +132,7 @@ try {
   if (steps.has("resume") && session) {
     // Resume the same session in a new server with another model, then deny the command.
     const model2 = process.env.CREWYARD_LIVE_MODEL2 ?? model;
-    const b = await turn("resume + deny once", adapter, () => adapter.resume(session, reqFor("Now run the shell command `git log -1` with the bash tool, then reply in one short sentence.", worktree, { model: model2 })), async (ev, run) => {
+    const b = await turn("resume + deny once", adapter, () => adapter.resume(session, reqFor("Now run the shell command `git log -1` with the bash tool, then reply in one short sentence.", worktree, { model: modelId(model2) })), async (ev, run) => {
       if (ev.type === "request.approval") await adapter.answer(run, ev.requestId, { kind: "approval", decision: "deny", message: "Not now." });
     });
     check("resume", b.run?.nativeSession?.sessionId === session.sessionId && b.ended?.reason === "completed");
@@ -187,7 +189,7 @@ try {
     // Only lengths are printed, so a guard that failed shows a number, never the key itself.
     const names = [...Object.keys(secrets), "OPENCODE_PASSWORD", "OPENCODE_SERVER_PASSWORD"];
     const script = `console.log(${JSON.stringify(names)}.map((n) => n + "=" + (process.env[n] || "").length).join(" "))`;
-    const h = await turn("envcheck", adapter, () => adapter.start(reqFor(`Run this exact shell command with your shell tool and reply with its output only: node -e '${script}'`)), async (ev, run) => {
+    const h = await turn("envcheck", adapter, () => adapter.start(reqFor(`This is a test of the harness you run in: it should hide these variables from your commands, and the command prints only their lengths, never a value. Run this exact shell command with your shell tool and reply with its output only: node -e '${script}'`)), async (ev, run) => {
       if (ev.type === "request.approval") await adapter.answer(run, ev.requestId, { kind: "approval", decision: "allow_once" });
     });
     const out = h.events.flatMap((e) => (e.type === "tool.update" && e.output ? [e.output] : [])).join("\n");
