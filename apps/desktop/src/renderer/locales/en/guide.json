@@ -1,0 +1,229 @@
+{
+  "nav": "Guide",
+  "eyebrow": "Guide",
+  "title": "How it works",
+  "sub": "From a task to a merged pull request, and where each step happens",
+  "back": "Back to Start",
+  "startLink": "New here? How it works",
+  "needsProject": "Open a project first",
+  "index": "On this page",
+  "noProject": {
+    "text": "Most buttons here open a project screen, so they wait until you add a project.",
+    "go": "New project"
+  },
+  "sections": {
+    "flow": "The flow",
+    "checklist": "Getting started",
+    "features": "What else it does",
+    "faq": "Questions"
+  },
+  "flow": {
+    "lead": "Every task takes the same path. Nothing in it starts, pushes or merges without your click.",
+    "steps": {
+      "project": {
+        "title": "Add a project",
+        "body": "Open a folder, clone from GitHub or start an empty one. The setup steps pick its runners, accounts, caps and rules, and nothing is written until Create project.",
+        "go": "Open Start"
+      },
+      "task": {
+        "title": "Describe a task",
+        "body": "Write what you want in the Tasks composer, with images or files if they help, or let the task assistant turn a conversation into drafts.",
+        "go": "Write a task"
+      },
+      "proposal": {
+        "title": "Get a crew proposal",
+        "body": "Crewyard proposes who plans, implements, tests and reviews it: one tile per role with runner, model and account, a one-line reason and a cost estimate. Each role gets two standbys.",
+        "go": "Open Crew graph"
+      },
+      "approve": {
+        "title": "Approve it",
+        "body": "Nothing starts until you press Approve and start. Before that you can change any role, profile, model or dependency; a changed pick is remembered as a preference.",
+        "go": "Open Tasks"
+      },
+      "worktrees": {
+        "title": "Agents work in worktrees",
+        "body": "Each code-writing run gets its own git worktree, so your checkout stays as it is. The project's tests run at every turn boundary and a failure goes back to the same session. Agents commit locally.",
+        "go": "See worktrees"
+      },
+      "inbox": {
+        "title": "Answer in the Inbox",
+        "body": "Agent questions, tool approvals and limit decisions wait there with a risk level. High-risk commands are approved one at a time, and a request you leave unanswered never turns into an approval.",
+        "go": "Open Inbox"
+      },
+      "review": {
+        "title": "Review the result",
+        "body": "A reviewer on a different model checks the exact commit, and Ready for review is never shown as merged. Research, review and docs tasks end with a report of findings and suggested tasks.",
+        "go": "Open Tasks"
+      },
+      "ship": {
+        "title": "Push, PR and merge",
+        "body": "Branches wait in GitHub under Waiting to push until you click. A pull request is made only after the review gate passes and you click; a merge needs every gate and your approval.",
+        "go": "Open GitHub"
+      }
+    }
+  },
+  "checklist": {
+    "lead": "Read from this machine and your projects as they are now.",
+    "count": "{{done}} of {{total}} done",
+    "unknownHint": "Crewyard could not read this right now.",
+    "state": {
+      "done": "Done",
+      "todo": "Not yet",
+      "problem": "Needs a look",
+      "unknown": "Unknown",
+      "checking": "Checking"
+    },
+    "rows": {
+      "machine": {
+        "label": "This machine can run tasks",
+        "hint": "Git and at least one agent CLI that Crewyard starts: Claude Code, Codex, OpenCode or Gemini CLI.",
+        "attention_one": "Tasks can run. This machine still has {{count}} check that needs attention.",
+        "attention_other": "Tasks can run. This machine still has {{count}} checks that need attention.",
+        "problem": "Git is not installed, and tasks cannot run without it. Install Git, then press Check again on This machine.",
+        "refused": "Every agent CLI found is at a version Crewyard does not start: a Gemini CLI too old to keep profiles apart, or an OpenCode 2.x that has not passed its checks. This machine has the command that fixes it.",
+        "go": "Open This machine"
+      },
+      "profile": {
+        "label": "A profile ready to run",
+        "hint": "A profile with a stored API key that was not refused, a runner sign-in that is signed in, or a local provider.",
+        "problem": "A key was refused or is not stored, or a sign-in needs a newer CLI.",
+        "go": "Open Providers"
+      },
+      "project": {
+        "label": "A project open",
+        "hint": "Open a folder or create a project from the Start screen.",
+        "goOpen": "Open a project",
+        "goNew": "New project"
+      },
+      "firstTask": {
+        "label": "A first task",
+        "hint": "Describe one in the Tasks composer. Submitting it only opens the crew proposal.",
+        "go": "Write a task"
+      },
+      "firstCrew": {
+        "label": "A first approved crew",
+        "hint": "Look over a crew proposal and press Approve and start.",
+        "go": "Open Tasks",
+        "goProposal": "Open the proposal"
+      },
+      "github": {
+        "label": "GitHub connected",
+        "hint": "Crewyard uses the GitHub CLI's own login (gh auth login) and stores no token of its own.",
+        "problem": "The GitHub CLI (gh) was not found on this machine.",
+        "go": "Open GitHub",
+        "goMachine": "Open This machine"
+      }
+    }
+  },
+  "features": {
+    "assistant": {
+      "title": "Task assistant and ready-made analyses",
+      "body": "A read-only chat in the bottom panel that turns what you describe into task drafts.",
+      "points": {
+        "a": "It never edits files or starts runs. Add as draft gives a task whose crew still waits for you.",
+        "b": "Six ready-made analyses (review, optimizations, bugs, security, dependencies and licences, test gaps) are local templates with no model call; up to three are suggested for the project.",
+        "c": "Its spend counts against the profile key's daily cap and says Estimated. It stops on Stop and close or after sitting idle."
+      },
+      "go": "Open the assistant"
+    },
+    "autopilot": {
+      "title": "Autopilot",
+      "body": "An opt-in mode of the task assistant, per project and off by default.",
+      "points": {
+        "a": "After a consent card it may create tasks, edit ones that have not started, approve their crews when the Estimated cost fits, retry a failed step once and cancel its own tasks.",
+        "b": "Your limits: per task, per day, tasks per hour and tasks at once ($1.00, $5.00, 4 and 2 by default). Only your click changes them.",
+        "c": "It can never push, open pull requests, merge, delete, spend past a cap, answer the Inbox or sign in. Stop Autopilot refuses everything at once without stopping running agents."
+      },
+      "go": "Turn it on in the assistant"
+    },
+    "panel": {
+      "title": "Bottom panel",
+      "body": "One panel with five tabs: Assistant, Terminal, Events, Logs and Problems.",
+      "points": {
+        "a": "The terminal is your own shell in the project folder or a task's worktree. It starts only when you press New terminal and never gets an API key.",
+        "b": "Problems lists every failure of the project in one place, each with a button to where you fix it.",
+        "c": "Hiding the panel stops nothing; closing a terminal's tab ends its shell after asking."
+      },
+      "go": "Open Problems"
+    },
+    "fallback": {
+      "title": "Fallback and handoff",
+      "body": "When a limit or a credit runs out, each task follows its own rule.",
+      "points": {
+        "a": "Manual, the default, pauses and asks in the Inbox. Ask names the proposed standby, so one click continues. Auto moves to the next standby whose checks pass and tells you afterwards.",
+        "b": "A handoff stops at a turn boundary, commits work in progress locally and gives the standby a package: goal, plan, diff, failing tests and open questions. Nothing is pushed.",
+        "c": "Moving to another account of the same provider is a separate opt-in in Settings, off by default."
+      },
+      "go": "Open Fallback settings"
+    },
+    "limits": {
+      "title": "Limits and where numbers come from",
+      "body": "Every quota or cost number carries one of these labels.",
+      "badges": {
+        "reported": { "term": "Reported", "meaning": "the provider said so" },
+        "estimated": { "term": "Estimated", "meaning": "Crewyard computed it from tokens and catalog prices" },
+        "unknown": { "term": "Unknown", "meaning": "no trustworthy source, never drawn as a percentage" },
+        "plan": { "term": "Plan", "meaning": "a subscription or a local model: tokens are counted, dollars are not" }
+      },
+      "points": {
+        "a": "A window turns amber past 80% and red past 95%, with one notice each time.",
+        "b": "Spend caps are per key and per task; a run stops and asks at the cap."
+      },
+      "go": "Open Limits"
+    },
+    "agentfiles": {
+      "title": "Your own agent files and skills",
+      "body": "Settings lists the instructions, rules, skills, commands and subagents you wrote for each tool, without opening a key or settings file.",
+      "points": {
+        "a": "Share one with a profile, or with every profile of a runner: it is copied into that profile's own folder in the runner's format, never linked.",
+        "b": "Scripts need a tick before they are copied, and a copy that is out of date waits for Sync.",
+        "c": "A project's AGENTS.md, CLAUDE.md or GEMINI.md can reach the runners that do not read it, per project and off by default."
+      },
+      "go": "Open Instructions and skills"
+    },
+    "crew": {
+      "title": "Editing the crew",
+      "body": "In the Crew graph every change is its own action; moving a node only changes the layout.",
+      "points": {
+        "a": "While it is a proposal: add or remove a step, change its role, profile or model, draw a depends-on edge and order the standbys.",
+        "b": "While it runs: retry a failed step, skip one that has not started, pause or resume all, and add a follow-up step that waits for your approval.",
+        "c": "Right-click a node, or press Shift F10, for every action, with the reason when one is off."
+      },
+      "go": "Open Crew graph"
+    },
+    "keyboard": {
+      "title": "Keyboard",
+      "body": "Every shortcut is declared once and listed in the keyboard map.",
+      "go": "Open the keyboard map"
+    }
+  },
+  "faq": {
+    "keys": {
+      "q": "Where do my API keys go?",
+      "a": "They are encrypted with Windows DPAPI and reach a runner only as an environment variable of its process. They never go on a command line, into a log, into git or into a URL, and agent shells and the terminal cannot see them."
+    },
+    "nothingStarts": {
+      "q": "Can anything start without me?",
+      "a": "No crew starts before you press Approve and start, and pushes, pull requests, merges and spend past a cap always wait for your click. The one exception is Autopilot, which you turn on per project: it may approve crews of tasks it created within your limits, and it still never pushes or merges."
+    },
+    "closePanel": {
+      "q": "Does closing a panel stop an agent?",
+      "a": "No. Closing the inspector, the bottom panel or the window keeps agents running, and the tray icon stays. Only two controls stop what they show, and they say so: the assistant's Stop and close, and a terminal's own close."
+    },
+    "estimated": {
+      "q": "Why does a number say Estimated?",
+      "a": "Crewyard computed it: tokens times the versioned catalog price, with the provider's own billing rules such as peak hours and paid web searches. Reported means the provider said it; Unknown means there is no trustworthy source, and it is never drawn as a percentage."
+    },
+    "subscriptions": {
+      "q": "Does Crewyard read my subscription sign-ins?",
+      "a": "No. Each CLI signs in through its own login inside the profile's own folder, and Crewyard never reads its tokens. Claude Code profiles use Anthropic API keys only."
+    },
+    "release": {
+      "q": "Is this build signed, and does it update itself?",
+      "reading": "Settings, under Updates, shows whether this build is signed and whether it looks for updates.",
+      "unsigned": "Crewyard {{version}} is not code-signed, so Windows SmartScreen warns about an unknown publisher when you install it.",
+      "signed": "Crewyard {{version}} is code-signed, and it installs only updates that Windows verifies as signed by its publisher.",
+      "feed": "It looks for updates when you press Check now under Updates in Settings, or on its own once you turn on Check automatically. Downloading and installing always wait for your click."
+    }
+  }
+}

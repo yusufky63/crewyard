@@ -28,7 +28,9 @@ test.afterAll(async () => {
 });
 
 const WIDTHS = [960, 1280, 1920, 2560];
-const SCREENS = ["Tasks", "Inbox", "Crew graph", "Limits & usage", "Providers", "GitHub"];
+const SCREENS = ["Tasks", "Inbox", "Crew graph", "Limits & usage", "Providers", "GitHub", "Guide"];
+/** A screen whose page title is not its sidebar name. */
+const TITLES: Record<string, string> = { Guide: "How it works" };
 
 async function resize(width: number): Promise<void> {
   await h.app.evaluate(({ BrowserWindow }, w) => BrowserWindow.getAllWindows()[0]!.setContentSize(w, 900), width);
@@ -55,7 +57,7 @@ for (const sidebar of ["full", "rail"] as const) {
       await resize(width);
       for (const name of SCREENS) {
         await page.locator("#app-sidebar").getByRole("button", { name: new RegExp(`^${name}`) }).click();
-        await expect(page.getByRole("heading", { name, exact: true, level: 1 })).toBeVisible();
+        await expect(page.getByRole("heading", { name: TITLES[name] ?? name, exact: true, level: 1 })).toBeVisible();
         expect(await overflow(), `${name} at ${width} px, sidebar ${sidebar}`).toBe(0);
       }
     }

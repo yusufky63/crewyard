@@ -49,6 +49,7 @@
     "go.limits": "Limits & usage",
     "go.providers": "Providers",
     "go.github": "GitHub",
+    "go.guide": "Guide (how it works)",
     "panel.terminal": "Expand the panel on the terminal, or collapse it",
     "panel.problems": "Expand the panel on problems, or collapse it",
     "terminal.close": "On a terminal's tab: end its shell (asks while it runs)",
