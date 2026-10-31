@@ -45,7 +45,8 @@ export function assistantFor(ctx: HandlerContext, overrides: Partial<Omit<Assist
       cancel: (taskId) => o.cancel(taskId),
       enqueue: (runId, text) => void o.enqueue(runId, text),
       retry: (runId) => o.retry(runId),
-      report: (taskId) => service.report(taskId),
+      // read_task is a read the agent may make at any time: it never creates the suggested drafts.
+      report: (taskId) => service.peekReport(taskId),
       candidates: async (projectId) => await o.profileDirectory().candidates(projectId),
       projectName: (projectId) => (db.prepare("select name from projects where id = ?").get(projectId) as { name: string } | undefined)?.name ?? null,
       userMessages: (conversationId) => db.prepare("select id, text from assistant_messages where conversation_id = ? and role = 'user' order by at, rowid").all(conversationId) as Array<{ id: string; text: string }>,
@@ -73,6 +74,7 @@ export function assistantFor(ctx: HandlerContext, overrides: Partial<Omit<Assist
       },
       taskList: (projectId, status) => autopilot.taskList(projectId, status),
       taskRead: (projectId, taskId) => autopilot.taskRead(projectId, taskId),
+      reportRead: (projectId, taskId) => autopilot.reportRead(projectId, taskId),
       requests: (projectId) => o.requests({ projectId }),
       agentReports: (projectId) => mcp.reports.list({ projectId }),
       stalls: (projectId) => o.stalls.list({ projectId }),

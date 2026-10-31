@@ -1,6 +1,7 @@
 import { ASSISTANT_KINDS, ASSISTANT_LIMITS, ASSISTANT_SIZES, parseTaskDraft, type TaskDraftInput } from "./assistant.ts";
 import { utf8Length } from "./event-caps.ts";
-import { cleanText } from "./mcp.ts";
+import { cleanText, REPORT_SERVER } from "./mcp.ts";
+import type { TaskStatus } from "./state.ts";
 
 // The task assistant's read tools and its own-draft tools (docs/adr/0018). The owner asked for the
 // assistant to "reach almost everything"; it reaches it by reading. Every tool here reads stored
@@ -62,31 +63,43 @@ export const ASSISTANT_TOOL_CAPS = {
   previewBytes: 300,
 } as const;
 
-/** What the person reads in the conversation for a call, before its subject ("Read task: Fix login"). */
-export const TOOL_LINE_TITLES: Record<AssistantExtraTool, string> = {
-  list_tasks: "Listed tasks",
-  read_task: "Read task",
-  read_report: "Read report",
-  read_crew: "Read crew",
-  list_drafts: "Listed drafts",
-  read_inbox: "Read the Inbox",
-  read_events: "Read events",
-  read_usage: "Read spend and limits",
-  list_profiles: "Listed profiles",
-  read_project: "Read project settings",
-  git_overview: "Read git status",
-  list_problems: "Listed problems",
-  list_agent_files: "Listed instruction files and skills",
-  edit_draft: "Edited draft",
-  discard_draft: "Discarded draft",
+// Every task status, as a record so a new status fails to compile until it is listed here too.
+const STATUSES: Record<TaskStatus, true> = {
+  proposed: true,
+  queued: true,
+  running: true,
+  needs_input: true,
+  limited: true,
+  handing_off: true,
+  review: true,
+  done: true,
+  failed: true,
+  merged: true,
+  cancelled: true,
 };
+/** The statuses list_tasks filters on; anything else is refused instead of quietly matching nothing. */
+export const TASK_STATUS_FILTERS = Object.keys(STATUSES) as TaskStatus[];
+export const isTaskStatus = (s: string): s is TaskStatus => Object.hasOwn(STATUSES, s);
 
-/** The tool line for one call: the title, then the subject (a task's or draft's title) when there is one. */
-export function toolLineTitle(tool: AssistantExtraTool, subject: string | null, refused = false): string {
-  const s = subject ? cleanText(subject).replace(/\s+/g, " ") : "";
-  const base = s ? `${TOOL_LINE_TITLES[tool]}: ${s}` : TOOL_LINE_TITLES[tool];
-  const line = refused ? `${base} (refused)` : base;
-  return cutWithEllipsis(line, ASSISTANT_LIMITS.toolLineBytes);
+/**
+ * One of Crewyard's own tool lines as the panel gets it. The line is stored as data, never as
+ * English prose, so the panel words it in the person's language (`toolLine.*` in assistant.json):
+ * the tool, whether it was refused, and its subject. The subject is a task's, draft's or project's
+ * title (untrusted, cleaned, shown as text); list_tasks carries the status it filtered on and
+ * read_usage the days it looked back instead.
+ */
+export interface AssistantToolLine {
+  tool: AssistantExtraTool;
+  outcome: "done" | "refused";
+  subject: string | null;
+  days?: number;
+  status?: TaskStatus;
+}
+
+/** What a tool line stores as its text: only the subject, cleaned, on one line and capped. */
+export function toolLineText(subject: string | null | undefined): string {
+  if (!subject) return "";
+  return cutWithEllipsis(cleanText(subject).replace(/\s+/g, " ").trim(), ASSISTANT_LIMITS.toolLineBytes);
 }
 
 /**
@@ -103,15 +116,31 @@ export function parseToolLineId(id: string): { tool: AssistantExtraTool; outcome
   return { tool: m[1] as AssistantExtraTool, outcome: m[2] as "done" | "refused" };
 }
 
+/** A stored tool line (its id and text) as the panel gets it; null for any other line. */
+export function toolLineCall(id: string, text: string): AssistantToolLine | null {
+  const c = parseToolLineId(id);
+  if (!c) return null;
+  if (c.tool === "read_usage") {
+    const days = Number(text);
+    return { ...c, subject: null, ...(text && Number.isInteger(days) && days >= 1 && days <= ASSISTANT_TOOL_CAPS.usageDaysMax ? { days } : {}) };
+  }
+  if (c.tool === "list_tasks") return { ...c, subject: null, ...(isTaskStatus(text) ? { status: text } : {}) };
+  return { ...c, subject: text || null };
+}
+
+// The exact shapes each adapter gives a call to a tool on our server: Claude's tool name (maybe
+// followed by ": <detail>"), Codex's server.tool, OpenCode's server_tool, and Gemini's ACP title.
+const TOOL_NAMES = ASSISTANT_EXTRA_TOOLS.join("|");
+const OWN_TOOL_TITLE = new RegExp(`^(?:mcp__${REPORT_SERVER}__(?:${TOOL_NAMES})(?::.*)?|${REPORT_SERVER}[._/](?:${TOOL_NAMES})|(?:${TOOL_NAMES}) \\(${REPORT_SERVER} MCP Server\\))$`, "s");
+
 /**
- * Whether a runner's own tool.call title names one of these tools on Crewyard's server
- * (`mcp__crewyard__read_task`, `crewyard.read_task`, `crewyard_read_task`). Those lines are left out:
- * Crewyard writes a readable line of its own for each call instead.
+ * Whether a runner's own tool.call title is a call to one of these tools on Crewyard's server. Only
+ * the whole server-qualified name counts, so a runner's read or search that merely mentions a path
+ * or word with "crewyard" in it stays visible. Those calls are left out because Crewyard writes a
+ * readable line of its own for each.
  */
 export function isOwnToolTitle(title: string): boolean {
-  const t = title.toLowerCase();
-  if (!t.includes("crewyard")) return false;
-  return ASSISTANT_EXTRA_TOOLS.some((name) => new RegExp(`(?:^|[^a-z0-9])${name}(?:$|[^a-z0-9_])`).test(t));
+  return OWN_TOOL_TITLE.test(title.trim());
 }
 
 /** Cuts text to at most `max` UTF-8 bytes without splitting a character; adds an ellipsis when it cut. */
@@ -194,7 +223,6 @@ export type AssistantToolCall =
 type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
 
 const ID = /^[A-Za-z0-9-]{1,64}$/;
-const STATUS = /^[a-z_]{1,32}$/;
 
 const rec = (v: unknown): Record<string, unknown> | null => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null);
 
@@ -237,6 +265,43 @@ const ARG_KEYS: Record<AssistantExtraTool, readonly string[]> = {
   discard_draft: ["draft_id", "reason"],
 };
 
+/**
+ * edit_draft's fields, each checked on its own with propose_task's rules. A field left out or sent
+ * as null stays as it is: models often send null for an optional field they do not mean to touch,
+ * and that must never blank the draft the person is looking at.
+ */
+function parseDraftPatch(a: Record<string, unknown>): Parsed<Partial<TaskDraftInput>> {
+  const given = (k: string) => a[k] !== undefined && a[k] !== null;
+  const patch: Partial<TaskDraftInput> = {};
+  // parseTaskDraft needs a title and a kind; only the field under check is ever taken from its result.
+  const check = (field: Record<string, unknown>) => parseTaskDraft({ title: "x", kind: "docs", ...field });
+  if (given("title")) {
+    const r = check({ title: a.title });
+    if (!r.ok) return r;
+    patch.title = r.value.title;
+  }
+  if (given("description")) {
+    const r = check({ description: a.description });
+    if (!r.ok) return r;
+    patch.description = r.value.description;
+  }
+  if (given("kind")) {
+    if (typeof a.kind !== "string" || !(ASSISTANT_KINDS as readonly string[]).includes(a.kind)) return { ok: false, error: `kind must be one of ${ASSISTANT_KINDS.join(", ")}` };
+    patch.kind = a.kind as TaskDraftInput["kind"];
+  }
+  if (given("size")) {
+    if (typeof a.size !== "string" || !(ASSISTANT_SIZES as readonly string[]).includes(a.size)) return { ok: false, error: `size must be one of ${ASSISTANT_SIZES.join(", ")}` };
+    patch.size = a.size as TaskDraftInput["size"];
+  }
+  if (given("acceptance_criteria")) {
+    const r = check({ acceptance_criteria: a.acceptance_criteria });
+    if (!r.ok) return r;
+    patch.acceptance = r.value.acceptance;
+  }
+  if (Object.keys(patch).length === 0) return { ok: false, error: "nothing to change: give title, description, kind, size or acceptance_criteria" };
+  return { ok: true, value: patch };
+}
+
 /** Checks one call's arguments. Errors go back to the agent as the tool result, so it can correct itself. */
 export function parseAssistantToolCall(tool: string, args: unknown): Parsed<AssistantToolCall> {
   if (!isAssistantExtraTool(tool)) return { ok: false, error: "unknown tool" };
@@ -252,8 +317,9 @@ export function parseAssistantToolCall(tool: string, args: unknown): Parsed<Assi
       return { ok: true, value: { tool } };
     case "list_tasks": {
       const s = a.status;
-      if (s !== undefined && s !== null && (typeof s !== "string" || !STATUS.test(s))) return { ok: false, error: "status must be a task status such as running, review or done" };
-      return { ok: true, value: { tool, status: typeof s === "string" ? s : null } };
+      if (s === undefined || s === null || s === "") return { ok: true, value: { tool, status: null } };
+      if (typeof s !== "string" || !isTaskStatus(s)) return { ok: false, error: `status must be one of ${TASK_STATUS_FILTERS.join(", ")}` };
+      return { ok: true, value: { tool, status: s } };
     }
     case "read_task":
     case "read_report":
@@ -295,23 +361,9 @@ export function parseAssistantToolCall(tool: string, args: unknown): Parsed<Assi
     case "edit_draft": {
       const d = id(a, "draft_id", true);
       if (!d.ok) return d;
-      const patch: Partial<TaskDraftInput> = {};
-      // The same checks as propose_task, field by field; stand-ins fill what the patch leaves out.
-      const probe = parseTaskDraft({
-        title: a.title ?? "edit",
-        description: a.description,
-        kind: a.kind ?? "docs",
-        size: a.size,
-        acceptance_criteria: a.acceptance_criteria,
-      });
-      if (!probe.ok) return probe;
-      if (a.title !== undefined) patch.title = probe.value.title;
-      if (a.description !== undefined) patch.description = probe.value.description;
-      if (a.kind !== undefined) patch.kind = probe.value.kind;
-      if (a.size !== undefined) patch.size = probe.value.size;
-      if (a.acceptance_criteria !== undefined) patch.acceptance = probe.value.acceptance;
-      if (Object.keys(patch).length === 0) return { ok: false, error: "nothing to change: give title, description, kind, size or acceptance_criteria" };
-      return { ok: true, value: { tool, draftId: d.value!, patch } };
+      const p = parseDraftPatch(a);
+      if (!p.ok) return p;
+      return { ok: true, value: { tool, draftId: d.value!, patch: p.value } };
     }
     case "discard_draft": {
       const d = id(a, "draft_id", true);
@@ -337,8 +389,8 @@ export const ASSISTANT_EXTRA_TOOL_DEFS = [
   {
     name: "list_tasks",
     title: "List the project's tasks",
-    description: "Lists the project's tasks, newest first: id, title, kind, status, open Inbox requests, spend with its label, and whether Autopilot created it. status filters to one status (proposed, queued, running, needs_input, limited, review, done, failed, merged, cancelled).",
-    inputSchema: { type: "object", properties: { status: { type: "string", maxLength: 32 } }, additionalProperties: false },
+    description: "Lists the project's tasks, newest first: id, title, kind, status, open Inbox requests, spend with its label, and whether Autopilot created it. status filters to one status.",
+    inputSchema: { type: "object", properties: { status: { type: "string", enum: [...TASK_STATUS_FILTERS] } }, additionalProperties: false },
     annotations: ro,
   },
   {
@@ -441,7 +493,7 @@ export const ASSISTANT_EXTRA_TOOL_DEFS = [
   {
     name: "edit_draft",
     title: "Edit one of your open drafts",
-    description: "Changes a draft you proposed in this conversation that the person has not added or discarded yet. Give only the fields to change; acceptance_criteria replaces the list. It stays a draft.",
+    description: "Changes a draft you proposed in this conversation (propose_task returns its draft_id) that the person has not added or discarded yet. Give only the fields to change; a field left out or null stays as it is, and acceptance_criteria replaces the list. Drafts the person picked from ready-made tasks or a report stay theirs. It stays a draft.",
     inputSchema: {
       type: "object",
       properties: {
@@ -460,7 +512,7 @@ export const ASSISTANT_EXTRA_TOOL_DEFS = [
   {
     name: "discard_draft",
     title: "Discard one of your open drafts",
-    description: "Discards a draft you proposed in this conversation that the person has not added yet, for example when you replaced it with a better one.",
+    description: "Discards a draft you proposed in this conversation that the person has not added yet, for example when you replaced it with a better one. Drafts the person picked from ready-made tasks or a report stay theirs.",
     inputSchema: {
       type: "object",
       properties: { draft_id: { type: "string", description: "A draft id from list_drafts." }, reason: { type: "string", maxLength: ASSISTANT_TOOL_CAPS.reasonBytes } },

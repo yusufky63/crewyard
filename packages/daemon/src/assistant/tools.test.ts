@@ -14,7 +14,8 @@ import { ASSISTANT_TOOLS } from "../mcp/service.ts";
 import { McpSession, REPORT_TOOLS } from "../mcp/session.ts";
 import { AdapterRegistry } from "../orchestrator/adapters.ts";
 import { orchestratorFor } from "../orchestrator/index.ts";
-import { candidate, cleanTemps, model, ScriptedAdapter, tempDir, tempRepo, waitFor } from "../orchestrator/testing.ts";
+import { candidate, cleanTemps, git, model, ScriptedAdapter, tempDir, tempRepo, waitFor } from "../orchestrator/testing.ts";
+import { problemSources } from "../handlers/problems.ts";
 import { recordSpend } from "../providers/ledger.ts";
 import { Store } from "../store.ts";
 import { AssistantTools, type AssistantToolsHost } from "./tools.ts";
@@ -125,11 +126,62 @@ describe("assistant read tools with Autopilot off", () => {
     expect((older.events as Array<{ kind: string }>).some((e) => e.kind === "run.message.delta")).toBe(false);
 
     expect(await call("list_drafts")).toMatchObject({ ok: true, drafts: [] });
-    // Our own tool lines, readable, with the subject, and marked as ours.
-    const lines = s.a.get(s.project.id).lines.filter((l) => l.role === "tool");
-    expect(lines.map((l) => l.text)).toEqual(expect.arrayContaining(["Listed tasks", "Listed tasks: running", "Read task: Fix login", "Read crew: Fix login", "Read report: Find why the Windows build is slow"]));
-    expect(lines.find((l) => l.text === "Read task: Fix login")?.call).toEqual({ tool: "read_task", outcome: "done" });
+    expect(await call("read_usage", { days: 1 })).toMatchObject({ ok: true, period: { days: 1 } });
+    // Our own tool lines are data the panel words in the person's language: tool, outcome, subject.
+    const calls = s.a
+      .get(s.project.id)
+      .lines.filter((l) => l.role === "tool")
+      .map((l) => l.call);
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        { tool: "list_tasks", outcome: "done", subject: null },
+        { tool: "list_tasks", outcome: "done", subject: null, status: "running" },
+        { tool: "read_task", outcome: "done", subject: "Fix login" },
+        { tool: "read_crew", outcome: "done", subject: "Fix login" },
+        { tool: "read_report", outcome: "done", subject: "Find why the Windows build is slow" },
+        { tool: "read_usage", outcome: "done", subject: null, days: 1 },
+      ]),
+    );
+    // No English sentence is stored for the panel to show as it is.
+    expect(s.a.get(s.project.id).lines.some((l) => l.role === "tool" && /^(Read|Listed) /.test(l.text))).toBe(false);
     expect(conversationId).toBeTruthy();
+  });
+
+  it("reads a finished report with read_task without creating its suggested drafts or an event, and read_report counts for Autopilot", async () => {
+    const s = await setup(assistantScript);
+    const { call } = await live(s);
+    const research = await s.o.propose({ projectId: s.project.id, title: "Find why the Windows build is slow", kind: "research" });
+    await s.o.approve({ taskId: research.id });
+    await waitFor(() => s.o.get(research.id).status === "done");
+    // A researcher's findings with a suggested task: opening the report in the app creates its draft.
+    s.store.appendEvent({
+      kind: "research.findings",
+      source: "orchestrator",
+      payload: {
+        summary: "Defender scans the output folder.\u0007",
+        findings: [{ title: "Exclude the output folder", severity: "high", file: "build.ps1", line: 3, detail: "Add an exclusion.", suggestedTask: { title: "Exclude dist from Defender", description: "", kind: "docs", acceptanceCriteria: ["Documented"] } }],
+      },
+      projectId: s.project.id,
+      taskId: research.id,
+    });
+    const count = (sql: string) => Number((s.store.db.prepare(sql).get(research.id) as { n: number }).n);
+    const drafts = () => count("select count(*) as n from assistant_drafts where source_task_id = ?");
+    const events = () => count("select count(*) as n from events where task_id = ?");
+    const before = { drafts: drafts(), events: events() };
+    const read = await call("read_task", { task_id: research.id });
+    expect(read).toMatchObject({ ok: true, report: { summary: "Defender scans the output folder.", findings: [{ title: "Exclude the output folder", file: "build.ps1" }] } });
+    expect({ drafts: drafts(), events: events() }).toEqual(before);
+    // The report view the person opens still creates the suggestion once.
+    expect(s.a.report(research.id)?.drafts.map((d) => d.title)).toEqual(["Exclude dist from Defender"]);
+    expect(drafts()).toBe(before.drafts + 1);
+
+    // An Autopilot task whose report the agent read with read_report may be completed.
+    s.store.db
+      .prepare("insert into autopilot_tasks (task_id, project_id, conversation_id, basis_message_id, basis, sources, reason, created_at) values (?, ?, null, 'm', 'b', '[]', 'r', ?)")
+      .run(research.id, s.project.id, new Date().toISOString());
+    expect(await call("read_report", { task_id: research.id })).toMatchObject({ ok: true, report: { source: "findings" } });
+    const row = s.store.db.prepare("select report_read_at from autopilot_tasks where task_id = ?").get(research.id) as { report_read_at: string | null };
+    expect(row.report_read_at).toEqual(expect.any(String));
   });
 
   it("reads the Inbox, spend with labels, profiles, the project, git, problems and agent files, with no secret", async () => {
@@ -159,7 +211,7 @@ describe("assistant read tools with Autopilot off", () => {
     const git = await call("git_overview", { commits: 3 });
     expect(git).toMatchObject({ ok: true, repo: { branch: expect.any(String), upstream: null, ahead: null }, recent_commits: [expect.objectContaining({ sha: expect.any(String) })] });
 
-    expect(await call("list_problems")).toMatchObject({ ok: true, failed_steps: [], failing_checks: [] });
+    expect(await call("list_problems")).toMatchObject({ ok: true, failing_checks: [] });
     const files = await call("list_agent_files");
     expect(files.found).toEqual(expect.arrayContaining([expect.objectContaining({ tool: "claude", name: "CLAUDE.md", preview: expect.stringContaining("Use pnpm") })]));
     // Reading the Inbox answered nothing.
@@ -190,7 +242,30 @@ describe("own drafts", () => {
     expect(await call("discard_draft", { draft_id: second.id, reason: "Merged into the first." })).toMatchObject({ ok: true, status: "discarded" });
     expect(s.a.get(s.project.id).drafts.find((d) => d.id === second.id)?.status).toBe("discarded");
     const lines = s.a.get(s.project.id).lines.filter((l) => l.role === "tool").map((l) => [l.text, l.call?.outcome]);
-    expect(lines).toEqual(expect.arrayContaining([["Edited draft: Fix the login redirect", "done"], ["Edited draft (refused)", "refused"], ["Discarded draft: Write docs", "done"]]));
+    expect(lines).toEqual(expect.arrayContaining([["Fix the login redirect", "done"], ["", "refused"], ["Write docs", "done"]]));
+  });
+
+  it("propose_task returns the draft id, and a null field leaves the stored value as it is", async () => {
+    const s = await setup(assistantScript);
+    const { call, conversationId } = await live(s);
+    const proposed = JSON.parse((await s.a.toolCall(conversationId, "propose_task", { title: "Assistant draft", description: "keep me", kind: "code", acceptance_criteria: ["It works"] })).text) as { ok: boolean; draft_id: string };
+    expect(proposed).toMatchObject({ ok: true, draft_id: expect.any(String) });
+    const draftId = proposed.draft_id;
+    expect(await call("edit_draft", { draft_id: draftId, title: null, description: null, kind: null, size: null, acceptance_criteria: null })).toMatchObject({ isError: true, refused: "invalid" });
+    expect(await call("edit_draft", { draft_id: draftId, title: null, description: null, kind: null, size: "M", acceptance_criteria: null })).toMatchObject({ ok: true });
+    const d = s.a.get(s.project.id).drafts.find((x) => x.id === draftId)!;
+    expect({ title: d.title, description: d.description, kind: d.kind, size: d.size, acceptance: d.acceptance }).toEqual({ title: "Assistant draft", description: "keep me", kind: "code", size: "M", acceptance: ["It works"] });
+  });
+
+  it("never changes a ready-made task the person picked into the same conversation", async () => {
+    const s = await setup(assistantScript);
+    const { call, conversationId } = await live(s);
+    s.a.preset(s.project.id, "bugs");
+    const picked = s.a.get(s.project.id).drafts.find((d) => d.source === "preset")!;
+    expect(s.store.db.prepare("select conversation_id from assistant_drafts where id = ?").get(picked.id)).toEqual({ conversation_id: conversationId });
+    expect(await call("edit_draft", { draft_id: picked.id, title: "Changed by agent" })).toMatchObject({ isError: true, refused: "not_yours" });
+    expect(await call("discard_draft", { draft_id: picked.id })).toMatchObject({ isError: true, refused: "not_yours" });
+    expect(s.a.get(s.project.id).drafts.find((d) => d.id === picked.id)).toMatchObject({ title: picked.title, status: "open", source: "preset" });
   });
 });
 
@@ -200,6 +275,7 @@ describe("refusals, caps and the rate limit", () => {
     task: () => null,
     taskList: () => ({ tasks: [] }),
     taskRead: () => null,
+    reportRead: () => undefined,
     requests: () => [],
     agentReports: () => [],
     stalls: () => [],
@@ -223,9 +299,98 @@ describe("refusals, caps and the rate limit", () => {
     const t = new AssistantTools({ store: store(), host: host({ task: () => ({ id: "t1", projectId: "other", title: "Theirs" }) as unknown as TaskDetail }) });
     expect(JSON.parse((await t.call(ctx, "read_task", { task_id: "../x" })).outcome.text)).toMatchObject({ ok: false, refused: "invalid" });
     const theirs = await t.call(ctx, "read_crew", { task_id: "t1" });
-    expect(theirs).toMatchObject({ refused: true, line: "Read crew (refused)", outcome: { isError: true } });
+    expect(theirs).toMatchObject({ refused: true, tool: "read_crew", line: "", outcome: { isError: true } });
     expect(JSON.parse(theirs.outcome.text)).toMatchObject({ refused: "not_found" });
-    expect(JSON.parse((await t.call(ctx, "push", {})).outcome.text)).toMatchObject({ refused: "invalid", detail: "unknown tool." });
+    const push = await t.call(ctx, "push", {});
+    expect(JSON.parse(push.outcome.text)).toMatchObject({ refused: "invalid", detail: "unknown tool." });
+    // An unknown tool writes no line at all.
+    expect(push).toMatchObject({ tool: null, line: null });
+  });
+
+  it("cleans and redacts what read_task passes on from Autopilot's read", async () => {
+    const task = { id: "t1", projectId: "p", title: "Fix login", description: "Steps\u0007 to log in" } as unknown as TaskDetail;
+    const t = new AssistantTools({
+      store: store(),
+      host: host({
+        task: () => task,
+        taskRead: () => ({
+          title: "Fix\u202e login",
+          steps: [{ step: "implement", failure: "curl -H 'Authorization: Bearer abcdefghijklmnop' failed" }],
+          report: { summary: "x".repeat(20_000), findings: [{ title: "A\nB", file: null, detail: "sk-proj-abcdefghijklmnopqrstuvwx leaked" }] },
+        }),
+      }),
+    });
+    const out = JSON.parse((await t.call(ctx, "read_task", { task_id: "t1" })).outcome.text) as { title: string; description: string; steps: Array<{ failure: string }>; report: { summary: string; findings: Array<{ title: string; detail: string }> } };
+    expect(out.title).toBe("Fix login");
+    expect(out.description).toBe("Steps to log in");
+    expect(out.steps[0]!.failure).not.toContain("abcdefghijklmnop");
+    expect(out.steps[0]!.failure).toContain("[redacted]");
+    expect(utf8Length(out.report.summary)).toBeLessThanOrEqual(ASSISTANT_TOOL_CAPS.reportSummaryBytes);
+    expect(out.report.findings[0]!.title).toBe("A B");
+    // Report text is agent-written data: cleaned and capped, as read_report shows it.
+    expect(out.report.findings[0]!.detail).toContain("leaked");
+  });
+
+  it("redacts secrets in list_problems and read_events from real rows", async () => {
+    const st = store();
+    const db = st.db;
+    const project = st.addProject(join(tempDir("crewyard tools-"), "my app"), "my app");
+    db.prepare("insert into tasks (id, project_id, title, description, kind, size, fallback, wait_reset_minutes, classification, created_at) values ('t1', ?, 'Fix login', '', 'code', 'S', 'manual', 0, '{}', 'now')").run(project.id);
+    db.prepare("insert into crews (id, task_id, proposed_at, estimate_provenance) values ('c1', 't1', 'now', 'unknown')").run();
+    db.prepare("insert into crew_members (id, crew_id, position, step, role, depends_on, required, writes_code, standby, reasons) values ('m1', 'c1', 0, 'implement', 'implementer', '[]', 1, 1, '[]', '[]')").run();
+    db.prepare("insert into runs (id, task_id, member_id, role, profile_id, runner, cwd, started_at, ended_at, end_reason, end_detail) values ('r1', 't1', 'm1', 'implementer', 'p', 'codex', 'C:\\x', 'now', 'now', 'failed', ?)").run(
+      "API Error: 401 OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwx was rejected",
+    );
+    st.appendEvent({ kind: "git.failed", source: "orchestrator", payload: { detail: "push to https://me:hunter2secret@github.com/o/r failed" }, projectId: project.id, taskId: "t1", runId: "r1" });
+    st.appendEvent({ kind: "tool.call", source: "codex", payload: { command: "curl -H 'Authorization: Bearer abcdefghijklmnop' https://x" }, projectId: project.id, taskId: "t1", runId: "r1" });
+    const task = { id: "t1", projectId: project.id, title: "Fix login" } as unknown as TaskDetail;
+    const t = new AssistantTools({ store: st, host: host({ task: () => task, problems: (id) => problemSources(db, id) }) });
+    const c = { projectId: project.id, conversationId: "c" };
+    const problems = (await t.call(c, "list_problems", {})).outcome.text;
+    expect(JSON.parse(problems)).toMatchObject({ ok: true, failed_steps: [{ task: "Fix login", failure: expect.stringContaining("[redacted]") }], failed_events: [{ kind: "git.failed", text: expect.stringContaining("[redacted]") }] });
+    const events = (await t.call(c, "read_events", { run_id: "r1" })).outcome.text;
+    expect(JSON.parse(events)).toMatchObject({ ok: true, events: expect.arrayContaining([expect.objectContaining({ kind: "tool.call", text: expect.stringContaining("Authorization: [redacted]") })]) });
+    for (const secret of ["sk-proj-abcdefghijklmnopqrstuvwx", "hunter2secret", "abcdefghijklmnop"]) {
+      expect(problems).not.toContain(secret);
+      expect(events).not.toContain(secret);
+    }
+    // A full page of long events still fits the 16 KB cap: shortened, marked, and paging goes on
+    // from the last event it holds, so nothing is skipped.
+    for (let i = 0; i < 120; i++) st.appendEvent({ kind: "tool.call", source: "codex", payload: { command: `step ${i} ${"word ".repeat(200)}` }, projectId: project.id, taskId: "t1", runId: "r1" });
+    const seen = new Set<number>();
+    let before: number | null = null;
+    for (let pages = 0; pages < 20; pages++) {
+      const text = (await t.call(c, "read_events", { task_id: "t1", limit: 100, ...(before ? { before_seq: before } : {}) })).outcome.text;
+      expect(utf8Length(text)).toBeLessThanOrEqual(ASSISTANT_TOOL_CAPS.resultBytes);
+      const page = JSON.parse(text) as { events: Array<{ seq: number }>; next_before_seq: number | null; shortened?: boolean };
+      if (pages === 0) expect(page).toMatchObject({ shortened: true });
+      for (const e of page.events) seen.add(e.seq);
+      if (!page.next_before_seq) break;
+      expect(page.next_before_seq).toBe(page.events.at(-1)!.seq);
+      before = page.next_before_seq;
+    }
+    const all = (db.prepare("select seq from events where task_id = 't1'").all() as Array<{ seq: number }>).map((r) => Number(r.seq));
+    expect([...seen].sort((a, b) => a - b)).toEqual(all.sort((a, b) => a - b));
+  });
+
+  it("reads a task's worktree: its branch, status and diff stat against its base", async () => {
+    const root = tempDir("crewyard tools-");
+    const repo = await tempRepo(root, "app with space");
+    const baseSha = (await git(repo, "rev-parse", "HEAD")).trim();
+    writeFileSync(join(repo, "login.ts"), "export const ok = true;\n");
+    await git(repo, "add", "-A");
+    await git(repo, "commit", "-q", "-m", "Fix login");
+    writeFileSync(join(repo, "notes.md"), "draft\n");
+    const task = { id: "t1", projectId: "p", title: "Fix login", worktree: { id: "w1", path: repo, branch: "main", baseSha, ownerRunId: null, createdAt: "now" } } as unknown as TaskDetail;
+    const t = new AssistantTools({ store: store(), host: host({ project: () => ({ id: "p", name: "app", path: repo }), task: () => task }) });
+    const out = await t.call(ctx, "git_overview", { task_id: "t1", commits: 5 });
+    expect(out).toMatchObject({ refused: false, line: "Fix login" });
+    const r = JSON.parse(out.outcome.text) as { repo: { branch: string }; recent_commits: Array<{ subject: string }>; task: { branch: string; base: string; status: { changed_files: number; status: string[] }; diff_stat: string[] } };
+    expect(r.repo.branch).toBe("main");
+    expect(r.recent_commits.map((x) => x.subject)).toEqual(["Fix login", "init"]);
+    expect(r.task).toMatchObject({ branch: "main", base: baseSha.slice(0, 12), status: { changed_files: 1, status: ["?? notes.md"] } });
+    expect(r.task.diff_stat[0]).toContain("login.ts");
+    expect(r.task.diff_stat.at(-1)).toContain("1 file changed");
   });
 
   it("caps every result at 16 KB and marks it", async () => {
@@ -240,7 +405,15 @@ describe("refusals, caps and the rate limit", () => {
     let now = 1_000_000;
     const t = new AssistantTools({ store: store(), host: host(), now: () => now });
     for (let i = 0; i < ASSISTANT_TOOL_CAPS.callsPerMinute; i++) expect((await t.call(ctx, "list_tasks", {})).refused).toBe(false);
-    expect(JSON.parse((await t.call(ctx, "list_tasks", {})).outcome.text)).toMatchObject({ refused: "rate" });
+    const first = await t.call(ctx, "list_tasks", {});
+    expect(JSON.parse(first.outcome.text)).toMatchObject({ refused: "rate" });
+    // The first refusal shows the person one line; the ones after it in a row write none.
+    expect(first.line).toBe("");
+    for (let i = 0; i < 5; i++) {
+      const again = await t.call(ctx, "read_inbox", {});
+      expect(JSON.parse(again.outcome.text)).toMatchObject({ refused: "rate" });
+      expect(again.line).toBeNull();
+    }
     // Another conversation has its own window, and the window rolls.
     expect((await t.call({ ...ctx, conversationId: "d" }, "list_tasks", {})).refused).toBe(false);
     now += 61_000;
@@ -287,7 +460,10 @@ describe("through the live session", () => {
     await s.a.send(s.project.id, "cheap", "What tasks are there?");
     const view = await waitFor(() => (s.a.get(s.project.id).lines.some((l) => l.text === "There is one task.") ? s.a.get(s.project.id) : null), 20_000);
     const tools = view.lines.filter((l) => l.role === "tool");
-    expect(tools.map((l) => l.text)).toEqual(["Listed tasks", "Read task (refused)"]);
+    expect(tools.map((l) => l.call)).toEqual([
+      { tool: "list_tasks", outcome: "done", subject: null },
+      { tool: "read_task", outcome: "refused", subject: null },
+    ]);
     expect(tools.some((l) => l.text.includes("mcp__crewyard"))).toBe(false);
     const prompt = s.adapter.started.find((x) => x.role === "assistant")!.req.prompt;
     expect(prompt).toContain("read_inbox (what waits on the person)");

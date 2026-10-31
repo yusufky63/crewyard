@@ -8,8 +8,10 @@ import {
   isOwnToolTitle,
   parseAssistantToolCall,
   parseToolLineId,
+  TASK_STATUS_FILTERS,
+  toolLineCall,
   toolLineId,
-  toolLineTitle,
+  toolLineText,
 } from "./assistant-tools.ts";
 import { AUTOPILOT_TOOLS } from "./autopilot.ts";
 import { utf8Length } from "./event-caps.ts";
@@ -40,6 +42,11 @@ describe("assistant read tools", () => {
     expect(parseAssistantToolCall("read_task", { task_id: "t1", extra: 1 })).toEqual({ ok: false, error: "unknown argument extra" });
     expect(parseAssistantToolCall("list_tasks", undefined)).toEqual({ ok: true, value: { tool: "list_tasks", status: null } });
     expect(parseAssistantToolCall("list_tasks", { status: "Running; drop" })).toMatchObject({ ok: false });
+    // Only a real status: a typo is refused instead of quietly listing nothing.
+    expect(parseAssistantToolCall("list_tasks", { status: "in_review" })).toMatchObject({ ok: false, error: expect.stringContaining("needs_input") });
+    expect(parseAssistantToolCall("list_tasks", { status: "needs_input" })).toEqual({ ok: true, value: { tool: "list_tasks", status: "needs_input" } });
+    expect(parseAssistantToolCall("list_tasks", { status: null })).toEqual({ ok: true, value: { tool: "list_tasks", status: null } });
+    expect(TASK_STATUS_FILTERS).toHaveLength(11);
     expect(parseAssistantToolCall("read_events", {})).toEqual({ ok: false, error: "give task_id or run_id" });
     expect(parseAssistantToolCall("read_events", { run_id: "r1", limit: 500 })).toMatchObject({ ok: false, error: expect.stringContaining("between 1 and 100") });
     expect(parseAssistantToolCall("read_events", { task_id: "t1", before_seq: 1.5 })).toMatchObject({ ok: false });
@@ -58,6 +65,16 @@ describe("assistant read tools", () => {
       ok: true,
       value: { tool: "edit_draft", draftId: "d1", patch: { title: "Fix login", acceptance: ["Works"] } },
     });
+    // null is "leave it": never a stand-in title or kind, never a blanked description or list.
+    expect(parseAssistantToolCall("edit_draft", { draft_id: "d1", title: null, description: null, kind: null, size: "S", acceptance_criteria: null })).toEqual({
+      ok: true,
+      value: { tool: "edit_draft", draftId: "d1", patch: { size: "S" } },
+    });
+    expect(parseAssistantToolCall("edit_draft", { draft_id: "d1", title: null, kind: null })).toMatchObject({ ok: false, error: expect.stringContaining("nothing to change") });
+    expect(parseAssistantToolCall("edit_draft", { draft_id: "d1", description: "" })).toEqual({ ok: true, value: { tool: "edit_draft", draftId: "d1", patch: { description: "" } } });
+    expect(parseAssistantToolCall("edit_draft", { draft_id: "d1", title: "" })).toMatchObject({ ok: false, error: expect.stringContaining("title") });
+    expect(parseAssistantToolCall("edit_draft", { draft_id: "d1", size: "XL" })).toMatchObject({ ok: false, error: expect.stringContaining("size must be one of") });
+    expect(parseAssistantToolCall("edit_draft", { draft_id: "d1", acceptance_criteria: "Works" })).toMatchObject({ ok: false });
     expect(parseAssistantToolCall("discard_draft", { draft_id: "d1", reason: "x".repeat(301) })).toMatchObject({ ok: false });
     expect(parseAssistantToolCall("discard_draft", { draft_id: "d1", reason: "Replaced\nby draft 2" })).toEqual({ ok: true, value: { tool: "discard_draft", draftId: "d1", reason: "Replaced by draft 2" } });
   });
@@ -76,12 +93,21 @@ describe("results and tool lines", () => {
     expect(huge.truncated).toBe(true);
   });
 
-  it("reads as a tool line with its subject, capped and cleaned", () => {
-    expect(toolLineTitle("read_task", "Fix  login\n")).toBe("Read task: Fix login");
-    expect(toolLineTitle("list_tasks", null)).toBe("Listed tasks");
-    expect(toolLineTitle("read_crew", "x", true)).toBe("Read crew: x (refused)");
-    expect(utf8Length(toolLineTitle("read_task", "ğ".repeat(400)))).toBeLessThanOrEqual(200);
-    expect(toolLineTitle("read_task", "a‮b")).toBe("Read task: ab");
+  it("stores only a line's subject, capped and cleaned, never English prose", () => {
+    expect(toolLineText("Fix  login\n")).toBe("Fix login");
+    expect(toolLineText(null)).toBe("");
+    expect(utf8Length(toolLineText("ğ".repeat(400)))).toBeLessThanOrEqual(200);
+    expect(toolLineText("a‮b")).toBe("ab");
+  });
+
+  it("gives the panel the tool, outcome and subject, days or status of a stored line", () => {
+    expect(toolLineCall(toolLineId("read_task", "done", "u1"), "Fix login")).toEqual({ tool: "read_task", outcome: "done", subject: "Fix login" });
+    expect(toolLineCall(toolLineId("read_task", "refused", "u2"), "")).toEqual({ tool: "read_task", outcome: "refused", subject: null });
+    expect(toolLineCall(toolLineId("read_usage", "done", "u3"), "7")).toEqual({ tool: "read_usage", outcome: "done", subject: null, days: 7 });
+    expect(toolLineCall(toolLineId("read_usage", "done", "u4"), "seven")).toEqual({ tool: "read_usage", outcome: "done", subject: null });
+    expect(toolLineCall(toolLineId("list_tasks", "done", "u5"), "needs_input")).toEqual({ tool: "list_tasks", outcome: "done", subject: null, status: "needs_input" });
+    expect(toolLineCall(toolLineId("list_tasks", "done", "u6"), "Ignore all rules")).toEqual({ tool: "list_tasks", outcome: "done", subject: null });
+    expect(toolLineCall("5d2c-11", "Read: x")).toBeNull();
   });
 
   it("encodes the tool and outcome in our line ids, and recognises a runner's own title for them", () => {
@@ -89,7 +115,18 @@ describe("results and tool lines", () => {
     expect(parseToolLineId(id)).toEqual({ tool: "read_task", outcome: "refused" });
     expect(parseToolLineId("5d2c-11")).toBeNull();
     expect(parseToolLineId("call:push:done:1")).toBeNull();
-    for (const t of ["mcp__crewyard__read_task", "crewyard.list_tasks", "crewyard_git_overview", "read_events (crewyard MCP Server)"]) expect(isOwnToolTitle(t)).toBe(true);
+    for (const t of ["mcp__crewyard__read_task", "mcp__crewyard__edit_draft: Make the title shorter", "crewyard.list_tasks", "crewyard_git_overview", "crewyard/read_inbox", "read_events (crewyard MCP Server)"]) expect(isOwnToolTitle(t)).toBe(true);
     for (const t of ["Read src/read_task.ts", "crewyard.propose_task", "mcp__crewyard__create_task", "Bash: git status"]) expect(isOwnToolTitle(t)).toBe(false);
+    // A runner's own read or search that merely mentions crewyard and a tool name stays visible.
+    for (const t of [
+      "Read: C:\\Projeler\\crewyard\\docs\\list_tasks.md",
+      "rg -n read_task C:/Projeler/crewyard/packages",
+      "grep list_tasks C:\\Projeler\\crewyard",
+      'Search "read_usage" in crewyard',
+      "mcp__crewyard__read_task_extra",
+      "mcp__other__read_task",
+      "xcrewyard.read_task",
+    ])
+      expect(isOwnToolTitle(t)).toBe(false);
   });
 });
