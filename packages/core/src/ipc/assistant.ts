@@ -1,4 +1,5 @@
 import type { AssistantSpendLabel, TaskDraftInput } from "../assistant.ts";
+import type { AssistantExtraTool } from "../assistant-tools.ts";
 import type { AutopilotLimits, AutopilotRefusal, AutopilotSource, AutopilotTool } from "../autopilot.ts";
 import type { PresetSuggestion, ProjectFacts, TaskPresetId } from "../presets.ts";
 import type { RunnerId } from "../events.ts";
@@ -40,6 +41,12 @@ export interface AssistantLine {
   queued?: boolean;
   /** The reply was longer than the cap and was cut. */
   truncated?: boolean;
+  /**
+   * Set on a `tool` line Crewyard wrote for one of the assistant's own read or draft tools
+   * (docs/adr/0018): which tool, and whether it was refused. `text` is then our readable title with
+   * the subject (a task's title, untrusted), never the runner's raw tool name.
+   */
+  call?: { tool: AssistantExtraTool; outcome: "done" | "refused" };
 }
 
 /** Where a draft came from: the assistant's propose_task, a preset you picked, or a finished task's finding or follow-up. */

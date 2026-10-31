@@ -1,4 +1,4 @@
-import { ASSISTANT_TOOL_DEFS, AUTOPILOT_TOOL_DEFS, type AgentCapabilities, type McpServerSpec, type McpTopics, type McpServerView, type RolePolicy } from "@crewyard/core";
+import { ASSISTANT_EXTRA_TOOL_DEFS, ASSISTANT_TOOL_DEFS, AUTOPILOT_TOOL_DEFS, type AgentCapabilities, type McpServerSpec, type McpTopics, type McpServerView, type RolePolicy } from "@crewyard/core";
 import type { Store } from "../store.ts";
 import { checkServer } from "./check.ts";
 import { planServers, recordUsage } from "./inject.ts";
@@ -35,13 +35,15 @@ export interface McpHook {
 export const ASSISTANT_KEY = "assistant:";
 
 /**
- * The Autopilot tools (docs/adr/0017) are listed on every assistant connection, because a client
- * reads the list once per session; the daemon refuses each call while Autopilot is off or stopped.
+ * What an assistant connection lists: propose_task, the read and own-draft tools (docs/adr/0018),
+ * which work with Autopilot off, and the Autopilot tools (docs/adr/0017), listed on every assistant
+ * connection because a client reads the list once per session; the daemon refuses each Autopilot
+ * call while it is off or stopped. Crew runs list none of these.
  */
-const ASSISTANT_TOOLS: ToolSet = {
-  tools: [...ASSISTANT_TOOL_DEFS, ...AUTOPILOT_TOOL_DEFS],
+export const ASSISTANT_TOOLS: ToolSet = {
+  tools: [...ASSISTANT_TOOL_DEFS, ...ASSISTANT_EXTRA_TOOL_DEFS, ...AUTOPILOT_TOOL_DEFS],
   instructions:
-    "Use propose_task once for each task you suggest. It only shows the person a draft; nothing starts unless they add it and approve its crew. The other tools work only while the person has Autopilot on for this project; a refusal says why.",
+    "Use propose_task once for each task you suggest. It only shows the person a draft; nothing starts unless they add it and approve its crew. The read tools (list_tasks, read_task, read_report, read_crew, list_drafts, read_inbox, read_events, read_usage, list_profiles, read_project, git_overview, list_problems, list_agent_files) and edit_draft and discard_draft for your own open drafts always work. create_task, edit_task, approve_crew, queue_message, retry_step, cancel_task and complete_task work only while the person has Autopilot on for this project; a refusal says why.",
 };
 
 export type AssistantToolCall = (conversationId: string, tool: string, args: unknown) => Promise<ToolOutcome>;

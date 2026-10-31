@@ -7,7 +7,11 @@ import {
   assistantPolicy,
   cleanText,
   draftDescription,
+  isAssistantExtraTool,
   isAutopilotTool,
+  isOwnToolTitle,
+  parseToolLineId,
+  toolLineId,
   parseTaskDraft,
   presetById,
   suggestPresets,
@@ -45,6 +49,7 @@ import type { Store } from "../store.ts";
 import type { ToolOutcome } from "../mcp/session.ts";
 import { assistantPrompt, type RecapLine } from "./prompt.ts";
 import { readTaskReport } from "./reports.ts";
+import type { ToolAnswer, ToolContext } from "./tools.ts";
 import { addSpend, estimateSuggest, NO_SPEND, priceUsage, ZERO_TOTALS, type Totals } from "./spend.ts";
 
 // The task assistant (docs/adr/0014): one read-only runner session per project that turns a
@@ -84,10 +89,17 @@ export interface AssistantAutopilot {
   completed(taskId: string): TaskReport["completed"];
 }
 
+/** The read and own-draft tools (docs/adr/0018), when the handlers wire them. */
+export interface AssistantToolCaller {
+  call(ctx: ToolContext, tool: string, args: unknown): Promise<ToolAnswer>;
+  forget(conversationId: string): void;
+}
+
 export interface AssistantServiceOptions {
   store: Store;
   host: AssistantHost;
   autopilot?: AssistantAutopilot;
+  tools?: AssistantToolCaller;
   emit(topic: "assistant.changed", payload: { projectId: string }): void;
   now?: () => Date;
   freeMemoryMb?: () => number;
@@ -257,6 +269,7 @@ export class AssistantService {
       at: r.at,
       ...(queued.has(r.id) ? { queued: true } : {}),
       ...(r.truncated ? { truncated: true } : {}),
+      ...(r.role === "tool" ? callOf(r.id) : {}),
     }));
     if (live?.reply) lines.push({ id: live.reply.id, role: "assistant", text: live.reply.text, at: live.reply.at, ...(live.reply.truncated ? { truncated: true } : {}) });
     base.lines = lines;
@@ -506,6 +519,8 @@ export class AssistantService {
         return;
       }
       case "tool.call": {
+        // Crewyard writes its own readable line for calls to its read and draft tools.
+        if (isOwnToolTitle(ev.title)) return;
         this.flushReply(live);
         const title = cutBytes(cleanText(ev.title).replace(/\s+/g, " "), ASSISTANT_LIMITS.toolLineBytes);
         if (title) this.insertLine(live.conversationId, "tool", title);
@@ -573,8 +588,7 @@ export class AssistantService {
     this.db.prepare("insert into assistant_messages (id, conversation_id, role, text, truncated, at) values (?, ?, 'assistant', ?, ?, ?)").run(r.id, live.conversationId, cleanText(r.text), r.truncated ? 1 : 0, r.at);
   }
 
-  private insertLine(conversationId: string, role: AssistantLine["role"], text: string): string {
-    const id = randomUUID();
+  private insertLine(conversationId: string, role: AssistantLine["role"], text: string, id: string = randomUUID()): string {
     this.db.prepare("insert into assistant_messages (id, conversation_id, role, text, at) values (?, ?, ?, ?, ?)").run(id, conversationId, role, text, this.iso());
     return id;
   }
@@ -585,6 +599,7 @@ export class AssistantService {
     this.flushReply(live);
     this.live.delete(live.projectId);
     this.opts.host.serverEnded(live.conversationId);
+    this.opts.tools?.forget(live.conversationId);
     // Messages that never reached the runner are kept as lines, with a note that they did not go.
     if (live.pending.length > 0) this.insertLine(live.conversationId, "notice", "undelivered");
     live.pending = [];
@@ -664,11 +679,19 @@ export class AssistantService {
   async toolCall(conversationId: string, tool: string, args: unknown): Promise<ToolOutcome> {
     const live = [...this.live.values()].find((l) => l.conversationId === conversationId);
     if (!live || live.stopping) return { text: "Refused: this assistant session is not active.", isError: true };
+    if (isAssistantExtraTool(tool)) {
+      if (!this.opts.tools) return { text: "Refused: the read tools are not available.", isError: true };
+      this.flushReply(live);
+      const a = await this.opts.tools.call({ projectId: live.projectId, conversationId }, tool, args);
+      if (a.line && a.tool) this.insertLine(conversationId, "tool", a.line, toolLineId(a.tool, a.refused ? "refused" : "done", randomUUID()));
+      this.emitNow(live.projectId);
+      return a.outcome;
+    }
     if (isAutopilotTool(tool)) {
       this.flushReply(live);
       if (!this.opts.autopilot) return { text: JSON.stringify({ ok: false, refused: "off", detail: "Autopilot is not available." }), isError: true };
       const out = await this.opts.autopilot.call(live.projectId, conversationId, tool, args);
-      if (tool !== "list_tasks" && tool !== "read_task") this.insertLine(conversationId, "notice", `autopilot.call.${out.isError ? "refused" : "done"}.${tool}`);
+      this.insertLine(conversationId, "notice", `autopilot.call.${out.isError ? "refused" : "done"}.${tool}`);
       this.emitNow(live.projectId);
       return out;
     }
@@ -806,6 +829,12 @@ function parseList(s: string): string[] {
   } catch {
     return [];
   }
+}
+
+/** The tool and outcome of a line Crewyard wrote for one of its own tools, from the line's id. */
+function callOf(id: string): Pick<AssistantLine, "call"> {
+  const call = parseToolLineId(id);
+  return call ? { call } : {};
 }
 
 function parseTotals(s: string | null): Totals {
