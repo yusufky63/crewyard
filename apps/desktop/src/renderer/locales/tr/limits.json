@@ -108,17 +108,9 @@
     "all": "Limitler",
     "list": "Hesaplar, en acil olan önce",
     "local": "yerel",
-    "tipLocal": "{{name}} bu makinede: limit yok",
-    "tipKey": "{{name}}: bugün {{spent}}, günlük sınır {{cap}} ({{provenance}})",
-    "tipKeyNoCap": "{{name}}: bugün {{spent}}, günlük sınır yok ({{provenance}})",
-    "tipPlan": "{{name}}: {{window}} %{{pct}} kullanıldı ({{provenance}})",
-    "tipUnknown": "{{name}}: limit verisi yok ({{provenance}})",
     "signIn": "Giriş",
     "update": "Güncelle",
-    "tipSignedOut": "{{name}} için oturum açılmamış",
-    "tipBlocked": "{{name}}: oturum açabilmesi için CLI'ın güncellenmesi gerekiyor",
     "tipChecked": "{{time}} denetlendi",
-    "tipMeters": "{{name}}: {{meters}} ({{provenance}}, {{time}} görüldü)",
     "tipMeter": "{{window}} %{{pct}}",
     "tipMeterUnknown": "{{window}} bilinmiyor",
     "short": {
@@ -132,8 +124,30 @@
     "bucketShort": {
       "mcp": "MCP"
     },
-    "meta": "{{provenance}} · {{time}} sıfırlanır",
-    "capMeta": "{{provenance}} · sınır {{cap}}"
+    "more": "+{{count}} kullanılmayan hesap",
+    "moreAll": "{{count}} kullanılmayan hesap",
+    "pct": "%{{pct}}",
+    "running": "{{count}} çalışma sürüyor",
+    "mark": {
+      "reported": "B",
+      "estimated": "T",
+      "unknown": "?"
+    },
+    "detail": {
+      "signIn": {
+        "signed_in": "Oturum açık",
+        "signed_out": "Oturum açılmamış",
+        "blocked": "Oturum açabilmesi için CLI güncellenmeli",
+        "unknown": "Oturum henüz denetlenmedi"
+      },
+      "local": "Bu makinede çalışır, limit yok",
+      "noData": "Henüz limit bildirilmedi",
+      "today": "Bugün",
+      "cap": "günlük sınır {{cap}}",
+      "noCap": "günlük sınır yok",
+      "resets": "{{time}} sıfırlanır",
+      "seen": "{{time}} görüldü"
+    }
   },
   "usage": {
     "title": "Kullanım",

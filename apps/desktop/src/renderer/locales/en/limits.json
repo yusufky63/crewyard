@@ -108,17 +108,9 @@
     "all": "All limits",
     "list": "Accounts, most urgent first",
     "local": "local",
-    "tipLocal": "{{name}} on this machine: no limit",
-    "tipKey": "{{name}}: {{spent}} today of the {{cap}} daily cap ({{provenance}})",
-    "tipKeyNoCap": "{{name}}: {{spent}} today, no daily cap ({{provenance}})",
-    "tipPlan": "{{name}}: {{window}} {{pct}}% used ({{provenance}})",
-    "tipUnknown": "{{name}}: no limit data ({{provenance}})",
     "signIn": "Sign in",
     "update": "Update",
-    "tipSignedOut": "{{name}} is not signed in",
-    "tipBlocked": "{{name}}: its CLI needs an update before it can sign in",
     "tipChecked": "checked {{time}}",
-    "tipMeters": "{{name}}: {{meters}} ({{provenance}}, seen {{time}})",
     "tipMeter": "{{window}} {{pct}}%",
     "tipMeterUnknown": "{{window}} unknown",
     "short": {
@@ -132,8 +124,30 @@
     "bucketShort": {
       "mcp": "MCP"
     },
-    "meta": "{{provenance}} · resets {{time}}",
-    "capMeta": "{{provenance}} · cap {{cap}}"
+    "more": "+{{count}} not used",
+    "moreAll": "{{count}} not used",
+    "pct": "{{pct}}%",
+    "running": "{{count}} running",
+    "mark": {
+      "reported": "R",
+      "estimated": "E",
+      "unknown": "?"
+    },
+    "detail": {
+      "signIn": {
+        "signed_in": "Signed in",
+        "signed_out": "Not signed in",
+        "blocked": "Its CLI needs an update before it can sign in",
+        "unknown": "Sign-in not checked yet"
+      },
+      "local": "Runs on this machine, no limit",
+      "noData": "No limit reported yet",
+      "today": "Today",
+      "cap": "of {{cap}} daily cap",
+      "noCap": "no daily cap",
+      "resets": "resets {{time}}",
+      "seen": "Seen {{time}}"
+    }
   },
   "usage": {
     "title": "Usage",

@@ -307,6 +307,26 @@ describe("providers service", () => {
     expect(sum.todayByCredential.find((s) => s.key === d.id)?.usd).toBeCloseTo(4.2);
   });
 
+  it("counts runs that have not ended on each account, a key's across all its profiles", async () => {
+    const { store, svc } = setup();
+    const c = await svc.addCredential("ds", "deepseek", "sk-d");
+    const k1 = svc.createProfile({ alias: "ds-a", runner: "opencode", providerId: "deepseek", credentialId: c.id, defaultModel: null });
+    const k2 = svc.createProfile({ alias: "ds-b", runner: "claude-code", providerId: "deepseek", credentialId: c.id, defaultModel: null });
+    const plan = svc.createProfile({ alias: "work", runner: "codex", providerId: "openai", credentialId: null, defaultModel: null });
+    const idle = svc.createProfile({ alias: "home", runner: "codex", providerId: "openai", credentialId: null, defaultModel: null });
+    // No task or crew around the runs: only the count matters here.
+    store.db.exec("pragma foreign_keys = off");
+    const run = store.db.prepare("insert into runs (id, task_id, member_id, role, profile_id, runner, cwd, started_at, ended_at) values (?, 't', 'm', 'implementer', ?, 'codex', 'C:\\w s', ?, ?)");
+    const at = new Date().toISOString();
+    run.run("r1", k1.id, at, null);
+    run.run("r2", k2.id, at, null);
+    run.run("r3", plan.id, at, null);
+    run.run("r4", idle.id, at, at);
+    store.db.exec("pragma foreign_keys = on");
+    const rows = new Map(svc.accounts().map((r) => [r.label, r.activeRuns]));
+    expect(Object.fromEntries(rows)).toEqual({ ds: 2, work: 1, home: 0 });
+  });
+
   it("reads the latest plan window from the orchestrator's usage_samples, and validates thresholds", () => {
     const { store, svc } = setup();
     const p = svc.createProfile({ alias: "work", runner: "codex", providerId: "openai", credentialId: null, defaultModel: null });

@@ -6,27 +6,51 @@
 .accts-head button { font: 500 11px / 1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); padding: 2px 0; }
 .accts-head button:hover { color: var(--ink); }
 .accts-list { overflow-y: auto; max-height: min(34vh, var(--layout-accounts-max)); scrollbar-width: thin; scrollbar-color: var(--tick) transparent; display: grid; gap: 1px; padding-bottom: 6px; }
-/* One account: a 28 px name line, then one row per reported window or bucket (or a cap) at full width. */
-.acct { display: grid; width: 100%; padding: 0 8px 4px; font-size: 12px; color: var(--ink-2); text-align: left; }
-.acct:hover { background: var(--raised); color: var(--ink); }
-.acct-top { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: center; gap: 6px; height: 28px; }
+.accts-fold { display: grid; gap: 1px; }
+.accts-fold[hidden] { display: none; }
+
+/* `+N not used`: the accounts without a meter fold into this one line. */
+.accts-more { display: flex; align-items: center; gap: 6px; height: 24px; padding: 0 8px; font: 500 11px / 1 var(--mono); color: var(--ink-3); text-align: left; white-space: nowrap; }
+.accts-more:hover { background: var(--raised); color: var(--ink); }
+.accts-more svg { flex: none; transition: transform var(--motion-fast) var(--motion-ease); }
+.accts-more svg.up { transform: rotate(180deg); }
+
+/* One account: a 24 px name line, then one single-line row per window, bucket or cap when it is in use. */
+.acct-b { display: grid; width: 100%; padding: 0 8px 2px; font-size: 12px; color: var(--ink-2); text-align: left; }
+.acct-b:hover, .acct-b:focus-visible { background: var(--raised); color: var(--ink); }
+.acct-top { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto auto; align-items: center; gap: 6px; height: 24px; }
 .acct .n { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.acct .v, .acct .mv { font: 500 11px / 1 var(--mono); text-align: right; color: var(--ink); white-space: nowrap; }
+.acct .run { display: inline-flex; align-items: center; }
+.acct .v, .acct .mv { display: inline-flex; align-items: baseline; justify-content: flex-end; gap: 3px; font: 500 11px / 1 var(--mono); color: var(--ink); white-space: nowrap; }
 .acct .muted { color: var(--ink-3); }
 .acct .warn { color: var(--warn); }
 .acct .bad { color: var(--bad); }
-.acct-m { display: grid; grid-template-columns: 52px minmax(0, 1fr) 34px; grid-template-areas: "k m v" "t t t"; align-items: center; column-gap: 6px; row-gap: 2px; padding: 2px 0 4px; }
-.acct-m .k { grid-area: k; font: 500 10px / 1.2 var(--mono); letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.acct-m .meter { grid-area: m; }
-.acct-m .mv { grid-area: v; }
-.acct-m .meta { grid-area: t; font: 400 10px / 1.2 var(--mono); color: var(--ink-3); overflow-wrap: anywhere; }
+.acct-m { display: grid; grid-template-columns: 52px minmax(0, 1fr) 44px; align-items: center; column-gap: 6px; height: 16px; }
+.acct-m .k { font: 500 10px / 1 var(--mono); letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Source mark beside every value: R, E or ? in the provenance badge colours; the word is screen-reader text. */
+.pm { font: 500 9px / 1 var(--mono); color: var(--ink-3); }
+.pm-reported { color: var(--ok); }
+.pm-estimated { color: var(--accent); }
+.pm-unknown { color: var(--ink-3); }
+.acct .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* Hover and focus detail, beside the sidebar's right edge. */
+.acct-tip { position: fixed; z-index: var(--z-popover); width: 280px; display: grid; gap: 6px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--line-strong); color: var(--ink-2); font-size: 12px; pointer-events: none; }
+.acct-tip[hidden] { display: none; }
+.acct-tip::before { content: ""; position: absolute; inset: -1px; pointer-events: none; background: var(--ink-3); -webkit-mask: var(--tick-mask); mask: var(--tick-mask); }
+.acct-tip-name { color: var(--ink); font-weight: 500; overflow-wrap: anywhere; }
+.acct-tip-meta { font: 400 11px / 1.3 var(--mono); color: var(--ink-3); }
+.acct-tip-meta.run { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); }
+.acct-tip-meta.warn { color: var(--warn); }
+.acct-tip-meta.bad { color: var(--bad); }
+.acct-tip-grid { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; column-gap: 8px; row-gap: 2px; align-items: baseline; font: 400 11px / 1.3 var(--mono); }
+.acct-tip-row { display: contents; }
+.acct-tip-grid .n { color: var(--ink); font-weight: 500; text-align: right; }
+.acct-tip-grid .rs { grid-column: 1 / -1; color: var(--ink-3); padding-bottom: 4px; }
+.acct-tip-grid .pv { font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; }
 
 /* Icon rail below 1180 px: the block hides; the status bar keeps the near-limit count (DESIGN.md §4). */
 @media (max-width: 1180px) {
   .accts { display: none; }
 }
-
-/* Several limits on one account: their 8-tick meters stack in the meter column (one per window and bucket, three at most). */
-.acct .mstack { display: grid; gap: 2px; align-content: center; }
-.acct .mstack .meter.xs { height: 6px; }
-.acct .mstack .meter.xs i, .acct .mstack .meter.xs i.th { height: 4px; }
