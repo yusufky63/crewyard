@@ -137,11 +137,13 @@ describe("project daily cap", () => {
     expect([reset.getDate(), reset.getHours(), reset.getMinutes()]).toEqual([31, 0, 0]);
   });
 
-  it("comes from the project's file: none without one, its value with one, the default when the file is broken", () => {
+  it("comes from the project's file: its value with one, the default without one or when it is broken", () => {
     const root = join(tempDir(), "proje klasörü");
     mkdirSync(join(root, ".crewyard"), { recursive: true });
     const project = { path: root, name: "demo repo" };
-    expect(projectDailyCapUsd({ path: join(root, "yok"), name: "x" })).toBeNull();
+    // A folder added by Open folder or Import never ran setup, and still has the wizard's default cap.
+    expect(projectDailyCapUsd({ path: join(root, "yok"), name: "x" })).toBe(defaultProjectConfig("x", "y").budget.dailyUsd);
+    expect(defaultProjectConfig("x", "y").budget.dailyUsd).toBe(10);
     const cfg = defaultProjectConfig("demo repo", join(root, "worktrees"));
     cfg.budget.dailyUsd = 2.5;
     writeFileSync(join(root, ".crewyard", "project.json"), JSON.stringify(cfg));

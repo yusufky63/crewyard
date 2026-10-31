@@ -166,14 +166,13 @@ export function reservedUsd(db: DatabaseSync, scope: { credentialId?: string | n
 // see: paid runs on a known key. Assistant chats spend on no task and stay outside it.
 
 /**
- * The project's daily cap, or null when it has none. Like the per-task budget, it comes from the
- * project's own file: a folder added without setup never had a cap shown to anyone. A file that
- * exists but cannot be used still holds to the default cap, the way such a file also turns toast
- * approvals off: a cap the user set is never dropped because its file broke.
+ * The project's daily cap. It is the project file's `budget.dailyUsd`, and the wizard default ($10)
+ * when there is no file (a folder added by Open folder or Import never ran setup) or the file
+ * cannot be used: §5.1 makes this cap the backstop Orchestra spends under, so no project is ever
+ * without one, and a cap the user set is never dropped because its file broke.
  */
-export function projectDailyCapUsd(project: { path: string; name: string }): number | null {
-  const read = effectiveProjectConfig(project.path, project.name);
-  return read.fromFile || read.status.state !== "missing" ? read.config.budget.dailyUsd : null;
+export function projectDailyCapUsd(project: { path: string; name: string }): number {
+  return effectiveProjectConfig(project.path, project.name).config.budget.dailyUsd;
 }
 
 /** Ledger spend on the project's tasks since local midnight, every key together. */

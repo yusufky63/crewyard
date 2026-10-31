@@ -12,7 +12,7 @@ import { Part } from "./part.ts";
 import type { MemberRow, OrchestratorDb, ProjectRow, TaskRow, WorktreeRow } from "./db.ts";
 import type { Candidate } from "./directory.ts";
 import { errorCode, errorDetail, OrchestratorError } from "./errors.ts";
-import { overCap, reachedCaps, reservedUsd, reserveSpend, spendCredential } from "./spend.ts";
+import { overCap, projectDailyCap, projectDailyCapUsd, reachedCaps, reservedUsd, reserveSpend, spendCredential } from "./spend.ts";
 
 // Best of N (feature scan A8; the idea from crystal's session dialog and orca's parallel-agents
 // recipe, our own design). The implement step of a task runs as 2 to 4 variants on different
@@ -343,11 +343,14 @@ export class BestOfRunner extends Part {
   private groupBudgetHold(task: TaskRow, m: MemberRow, views: CandidateView[], candidates: Candidate[]): Reason | null {
     const byCredential = new Map<string, { c: Candidate; usd: number }>();
     let total = 0;
+    // What the ledger will see: only variants on a key it knows count against the project's cap.
+    let ledgered = 0;
     for (const v of views) {
       const c = candidates.find((x) => x.profile.id === v.profileId);
       if (c?.profile.credential.kind !== "api_key") continue;
       const usd = estimateFor(c, this.tpl(m), task.size, this.now()).usd ?? 0;
       total += usd;
+      if (spendCredential(c) !== null) ledgered += usd;
       const key = spendCredential(c) ?? `profile:${c.profile.id}`;
       const cur = byCredential.get(key);
       byCredential.set(key, { c, usd: (cur?.usd ?? 0) + usd });
@@ -355,6 +358,10 @@ export class BestOfRunner extends Part {
     for (const { c, usd } of byCredential.values()) {
       const cap = reachedCaps(this.opts.store.db, spendCredential(c), task.id, this.now(), { addUsd: usd }).find((x) => x.reservedUsd);
       if (cap && !overCap(cap.spentUsd, 0, usd, cap.capUsd)) return { code: "admission.budget_reserved", params: { reservedUsd: cap.reservedUsd!, capUsd: cap.capUsd, cap: cap.kind } };
+    }
+    if (ledgered > 0) {
+      const cap = projectDailyCap(this.opts.store.db, task.project_id, projectDailyCapUsd(this.db.project(task.project_id)), this.now(), { addUsd: ledgered });
+      if (cap?.reservedUsd && !overCap(cap.spentUsd, 0, ledgered, cap.capUsd)) return { code: "admission.budget_reserved", params: { reservedUsd: cap.reservedUsd, capUsd: cap.capUsd, cap: cap.kind } };
     }
     if (task.budget_usd !== null && total > 0) {
       const spent = this.db.spend(this.budgetRuns(task.id)).usd ?? 0;

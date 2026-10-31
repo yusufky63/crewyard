@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { CandidateView, LimitNoticePayload, RequestPayload, RequestView, SpendCap } from "@crewyard/core";
+import type { CandidateView, LimitNoticePayload, OrchestratorErrorCode, RequestPayload, RequestView, SpendCap } from "@crewyard/core";
 import { LANGUAGES, resources } from "../../i18n.ts";
 import { canAllowAlways, defaultTarget, denyAnswer, emptyForm, formAnswer, formReady, handoffChoices, infoNotices, orderRequests, riskTone, stallText, titleKey } from "./model.ts";
 
@@ -39,6 +39,27 @@ describe("inbox", () => {
         expect(inbox.title[`capWould_${kind}`], `${lang} capWould_${kind}`).toContain("{{usd}}");
         expect(inbox.cap[kind], `${lang} cap.${kind}`).toBeTruthy();
         expect(tasks.capKind[kind], `${lang} capKind.${kind}`).toBeTruthy();
+      }
+    }
+  });
+
+  it("explains every handoff refusal in the Crew screen and the task list, in each language", () => {
+    // Keyed by every handoff.* code, so a new refusal without strings fails to compile here.
+    const codes: Record<Extract<OrchestratorErrorCode, `handoff.${string}`>, true> = {
+      "handoff.same_profile": true,
+      "handoff.open": true,
+      "handoff.target_not_ready": true,
+      "handoff.over_cap": true,
+      "handoff.over_budget": true,
+      "handoff.over_project_daily": true,
+    };
+    for (const lang of LANGUAGES) {
+      const crew = resources[lang]?.crew as { error: { handoff: Record<string, string> } };
+      const tasks = resources[lang]?.tasks as { errors: Record<string, string> };
+      for (const code of Object.keys(codes)) {
+        const name = code.slice("handoff.".length);
+        expect(crew.error.handoff[name], `${lang} crew error.${code}`).toBeTruthy();
+        expect(tasks.errors[`handoff_${name}`], `${lang} tasks errors.handoff_${name}`).toBeTruthy();
       }
     }
   });

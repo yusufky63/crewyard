@@ -288,7 +288,8 @@
       "open": "This step is already being handed off",
       "target_not_ready": "That account is not ready: no key, not signed in, or no runner",
       "over_cap": "That account is past its spending cap",
-      "over_budget": "This task is past its budget. Approve going past it in the Inbox first"
+      "over_budget": "This task is past its budget. Approve going past it in the Inbox first",
+      "over_project_daily": "This project's daily spending cap is used up, and that account spends on a paid key. Pick a plan or a local model, or wait until the cap resets at midnight"
     }
   },
   "changeAi": {

@@ -123,6 +123,14 @@ export class Launcher extends Part {
         this.held.set(runId, spec);
         return;
       }
+      // Setup steps awaited, so another step of the project may have reserved meanwhile; check
+      // again in the same synchronous step as the hold, or two parallel boots both pass (F3).
+      const late = boot ? this.deps.capFor(task.id, runId, candidate, amount) : null;
+      if (late) {
+        this.held.set(runId, spec);
+        await this.deps.pauseForCap(runId, late, this.iso());
+        return;
+      }
       this.held.delete(runId);
       if (candidate.profile.credential.kind === "api_key") reserveSpend(this.opts.store.db, { runId, taskId: this.budgetTask(task.id), credentialId: spendCredential(candidate), amountUsd: amount }, this.now());
       // Handoff by fork: the target continues a copy of the source's conversation; on any failure it

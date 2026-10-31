@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { defaultProjectConfig, type CandidateView, type ProjectConfig, type RunOutput, type StartRequest } from "@crewyard/core";
 import type { FakeStep } from "@crewyard/adapter-fake";
@@ -272,5 +272,32 @@ describe("best of N: the parent's caps count every variant (PLAN.md §9.4)", () 
 
     const limit = await waitFor(() => o.requests({ taskId: variant }).find((r) => r.kind === "handoff" && r.payload.kind === "handoff" && r.payload.trigger === "limit"), 30_000);
     expect(limit.payload.kind === "handoff" && limit.payload.candidates.map((c) => c.profileId)).toEqual([]);
+  });
+
+  it("a group waits in the queue while another task of the project holds the room the project's daily cap needs", async () => {
+    // A research task on ds-b holds its estimate; the group's two variants together would pass the cap with it.
+    const pick: Picker = (role, req) => (role === "researcher" ? [running, ...ask("hold"), say("bitti")] : role === "implementer" ? [running, say(`${req.profile.id} done`)] : [running, say(`${role} done`)]);
+    const { o, project, repo } = await setup({ pick, candidates: [candidate("anthropic-key", "anthropic", model("claude-sonnet")), key("ds-a", "cred-a"), key("ds-b", "cred-b")] });
+    const r = await o.propose({ projectId: project.id, title: "Araştırma: sınır", pins: { researcher: "ds-b" } });
+    const t = await o.propose({ projectId: project.id, ...CODE_S, bestOf: 2, pins: { implementer: "ds-a", reviewer: "anthropic-key" } });
+    const held = r.crew!.members[0]!.chosen!.estimate.usd!;
+    const group = t.bestOfGroup!.variants.reduce((n, v) => n + v.candidate.estimate.usd!, 0);
+    const cap = Math.max(held, group) + Math.min(held, group) / 2;
+    const file = join(repo, ".crewyard", "project.json");
+    const cfg = JSON.parse(readFileSync(file, "utf8")) as ProjectConfig;
+    cfg.budget.dailyUsd = cap;
+    writeFileSync(file, JSON.stringify(cfg));
+    await o.approve({ taskId: r.id });
+    const hold = await waitFor(() => o.requests({ taskId: r.id }).find((q) => q.kind === "question"), 30_000);
+    await o.approve({ taskId: t.id });
+
+    const impl = await waitFor(() => o.get(t.id).crew!.members.find((m) => m.role === "implementer" && m.blockedBy));
+    expect(impl.blockedBy).toMatchObject({ code: "admission.budget_reserved", params: { capUsd: cap, cap: "project_daily" } });
+    expect(o.get(t.id).bestOfGroup!.variants.every((v) => v.taskId === null)).toBe(true);
+    expect(o.requests({})).toHaveLength(1);
+
+    // The research ends having spent nothing, its hold is settled, and the whole group starts.
+    await o.answer(hold.id, { kind: "question", answers: [{ selected: ["yes"] }] });
+    await waitFor(() => o.get(t.id).bestOfGroup!.variants.every((v) => v.taskId !== null), 30_000);
   });
 });

@@ -245,6 +245,35 @@ describe("review loop", () => {
     expect(d.loop.verdicts.at(-1)!.verdict).toBe("changes");
   });
 
+  it("stops the review loop at the project's daily cap instead of sending the comments back on a paid key", async () => {
+    // The implementer works on a key the ledger knows; while the reviewer reads, other work of the
+    // project uses up the day's cap, so another try on that key would pass it.
+    let reviewing = (): void => undefined;
+    const pick: Picker = (role) => {
+      if (role === "reviewer") reviewing();
+      return [running, say(`${role} done`)];
+    };
+    const cands = CANDIDATES().map((c) => (c.profile.id === "deepseek-key" ? { ...c, credentialId: "cred-ds" } : c));
+    const { o, project, store } = await setup({
+      pick,
+      candidates: cands,
+      config: (c) => (c.budget.dailyUsd = 1),
+      scripted: { result: (role) => (role === "reviewer" ? verdict("changes") : undefined) },
+    });
+    const t = await o.propose({ projectId: project.id, ...CODE_S, kind: "code", size: "S", pins: { implementer: "deepseek-key", reviewer: "anthropic-key" } });
+    reviewing = () => {
+      store.db
+        .prepare("insert into spend (at, credential_id, profile_id, task_id, run_id, provider_id, model, cost_usd, source) values (?, 'cred-other', 'other', ?, null, 'openai', null, 1, 'estimated')")
+        .run(new Date().toISOString(), t.id);
+    };
+    await o.approve({ taskId: t.id });
+    await waitFor(() => kinds(o, t.id).includes("stop_spend_cap"), 30_000);
+    await o.settle();
+    expect(kinds(o, t.id)).toEqual(["tests_skipped", "stop_spend_cap"]);
+    expect(o.get(t.id).loop.decisions.at(-1)!.reason).toEqual({ code: "loop.spend_cap", params: { cap: "project_daily" } });
+    expect(o.get(t.id).runs.filter((r) => r.role === "implementer")).toHaveLength(1);
+  });
+
   it("records a reviewer result that failed its check, and does not guess", async () => {
     const { o, project } = await setup({ scripted: { result: (role) => (role === "reviewer" ? { ok: false, error: "verdict: invalid option" } : undefined) } });
     const t = await o.propose({ projectId: project.id, ...CODE_S, kind: "code", size: "S" });
