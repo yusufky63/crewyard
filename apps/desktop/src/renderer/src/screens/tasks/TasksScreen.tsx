@@ -14,7 +14,7 @@ import { useWork } from "./data.ts";
 import { usePrefs } from "../../prefs.ts";
 import { toggleAssistant } from "../../shell/activity/panel.ts";
 import { useFixtureState } from "./fixtureState.ts";
-import { FILTERS, filterCounts, matchesFilter, type Filter } from "./model.ts";
+import { FILTERS, filterCounts, offersCrewProposal, taskMatchesFilter, type Filter } from "./model.ts";
 import { TaskRow } from "./TaskRow.tsx";
 import "./tasks.css";
 import { LazyRow } from "./LazyRow.tsx";
@@ -33,7 +33,9 @@ export function TasksScreen() {
   const tasks = useWork("tasks.list", { projectId: projectId ?? "" }, { enabled: Boolean(projectId) });
   const requests = useWork("requests.list", { projectId: projectId ?? "" }, { enabled: Boolean(projectId) });
   const selected = tasks.data?.find((x) => x.id === taskId);
-  const draft = useWork("tasks.get", { taskId: selected?.id ?? "" }, { enabled: selected?.status === "proposed" });
+  // No crew proposal and no Approve for a goal task waiting for its turn (docs/adr/0019).
+  const proposing = offersCrewProposal(selected);
+  const draft = useWork("tasks.get", { taskId: selected?.id ?? "" }, { enabled: proposing });
   // A selected Best of N task that is still choosing shows its variants side by side.
   const comparing = selected?.bestOf && ["running", "choosing", "failed"].includes(selected.bestOf.phase) && !selected.cancelledAt;
   const group = useWork("tasks.get", { taskId: selected?.id ?? "" }, { enabled: Boolean(comparing) });
@@ -42,7 +44,8 @@ export function TasksScreen() {
   // it there, or stops it and closes the panel, as Ctrl Shift A does on every project screen.
   const assistant = usePrefs((s) => s.drawerOpen && s.drawerTab === "assistant");
   const all = tasks.data ?? [];
-  const shown = all.filter((x) => matchesFilter(x.status, filter));
+  // Goal tasks count and show under their goal, never on their own under Needs you (model.ts).
+  const shown = all.filter((x) => taskMatchesFilter(x, filter));
   // J and K select as a click on the row does: the task, and the inspector on it.
   useListKeys(
     shown.map((x) => x.id),
@@ -61,7 +64,7 @@ export function TasksScreen() {
         if (s.n === prev.n || !s.taskId) return;
         setView("tasks");
         const task = tasks.data?.find((x) => x.id === s.taskId);
-        if (!task || !matchesFilter(task.status, filter)) setFilter("all");
+        if (!task || !taskMatchesFilter(task, filter)) setFilter("all");
       }),
     [tasks.data, filter],
   );
@@ -106,7 +109,7 @@ export function TasksScreen() {
       {view === "tasks" && (
         <>
           <Composer projectId={projectId} projectName={project?.name ?? ""} assistantOpen={assistant} onAssistant={() => toggleAssistant(projectId)} />
-          {selected?.status === "proposed" && draft.data && draft.data.id === selected.id && <CrewProposal key={selected.id} task={draft.data} onClose={() => selectTask(selected.id)} />}
+          {proposing && selected && draft.data && draft.data.id === selected.id && <CrewProposal key={selected.id} task={draft.data} onClose={() => selectTask(selected.id)} />}
           {comparing && group.data && group.data.id === selected.id && <BestOfCompare detail={group.data} />}
 
           <div className="tk-list-head">

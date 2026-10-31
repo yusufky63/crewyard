@@ -212,7 +212,8 @@ function Checklist({ actions }: { actions: Actions }) {
   const attention = summarize(machineItems).attention;
   const problem = machineProblem(tools);
   const { target, projects } = actions;
-  const proposed = tasks.data?.find((x) => x.status === "proposed" && (!actions.projectId || x.projectId === actions.projectId));
+  // A waiting goal task derives `proposed` too, but it starts with its plan; the daemon refuses its approval.
+  const proposed = tasks.data?.find((x) => x.status === "proposed" && !x.goal && (!actions.projectId || x.projectId === actions.projectId));
 
   // "New project" only once the list has answered empty; while it loads or fails, Start is the safe
   // place to send someone, since it lists the projects that exist.
