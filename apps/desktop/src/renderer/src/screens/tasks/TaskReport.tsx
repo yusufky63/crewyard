@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ReportSeverity, TaskDetail, TaskReport as Report } from "@crewyard/core";
@@ -18,6 +19,9 @@ export const hasReport = (d: Pick<TaskDetail, "kind" | "status">) => d.kind !== 
 const SEVERITY_CLASS: Record<ReportSeverity, string> = { critical: "tk-sev-bad", high: "tk-sev-bad", medium: "tk-sev-warn", low: "muted", info: "muted" };
 
 function useReport(taskId: string, enabled: boolean) {
+  const qc = useQueryClient();
+  // Autopilot marking the task done (docs/adr/0017) changes the report without a task change.
+  useEffect(() => window.crewyard.on("autopilot.changed", () => void qc.invalidateQueries({ queryKey: ["assistant.report", { taskId }] })), [qc, taskId]);
   return useWork("assistant.report", { taskId }, { enabled });
 }
 

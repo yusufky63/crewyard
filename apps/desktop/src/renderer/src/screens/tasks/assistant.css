@@ -104,7 +104,8 @@
 .ap-log summary::-webkit-details-marker { display: none; }
 .ap-log summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .ap-log ol { margin: 6px 0 0; padding: 0; list-style: none; display: grid; gap: 6px; max-height: 240px; overflow-y: auto; }
-.ap-entry { display: grid; grid-template-columns: 6ch minmax(0, 1fr); gap: 10px; font-size: 13px; align-items: baseline; }
+.ap-entry { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; font-size: 13px; align-items: baseline; }
+.ap-entry > .num { white-space: nowrap; }
 .ap-what { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; min-width: 0; }
 .ap-refused .ap-what > span:first-child { color: var(--ink-2); }
 .ap-quote { display: block; flex-basis: 100%; color: var(--ink-2); white-space: pre-wrap; overflow-wrap: anywhere; border-left: 2px solid var(--line-strong); padding-left: 8px; }
