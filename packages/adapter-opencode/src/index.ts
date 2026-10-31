@@ -26,6 +26,8 @@ export const capabilities: AgentCapabilities = {
   // export from one profile, import into another, fork there, summarize with the target's model
   // (fake suite, and live on DeepSeek 2026-10-30: the copy resumed in the other profile and kept the context).
   fork: { compact: true },
+  // `file` parts with a file:// URL: images and PDFs as media, text through OpenCode's Read tool (input.ts).
+  attachments: { images: true, files: true },
 };
 
 export function createAdapter(opts: OpenCodeAdapterOptions = {}): AgentAdapter {

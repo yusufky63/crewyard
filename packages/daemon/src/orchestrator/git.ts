@@ -206,10 +206,11 @@ export const diffStat = async (cwd: string, baseSha: string, bin = "git") => (aw
 export const isClean = async (cwd: string, bin = "git") => (await git(cwd, ["status", "--porcelain"], bin)).trim().length === 0;
 
 /** Write to a temp file, then rename, retrying while antivirus or an editor holds the target. */
-export function writeFileAtomic(path: string, content: string): void {
+export function writeFileAtomic(path: string, content: string | Uint8Array): void {
   mkdirSync(dirname(path), { recursive: true });
   const tmp = `${path}.${process.pid}.tmp`;
-  writeFileSync(tmp, content, "utf8");
+  if (typeof content === "string") writeFileSync(tmp, content, "utf8");
+  else writeFileSync(tmp, content);
   for (let attempt = 0; ; attempt++) {
     try {
       renameSync(tmp, path);

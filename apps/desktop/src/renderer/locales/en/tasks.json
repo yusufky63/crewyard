@@ -1,6 +1,20 @@
 {
   "nav": "Tasks",
   "title": "Tasks",
+  "attach": {
+    "button": "Attach",
+    "hint": "Add images or files: paste with Ctrl V, drop them here, or pick them. Up to {{max}} per task or message.",
+    "pastedName": "pasted.{{ext}}",
+    "imageAlt": "Attached image: {{name}}",
+    "fileLabel": "Attached file: {{name}}",
+    "remove": "Remove {{name}}",
+    "listLabel_one": "{{count}} attachment",
+    "listLabel_other": "{{count}} attachments",
+    "uploading": "Adding…",
+    "proposal_one": "{{count}} attachment",
+    "proposal_other": "{{count}} attachments",
+    "asPath": "{{who}} cannot take these directly: {{names}}. It gets the file paths to read instead."
+  },
   "composer": {
     "bestOf": "Best of",
     "bestOfTitle": "Run the implement step on several profiles at once, each in its own worktree, then keep one",
@@ -339,7 +353,9 @@
     "undo_no_turn": "No turn with a checkpoint is left to undo.",
     "undo_other_run": "Another run is working in this worktree. Undo once it has finished.",
     "undo_superseded": "A later run continues this step. Undo from that run.",
-    "undo_cancelled": "This task was cancelled."
+    "undo_cancelled": "This task was cancelled.",
+    "attach_image_unsupported": "This runner has no documented way to take images.",
+    "attach_file_unsupported": "This runner takes images only. Other files reach it as a path in the message."
   },
   "issues": {
     "import": "Import issue",
@@ -463,6 +479,12 @@
     "crew_read_only_profile": "That account is marked read-only, so it cannot take a role that changes files. Pick another account, or turn off read-only for it in Providers.",
     "handoff_over_budget": "This task is past its budget. Approve going past it in the Inbox first.",
     "load": "Tasks could not be loaded from the background service.",
+    "attachment_type": "Only PNG, JPEG, GIF and WebP images, PDFs and text files can be attached.",
+    "attachment_too_large": "Too large to attach. Images can be up to 5 MB and files up to 10 MB.",
+    "attachment_empty": "That file is empty.",
+    "attachment_too_many": "Up to 8 attachments per task or message.",
+    "attachment_not_found": "That attachment is gone. Add it again.",
+    "attachment_claimed": "That attachment already belongs to another task or message. Add it again.",
     "other": "Something went wrong: {{message}}",
     "queue_not_found": "That message is no longer in the queue.",
     "queue_delivered": "The agent already has that message, so it can no longer change.",

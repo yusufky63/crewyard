@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import type { FallbackMode, IssueDetail, TaskKind } from "@crewyard/core";
 import { Button, Label, Panel } from "@crewyard/ui";
 import { useNav } from "../../nav.ts";
+import { AttachButton, DraftAttachments, useAttachmentDraft, useDiscardOnUnmount } from "./Attachments.tsx";
 import { act, useErrorText, useWork } from "./data.ts";
 import { issueDraft } from "./issue.ts";
 import { ImportButton, IssueChip, IssuePicker } from "./IssuePicker.tsx";
@@ -35,12 +36,14 @@ export function Composer({ projectId, projectName }: { projectId: string; projec
   const [error, setError] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
   const [issue, setIssue] = useState<{ number: number; url: string; title: string } | null>(null);
+  const attach = useAttachmentDraft();
+  useDiscardOnUnmount(attach);
   const ids = { text: useId(), branch: useId(), kind: useId(), fallback: useId(), budget: useId(), bestOf: useId() };
 
   const { title, description } = splitTaskText(text);
   const budgetUsd = budget.trim() === "" ? undefined : Number(budget);
   const budgetBad = budgetUsd !== undefined && (!Number.isFinite(budgetUsd) || budgetUsd <= 0);
-  const ready = title.length > 0 && !budgetBad && !busy;
+  const ready = title.length > 0 && !budgetBad && !busy && !attach.busy;
 
   const submit = async (e?: FormEvent) => {
     e?.preventDefault();
@@ -57,7 +60,9 @@ export function Composer({ projectId, projectName }: { projectId: string; projec
         ...(branch.trim() ? { baseBranch: branch.trim() } : {}),
         ...(budgetUsd !== undefined ? { budgetUsd } : {}),
         ...(bestOf > 0 ? { bestOf } : {}),
+        ...(attach.ids.length > 0 ? { attachments: attach.ids } : {}),
       });
+      attach.clear();
       // The link is kept with the task; a failure here leaves the proposed task as it is.
       if (issue) await act("github.linkIssue", { taskId: task.id, number: issue.number, url: issue.url, title: issue.title }).catch((err: unknown) => setError(errorText(err)));
       setText("");
@@ -79,11 +84,12 @@ export function Composer({ projectId, projectName }: { projectId: string; projec
 
   return (
     <Panel className="tk-composer">
-      <form onSubmit={(e) => void submit(e)} onKeyDown={onKey}>
+      <form onSubmit={(e) => void submit(e)} onKeyDown={onKey} onDragOver={attach.handlers.onDragOver} onDrop={attach.handlers.onDrop}>
         <label className="lbl" htmlFor={ids.text}>
           {t("composer.label")}
         </label>
-        <textarea id={ids.text} value={text} onChange={(e) => setText(e.target.value)} placeholder={t("composer.placeholder")} rows={2} />
+        <textarea id={ids.text} value={text} onChange={(e) => setText(e.target.value)} onPaste={attach.handlers.onPaste} placeholder={t("composer.placeholder")} rows={2} />
+        <DraftAttachments draft={attach} />
         {picking && (
           <IssuePicker
             projectId={projectId}
@@ -139,6 +145,7 @@ export function Composer({ projectId, projectName }: { projectId: string; projec
             {t("composer.budget")}
             <input id={ids.budget} className="num" inputMode="decimal" value={budget} onChange={(e) => setBudget(e.target.value)} placeholder={t("composer.budgetNone")} aria-invalid={budgetBad || undefined} size={6} />
           </label>
+          <AttachButton draft={attach} />
           {issue ? <IssueChip issue={issue} onRemove={() => setIssue(null)} /> : repo.data?.remote && <ImportButton onClick={() => setPicking(true)} />}
           <div className="end">
             <span className="kbd">Ctrl</span>

@@ -1,5 +1,5 @@
 import { reviewFixture } from "./reviewFixture.ts";
-import { NO_RUN_CONTROLS, type AccountSwitchView, type CandidateView, type CrewMemberView, type IpcMethod, type IpcParams, type IpcResult, type LimitNoticePayload, type LoopDecisionView, type RequestView, type RoleId, type RunView, type StallAlertView, type TaskDetail, type TaskSummary, type UndoPreview, type BestOfVariantView, type ScheduleRunView, type ScheduleView } from "@crewyard/core";
+import { NO_RUN_CONTROLS, type AccountSwitchView, type AttachmentView, type CandidateView, type CrewMemberView, type IpcMethod, type IpcParams, type IpcResult, type LimitNoticePayload, type LoopDecisionView, type RequestView, type RoleId, type RunView, type StallAlertView, type TaskDetail, type TaskSummary, type UndoPreview, type BestOfVariantView, type ScheduleRunView, type ScheduleView } from "@crewyard/core";
 import { fixtureReports, fixtureServers, fixtureUsage } from "../../shell/mcpFixture.ts";
 
 // Screenshot data. Used only when the page URL has `fixture`, which the main process sets only
@@ -24,13 +24,50 @@ const cand = (profileId: string, alias: string, runner: CandidateView["runner"],
 });
 
 const OPUS = cand("p-opus", "anthropic-main", "claude-code", "anthropic", "claude-opus-5-5", 1.2, null, [{ code: "history.accepted", params: { accepted: 11, total: 12 } }, { code: "cost.estimate", params: { usd: 1.2 } }]);
-const SOL = cand("p-sol", "work", "codex", "openai", "gpt-6.1-sol", 0, 14, [{ code: "history.accepted", params: { accepted: 7, total: 8 } }, { code: "headroom", params: { pct: 14, provenance: "reported", window: "5h" } }]);
+// Codex takes images but no other files, as its adapter says (packages/adapter-codex/src/input.ts).
+const SOL = { ...cand("p-sol", "work", "codex", "openai", "gpt-6.1-sol", 0, 14, [{ code: "history.accepted", params: { accepted: 7, total: 8 } }, { code: "headroom", params: { pct: 14, provenance: "reported", window: "5h" } }]), attachments: { images: true, files: false } };
 const GLM = cand("p-glm", "zai-plan", "claude-code", "zai-coding-plan", "glm-5.3", 0, null, [{ code: "independence.provider" }, { code: "cost.plan" }]);
 const FLASH = cand("p-flash", "ds-primary", "opencode", "deepseek", "deepseek-flash", 0.4, null, [{ code: "cost.estimate", params: { usd: 0.4 } }, { code: "fit.context", params: { context: 128000 } }]);
 const ARGON = cand("p-argon", "google", "gemini-cli", "google", "gemini-4-argon", 0, null, [{ code: "fit.reasoning" }, { code: "headroom.unknown" }]);
 // Second accounts of two providers, for the same-provider account switch (docs/adr/0009).
 const SOL_HOME = cand("p-sol-home", "personal", "codex", "openai", "gpt-6.1-sol", 0, 64, [{ code: "headroom", params: { pct: 64, provenance: "reported", window: "5h" } }]);
 const FLASH_B = cand("p-flash-b", "ds-backup", "opencode", "deepseek", "deepseek-flash", 0.41, null, [{ code: "cost.estimate", params: { usd: 0.41 } }]);
+
+const attachment = (id: string, kind: AttachmentView["kind"], name: string, mime: string, bytes: number): AttachmentView => ({ id, kind, name, mime, bytes, createdAt: ago(2) });
+const SHOT = attachment("a-shot", "image", "frame-time spike.png", "image/png", 184_320);
+const TRACE = attachment("a-trace", "file", "pathfinding-trace.log", "text/plain", 41_210);
+const HINT = attachment("a-hint", "image", "429 response.png", "image/png", 96_512);
+
+/**
+ * A stand-in screenshot for attachment thumbnails, drawn once in the theme's own colors: a panel
+ * with a chart line and a spike, which is what a pasted profiler capture tends to look like.
+ */
+let shot: string | null = null;
+function fixtureShot(): string {
+  if (shot) return shot;
+  const canvas = document.createElement("canvas");
+  canvas.width = 160;
+  canvas.height = 120;
+  const g = canvas.getContext("2d");
+  if (!g) return "";
+  const css = getComputedStyle(document.documentElement);
+  const v = (name: string) => css.getPropertyValue(name).trim();
+  g.fillStyle = v("--surface");
+  g.fillRect(0, 0, 160, 120);
+  g.strokeStyle = v("--line");
+  g.strokeRect(0.5, 0.5, 159, 119);
+  g.fillStyle = v("--ink-3");
+  g.fillRect(10, 10, 60, 6);
+  g.strokeStyle = v("--accent");
+  g.lineWidth = 2;
+  g.beginPath();
+  [96, 92, 94, 90, 93, 40, 91, 89, 92, 90].forEach((y, i) => (i === 0 ? g.moveTo(10 + i * 15.5, y) : g.lineTo(10 + i * 15.5, y)));
+  g.stroke();
+  g.fillStyle = v("--bad");
+  g.fillRect(84, 34, 4, 4);
+  shot = canvas.toDataURL("image/png");
+  return shot;
+}
 
 let seq = 0;
 const decision = (m: CrewMemberView, runId: string, kind: LoopDecisionView["kind"], iteration: number, reason: LoopDecisionView["reason"], at: string): LoopDecisionView => ({
@@ -133,7 +170,7 @@ function build(projectId: string): { tasks: TaskDetail[]; requests: RequestView[
     { ...member("reviewer", 3, GLM, [ARGON], ["implementer"]), reasons: [{ code: "pin.dropped" as const, params: { alias: SOL.alias, cause: "independence" } }] },
     member("tester", 4, FLASH, [SOL], ["implementer"]),
   ];
-  const proposed = detail(summary("t-proposed", "Optimize unit pathfinding for 2,000 units and keep the frame time under 16 ms", { status: "proposed", createdAt: ago(1) }), p, []);
+  const proposed = detail(summary("t-proposed", "Optimize unit pathfinding for 2,000 units and keep the frame time under 16 ms", { status: "proposed", createdAt: ago(1) }), p, [], { attachments: [SHOT, TRACE] });
 
   // 2. Running, with the implementer near its 5-hour window.
   const r = [member("planner", 1, OPUS, [GLM]), member("implementer", 2, SOL, [OPUS, FLASH], ["planner"], true), member("tester", -1, FLASH, [SOL], ["implementer"]), member("reviewer", 4, GLM, [ARGON], ["implementer"])];
@@ -148,10 +185,10 @@ function build(projectId: string): { tasks: TaskDetail[]; requests: RequestView[
       diff: [{ path: "src/auth/limiter.ts", added: 64, removed: 0 }, { path: "src/auth/login.ts", added: 18, removed: 6 }, { path: "src/auth/limiter.test.ts", added: 43, removed: 0 }],
       queuedMessages: 2,
       queue: [
-        { id: "qm-1", text: "Return the retry hint in seconds, not milliseconds.", createdAt: ago(3), editedAt: null, kind: "user" },
+        { id: "qm-1", text: "Return the retry hint in seconds, not milliseconds. This is what clients see now.", createdAt: ago(3), editedAt: null, kind: "user", attachments: [HINT] },
         { id: "qm-2", text: "Keep the old error text as a fallback for clients that parse it.", createdAt: ago(1), editedAt: ago(0), kind: "user" },
       ],
-      controls: { steer: { ok: true, reason: null }, undo: { ok: false, reason: "undo.turn_running", turnId: null } },
+      controls: { steer: { ok: true, reason: null }, undo: { ok: false, reason: "undo.turn_running", turnId: null }, attach: { image: { ok: true, reason: null }, file: { ok: false, reason: "attach.file_unsupported" } } },
     }),
   ];
   // The tests failed twice at the implementer's turn boundary; each failure went back to the same session.
@@ -423,6 +460,12 @@ export function fixtureCall<M extends IpcMethod>(method: M, params: IpcParams<M>
       return fixtureScheduleRuns((params as { id: string }).id) as IpcResult<M>;
     case "runs.undoPreview":
       return fixtureUndo((params as { runId: string }).runId) as IpcResult<M>;
+    case "attachments.preview":
+      return { dataUrl: fixtureShot() } as IpcResult<M>;
+    case "attachments.add":
+      return attachment(`a-${Date.now()}`, "image", (params as { name: string }).name, "image/png", 1024) as IpcResult<M>;
+    case "attachments.discard":
+      return { id: (params as { id: string }).id } as IpcResult<M>;
     case "github.repo":
     case "github.issues":
     case "github.issue":

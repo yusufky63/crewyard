@@ -1,6 +1,20 @@
 {
   "nav": "Görevler",
   "title": "Görevler",
+  "attach": {
+    "button": "Ekle",
+    "hint": "Görsel ya da dosya ekleyin: Ctrl V ile yapıştırın, buraya sürükleyin ya da seçin. Görev ya da mesaj başına en fazla {{max}} tane.",
+    "pastedName": "yapistirilan.{{ext}}",
+    "imageAlt": "Eklenen görsel: {{name}}",
+    "fileLabel": "Eklenen dosya: {{name}}",
+    "remove": "Kaldır: {{name}}",
+    "listLabel_one": "{{count}} ek",
+    "listLabel_other": "{{count}} ek",
+    "uploading": "Ekleniyor…",
+    "proposal_one": "{{count}} ek",
+    "proposal_other": "{{count}} ek",
+    "asPath": "{{who}} şunları doğrudan alamıyor: {{names}}. Bunun yerine okuması için dosya yollarını alır."
+  },
   "composer": {
     "bestOf": "En iyisi",
     "bestOfTitle": "Uygulama adımını birkaç profilde aynı anda, her birini kendi worktree'sinde çalıştırın, sonra birini seçin",
@@ -339,7 +353,9 @@
     "undo_no_turn": "Geri alınabilecek, denetim noktası olan bir tur kalmadı.",
     "undo_other_run": "Bu çalışma ağacında başka bir çalışma sürüyor. O bitince geri alın.",
     "undo_superseded": "Bu adımı sonraki bir çalışma sürdürüyor. Geri almayı oradan yapın.",
-    "undo_cancelled": "Bu görev iptal edildi."
+    "undo_cancelled": "Bu görev iptal edildi.",
+    "attach_image_unsupported": "Bu çalıştırıcının görsel almak için belgelenmiş bir yolu yok.",
+    "attach_file_unsupported": "Bu çalıştırıcı yalnızca görsel alır. Diğer dosyalar ona mesajda bir yol olarak ulaşır."
   },
   "issues": {
     "import": "Issue içe aktar",
@@ -463,6 +479,12 @@
     "crew_read_only_profile": "Bu hesap salt okunur olarak işaretli, dosya değiştiren bir rolü üstlenemez. Başka bir hesap seçin ya da Sağlayıcılar'da salt okunur ayarını kapatın.",
     "handoff_over_budget": "Bu görev bütçesini aştı. Önce Gelen kutusunda bütçeyi aşmayı onaylayın.",
     "load": "Görevler arka plan hizmetinden okunamadı.",
+    "attachment_type": "Yalnızca PNG, JPEG, GIF ve WebP görseller, PDF'ler ve metin dosyaları eklenebilir.",
+    "attachment_too_large": "Eklemek için çok büyük. Görseller en fazla 5 MB, dosyalar en fazla 10 MB olabilir.",
+    "attachment_empty": "Bu dosya boş.",
+    "attachment_too_many": "Görev ya da mesaj başına en fazla 8 ek eklenebilir.",
+    "attachment_not_found": "Bu ek artık yok. Lütfen yeniden ekleyin.",
+    "attachment_claimed": "Bu ek zaten başka bir göreve ya da mesaja ait. Lütfen yeniden ekleyin.",
     "other": "Bir şeyler ters gitti: {{message}}",
     "queue_not_found": "Bu mesaj artık kuyrukta değil.",
     "queue_delivered": "Ajan bu mesajı zaten aldı; artık değiştirilemez.",

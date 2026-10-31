@@ -359,3 +359,47 @@ test("Settings: a development build says it does not update itself, and nothing 
   expect(await bridge("updates")).toMatchObject({ phase: "off", off: "development" });
   await expect(page.locator("#settings-about").getByText("Third-party licences")).toBeVisible();
 });
+
+/** A 1x1 PNG, the smallest image the daemon's signature check accepts as one. */
+const PNG_1PX = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+
+test("Attachments: a pasted image goes with the task, a picked file with a queued message", async () => {
+  const { page } = h;
+  h.setScripts({ researcher: [[running, hold()]] });
+  // The settings flows leave Settings open, which hides the sidebar.
+  await page.locator("main").getByRole("button", { name: "[ Back ]", exact: true }).click();
+  await page.locator("#app-sidebar").getByRole("button", { name: "Tasks", exact: true }).click();
+  const box = page.getByLabel("New task");
+  await box.fill("Explain the error in the screenshot");
+  // Ctrl V with only an image on the clipboard, as a screenshot tool leaves it.
+  await box.evaluate((el, b64) => {
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    const data = new DataTransfer();
+    data.items.add(new File([bytes], "", { type: "image/png" }));
+    el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+  }, PNG_1PX);
+  const composer = page.locator(".tk-composer");
+  await expect(composer.getByRole("img", { name: "Attached image: pasted.png" })).toBeVisible();
+  // A renamed executable is refused by the daemon, and the reason is shown.
+  await composer.locator("input[type=file]").setInputFiles({ name: "tool.png", mimeType: "image/png", buffer: Buffer.from("MZ not an image") });
+  await expect(composer.getByText("Only PNG, JPEG, GIF and WebP images, PDFs and text files can be attached.")).toBeVisible();
+  await page.getByLabel("Kind").selectOption("research");
+  await page.getByRole("button", { name: "Propose crew" }).click();
+  const proposal = page.getByRole("region", { name: /Suggested crew for/ });
+  await expect(proposal.getByText("1 attachment")).toBeVisible();
+  await expect(proposal.getByRole("img", { name: "Attached image: pasted.png" })).toBeVisible();
+  await proposal.getByRole("button", { name: "Approve and start" }).click();
+  const task = (await taskByTitle("Explain the error in the screenshot"))!;
+  const detail = await daemon<{ attachments?: Array<{ name: string; kind: string }> }>(page, "tasks.get", { taskId: task.id });
+  expect(detail.attachments).toEqual([expect.objectContaining({ name: "pasted.png", kind: "image" })]);
+
+  await expect.poll(async () => (await runsOf(task.id))[0]?.state).toBe("running");
+  await page.locator("button.tk-top-main", { hasText: task.title }).click();
+  const inspector = page.locator("#app-inspector");
+  await inspector.locator("input[type=file]").setInputFiles({ name: "build log.txt", mimeType: "text/plain", buffer: Buffer.from("error: limiter.ts:42\n") });
+  await expect(inspector.getByText("build log.txt")).toBeVisible();
+  await inspector.getByRole("button", { name: "Send", exact: true }).click();
+  const queue = inspector.getByRole("list", { name: "1 attachment" }).first();
+  await expect(queue).toContainText("build log.txt");
+  await daemon(page, "tasks.cancel", { taskId: task.id });
+});

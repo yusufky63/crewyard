@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ArrowLeftRight, PanelRightClose, PanelRightOpen, Pause, Play, RotateCw, Send, X } from "lucide-react";
+import { ArrowLeftRight, PanelRightClose, PanelRightOpen, Pause, Play, RotateCw, X } from "lucide-react";
 import { readProviderError, providerErrorLine, splitEndDetail, type CandidateView, type HandoffStop, type RequestAnswer, type RunView, type TaskDetail } from "@crewyard/core";
 import { BrandIcon, Button, Label, Splitter, TickMeter } from "@crewyard/ui";
 import { useInspector, type InspectorTarget } from "../inspector.ts";
@@ -8,7 +8,7 @@ import { useNav } from "../nav.ts";
 import { usePrefs } from "../prefs.ts";
 import { INSPECTOR, inspectorBounds, sidebarColumn } from "./layout.ts";
 import { useViewportWidth } from "./useMedia.ts";
-import { QueueSection, UndoControl } from "./TurnControls.tsx";
+import { MessageForm, QueueSection, UndoControl } from "./TurnControls.tsx";
 import { TaskPullSection } from "../screens/github/TaskPull.tsx";
 import { ProvBadge } from "../screens/providers/shared.tsx";
 import { ApprovalActions } from "../screens/inbox/ApprovalActions.tsx";
@@ -33,7 +33,6 @@ type Tab = "details" | "changes" | "usage";
 
 function Actions({ detail, run, onError }: { detail: TaskDetail; run: RunView; onError: (err: unknown) => void }) {
   const f = useFormat();
-  const [text, setText] = useState("");
   const member = detail.crew?.members.find((m) => m.id === run.memberId);
   const targets = [member?.chosen, ...(member?.standby ?? [])].filter((c): c is CandidateView => Boolean(c) && c!.profileId !== run.profileId);
   const [target, setTarget] = useState(targets[0]?.profileId ?? "");
@@ -54,28 +53,7 @@ function Actions({ detail, run, onError }: { detail: TaskDetail; run: RunView; o
 
   return (
     <div className="ins-actions">
-      {canMessage && (
-        <form
-          className="ins-message"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (!text.trim()) return;
-            void go(async () => {
-              await act("runs.message", { runId: run.id, text: text.trim(), sessionId: run.nativeSessionId });
-              setText("");
-            });
-          }}
-        >
-          <label className="lbl" htmlFor="ins-msg">
-            {f.t("inspector.message")}
-          </label>
-          <textarea id="ins-msg" rows={2} value={text} onChange={(e) => setText(e.target.value)} placeholder={open && !run.pausedAt ? f.t("inspector.messageLive") : f.t("inspector.messageQueued")} />
-          <Button type="submit" variant="primary" disabled={!text.trim()}>
-            <Send aria-hidden="true" />
-            {f.t("inspector.send")}
-          </Button>
-        </form>
-      )}
+      {canMessage && <MessageForm key={run.id} run={run} onError={onError} />}
       <div className="ins-buttons">
         {open && !run.pausedAt && (
           <Button onClick={() => void go(() => act("runs.pause", { runId: run.id, sessionId: run.nativeSessionId }))}>

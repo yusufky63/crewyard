@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
-import type { AgentAdapter, ControlReason, ControlState, Profile, RewindResult, RunControls, RunnerId, UndoPreview } from "@crewyard/core";
+import { attachControls, type AgentAdapter, type ControlReason, type ControlState, type Profile, type RewindResult, type RunControls, type RunnerId, type UndoPreview } from "@crewyard/core";
 import type { Store } from "../store.ts";
 import { commitsSince, restore, restorePlan, snapshot } from "./checkpoints.ts";
 import type { OrchestratorDb, RunRow } from "./db.ts";
@@ -102,7 +102,7 @@ export class TurnControl {
   }
 
   controls(run: RunRow): RunControls {
-    return { steer: this.steerState(run), undo: this.undoState(run) };
+    return { steer: this.steerState(run), undo: this.undoState(run), attach: attachControls(this.host.adapter(run.runner)?.capabilities) };
   }
 
   steerState(run: RunRow): ControlState {

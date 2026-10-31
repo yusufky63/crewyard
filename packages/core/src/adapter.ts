@@ -1,4 +1,5 @@
 import type { AgentEvent, LimitWindow, Provenance, RiskLevel, RunnerId, RunOutput } from "./events.ts";
+import type { Attachment } from "./attachments.ts";
 import type { McpServerSpec } from "./mcp.ts";
 
 // What a runner can do. Unsupported operations are shown disabled with a reason, never hidden.
@@ -42,6 +43,12 @@ export interface AgentCapabilities {
    * server's read tools). Absent: the run gets no MCP servers, including the report server.
    */
   mcp?: { toolFilter: boolean };
+  /**
+   * Images and files reach the runner through its own documented input (`UserInput.attachments`,
+   * `StartRequest.attachments`). A kind it cannot take is listed in the text as a path to read,
+   * and the UI disables attaching that kind to its queue with the reason. Absent: neither.
+   */
+  attachments?: { images: boolean; files: boolean };
 }
 
 /** The session to copy and where the copy goes; both profiles run the same runner. */
@@ -185,7 +192,12 @@ export interface StartRequest {
    * let the run finish. Messages typed while a turn runs wait in our persisted queue instead of
    * the runner's, so they stay editable until this hands them over.
    */
-  nextTurn?: () => Promise<string | null>;
+  nextTurn?: () => Promise<string | UserInput | null>;
+  /**
+   * Images and files that go with `prompt`, only of the kinds `capabilities.attachments` claims;
+   * the daemon has already listed them in the prompt text.
+   */
+  attachments?: Attachment[];
   /**
    * Run the runner's own review against this target instead of a prompt turn (only with
    * `capabilities.nativeReview`). `prompt` is then context for mapping the review to
@@ -267,7 +279,8 @@ export interface NativeSessionRef {
   sessionId: string;
 }
 
-export type UserInput = { kind: "text"; text: string };
+/** `attachments` only of the kinds `capabilities.attachments` claims; the text already lists them. */
+export type UserInput = { kind: "text"; text: string; attachments?: Attachment[] };
 
 export type Answer =
   | { kind: "approval"; decision: "allow_once" | "allow_always" | "deny"; message?: string }

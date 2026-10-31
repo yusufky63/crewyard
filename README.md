@@ -26,6 +26,7 @@ Status: pre-release. It is built and tested on Windows 11. Linux and macOS are p
 - **Windows shell.** The taskbar button shows how many requests wait for you and flashes when a new one arrives while the window is in the background; "Open in Crewyard" in Explorer, `Crewyard.exe <folder>` and a folder dropped on the window open a project or start a new one.
 - **More:**
   - turn control (queue, steer, undo);
+  - images and files on a task or a queued message (paste, drop or pick), passed to each runner its own way;
   - Best of N;
   - scheduled tasks;
   - idle agents that sleep and wake with your answer;

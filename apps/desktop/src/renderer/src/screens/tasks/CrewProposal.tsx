@@ -4,6 +4,7 @@ import type { BuiltinRoleId, CandidateView, CrewEdit, CrewMemberView, FallbackMo
 import { Button, Label, TickMeter } from "@crewyard/ui";
 import { ProvBadge } from "../providers/shared.tsx";
 import { useAccountSwitchOn } from "./AccountSwitch.tsx";
+import { AttachmentList } from "./Attachments.tsx";
 import { act, useErrorText } from "./data.ts";
 import { IssueNote } from "./IssuePicker.tsx";
 import { ErrorLine, useFormat, Who } from "./parts.tsx";
@@ -20,6 +21,27 @@ const ROLE_ICON: Record<BuiltinRoleId, typeof Code> = {
 };
 
 const MODES: FallbackMode[] = ["manual", "ask", "auto"];
+
+/** Steps whose runner cannot take a kind of the task's attachments get those as paths to read. */
+function AttachNotes({ task, chosenOf }: { task: TaskDetail; chosenOf: (m: CrewMemberView) => CandidateView | null }) {
+  const f = useFormat();
+  const notes = (task.crew?.members ?? []).flatMap((m) => {
+    const c = chosenOf(m);
+    if (!c?.attachments) return [];
+    const missed = (task.attachments ?? []).filter((a) => (a.kind === "image" ? !c.attachments!.images : !c.attachments!.files));
+    return missed.length ? [{ id: m.id, who: `${f.role(m.role)} · ${f.runner(c.runner)}`, names: missed.map((a) => a.name).join(", ") }] : [];
+  });
+  if (notes.length === 0) return null;
+  return (
+    <ul className="tk-attach-notes">
+      {notes.map((n) => (
+        <li key={n.id} className="muted tk-small">
+          {f.t("attach.asPath", { who: n.who, names: n.names })}
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 function RoleTile({ index, member, chosen, budget, hideReasons, onSwap }: { index: number; member: CrewMemberView; chosen: CandidateView | null; budget: number | null; hideReasons: boolean; onSwap: (profileId: string) => void }) {
   const f = useFormat();
@@ -233,6 +255,13 @@ export function CrewProposal({ task, onClose }: { task: TaskDetail; onClose: () 
       </div>
       <h2 className="tk-crew-task">{task.title}</h2>
       <IssueNote taskId={task.id} description={task.description} />
+      {task.attachments?.length ? (
+        <div className="tk-crew-attach">
+          <Label>{f.t("attach.proposal", { count: task.attachments.length })}</Label>
+          <AttachmentList items={task.attachments} />
+          <AttachNotes task={task} chosenOf={chosenOf} />
+        </div>
+      ) : null}
       <div className="tk-crew-grid">
         {members.map((m, i) => (
           <RoleTile key={m.id} index={i} member={m} chosen={chosenOf(m)} budget={task.budgetUsd} hideReasons={hideReasons} onSwap={(profileId) => setEdits((e) => ({ ...e, [m.id]: profileId }))} />

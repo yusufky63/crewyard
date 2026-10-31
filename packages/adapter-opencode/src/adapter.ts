@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { checkOutput, outputInstruction, outputRetryPrompt, parseOutputText, sessionError } from "@crewyard/core";
+import { checkOutput, outputInstruction, outputRetryPrompt, parseOutputText, sessionError, toUserInput, type Attachment } from "@crewyard/core";
 import { randomUUID as newPassword } from "node:crypto";
 import type {
   AgentAdapter,
@@ -28,6 +28,7 @@ import type {
 import { isShutdownExit, parseVersion, resolveBin, run as runCommand } from "@crewyard/proc";
 import { compactionOf, errorText, exportSession, importSession, isNotFound, usageOf, type CliCall } from "./fork.ts";
 import { createOpencodeClient, type Event as OpenCodeEvent, type Message, type OpencodeClient, type PermissionRequest, type SessionStatus } from "@opencode-ai/sdk/v2";
+import { openCodeParts } from "./input.ts";
 import { OpenCodeMapper, type EventBody } from "./mapper.ts";
 import { isUserMcpPermission, mcpConfig, mcpPermissionRules, withMcpConfig } from "./mcp.ts";
 import { mustReject, permissionRules } from "./policy.ts";
@@ -165,7 +166,7 @@ export class OpenCodeAdapter implements AgentAdapter {
       const created = await run.client.session.create({ title: title(req.prompt), permission: [...permissionRules(req.policy), ...mcpPermissionRules(req.mcpServers ?? [], req.policy)] });
       this.attach(run, need(created).id);
       await this.listenUntilConnected(run);
-      await this.prompt(run, req.prompt);
+      await this.prompt(run, req.prompt, req.attachments);
       return run.handle;
     } catch (err) {
       await this.discard(run);
@@ -192,7 +193,7 @@ export class OpenCodeAdapter implements AgentAdapter {
         for (const p of m.parts) run.mapper.part(p);
       }
       await this.listenUntilConnected(run);
-      if (req.prompt.trim()) await this.prompt(run, req.prompt);
+      if (req.prompt.trim()) await this.prompt(run, req.prompt, req.attachments);
       else this.setState(run, "waiting_input");
       return run.handle;
     } catch (err) {
@@ -207,7 +208,7 @@ export class OpenCodeAdapter implements AgentAdapter {
 
   async send(handle: RunHandle, input: UserInput): Promise<void> {
     const run = this.live(handle);
-    await this.prompt(run, input.text);
+    await this.prompt(run, input.text, input.attachments);
   }
 
   async answer(handle: RunHandle, requestId: string, answer: Answer): Promise<void> {
@@ -606,8 +607,9 @@ export class OpenCodeAdapter implements AgentAdapter {
     const next = run.req.nextTurn ? await run.req.nextTurn().catch(() => null) : null;
     if (run.ended || run.stopping || run.interrupted || run.awaiting) return;
     if (next) {
+      const input = toUserInput(next);
       try {
-        await this.prompt(run, next);
+        await this.prompt(run, input.text, input.attachments);
         return;
       } catch (err) {
         return this.end(run, "failed", err instanceof Error ? err.message : String(err));
@@ -648,7 +650,7 @@ export class OpenCodeAdapter implements AgentAdapter {
     }
   }
 
-  private async prompt(run: Run, text: string): Promise<void> {
+  private async prompt(run: Run, text: string, attachments?: Attachment[]): Promise<void> {
     if (!run.awaiting) {
       run.promptAt = Date.now();
       run.sawBusy = false;
@@ -665,7 +667,7 @@ export class OpenCodeAdapter implements AgentAdapter {
     const format = !schema ? undefined : run.promptJson ? ({ type: "text" } as const) : ({ type: "json_schema", schema: schema.jsonSchema } as const);
     await run.client.session.promptAsync({
       sessionID: run.mapper.rootSession,
-      parts: [{ type: "text", text }],
+      parts: openCodeParts(text, attachments),
       ...(run.model ? { model: run.model } : {}),
       ...(format ? { format } : {}),
     });

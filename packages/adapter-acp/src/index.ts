@@ -20,6 +20,9 @@ export const capabilities: AgentCapabilities = {
   readOnlyMode: true,
   // session/new mcpServers; ACP cannot limit a server to some of its tools (docs/adr/0007).
   mcp: { toolFilter: false },
+  // Image and embedded resource blocks where the agent's promptCapabilities allow them, otherwise
+  // a resource_link, which every agent must accept (input.ts).
+  attachments: { images: true, files: true },
 };
 
 export function createAdapter(opts: AcpAdapterOptions = {}): AgentAdapter {
