@@ -12,3 +12,17 @@ coverage/
 .DS_Store
 Thumbs.db
 apps/desktop/screens/
+
+# Local tooling that must never reach a public repository.
+.claude/worktrees/
+.claude/settings.local.json
+.idea/
+.vscode/
+.eslintcache
+test-results/
+playwright-report/
+blob-report/
+# Signing certificates stay in the environment or the Windows store (README, "Building the Windows installer").
+*.pfx
+*.p12
+*.pem
