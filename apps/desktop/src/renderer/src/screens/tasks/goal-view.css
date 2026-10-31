@@ -1,0 +1,76 @@
+/* Orchestra goals (docs/adr/0019): the goal group row in the task list and the goal view above it.
+   Colors, sizes and radii come from tokens only; state colors through the shared .st-* and .badge-* pieces. */
+
+/* Goal group row: the TaskRow frame, its tasks indented under it. */
+.gl-row .tk-title { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.gl-eyebrow { flex: none; }
+.gl-title { min-width: 0; overflow-wrap: anywhere; }
+.gl-spend { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink-2); white-space: nowrap; }
+.gl-spend .meter { width: 96px; }
+.gl-planner { display: inline-flex; align-items: center; gap: 10px; min-width: 0; flex-wrap: wrap; }
+.gl-latest { font-family: var(--mono); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 360px; }
+.gl-tasks { margin: 12px 0 -14px 16px; border-left: 1px solid var(--line); }
+.gl-tasks > div > .tk-row { padding-left: 16px; }
+.gl-tasks > div:first-child > .tk-row { border-top: 1px solid var(--line); }
+
+/* The goal chip on a goal task's own row. */
+.tk-goal { display: inline-flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.04em; color: var(--ink-2); }
+
+/* Goal view: the goal bar, what needs you, then the tasks. */
+.gv { margin-top: 16px; padding: 16px; display: grid; gap: 12px; background: var(--canvas); }
+.gv-banner { margin: -4px 0 0; }
+.gv-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.gv-close { margin-left: auto; }
+.gv-bar { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.gv-title { flex: 1 1 320px; min-width: 0; margin: 0; font-size: 17px; font-weight: 600; letter-spacing: -0.015em; overflow-wrap: anywhere; }
+.gv-bar .gl-spend { font-size: 13px; }
+.gv-bar .gl-spend .meter { width: 160px; }
+.gv-meta { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.gv-meta > span { display: inline-flex; align-items: center; gap: 5px; min-width: 0; overflow-wrap: anywhere; }
+.gv-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.gv-pr { margin-left: auto; }
+.gv-note { margin: 0; font-size: 13px; }
+
+.gv-section { display: grid; border-top: 1px solid var(--line); padding-top: 8px; }
+.gv-sub { padding: 4px 0 8px; }
+
+.gv-need { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); align-items: start; }
+.gv-sub + .gv-need { border-top: 0; }
+.gv-need-icon { margin-top: 2px; }
+.gv-need-text { display: grid; gap: 3px; min-width: 0; }
+.gv-need-text .t { font-size: 14px; font-weight: 500; overflow-wrap: anywhere; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.gv-need-text .s { font-size: 12px; color: var(--ink-3); overflow-wrap: anywhere; }
+.gv-acts { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+
+.gv-task { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto minmax(0, 1.2fr) 120px; gap: 12px; align-items: center; width: 100%; padding: 9px 4px; border-top: 1px solid var(--line); text-align: left; font-size: 13px; }
+.gv-sub + .gv-task { border-top: 0; }
+.gv-task:hover { background: var(--raised); }
+.gv-task[aria-current] { background: var(--raised); box-shadow: inset 2px 0 0 var(--ink); }
+.gv-num { color: var(--ink-3); font-size: 12px; }
+.gv-task-title { min-width: 0; overflow-wrap: anywhere; font-weight: 500; }
+.gv-mode { justify-self: start; }
+.gv-task-state { display: inline-flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
+.gv-task-state .st { white-space: normal; }
+.gv-task-spend { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; white-space: nowrap; }
+.gv-integration .gv-task-title { color: var(--ink-2); font-weight: 400; }
+
+.gv-merges summary { cursor: pointer; padding: 4px 0; }
+.gv-merges ol { margin: 6px 0 0; padding-left: 20px; display: grid; gap: 4px; font-size: 12px; color: var(--ink-2); }
+
+/* Add task, Replan, Stop and Limits open in place, one at a time. */
+.gv-form { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--line); background: var(--surface); }
+.gv-form p { margin: 0; }
+.gv-form-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+.gv-field { display: grid; gap: 6px; min-width: 0; }
+.gv-field input, .gv-field textarea, .gv-field select { border: 1px solid var(--line-strong); background: var(--canvas); padding: 6px 10px; font-size: 13px; color: var(--ink); min-width: 0; }
+.gv-field textarea { resize: vertical; line-height: 1.4; }
+.gv-field select option { background: var(--surface); color: var(--ink); }
+.gv-waits { border: 0; margin: 0; padding: 0; display: grid; gap: 6px; min-width: 0; }
+.gv-waits legend { padding: 0 0 6px; }
+.gv-check { display: flex; align-items: center; gap: 8px; font-size: 13px; overflow-wrap: anywhere; }
+
+@media (max-width: 1180px) {
+  .gv-task { grid-template-columns: 28px minmax(0, 1fr) auto; }
+  .gv-task-state { grid-column: 2 / -1; }
+  .gv-task-spend { grid-column: 2 / -1; justify-content: flex-start; }
+}

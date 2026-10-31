@@ -1,5 +1,5 @@
 import { Notification } from "electron";
-import type { AssistantTopics, IpcMethod, IpcParams, IpcResult, LimitNoticePayload, NotificationSettings, RequestView, TasksTopics } from "@crewyard/core";
+import type { AssistantTopics, GoalDetail, GoalsTopics, IpcMethod, IpcParams, IpcResult, LimitNoticePayload, NotificationSettings, RequestView, TaskDetail, TasksTopics } from "@crewyard/core";
 import type { Translate } from "../i18n.ts";
 import {
   activationArgs,
@@ -7,13 +7,18 @@ import {
   AUTOPILOT_BATCH_MS,
   decideAction,
   emptyToastState,
+  goalMayToast,
+  goalTaskNumber,
+  goalToast,
   limitToast,
   parseActivation,
   requestToast,
   requestToastPlan,
   suppression,
   ToastGrants,
+  toastTopic,
   toastXml,
+  type GoalToastKind,
   type ToastAction,
   type ToastTarget,
 } from "./rules.ts";
@@ -47,11 +52,55 @@ export class Toaster {
 
   constructor(private readonly deps: ToasterDeps) {}
 
-  /** Fed every daemon event; reacts to the request, limit and Autopilot topics only. */
+  /** Fed every daemon event; reacts to the request, limit, Autopilot and goal topics only (toastTopic). */
   onEvent(topic: string, payload: unknown): void {
-    if (topic === "requests.changed") void this.onRequest(payload as TasksTopics["requests.changed"]).catch(() => undefined);
-    else if (topic === "limits.notice") void this.onLimit(payload as LimitNoticePayload).catch(() => undefined);
-    else if (topic === "autopilot.changed") this.onAutopilot(payload as AssistantTopics["autopilot.changed"]);
+    switch (toastTopic(topic)) {
+      case "request":
+        void this.onRequest(payload as TasksTopics["requests.changed"]).catch(() => undefined);
+        break;
+      case "limit":
+        void this.onLimit(payload as LimitNoticePayload).catch(() => undefined);
+        break;
+      case "autopilot":
+        this.onAutopilot(payload as AssistantTopics["autopilot.changed"]);
+        break;
+      case "goal":
+        void this.onGoal(payload as GoalsTopics["goals.changed"]).catch(() => undefined);
+        break;
+      case null:
+        break;
+    }
+  }
+
+  /**
+   * A goal toasts once when it first needs you, once when its last review passed, and once when
+   * it halts or finishes (rules.ts goalToast). The goal is read again; the event alone decides nothing.
+   * A suppressed toast still counts as raised, so quiet hours never end in a burst of stale ones.
+   */
+  private async onGoal(ev: GoalsTopics["goals.changed"]): Promise<void> {
+    if (!goalMayToast(this.seen, ev)) return;
+    const goal = await this.deps.call("goals.get", { goalId: ev.goalId });
+    const kind = goalToast(this.seen, goal.id, goal);
+    const s = this.deps.settings();
+    if (!kind || !s || suppression(s, goal.projectId, new Date())) return;
+    const t = this.deps.t();
+    const target: ToastTarget = { screen: "tasks", projectId: goal.projectId, taskId: null, requestId: null };
+    this.show({ ...this.describeGoal(kind, goal, t), launch: activationArgs("open", null, target), buttons: [] });
+  }
+
+  private describeGoal(kind: GoalToastKind, goal: GoalDetail, t: Translate): { title: string; lines: string[] } {
+    const name = { goal: goal.title };
+    if (kind === "ready") return { title: t("toast.goalReadyTitle", name), lines: [t("toast.goalReadyBody")] };
+    if (kind === "halted") return { title: t("toast.goalHaltedTitle", name), lines: [t("toast.goalHaltedBody")] };
+    if (kind === "finished") return { title: t("toast.goalFinishedTitle", name), lines: [t(goal.outcome === "merged" ? "toast.goalMerged" : "toast.goalDone")] };
+    return { title: t("toast.goalNeedsYouTitle", name), lines: [t(`toast.goalReason.${goal.reason ?? "decision"}`)] };
+  }
+
+  /** "Passkeys · 02 Server" for a goal task (design §3.6); the task's own title otherwise. */
+  private async taskLabel(task: TaskDetail, t: Translate): Promise<string> {
+    if (!task.goal || task.goal.hidden) return task.title;
+    const goal = await this.deps.call("goals.get", { goalId: task.goal.goalId }).catch(() => null);
+    return goal ? t("toast.goalTask", { goal: goal.title, number: goalTaskNumber(task.goal.number), task: task.title }) : task.title;
   }
 
   private readonly autopilot = new AutopilotBatches();
@@ -132,7 +181,7 @@ export class Toaster {
     const acting = plan.actions.some((x) => x !== "open");
     const grant = acting ? this.grants.issue({ requestId: req.id, runId: req.runId, sessionId: req.sessionId, taskId: req.taskId, projectId: req.projectId, actions: plan.actions, targetProfileId: plan.targetProfileId }) : null;
     const t = this.deps.t();
-    const { title, lines } = this.describe(req, plan.kind, task.title, t);
+    const { title, lines } = this.describe(req, plan.kind, await this.taskLabel(task, t), t);
     this.show({
       title,
       lines,

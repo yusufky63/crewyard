@@ -16,6 +16,7 @@ import { ApprovalActions } from "./ApprovalActions.tsx";
 import { InboxSplit } from "./InboxSplit.tsx";
 import { ReportList, useReports } from "./Reports.tsx";
 import { RiskBadge } from "./RiskBadge.tsx";
+import { GoalList, useGoalTaskLabel } from "./Goals.tsx";
 import { StallList, useStalls } from "./Stalls.tsx";
 import { SwitchList, useSwitches } from "./Switches.tsx";
 import { defaultTarget, emptyForm, formAnswer, formReady, handoffChoices, infoNotices, orderRequests, titleKey, type QuestionForm } from "./model.ts";
@@ -44,10 +45,11 @@ function useTitle() {
 /** "Role · Runner · alias · task": who asked, in one muted line. */
 function useAsker(task: TaskDetail | undefined, q: RequestView): string {
   const f = useFormat();
+  const title = useGoalTaskLabel(task);
   if (!task) return "";
   const run = task.runs.find((r) => r.id === q.runId);
   const who = run ? `${f.role(run.role)} · ${f.runner(run.runner)} · ${profileNames(task).get(run.profileId)?.alias ?? run.profileId}` : "";
-  return [who, task.title].filter(Boolean).join(" · ");
+  return [who, title].filter(Boolean).join(" · ");
 }
 
 function Item({ q, selected, onSelect }: { q: RequestView; selected: boolean; onSelect: () => void }) {
@@ -356,6 +358,7 @@ export function InboxScreen() {
             ))}
           </Panel>
           <ReportList reports={reports.data ?? []} onError={(e) => setStallError(errorText(e))} />
+          <GoalList projectId={projectId} />
           <StallList alerts={stalled} onOpenRequest={setPicked} onError={(e) => setStallError(errorText(e))} />
           <SwitchList switches={switches.data ?? []} onError={(e) => setStallError(errorText(e))} />
           <ErrorLine>{stallError}</ErrorLine>
