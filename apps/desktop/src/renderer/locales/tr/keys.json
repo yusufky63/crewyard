@@ -23,6 +23,8 @@
     "submit": "Oluşturucuyu gönder, seçili ekibi onayla, mesajı ya da yorumu gönder",
     "assistant": "Paneli görev asistanında aç ya da asistanı durdurup paneli kapat",
     "assistant.send": "Mesajını görev asistanına gönderir (Shift Enter yeni satır ekler)",
+    "assistant.prev": "Görev asistanıyla sohbette önceki mesaj; Tab ardından o mesajın işlemlerine gider",
+    "assistant.next": "Görev asistanıyla sohbette sonraki mesaj",
     "list.next": "Listede sonraki öğe",
     "list.prev": "Listede önceki öğe",
     "graph.full": "Tam ekranı aç ya da kapat",

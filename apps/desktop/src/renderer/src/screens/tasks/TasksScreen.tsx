@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Panel } from "@crewyard/ui";
 import { useInspector } from "../../inspector.ts";
@@ -18,6 +18,7 @@ import { FILTERS, filterCounts, matchesFilter, type Filter } from "./model.ts";
 import { TaskRow } from "./TaskRow.tsx";
 import "./tasks.css";
 import { LazyRow } from "./LazyRow.tsx";
+import { useTaskReveal } from "./assistant/openTask.ts";
 
 export function TasksScreen() {
   const { t } = useTranslation("tasks");
@@ -51,6 +52,18 @@ export function TasksScreen() {
       inspect({ taskId: id });
     },
     view === "tasks",
+  );
+  // Open task (assistant drafts, a report's suggested tasks, the Autopilot log) lands here: back to
+  // the task list, and off a filter that would hide the task.
+  useEffect(
+    () =>
+      useTaskReveal.subscribe((s, prev) => {
+        if (s.n === prev.n || !s.taskId) return;
+        setView("tasks");
+        const task = tasks.data?.find((x) => x.id === s.taskId);
+        if (!task || !matchesFilter(task.status, filter)) setFilter("all");
+      }),
+    [tasks.data, filter],
   );
 
   if (!projectId) return null;
@@ -111,7 +124,7 @@ export function TasksScreen() {
             {tasks.isSuccess && all.length === 0 && <p className="tk-empty muted">{t("empty.none")}</p>}
             {tasks.isSuccess && all.length > 0 && shown.length === 0 && <p className="tk-empty muted">{t("empty.filter")}</p>}
             {shown.map((s, i) => (
-              <LazyRow key={s.id} index={i}>
+              <LazyRow key={s.id} index={i} force={s.id === taskId}>
                 <TaskRow summary={s} requests={requests.data ?? []} />
               </LazyRow>
             ))}

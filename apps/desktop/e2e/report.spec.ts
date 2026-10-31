@@ -115,6 +115,17 @@ test("Open report shows the whole report in the inspector, and one suggested dra
   await expect(report.getByText("Added to Tasks. Its crew waits for your approval.")).toBeVisible();
   await report.getByRole("article", { name: /Cap network retries/ }).getByRole("button", { name: "Discard" }).click();
   await expect(report.getByRole("article")).toHaveCount(1);
+
+  // Open task on the added draft takes you to it from the inspector: the task selected, its row
+  // focused, and the inspector moved from the report to that task on Details.
+  await report.getByRole("article", { name: /Redact the Authorization header/ }).getByRole("button", { name: "Open task" }).click();
+  const row = main.locator(".tk-row", { hasText: "Redact the Authorization header in logs" });
+  await expect(row).toHaveAttribute("aria-current", "true");
+  await expect(row.locator("[data-list-id]")).toBeFocused();
+  const inspector = page.locator("#app-inspector");
+  await expect(report).toHaveCount(0);
+  await expect(inspector).toContainText("Redact the Authorization header in logs");
+  await expect(inspector.getByRole("tab", { name: "Details" })).toHaveAttribute("aria-selected", "true");
 });
 
 test("the assistant panel puts a ready-made task in its drafts without a model call", async () => {

@@ -66,6 +66,14 @@ What had happened: "projeyi incele" was classified as a `review` task, a reviewe
 
 Options considered for presets: (a) a model call that writes the task list for each project, or (b) fixed local templates plus local facts to rank them. (b) was chosen: it costs nothing, works offline and before any profile exists, and the model call stays one explicit, priced click.
 
+## Addendum, 2026-10-31: a conversation you can work with
+
+The owner: "mesaj gönderdikten sonra mesajlar kısmında düşünüyor gibi durumları da göster sadece üst kısmında değil ve agent mesajı daha interaktif ve kullanışlı olsun mesela: seçilebilir veya tıklanabilir ve mesaj yazdığım kutucuk çok belirgin değil" (after I send, show states like thinking in the messages too, not only at the top; make the agent's messages more interactive and useful, selectable or clickable; the box I type in is not prominent enough), and "add as draft yapınca open task açılıyor ama open task tepki vermiyor" (after Add as draft, Open task appears but does nothing).
+
+- **Live row.** While a turn runs, the end of the log says what it is doing: starting, thinking, or the runner's title of the latest call, with the time since the turn began and any message queued for the next turn boundary. A turn begins with your message or with a note Autopilot hands the session (`autopilot.on`, `autopilot.status.*`, ...; not its `autopilot.call.*` records, which are written during a turn), so an Autopilot turn gets the same row, timed from the note. While the row names a call, that call's own line is left out above it. It is derived in the renderer from the state and the lines the view already carries (`screens/tasks/assistant/model.ts`, `liveState`), so the daemon and the IPC contract are unchanged. A wait for an agent slot is not a state here: admission refuses at send with the reason, as before.
+- **Replies as text-only Markdown.** Replies go through the Files tab's reader (`shell/files/markdown.ts`), which yields plain data turned into React elements: raw HTML stays text, links show their target and are never followed, images are named and never fetched. Each reply offers Copy, Quote and `Make drafts from this`; the last one sends a fixed, visible message (priced like any other) asking for `propose_task` drafts, so it adds no new path to a model. Paths in code marks and tool lines can be copied; nothing in agent text opens anything.
+- **Open task.** It used to select the task only, which showed nothing: after `Add as draft` that task was already selected, and from the bottom panel on another screen, or from the inspector, the selection was invisible. It now switches to the project's Tasks screen, back to its task list and off a status filter that would hide the task, selects the task, expands the inspector if it was collapsed and opens it on Details, mounts the task's row even past the first 30 lazily mounted ones, and moves focus to it (`screens/tasks/assistant/openTask.ts`); the Autopilot log's task links do the same.
+
 ## Sources
 
 | Source | Opened | Stars | License | Archived |
@@ -86,7 +94,7 @@ What Task Master does differently, and why we do not: it writes tasks straight i
 
 - **Read-only, twice:** the runner's own read-only mode, plus our approval answers (every approval denied, every question cancelled). The policy is a constant in `packages/core/src/assistant.ts` with tests.
 - **Cannot start anything:** the assistant's only tool is `propose_task`, which stores a draft. The handler that turns a draft into a task is reachable only through IPC from the renderer, i.e. your click; the tool result tells the agent that nothing starts.
-- **Untrusted text:** drafts are checked and capped by core, stored as text and rendered by React as text (no HTML, no links). Assistant replies are capped per message; control and bidirectional-override characters are removed (`cleanText`).
+- **Untrusted text:** drafts are checked and capped by core, stored as text and rendered by React as text (no HTML, no links). Assistant replies are capped per message; control and bidirectional-override characters are removed (`cleanText`). Replies are shown through the text-only Markdown reader (see the 2026-10-31 addendum): its output is data, never HTML, and a link's target is shown, never opened.
 - **Keys:** only through the profile's env from the DPAPI store, as for runs; never on a command line, in a message, a log or the transcript table.
 - **Tickets:** one per assistant process, prefixed so a crew run's ticket can never act as an assistant's and the other way round; revoked on stop.
 - **Spend:** recorded and checked against the key's daily cap; a reached cap stops it.

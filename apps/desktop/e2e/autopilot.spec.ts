@@ -64,6 +64,7 @@ test("Autopilot is off until you accept what it may do and set its limits", asyn
   // Nothing outward-facing shows in the status bar while it is off.
   await expect(page.locator(".statusbar").getByRole("button", { name: /Stop Autopilot/ })).toHaveCount(0);
 
+  await expect(s.getByRole("button", { name: "Turn on…" })).toHaveClass(/btn-ok/);
   await s.getByRole("button", { name: "Turn on…" }).click();
   const consent = s.getByRole("alertdialog", { name: "Turn on Autopilot for this project" });
   await expect(consent).toBeVisible();
@@ -72,6 +73,7 @@ test("Autopilot is off until you accept what it may do and set its limits", asyn
   await consent.getByLabel("Per task (USD)").fill("5");
   await consent.getByLabel("Per day (USD)").fill("20");
   await shoot(page, "consent");
+  await expect(consent.getByRole("button", { name: "Turn on", exact: true })).toHaveClass(/btn-ok/);
   await consent.getByRole("button", { name: "Turn on", exact: true }).click();
   await expect(consent).toHaveCount(0);
   await expect(s.getByText("On", { exact: true })).toBeVisible();
@@ -92,6 +94,8 @@ test("the assistant runs a research task to done, and the code task's pull reque
         say("Started a research task and a code task."),
         // Crewyard's note that the research finished arrives as the next turn.
         { awaitTurn: true },
+        // Long enough to see the live row of a turn that Crewyard's note, not your message, started.
+        { wait: 2500 },
         tool("read_task", { task_id: "{{mcp.0.task_id}}" }),
         tool("complete_task", { task_id: "{{mcp.0.task_id}}", reason: "The report names the slow step." }),
         tool("complete_task", { task_id: "{{mcp.2.task_id}}", reason: "Trying to close the code task too." }),
@@ -108,6 +112,13 @@ test("the assistant runs a research task to done, and the code task's pull reque
   await box.press("Enter");
 
   const log = p.getByRole("log", { name: "Conversation with the task assistant" });
+  // The note's turn has a live row of its own: thinking, with the spinner and the time since the note.
+  await expect(log.getByText("Autopilot told the assistant: one of its tasks finished.")).toBeVisible({ timeout: 30_000 });
+  const live = log.locator(".as-live");
+  await expect(live).toContainText("Thinking…", { timeout: 10_000 });
+  await expect(live.locator(".spin")).toHaveCount(1);
+  await expect(live.locator(".as-live-time")).toHaveText(/^0:0\d$/);
+  await page.screenshot({ path: join(shots, "note-turn-dark-1280.png") });
   await expect(log.getByText("Marked the research done.", { exact: false })).toBeVisible({ timeout: 30_000 });
   await expect(log.getByText("Autopilot: Created a task.").first()).toBeVisible();
   await expect(log.getByText("Autopilot: Approved a crew.").first()).toBeVisible();
@@ -147,6 +158,15 @@ test("the assistant runs a research task to done, and the code task's pull reque
   await expect(s.getByText("Refused: code tasks wait for you")).toBeVisible();
   await shoot(page, "log");
 
+  // Turn off is a warning; a task named in the log opens it: Tasks, the task selected, the inspector on it.
+  await expect(s.getByRole("button", { name: "Turn off" })).toHaveClass(/btn-warn/);
+  await expect(s.locator(".ap-refused-badge").first()).toHaveClass(/badge-bad/);
+  await s.getByRole("button", { name: "Exclude the output folder from Defender" }).first().click();
+  const row = page.locator("main .tk-row", { hasText: "Exclude the output folder from Defender" });
+  await expect(row).toHaveAttribute("aria-current", "true");
+  await expect(row.locator("[data-list-id]")).toBeFocused();
+  await expect(page.locator("#app-inspector")).toContainText("Exclude the output folder from Defender");
+
   // The research report says who marked it done.
   await page.getByRole("button", { name: "Open report" }).first().click();
   await expect(page.getByText("Marked done by Autopilot on", { exact: false })).toBeVisible();
@@ -159,6 +179,7 @@ test("Stop Autopilot in the status bar refuses everything at once and leaves age
   await page.locator(".statusbar").getByRole("button", { name: /Stop Autopilot/ }).click();
   await expect(s.getByText("Stopped", { exact: true })).toBeVisible();
   await expect(s.getByText("every Autopilot action is refused in every project", { exact: false })).toBeVisible();
+  await expect(s.locator(".ap-banner")).toHaveClass(/banner-bad/);
   await shoot(page, "stopped");
   const global = await daemon<{ killed: boolean }>(page, "autopilot.global", {});
   expect(global.killed).toBe(true);
