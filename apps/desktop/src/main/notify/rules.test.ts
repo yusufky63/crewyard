@@ -7,6 +7,7 @@ import {
   emptyToastState,
   escapeXml,
   goalMayToast,
+  goalsRestarted,
   goalTaskNumber,
   goalToast,
   GRANT_TTL_MS,
@@ -251,65 +252,115 @@ describe("Autopilot toasts (docs/adr/0017)", () => {
 
 describe("goal toasts (docs/adr/0019)", () => {
   const needs = (reason: GoalNeedsReason) => ({ status: "needs_you" as const, reason, outcome: null });
+  const ready = { status: "ready_for_review" as const, reason: null, outcome: null };
+  const merged = { status: "finished" as const, reason: null, outcome: "merged" as const };
 
   it("toasts once when a goal first needs you, never again for later reasons", () => {
     const s = emptyToastState();
-    expect(goalToast(s, "g1", needs("plan_ready"))).toBe("needs_you");
-    expect(goalToast(s, "g1", needs("plan_ready"))).toBeNull();
-    expect(goalToast(s, "g1", needs("decision"))).toBeNull();
+    expect(goalToast(s, "g1", needs("plan_ready"), "planned")).toBe("needs_you");
+    expect(goalToast(s, "g1", needs("plan_ready"), "planned")).toBeNull();
+    expect(goalToast(s, "g1", needs("decision"), "decision")).toBeNull();
     // Another goal has its own first time.
-    expect(goalToast(s, "g2", needs("stuck"))).toBe("needs_you");
+    expect(goalToast(s, "g2", needs("stuck"), "decision")).toBe("needs_you");
   });
 
   it("leaves a goal task's request to the request's own toast, without using up the goal's first time", () => {
     const s = emptyToastState();
-    expect(goalToast(s, "g1", needs("request"))).toBeNull();
-    expect(goalToast(s, "g1", needs("decision"))).toBe("needs_you");
+    expect(goalToast(s, "g1", needs("request"), "released")).toBeNull();
+    expect(goalToast(s, "g1", needs("decision"), "decision")).toBe("needs_you");
   });
 
-  it("toasts once for ready for a pull request, once for a halt and once for finishing", () => {
+  it("toasts once for ready for a pull request, once for a halt and once for finishing, each on the runner's own cause", () => {
     const s = emptyToastState();
-    expect(goalToast(s, "g1", { status: "ready_for_review", reason: null, outcome: null })).toBe("ready");
-    expect(goalToast(s, "g1", { status: "ready_for_review", reason: null, outcome: null })).toBeNull();
-    expect(goalToast(s, "g1", needs("halted"))).toBe("halted");
-    expect(goalToast(s, "g1", needs("halted"))).toBeNull();
+    expect(goalToast(s, "g1", ready, "finished")).toBe("ready");
+    expect(goalToast(s, "g1", ready, "finished")).toBeNull();
+    expect(goalToast(s, "g1", needs("halted"), "halted")).toBe("halted");
+    expect(goalToast(s, "g1", needs("halted"), "halted")).toBeNull();
     // The halt was its first time needing you as well.
-    expect(goalToast(s, "g1", needs("decision"))).toBeNull();
-    expect(goalToast(s, "g1", { status: "finished", reason: null, outcome: "merged" })).toBe("finished");
-    expect(goalToast(s, "g1", { status: "finished", reason: null, outcome: "merged" })).toBeNull();
+    expect(goalToast(s, "g1", needs("decision"), "decision")).toBeNull();
+    expect(goalToast(s, "g1", merged, "finished")).toBe("finished");
+    expect(goalToast(s, "g1", merged, "finished")).toBeNull();
+  });
+
+  it("raises ready, finished and halted only when the runner announces them, never from a pass", () => {
+    const s = emptyToastState();
+    expect(goalToast(s, "g1", ready, "released")).toBeNull();
+    expect(goalToast(s, "g1", merged, "joined")).toBeNull();
+    expect(goalToast(s, "g1", needs("halted"), "released")).toBeNull();
+    expect(goalMayToast(s, { goalId: "g1", status: "ready_for_review", cause: "joined" })).toBe(false);
+    expect(goalMayToast(s, { goalId: "g1", status: "finished", cause: "released" })).toBe(false);
+    expect(goalMayToast(s, { goalId: "g1", status: "ready_for_review", cause: "finished" })).toBe(true);
+  });
+
+  it("a launch never toasts again for goals that finished, wait for review or needed you before it", () => {
+    // The runner's first pass after a start announces every approved goal again with `released`.
+    const s = emptyToastState();
+    expect(goalMayToast(s, { goalId: "done", status: "finished", cause: "released" })).toBe(false);
+    expect(goalMayToast(s, { goalId: "rev", status: "ready_for_review", cause: "released" })).toBe(false);
+    expect(goalMayToast(s, { goalId: "ask", status: "needs_you", cause: "released" })).toBe(false);
+    expect(goalMayToast(s, { goalId: "dec", status: "needs_you", cause: "decision" })).toBe(false);
+    // Later in the same session the goal that needed you does not toast for it again...
+    expect(goalMayToast(s, { goalId: "ask", status: "needs_you", cause: "released" })).toBe(false);
+    // ...but a goal that was running at the start and needs you now does.
+    expect(goalMayToast(s, { goalId: "run", status: "running", cause: "released" })).toBe(false);
+    expect(goalMayToast(s, { goalId: "run", status: "needs_you", cause: "released" })).toBe(true);
+  });
+
+  it("starts a fresh baseline each time the daemon starts", () => {
+    const s = emptyToastState();
+    expect(goalMayToast(s, { goalId: "g1", status: "running", cause: "released" })).toBe(false);
+    goalsRestarted(s);
+    expect(goalMayToast(s, { goalId: "g1", status: "needs_you", cause: "released" })).toBe(false);
+    expect(goalToast(s, "g1", needs("failed"), "released")).toBeNull();
+  });
+
+  it("a real transition right after a start still toasts: a plan that became ready is not a pass cause", () => {
+    const s = emptyToastState();
+    expect(goalMayToast(s, { goalId: "g1", status: "needs_you", cause: "planned" })).toBe(true);
+    expect(goalToast(s, "g1", needs("plan_ready"), "planned")).toBe("needs_you");
   });
 
   it("a halt after the first needs-you still toasts", () => {
     const s = emptyToastState();
-    expect(goalToast(s, "g1", needs("plan_ready"))).toBe("needs_you");
+    expect(goalToast(s, "g1", needs("plan_ready"), "planned")).toBe("needs_you");
     expect(goalMayToast(s, { goalId: "g1", status: "needs_you", cause: "halted" })).toBe(true);
-    expect(goalToast(s, "g1", needs("halted"))).toBe("halted");
+    expect(goalToast(s, "g1", needs("halted"), "halted")).toBe("halted");
     expect(goalMayToast(s, { goalId: "g1", status: "needs_you", cause: "decision" })).toBe(false);
   });
 
   it("never toasts running, planning, paused, stopped or a goal that became one ordinary task", () => {
     const s = emptyToastState();
     for (const status of ["running", "planning", "paused", "stopped"] as const) {
-      expect(goalMayToast(s, { goalId: "g1", status, cause: "released" })).toBe(false);
-      expect(goalToast(s, "g1", { status, reason: null, outcome: null })).toBeNull();
+      expect(goalMayToast(s, { goalId: "g1", status, cause: "resumed" })).toBe(false);
+      expect(goalToast(s, "g1", { status, reason: null, outcome: null }, "finished")).toBeNull();
     }
     expect(goalMayToast(s, { goalId: "g1", status: "finished", cause: "collapsed" })).toBe(false);
-    expect(goalToast(s, "g1", { status: "finished", reason: null, outcome: "collapsed" })).toBeNull();
+    expect(goalToast(s, "g1", { status: "finished", reason: null, outcome: "collapsed" }, "finished")).toBeNull();
   });
 
   it("skips reading the goal once every toast it may raise has been raised", () => {
     const s = emptyToastState();
-    expect(goalMayToast(s, { goalId: "g1", status: "ready_for_review", cause: "decided" })).toBe(true);
-    goalToast(s, "g1", { status: "ready_for_review", reason: null, outcome: null });
-    expect(goalMayToast(s, { goalId: "g1", status: "ready_for_review", cause: "decided" })).toBe(false);
+    expect(goalMayToast(s, { goalId: "g1", status: "ready_for_review", cause: "finished" })).toBe(true);
+    goalToast(s, "g1", ready, "finished");
+    expect(goalMayToast(s, { goalId: "g1", status: "ready_for_review", cause: "finished" })).toBe(false);
   });
 
   it("remembers a bounded number of goals", () => {
     const s = emptyToastState();
-    for (let i = 0; i < 520; i++) goalToast(s, `g${i}`, needs("plan_ready"));
+    for (let i = 0; i < 520; i++) {
+      goalMayToast(s, { goalId: `g${i}`, status: "needs_you", cause: "planned" });
+      goalToast(s, `g${i}`, needs("plan_ready"), "planned");
+    }
     expect(s.goals.size).toBe(500);
+    expect(s.goalsLive.size).toBe(500);
     expect(s.goals.has("g0")).toBe(false);
     expect(s.goals.has("g519")).toBe(true);
+  });
+
+  it("carries a goal toast's goal through the activation, and drops a malformed one", () => {
+    const target = { screen: "tasks" as const, projectId: "p1", taskId: null, requestId: null, goalId: "goal_1" };
+    expect(parseActivation(activationArgs("open", null, target))?.target).toEqual(target);
+    expect(parseActivation("crewyard-toast?a=open&s=tasks&g=..%2F..")?.target.goalId).toBeUndefined();
   });
 
   it("raises no per-task done toast: task changes, goal tasks included, never reach a toast", () => {

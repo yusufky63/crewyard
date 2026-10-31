@@ -2,7 +2,6 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Check, ChevronDown, ChevronUp, CircleHelp, Clock, GitBranch, GitPullRequest, Pause, Square, Target } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { create } from "zustand";
 import type { CostEstimate, GoalSummary, Reason, RequestView, TaskGoalRef, TaskMode, TaskSummary } from "@crewyard/core";
 import { TickMeter } from "@crewyard/ui";
 import { ProvBadge } from "../providers/shared.tsx";
@@ -16,14 +15,7 @@ import "./goal-view.css";
 // status, progress and spend against its budget, and its tasks indented under it. Goal text and
 // titles are untrusted: React renders them as plain text, and nothing in them becomes a link.
 
-/**
- * Which goal the Tasks slot shows (design §3.3). The Inbox's goal list and the goal rows set it;
- * the Tasks screen reads it to put the goal view above the list.
- */
-export const useGoalNav = create<{ goalId: string | null; open(goalId: string | null): void }>()((set) => ({
-  goalId: null,
-  open: (goalId) => set({ goalId }),
-}));
+export { useGoalNav } from "./goalNav.ts";
 
 /** Keeps every goals.* read fresh: the daemon pushes `goals.changed` when a goal's facts change. */
 export function useGoalsChanged(): void {

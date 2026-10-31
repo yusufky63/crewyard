@@ -36,6 +36,8 @@ export interface NavigateTarget {
   projectId: string | null;
   taskId: string | null;
   requestId: string | null;
+  /** A goal toast opens that goal's view in the Tasks slot. */
+  goalId?: string | null;
 }
 
 /** Why a folder from the command line, Explorer or a drop cannot be opened (PLAN.md §12). */

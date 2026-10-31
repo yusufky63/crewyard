@@ -61,12 +61,12 @@
       "stuck": "Hiçbir görev başlayamıyor. Nasıl devam edileceğini seçin.",
       "empty": "Onaylı görev kalmadı. Yeniden planlayın ya da durdurun."
     },
-    "goalReadyTitle": "{{goal}}: çekme isteğine hazır",
-    "goalReadyBody": "Son inceleme hedef dalında geçti. Çekme isteğini siz açarsınız.",
+    "goalReadyTitle": "{{goal}}: pull request'e hazır",
+    "goalReadyBody": "Son inceleme hedef dalında geçti. Pull request'i siz açarsınız.",
     "goalHaltedTitle": "{{goal}}: durdu",
     "goalHaltedBody": "Görevler başarısız olmaya devam etti. Sürdürün, yeniden planlayın ya da durdurun.",
     "goalFinishedTitle": "{{goal}}: bitti",
-    "goalMerged": "Çekme isteği birleştirildi.",
+    "goalMerged": "Pull request birleştirildi.",
     "goalDone": "Tüm görevler tamamlandı.",
     "goalTask": "{{goal}} · {{number}} {{task}}"
   },

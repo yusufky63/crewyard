@@ -14,9 +14,11 @@ export interface ToastState {
   requests: Set<string>;
   /** Goal toasts already raised, per goal (see goalToast). */
   goals: Map<string, Set<GoalToastKind>>;
+  /** Goals with a `goals.changed` seen since the daemon last started (see goalMayToast). */
+  goalsLive: Set<string>;
 }
 
-export const emptyToastState = (): ToastState => ({ alerts: new Map(), requests: new Set(), goals: new Map() });
+export const emptyToastState = (): ToastState => ({ alerts: new Map(), requests: new Set(), goals: new Map(), goalsLive: new Set() });
 
 /** The context window belongs to one run; plan windows belong to the account. */
 const alertKey = (n: LimitNoticePayload) => `${n.profileId}|${n.window}|${n.window === "context" ? (n.runId ?? "") : ""}`;
@@ -95,40 +97,74 @@ export function toastTopic(topic: string): ToastTopic | null {
   }
 }
 
-/** A goal change worth reading the goal for: only these statuses can toast, and only once each. */
-export function goalMayToast(state: ToastState, ev: { goalId: string; status: GoalStatus; cause: GoalChangeCause }): boolean {
-  if (ev.cause === "collapsed") return false;
-  const fired = state.goals.get(ev.goalId);
-  // A halt may still come after the first "needs you"; goalToast decides on the goal as it is.
-  if (ev.status === "needs_you") return !(fired?.has("needs_you") && fired.has("halted"));
-  if (ev.status === "ready_for_review") return !fired?.has("ready");
-  if (ev.status === "finished") return !fired?.has("finished");
-  return false;
-}
-
 /** Most goals a toast state remembers; the oldest are dropped first, as the grants are. */
 const MAX_GOALS = 500;
 
 /**
- * Which toast a goal raises now, recording it so it never raises the same kind twice. Reads the
- * goal as the daemon has it now (status, reason, outcome), never the event's word alone.
+ * Causes the goal runner announces from its scheduling pass, without a new fact behind them. After
+ * a daemon start the runner's memory of what it announced is empty, so its first pass announces
+ * every approved goal again with one of these, finished and ready ones included. The first such
+ * event per goal after a start is a baseline, never a toast.
  */
-export function goalToast(state: ToastState, goalId: string, g: { status: GoalStatus; reason: GoalNeedsReason | null; outcome: GoalOutcome | null }): GoalToastKind | null {
+const PASS_CAUSES = new Set<GoalChangeCause>(["released", "held", "paused", "decision"]);
+
+/** The daemon (re)started: the next pass announces every goal again, and those are baselines. */
+export function goalsRestarted(state: ToastState): void {
+  state.goalsLive.clear();
+}
+
+function goalFired(state: ToastState, goalId: string, kinds: GoalToastKind[]): void {
   const fired = state.goals.get(goalId) ?? new Set<GoalToastKind>();
-  let kind: GoalToastKind | null = null;
-  if (g.status === "needs_you") {
-    if (g.reason === "halted") kind = fired.has("halted") ? null : "halted";
-    // The request toasts on its own; the goal's first "needs you" stays for something only the goal says.
-    else if (g.reason !== "request") kind = fired.has("needs_you") ? null : "needs_you";
-  } else if (g.status === "ready_for_review") kind = fired.has("ready") ? null : "ready";
-  else if (g.status === "finished" && g.outcome !== "collapsed") kind = fired.has("finished") ? null : "finished";
-  if (kind === null) return null;
-  fired.add(kind);
-  // A halt is the goal needing you; it is its first time too.
-  if (kind === "halted") fired.add("needs_you");
+  for (const k of kinds) fired.add(k);
   state.goals.delete(goalId);
   state.goals.set(goalId, fired);
   while (state.goals.size > MAX_GOALS) state.goals.delete(state.goals.keys().next().value as string);
+}
+
+/**
+ * A goal change worth reading the goal for. Ready, finished and halted toast only on the runner's
+ * own causes for them, which it raises once per transition and dedupes across restarts through the
+ * stored `goal.finished` and `goal.halted` events. "Needs you" toasts on any cause except a
+ * restart's baseline: the first pass event for a goal after a start records that it already needs
+ * you, so a launch never repeats the toasts of goals that needed you before it.
+ */
+export function goalMayToast(state: ToastState, ev: { goalId: string; status: GoalStatus; cause: GoalChangeCause }): boolean {
+  if (ev.cause === "collapsed") return false;
+  const first = !state.goalsLive.has(ev.goalId);
+  if (first) {
+    state.goalsLive.add(ev.goalId);
+    while (state.goalsLive.size > MAX_GOALS) state.goalsLive.delete(state.goalsLive.values().next().value as string);
+  }
+  const fired = state.goals.get(ev.goalId);
+  if (ev.cause === "halted") return !fired?.has("halted");
+  if (ev.cause === "finished") return ev.status === "ready_for_review" ? !fired?.has("ready") : ev.status === "finished" ? !fired?.has("finished") : false;
+  if (ev.status !== "needs_you") return false;
+  if (first && PASS_CAUSES.has(ev.cause)) {
+    goalFired(state, ev.goalId, ["needs_you"]);
+    return false;
+  }
+  return !fired?.has("needs_you");
+}
+
+/**
+ * Which toast a goal raises now, recording it so it never raises the same kind twice. Reads the
+ * goal as the daemon has it now (status, reason, outcome), never the event's word alone; `cause`
+ * is the event's, which says whether this is the runner's announcement of a halt or a finish.
+ */
+export function goalToast(state: ToastState, goalId: string, g: { status: GoalStatus; reason: GoalNeedsReason | null; outcome: GoalOutcome | null }, cause: GoalChangeCause): GoalToastKind | null {
+  const fired = state.goals.get(goalId) ?? new Set<GoalToastKind>();
+  let kind: GoalToastKind | null = null;
+  if (cause === "halted") kind = g.status === "needs_you" && !fired.has("halted") ? "halted" : null;
+  else if (cause === "finished") {
+    if (g.status === "ready_for_review") kind = fired.has("ready") ? null : "ready";
+    else if (g.status === "finished" && g.outcome !== "collapsed") kind = fired.has("finished") ? null : "finished";
+  } else if (g.status === "needs_you" && g.reason !== "halted" && g.reason !== "request") {
+    // The request toasts on its own; the goal's first "needs you" stays for something only the goal says.
+    kind = fired.has("needs_you") ? null : "needs_you";
+  }
+  if (kind === null) return null;
+  // A halt is the goal needing you; it is its first time too.
+  goalFired(state, goalId, kind === "halted" ? ["halted", "needs_you"] : [kind]);
   return kind;
 }
 
@@ -278,6 +314,8 @@ export interface ToastTarget {
   projectId: string | null;
   taskId: string | null;
   requestId: string | null;
+  /** A goal toast opens that goal's view (design §3.3). */
+  goalId?: string | null;
 }
 
 export function activationArgs(action: ToastAction, token: string | null, target: ToastTarget): string {
@@ -286,6 +324,7 @@ export function activationArgs(action: ToastAction, token: string | null, target
   if (target.projectId) q.set("p", target.projectId);
   if (target.taskId) q.set("k", target.taskId);
   if (target.requestId) q.set("r", target.requestId);
+  if (target.goalId) q.set("g", target.goalId);
   return PREFIX + q.toString();
 }
 
@@ -308,7 +347,8 @@ export function parseActivation(raw: unknown): Activation | null {
     return v !== null && ID.test(v) ? v : null;
   };
   const t = q.get("t");
-  return { action, token: t !== null && TOKEN.test(t) ? t : null, target: { screen, projectId: id("p"), taskId: id("k"), requestId: id("r") } };
+  const goalId = id("g");
+  return { action, token: t !== null && TOKEN.test(t) ? t : null, target: { screen, projectId: id("p"), taskId: id("k"), requestId: id("r"), ...(goalId ? { goalId } : {}) } };
 }
 
 // ---------------------------------------------------------------------------------------------

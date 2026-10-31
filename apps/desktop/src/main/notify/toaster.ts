@@ -8,6 +8,7 @@ import {
   decideAction,
   emptyToastState,
   goalMayToast,
+  goalsRestarted,
   goalTaskNumber,
   goalToast,
   limitToast,
@@ -54,6 +55,8 @@ export class Toaster {
 
   /** Fed every daemon event; reacts to the request, limit, Autopilot and goal topics only (toastTopic). */
   onEvent(topic: string, payload: unknown): void {
+    // The goal runner's memory of what it announced starts empty with the daemon (rules.ts goalMayToast).
+    if (topic === "daemon.ready") goalsRestarted(this.seen);
     switch (toastTopic(topic)) {
       case "request":
         void this.onRequest(payload as TasksTopics["requests.changed"]).catch(() => undefined);
@@ -80,11 +83,11 @@ export class Toaster {
   private async onGoal(ev: GoalsTopics["goals.changed"]): Promise<void> {
     if (!goalMayToast(this.seen, ev)) return;
     const goal = await this.deps.call("goals.get", { goalId: ev.goalId });
-    const kind = goalToast(this.seen, goal.id, goal);
+    const kind = goalToast(this.seen, goal.id, goal, ev.cause);
     const s = this.deps.settings();
     if (!kind || !s || suppression(s, goal.projectId, new Date())) return;
     const t = this.deps.t();
-    const target: ToastTarget = { screen: "tasks", projectId: goal.projectId, taskId: null, requestId: null };
+    const target: ToastTarget = { screen: "tasks", projectId: goal.projectId, taskId: null, requestId: null, goalId: goal.id };
     this.show({ ...this.describeGoal(kind, goal, t), launch: activationArgs("open", null, target), buttons: [] });
   }
 
