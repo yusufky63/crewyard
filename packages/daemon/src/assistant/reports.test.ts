@@ -90,6 +90,8 @@ describe("task reports", () => {
       ["finding", "Cap retries at five", "code", "open"],
       ["followup", "Add a CI job for the security scan", expect.any(String), "open"],
     ]);
+    // Each finding with a suggested task points at its draft card.
+    expect(report.findings.map((f) => f.draftId ?? null)).toEqual([report.drafts[0]!.id, report.drafts[1]!.id, null]);
     expect(report.drafts[0]!.description).toBe('Strip it before logging.\n\nFrom finding "Token logged on auth failure", high (src/auth.ts:42).');
     expect(report.drafts[0]!.acceptance).toEqual(["No token in debug.log"]);
     // Read again: the same drafts, not new ones.

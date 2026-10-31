@@ -735,9 +735,16 @@ export class AssistantService {
       added ||= Number(res.changes) > 0;
     }
     if (added) this.opts.store.appendEvent({ kind: "assistant.suggestions", source: "assistant", payload: { count: read.suggestions.length }, projectId: task.projectId, taskId });
-    const drafts = (this.db.prepare("select * from assistant_drafts where source_task_id = ? order by created_at, rowid").all(taskId) as unknown as DraftRow[]).map(draftView);
+    const rows = this.db.prepare("select * from assistant_drafts where source_task_id = ? order by created_at, rowid").all(taskId) as unknown as DraftRow[];
+    const drafts = rows.map(draftView);
+    // A finding's draft was created under the key `finding:<index>`; the report links the two.
+    const byKey = new Map(rows.map((r) => [r.source_key, r.id]));
+    const findings = read.report.findings.map((f, i) => {
+      const draftId = byKey.get(`finding:${i}`);
+      return draftId ? { ...f, draftId } : f;
+    });
     const completed = this.opts.autopilot?.completed(taskId) ?? null;
-    return { taskId, ...read.report, drafts, ...(completed ? { completed } : {}) };
+    return { taskId, ...read.report, findings, drafts, ...(completed ? { completed } : {}) };
   }
 
   async presets(projectId: string): Promise<AssistantPresetsView> {

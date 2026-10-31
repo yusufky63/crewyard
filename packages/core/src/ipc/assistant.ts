@@ -106,6 +106,8 @@ export interface TaskReportFinding {
   file: string | null;
   line: number | null;
   detail: string;
+  /** The draft this finding's suggested task became, so the report can jump to its card; absent when it suggested none. */
+  draftId?: string | null;
 }
 
 /**
