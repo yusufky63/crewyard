@@ -144,6 +144,7 @@ const preview = new PreviewHost({
   window: () => win,
   targets: (taskId) => callDaemon("preview.targets", { taskId }),
   emit: (state) => send("preview.state", state),
+  attach: (name, data) => callDaemon("attachments.add", { name, data }),
   returnFocus: () => {
     if (!win || win.isDestroyed()) return;
     win.webContents.focus();

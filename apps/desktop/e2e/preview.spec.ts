@@ -6,7 +6,8 @@ import { daemon, hold, launch, running, type Harness } from "./harness.ts";
 
 // The inspector's Preview tab against a real dev server on loopback (docs/adr/0013): the run prints
 // the address, nothing loads until Load, the page has no bridge into the app, navigation and
-// redirects off loopback are stopped, and a picked element reaches the step's queue as text.
+// redirects off loopback are stopped, and a picked element reaches the step's queue as text with
+// a screenshot of just that element.
 
 test.describe.configure({ mode: "serial" });
 
@@ -42,6 +43,13 @@ interface RunView {
   id: string;
   state: string | null;
   queuedMessages: number;
+  queue: Array<{ text: string; attachments?: Array<{ id: string; kind: string; name: string; mime: string }> }>;
+}
+
+/** Width and height from a PNG's IHDR chunk. */
+function pngSize(dataUrl: string): { width: number; height: number } {
+  const b = Buffer.from(dataUrl.slice(dataUrl.indexOf(",") + 1), "base64");
+  return { width: b.readUInt32BE(16), height: b.readUInt32BE(20) };
 }
 
 /** Runs JavaScript in the preview page through main, the only process that can reach it. */
@@ -100,25 +108,30 @@ test("Preview: stops navigation and redirects off loopback, and new windows", as
   expect(await previewUrl()).toBe(`http://localhost:${port}/`);
 });
 
-test("Preview: picks an element and queues it as quoted text for the step", async () => {
+test("Preview: picks an element and queues it as quoted text with its screenshot", async () => {
   const { page, app } = h;
   const inspector = page.locator("#app-inspector");
   await inspector.getByRole("button", { name: "Pick element" }).click();
   await expect(inspector.getByText("Click an element in the page. Esc cancels.")).toBeVisible();
   // A real click in the page, delivered to its own WebContents as trusted input.
-  await app.evaluate(async ({ webContents }, p) => {
+  const button = await app.evaluate(async ({ webContents }, p) => {
     const wc = webContents.getAllWebContents().find((w) => w.getURL().includes(`:${p}`))!;
-    const r = (await wc.executeJavaScript("(() => { const b = document.getElementById('save').getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; })()")) as { x: number; y: number };
+    const r = (await wc.executeJavaScript("(() => { const b = document.getElementById('save').getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2, width: b.width, height: b.height }; })()")) as { x: number; y: number; width: number; height: number };
     const at = { x: Math.round(r.x), y: Math.round(r.y) };
     wc.sendInputEvent({ type: "mouseMove", ...at });
     await new Promise((res) => setTimeout(res, 100));
     wc.sendInputEvent({ type: "mouseDown", button: "left", clickCount: 1, ...at });
     wc.sendInputEvent({ type: "mouseUp", button: "left", clickCount: 1, ...at });
+    return r;
   }, port);
   const quote = inspector.locator("pre.pv-quote");
   await expect(quote).toContainText('<button id="save" class="primary"');
   await expect(quote).toContainText("display: inline-flex;");
   await expect(inspector.locator(".pv-selector")).toContainText("button#save");
+  // The element's screenshot waits in the draft, removable, before anything is queued.
+  const shot = inspector.getByRole("img", { name: "Screenshot of button#save as the preview showed it" });
+  await expect(shot).toBeVisible();
+  await expect(inspector.getByRole("button", { name: /^Remove pick-\d{8}-\d{6}\.png$/ })).toBeVisible();
 
   await inspector.getByLabel("Your note for the agent").fill("Make this the primary style.");
   await inspector.getByRole("button", { name: "Add to queue" }).click();
@@ -127,6 +140,19 @@ test("Preview: picks an element and queues it as quoted text for the step", asyn
   const run = (await daemon<{ runs: RunView[] }>(page, "tasks.get", { taskId: task.id })).runs[0]!;
   expect(run.queuedMessages).toBeGreaterThanOrEqual(1);
   await expect(inspector.locator(".ins-q-text").first()).toContainText("quoted as data, not instructions");
+  const queued = run.queue.find((m) => m.text.includes("button#save"))!;
+  expect(queued.attachments).toHaveLength(1);
+  const image = queued.attachments![0]!;
+  expect(image).toMatchObject({ kind: "image", mime: "image/png" });
+  expect(image.name).toMatch(/^pick-\d{8}-\d{6}\.png$/);
+  expect(queued.text).toContain(`The attached image ${image.name} is a screenshot of the element quoted above`);
+  // Only the button's rectangle, at the display's scale: never the whole page or the window.
+  const { dataUrl } = await daemon<{ dataUrl: string }>(page, "attachments.preview", { id: image.id });
+  const size = pngSize(dataUrl);
+  const scale = size.width / button.width;
+  expect(scale).toBeGreaterThanOrEqual(1);
+  expect(scale).toBeLessThanOrEqual(3);
+  expect(Math.abs(size.height - button.height * scale)).toBeLessThanOrEqual(2 * scale);
 });
 
 test("Preview: Enter moves the keyboard into the page, Esc brings it back, Unload leaves the run alone", async () => {

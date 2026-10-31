@@ -151,9 +151,10 @@ function size(bytes: number, lang: string): string {
   return `${fmt(bytes / 1024 / 1024)} MB`;
 }
 
-function Tile({ view, preview, onRemove }: { view: AttachmentView; preview: string | null; onRemove?: () => void }) {
+/** One attachment. `alt` replaces the file-name label where the caller knows what the image shows. */
+export function Tile({ view, preview, alt, onRemove }: { view: AttachmentView; preview: string | null; alt?: string; onRemove?: () => void }) {
   const { t, i18n } = useTranslation("tasks");
-  const label = t(view.kind === "image" ? "attach.imageAlt" : "attach.fileLabel", { name: view.name });
+  const label = alt ?? t(view.kind === "image" ? "attach.imageAlt" : "attach.fileLabel", { name: view.name });
   return (
     <li className="tk-attach-tile">
       {view.kind === "image" && preview ? <img src={preview} alt={label} /> : <FileText size={20} strokeWidth={1.75} aria-hidden="true" />}

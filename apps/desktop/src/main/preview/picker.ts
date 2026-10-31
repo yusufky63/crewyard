@@ -3,7 +3,7 @@ import { PREVIEW_LIMITS, PREVIEW_STYLE_PROPS } from "@crewyard/core";
 // The element picker, run in an isolated world of the preview page: it shares the page's DOM but
 // not its JavaScript, so the page cannot read or replace these functions. It answers with one
 // plain object (or null when stopped); main checks and caps that object with capPick, because the
-// page can still change the DOM under it. Synthetic events from the page are ignored.
+// page can still change the DOM under it. The element's viewport box tells main what to screenshot. Synthetic events from the page are ignored.
 
 /** The isolated world the picker runs in; any id above 0 (the page) and 999 (Electron's) would do. */
 export const PICKER_WORLD = 1013;
@@ -67,7 +67,7 @@ export function pickerScript(color: string): string {
     for (const p of cfg.props) styles[p] = cs.getPropertyValue(p);
     const r = el.getBoundingClientRect();
     const html = el.outerHTML;
-    finish({ selector: selectorOf(el), html: html.slice(0, cfg.max), htmlChars: html.length, styles, width: r.width, height: r.height });
+    finish({ selector: selectorOf(el), html: html.slice(0, cfg.max), htmlChars: html.length, styles, x: r.left, y: r.top, width: r.width, height: r.height });
   };
   const events = [["pointermove", onMove], ["click", onClick], ["pointerdown", swallow], ["pointerup", swallow], ["mousedown", swallow], ["mouseup", swallow], ["auxclick", swallow], ["contextmenu", swallow]];
   function finish(value) {
@@ -75,7 +75,17 @@ export function pickerScript(color: string): string {
     box.remove();
     root.style.cursor = cursor;
     delete globalThis.__crewyardPickStop;
-    resolve(value);
+    if (value === null) return resolve(null);
+    // Main screenshots the element next, so the outline must be off screen first: two frames
+    // after removing it, or a short wait where frames are throttled.
+    let sent = false;
+    const send = () => {
+      if (sent) return;
+      sent = true;
+      resolve(value);
+    };
+    requestAnimationFrame(() => requestAnimationFrame(send));
+    setTimeout(send, 150);
   }
   globalThis.__crewyardPickStop = () => finish(null);
   for (const [type, fn] of events) window.addEventListener(type, fn, true);

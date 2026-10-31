@@ -1,5 +1,5 @@
 // The bridge exposed by the preload script as window.crewyard. Types only; shared by both sides.
-import type { IpcMethod, IpcParams, IpcResult, PickedElement, PreviewRefusal } from "@crewyard/core";
+import type { AttachmentView, IpcMethod, IpcParams, IpcResult, PickedElement, PreviewRefusal } from "@crewyard/core";
 
 export interface AppInfo {
   version: string;
@@ -137,7 +137,11 @@ export interface PreviewState {
   picking: boolean;
 }
 
-export type PreviewPickResult = { ok: true; pick: PickedElement } | { ok: false; reason: "cancelled" | "not_loaded" | "invalid" | "failed" };
+/**
+ * A pick, with the element's screenshot already stored as an upload (`attachments.add`); `shot` is
+ * null when nothing of it could be captured. Whoever drops the pick discards the upload.
+ */
+export type PreviewPickResult = { ok: true; pick: PickedElement; shot: AttachmentView | null } | { ok: false; reason: "cancelled" | "not_loaded" | "invalid" | "failed" };
 
 export interface CrewyardApi {
   call<M extends IpcMethod>(method: M, params: IpcParams<M>): Promise<IpcResult<M>>;
