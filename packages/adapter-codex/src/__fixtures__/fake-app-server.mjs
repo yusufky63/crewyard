@@ -36,6 +36,7 @@ const started = () => notify("turn/started", { threadId: "thr-1", turn: turn("in
 const completed = (status, error = null) => notify("turn/completed", { threadId: "thr-1", turn: turn(status, error) });
 const tick = () => new Promise((r) => setTimeout(r, 5));
 let turns = 0;
+let threadConfig = {};
 
 const usage = (input, output) => ({ totalTokens: input + output, inputTokens: input, cachedInputTokens: 0, cacheWriteInputTokens: 0, outputTokens: output, reasoningOutputTokens: 0 });
 const pad = (n) => String(n).padStart(2, "0");
@@ -93,7 +94,16 @@ async function runTurn() {
     }
     case "question": {
       started();
-      const res = await ask("item/tool/requestUserInput", { threadId: "thr-1", turnId: "turn-1", itemId: "q-1", isBlocking: true, autoResolutionMs: null, questions: [
+      // codex 0.147 in Default mode: request_user_input only reaches the client with the feature on
+      // (request_user_input_available_modes in codex-rs/tools/src/tool_config.rs), and then with
+      // isBlocking false (is_blocking: mode == Plan in core/src/tools/handlers/request_user_input.rs).
+      if (threadConfig["features.default_mode_request_user_input"] !== true) {
+        // The refusal goes back to the model as the tool's output; the client sees no request.
+        log({ refused: "request_user_input is unavailable in Default mode" });
+        completed("completed");
+        return;
+      }
+      const res = await ask("item/tool/requestUserInput", { threadId: "thr-1", turnId: "turn-1", itemId: "q-1", isBlocking: false, autoResolutionMs: null, questions: [
         { id: "db", header: "Database", question: "Which database?", isOther: true, isSecret: false, options: [{ label: "Postgres", description: "Default" }, { label: "SQLite", description: "" }] },
         { id: "name", header: "Name", question: "Table name?", isOther: false, isSecret: false, options: null },
       ] });
@@ -183,8 +193,12 @@ const handlers = {
     setTimeout(() => notify("account/login/completed", { loginId: "login-1", success: false, error: "cancelled", onboardingEntrypoint: null }), 5);
     return { status: "canceled" };
   },
-  "thread/start": () => ({ thread: { id: "thr-1" } }),
+  "thread/start": (params) => {
+    threadConfig = params.config ?? {};
+    return { thread: { id: "thr-1" } };
+  },
   "thread/resume": (params) => {
+    threadConfig = params.config ?? {};
     if (config.resumeGone) throw Object.assign(new Error("no rollout found for thread id " + params.threadId), { rpcCode: -32600 });
     return { thread: { id: params.threadId } };
   },
