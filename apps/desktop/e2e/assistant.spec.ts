@@ -168,7 +168,7 @@ test("keyboard: Tab reaches the log, the box and every draft control; Esc stops 
 
   // Reopening shows the kept conversation and the added draft; the session is not running.
   await page.locator("#tk-assistant-toggle").press("Enter");
-  await expect(panel(page).getByRole("log").getByText("Stopped: you closed the panel.", { exact: false })).toBeVisible();
+  await expect(panel(page).getByRole("log").getByText("Stopped: you pressed Stop and close or Esc.", { exact: false })).toBeVisible();
   await expect(panel(page).getByText("Stopped", { exact: true })).toBeVisible();
   for (const width of [1280, 1920]) {
     for (const theme of ["dark", "light"] as const) {

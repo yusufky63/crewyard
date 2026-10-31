@@ -5,9 +5,9 @@ import { daemon, launch, running, say, type Harness } from "./harness.ts";
 
 // The bottom panel's Events and Logs tabs (DESIGN.md §4) against scripted runners: Ctrl J and
 // the status bar toggle, the live event feed with its filters, paging and "Show all", the redacted
-// Logs tab, Esc order, the splitter by keyboard, and the height and the collapsed strip surviving a
-// reload. Screenshots land in
-// apps/desktop/screens/activity (git-ignored) for the dark and light, 960 / 1280 / 1920 px check.
+// Logs tab, Esc order, the splitter by keyboard and by pointer, and the height and the collapsed
+// strip surviving a reload. Screenshots land in apps/desktop/screens/activity (git-ignored) for the
+// dark and light, 960 / 1280 / 1920 px check.
 
 test.describe.configure({ mode: "serial" });
 
@@ -215,6 +215,44 @@ test("the splitter resizes by keyboard, Enter collapses, and the height and the 
   // Double-click returns to the default height.
   await again.dblclick();
   await expect(again).toHaveAttribute("aria-valuenow", "280");
+});
+
+test("dragging the edge under 96 px collapses to the strip, and dragging the strip up expands it", async () => {
+  const { page } = h;
+  const sep = page.getByRole("separator", { name: "Resize the panel" });
+  await expect(body(page)).toBeVisible();
+  const pane = (await drawer(page).boundingBox())!;
+  const floor = pane.y + pane.height;
+  const height = async () => Math.round((await drawer(page).boundingBox())!.height);
+  /** Presses on the handle and drags it to `y`, in steps, as a hand would. */
+  const dragTo = async (y: number) => {
+    const handle = (await sep.boundingBox())!;
+    const x = handle.x + handle.width / 2;
+    await page.mouse.move(x, handle.y + handle.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(x, y, { steps: 10 });
+    await page.mouse.up();
+  };
+
+  // Down to 60 px above the status bar: under 96 px, so it collapses to the strip and stops nothing.
+  await dragTo(floor - 60);
+  await expect(body(page)).toHaveCount(0);
+  await expect(headToggle(page)).toHaveAttribute("aria-expanded", "false");
+  await expect(sep).toHaveAttribute("aria-valuenow", "36");
+  expect(await height()).toBeLessThanOrEqual(40);
+
+  // Up from the strip to 120 px: above 96 px it expands, and never under its 160 px minimum.
+  await dragTo(floor - 120);
+  await expect(body(page)).toBeVisible();
+  await expect(headToggle(page)).toHaveAttribute("aria-expanded", "true");
+  expect(await height()).toBe(160);
+
+  // Up to 300 px: it follows the pointer.
+  await dragTo(floor - 300);
+  await expect.poll(height).toBeGreaterThanOrEqual(290);
+  expect(await height()).toBeLessThanOrEqual(310);
+  await sep.dblclick();
+  await expect(sep).toHaveAttribute("aria-valuenow", "280");
 });
 
 test("screenshots in dark and light at 960, 1280 and 1920 px", async () => {
