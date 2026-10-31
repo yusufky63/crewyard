@@ -29,23 +29,44 @@ const TIMEOUT_MS = 8000;
  * requests an hour per IP, which shared serverless IPs can use up. A token with no scopes is enough
  * for a public repository.
  */
-function headers(): HeadersInit {
+function token(): string | undefined {
+  return process.env.GITHUB_TOKEN?.trim() || undefined;
+}
+
+function headers(withToken: boolean): HeadersInit {
   const h: Record<string, string> = {
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
     "User-Agent": "crewyard-site",
   };
-  const token = process.env.GITHUB_TOKEN?.trim();
-  if (token) h.Authorization = `Bearer ${token}`;
+  const t = withToken ? token() : undefined;
+  if (t) h.Authorization = `Bearer ${t}`;
   return h;
 }
 
+/** Logged once per server process, so a rejected token shows in the logs without flooding them. */
+let rejectedTokenLogged = false;
+
 type Fetched = { ok: true; json: unknown; next: string | null } | { ok: false; reason: UnavailableReason };
+
+function request(url: string, withToken: boolean): Promise<Response> {
+  return fetch(url, { headers: headers(withToken), next: { revalidate: REVALIDATE, tags: [RELEASES_TAG] }, signal: AbortSignal.timeout(TIMEOUT_MS) });
+}
 
 async function get(url: string): Promise<Fetched> {
   let res: Response;
   try {
-    res = await fetch(url, { headers: headers(), next: { revalidate: REVALIDATE, tags: [RELEASES_TAG] }, signal: AbortSignal.timeout(TIMEOUT_MS) });
+    res = await request(url, true);
+    // 401 means GITHUB_TOKEN is expired, revoked or mistyped. Treated as a transient error it would
+    // freeze the site on its last good page for as long as the token stays bad, so ask again without
+    // it: the repository is public, and the token only buys a higher rate limit.
+    if (res.status === 401 && token()) {
+      if (!rejectedTokenLogged) {
+        rejectedTokenLogged = true;
+        console.error("GitHub rejected GITHUB_TOKEN (401); reading releases without it. Replace the token in the deploy's environment.");
+      }
+      res = await request(url, false);
+    }
   } catch {
     return { ok: false, reason: "error" };
   }

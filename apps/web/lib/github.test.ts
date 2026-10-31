@@ -58,6 +58,27 @@ describe("getReleases", () => {
     expect((fetch.mock.calls[0]![1]?.headers as Record<string, string>).Authorization).toBe("Bearer test-token-value");
   });
 
+  it("asks again without GITHUB_TOKEN when GitHub rejects it, and says so once in the log", async () => {
+    vi.stubEnv("GITHUB_TOKEN", "expired-token-value");
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const fetch = mockFetch((_url, init) =>
+      (init?.headers as Record<string, string>).Authorization ? new Response('{"message":"Bad credentials"}', { status: 401 }) : Response.json([release(1, "v0.1.0")]),
+    );
+    expect(await getReleases()).toMatchObject({ kind: "ok", releases: [{ tag: "v0.1.0" }] });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect((fetch.mock.calls[1]![1]?.headers as Record<string, string>).Authorization).toBeUndefined();
+    await getReleases();
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(String(log.mock.calls[0]![0])).not.toContain("expired-token-value");
+    log.mockRestore();
+  });
+
+  it("does not retry a 401 when no token was sent", async () => {
+    const fetch = mockFetch(() => new Response("{}", { status: 401 }));
+    expect(await getReleases()).toEqual({ kind: "unavailable", reason: "error" });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
   it("says not public on 404, which is the state of a private repository", async () => {
     mockFetch(() => new Response('{"message":"Not Found"}', { status: 404 }));
     expect(await getReleases()).toEqual({ kind: "unavailable", reason: "not-public" });
