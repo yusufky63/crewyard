@@ -101,7 +101,7 @@ The site says the project is MIT-licensed and links to `LICENSE` on `main`. That
 
 ## Research
 
-The choices behind this app (the list endpoint over `/releases/latest`, hourly revalidation plus an optional webhook, server-only token) and the sources read for them are in [ADR 0019](../../docs/adr/0019-website.md).
+The choices behind this app (the list endpoint over `/releases/latest`, hourly revalidation plus an optional webhook, server-only token) and the sources read for them are in [ADR 0020](../../docs/adr/0020-website.md).
 
 ## Licence
 

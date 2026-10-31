@@ -1,4 +1,4 @@
-# ADR 0019: The project website and how it learns about releases
+# ADR 0020: The project website and how it learns about releases
 
 **Status:** accepted, 2026-10-31. Owner request the same day.
 
