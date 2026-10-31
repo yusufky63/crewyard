@@ -379,6 +379,8 @@ export interface AccountRow {
   plan?: PlanQuotaView["state"] | null;
   /** Sign-in profiles only; null for keys and local providers. */
   signIn: { state: SignInStatus["state"]; plan: string | null; probedAt: string | null } | null;
+  /** Runs not ended on this profile, or on any profile of this key; the sidebar puts these accounts in front. */
+  activeRuns?: number;
 }
 
 /** Last probe of a sign-in profile. Never carries an email, token or anything read from auth files. */

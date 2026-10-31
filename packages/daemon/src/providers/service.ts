@@ -587,6 +587,7 @@ export class ProvidersService {
   accounts(): AccountRow[] {
     const windows = latestWindows(this.db);
     const signIns = new Map(this.signInStatuses().map((s) => [s.profileId, s]));
+    const live = new Map((this.db.prepare("select profile_id as id, count(*) as n from runs where ended_at is null group by profile_id").all() as Array<{ id: string; n: number }>).map((r) => [r.id, Number(r.n)]));
     const rows: AccountRow[] = [];
     for (const p of this.listProfiles().filter((p) => p.credentialId === null)) {
       const local = this.catalog.provider(p.providerId)?.group === "local";
@@ -608,14 +609,16 @@ export class ProvidersService {
         meters: local ? [] : accountMeters(all),
         plan: null,
         signIn: signIn ? { state: signIn.state, plan: signIn.plan, probedAt: signIn.probedAt } : null,
+        activeRuns: live.get(p.id) ?? 0,
       });
     }
     const now = this.now();
     const plans = new Map(this.listPlanQuota().map((q) => [q.credentialId, q]));
     for (const c of this.listCredentials()) {
+      const keyRuns = this.profilesOfCredential(c.id).reduce((n, p) => n + (live.get(p.id) ?? 0), 0);
       const runner = (this.db.prepare("select runner from profiles where credential_id = ? order by created_at limit 1").get(c.id) as { runner: ProfileRunner } | undefined)?.runner ?? null;
       if (c.kind === "local") {
-        rows.push({ key: `credential:${c.id}`, label: c.alias, providerId: c.providerId, runner, kind: "local", pct: null, value: { kind: "none" }, provenance: "unknown", window: null, resetsAt: null, meters: [], plan: null, signIn: null });
+        rows.push({ key: `credential:${c.id}`, label: c.alias, providerId: c.providerId, runner, kind: "local", pct: null, value: { kind: "none" }, provenance: "unknown", window: null, resetsAt: null, meters: [], plan: null, signIn: null, activeRuns: keyRuns });
         continue;
       }
       // A coding-plan key that has a plan: its windows decide urgency, not its token spend. Until
@@ -639,6 +642,7 @@ export class ProvidersService {
           meters,
           plan: plan.state,
           signIn: null,
+          activeRuns: keyRuns,
         });
         continue;
       }
@@ -658,6 +662,7 @@ export class ProvidersService {
         meters: [],
         plan: plan?.state ?? null,
         signIn: null,
+        activeRuns: keyRuns,
       });
     }
     const rank = (r: AccountRow) => (r.kind === "local" ? -2 : r.pct === null ? -1 : r.pct);

@@ -29,6 +29,9 @@ interface Prefs extends LayoutPrefs {
   toggleDrawer(): void;
   drawerTab: DrawerTab;
   setDrawerTab(tab: DrawerTab): void;
+  /** The sidebar accounts block's `+N not used` line, expanded or folded. */
+  accountsUnusedOpen: boolean;
+  setAccountsUnusedOpen(open: boolean): void;
 }
 
 /** The Activity drawer's tabs; the terminal view is not built (DESIGN.md §4). */
@@ -84,6 +87,8 @@ export const usePrefs = create<Prefs>()(
       toggleDrawer: () => set((s) => ({ drawerOpen: !s.drawerOpen })),
       drawerTab: "events",
       setDrawerTab: (drawerTab) => set({ drawerTab }),
+      accountsUnusedOpen: false,
+      setAccountsUnusedOpen: (accountsUnusedOpen) => set({ accountsUnusedOpen }),
     }),
     {
       name: "crewyard:prefs",
