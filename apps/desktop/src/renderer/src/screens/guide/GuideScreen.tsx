@@ -8,14 +8,18 @@ import { Button, Label, Panel } from "@crewyard/ui";
 import { useDaemon } from "../../ipc.ts";
 import { keycaps, type ShortcutId } from "../../keys.ts";
 import { useNav } from "../../nav.ts";
+import { usePrefs } from "../../prefs.ts";
 import { openPanel } from "../../shell/activity/panel.ts";
 import { KeyboardMap } from "../../shell/status/keys.tsx";
 import { goInProject, openTask, startNewTask } from "../../shell/titlebar/actions.ts";
+import { useProvidersLive } from "../providers/shared.tsx";
 import { openSettings } from "../settings/model.ts";
+import { useUpdates } from "../settings/Updates.tsx";
 import { openSetup } from "../setup/draft.ts";
 import { MACHINE_PANEL_ID } from "../start/Machine.tsx";
+import { defenderItem, longPathsItem, summarize, TOOL_ORDER, toolItem } from "../start/machine.ts";
 import { FAQ, FEATURES, FLOW, needsProject, type GuideAction } from "./content.ts";
-import { guideChecklist, STATE_BADGE, type GuideRowId, type GuideState, type Read } from "./model.ts";
+import { guideChecklist, machineProblem, releaseFacts, STATE_BADGE, type GuideRowId, type GuideState, type Read } from "./model.ts";
 import "./guide.css";
 
 // The Guide (How it works): the task flow as numbered spec tiles, a Getting started list read from
@@ -74,14 +78,26 @@ function useGuideActions() {
         return setKeysOpen(true);
     }
   };
+  // Until projects.list answers (or while it fails), whether a project exists is not known, so a
+  // project button waits instead of claiming "Open a project first", the same guard the banner uses.
+  const projectKnown = projectId !== null || projectsQ.isSuccess;
   const available = (a: GuideAction) => !needsProject(a) || target !== null;
-  return { run, available, target, projects, projectsRead: projectsQ.isSuccess, projectId, keysOpen, closeKeys: () => setKeysOpen(false) };
+  return { run, available, projectKnown, target, projects, projectsRead: projectsQ.isSuccess, projectId, keysOpen, closeKeys: () => setKeysOpen(false) };
 }
 
 type Actions = ReturnType<typeof useGuideActions>;
 
 function GoButton({ action, label, actions }: { action: GuideAction; label: string; actions: Actions }) {
   const { t } = useTranslation("guide");
+  if (!actions.available(action) && !actions.projectKnown) {
+    return (
+      <span className="gd-go off">
+        <Button size="sm" variant="ghost" disabled>
+          {label}
+        </Button>
+      </span>
+    );
+  }
   if (!actions.available(action)) {
     return (
       <span className="gd-go off">
@@ -164,13 +180,19 @@ function Checklist({ actions }: { actions: Actions }) {
   const qc = useQueryClient();
   // The same queries (and cache keys) as Start's This machine strip, so both agree and share reads.
   const opts = { staleTime: STALE };
-  const tools: Partial<Record<ToolId, Read<ToolCheck>>> = {
+  // Opens without a project too, where the sidebar's accounts block (which also listens) is absent.
+  useProvidersLive();
+  const scanRoot = usePrefs((s) => s.scanRoot);
+  const tools: Record<ToolId, Read<ToolCheck>> = {
     claude: asRead(useDaemon("machine.tool", { id: "claude" }, opts)),
     codex: asRead(useDaemon("machine.tool", { id: "codex" }, opts)),
     opencode: asRead(useDaemon("machine.tool", { id: "opencode" }, opts)),
     gemini: asRead(useDaemon("machine.tool", { id: "gemini" }, opts)),
     git: asRead(useDaemon("machine.tool", { id: "git" }, opts)),
+    gh: asRead(useDaemon("machine.tool", { id: "gh" }, opts)),
   };
+  const env = useDaemon("machine.env", undefined, opts);
+  const defender = useDaemon("machine.defender", { scanRoot }, opts);
   const profiles = asRead(useDaemon("providers.profiles", undefined));
   const credentials = asRead(useDaemon("providers.credentials", undefined));
   const keyChecks = asRead(useDaemon("providers.keyChecks", undefined));
@@ -179,10 +201,23 @@ function Checklist({ actions }: { actions: Actions }) {
   const github = asRead(useDaemon("github.auth", undefined, { staleTime: STALE }));
   const rows = guideChecklist({ tools, profiles, credentials, keyChecks, signIns, projectOpen: Boolean(actions.projectId), tasks, github });
   const done = rows.filter((r) => r.state === "done").length;
+  // The row says whether tasks can run; the rest of This machine (an update, gh's sign-in, long
+  // paths, Defender, other copies) is counted exactly as Start's strip counts it, so the Guide never
+  // reads "all fine" while Start says checks need attention.
+  const machineItems = TOOL_ORDER.map((id) => toolItem(id, tools[id], env.data));
+  const longPaths = longPathsItem(env.data);
+  if (longPaths) machineItems.push(longPaths);
+  const def = defenderItem(defender.data, defender.isPending, defender.error);
+  if (def) machineItems.push(def);
+  const attention = summarize(machineItems).attention;
+  const problem = machineProblem(tools);
   const { target, projects } = actions;
   const proposed = tasks.data?.find((x) => x.status === "proposed" && (!actions.projectId || x.projectId === actions.projectId));
 
-  const projectGo = projects.length > 0 ? { label: t("checklist.rows.project.goOpen"), run: () => void actions.run({ kind: "start" }) } : { label: t("checklist.rows.project.goNew"), run: () => void actions.run({ kind: "setup" }) };
+  // "New project" only once the list has answered empty; while it loads or fails, Start is the safe
+  // place to send someone, since it lists the projects that exist.
+  const noProjects = actions.projectsRead && projects.length === 0;
+  const projectGo = noProjects ? { label: t("checklist.rows.project.goNew"), run: () => void actions.run({ kind: "setup" }) } : { label: t("checklist.rows.project.goOpen"), run: () => void actions.run({ kind: "start" }) };
   const where: Record<GuideRowId, { label: string; run(): void }> = {
     machine: {
       label: t("checklist.rows.machine.go"),
@@ -212,7 +247,9 @@ function Checklist({ actions }: { actions: Actions }) {
 
   const hint = (id: GuideRowId, state: GuideState) => {
     if (state === "unknown") return t("checklist.unknownHint");
-    if (state === "problem" && (id === "machine" || id === "profile" || id === "github")) return t(`checklist.rows.${id}.problem`);
+    if (id === "machine" && state === "done" && attention > 0) return t("checklist.rows.machine.attention", { count: attention });
+    if (id === "machine" && state === "problem") return t(problem === "refused" ? "checklist.rows.machine.refused" : "checklist.rows.machine.problem");
+    if (state === "problem" && (id === "profile" || id === "github")) return t(`checklist.rows.${id}.problem`);
     return t(`checklist.rows.${id}.hint`);
   };
 
@@ -236,8 +273,8 @@ function Checklist({ actions }: { actions: Actions }) {
               </span>
               <span className={STATE_BADGE[r.state]}>{t(`checklist.state.${r.state}`)}</span>
               <span className="gd-row-go">
-                {r.state !== "done" && (
-                  <Button size="sm" variant="ghost" tone={r.state === "problem" ? "warn" : undefined} onClick={where[r.id].run}>
+                {(r.state !== "done" || (r.id === "machine" && attention > 0)) && (
+                  <Button size="sm" variant="ghost" tone={r.state === "problem" || r.state === "done" ? "warn" : undefined} onClick={where[r.id].run}>
                     {where[r.id].label}
                     <ArrowRight aria-hidden="true" />
                   </Button>
@@ -336,8 +373,17 @@ function Features({ actions }: { actions: Actions }) {
   );
 }
 
+/** The release answer describes the build that is running, as Settings → Updates reads it. */
+function releaseAnswer(t: (k: string, o?: Record<string, unknown>) => string, s: ReturnType<typeof releaseFacts>): string {
+  if (!s) return t("faq.release.reading");
+  const build = t(s.signed ? "faq.release.signed" : "faq.release.unsigned", { version: s.version });
+  const updates = s.updates.looks ? t("faq.release.feed") : t(`settings:updates.off.${s.updates.why}`);
+  return `${build} ${updates}`;
+}
+
 function Faq() {
   const { t } = useTranslation("guide");
+  const release = releaseFacts(useUpdates());
   // ?faq= comes only from screenshot runs, to capture an answer open.
   const shotOpen = new URLSearchParams(window.location.search).get("faq");
   return (
@@ -350,7 +396,7 @@ function Faq() {
               <ChevronRight className="gd-chev" size={14} strokeWidth={1.75} aria-hidden="true" />
               {t(`faq.${id}.q`)}
             </summary>
-            <p className="sec">{t(`faq.${id}.a`)}</p>
+            <p className="sec">{id === "release" ? releaseAnswer(t, release) : t(`faq.${id}.a`)}</p>
           </details>
         ))}
       </div>

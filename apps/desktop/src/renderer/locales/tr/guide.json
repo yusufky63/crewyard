@@ -2,7 +2,7 @@
   "nav": "Rehber",
   "eyebrow": "Rehber",
   "title": "Nasıl çalışır",
-  "sub": "Bir görevden birleştirilmiş bir pull request'e kadar, her adım nerede olur",
+  "sub": "Bir görevin birleştirilen pull request'e kadar geçtiği adımlar ve her birinin uygulamadaki yeri",
   "back": "Başlangıca dön",
   "startLink": "Yeni misin? Nasıl çalıştığına bak",
   "needsProject": "Önce bir proje aç",
@@ -22,7 +22,7 @@
     "steps": {
       "project": {
         "title": "Proje ekle",
-        "body": "Bir klasör aç, GitHub'dan klonla ya da boş bir klasörle başla. Kurulum adımlarında hangi ajanların, hesapların, harcama sınırlarının ve kuralların geçerli olacağını seçersin; Projeyi oluştur'a basana kadar hiçbir şey yazılmaz.",
+        "body": "Bir klasör aç, GitHub'dan klonla ya da boş bir klasörle başla. Kurulum adımlarında hangi çalıştırıcıların, hesapların, harcama sınırlarının ve kuralların geçerli olacağını seçersin; Projeyi oluştur'a basana kadar hiçbir şey yazılmaz.",
         "go": "Başlangıcı aç"
       },
       "task": {
@@ -32,7 +32,7 @@
       },
       "proposal": {
         "title": "Ekip önerisini gör",
-        "body": "Crewyard işi kimin planlayacağını, yazacağını, test edeceğini ve inceleyeceğini önerir: her rol için ajan, model ve hesabıyla bir kart, tek satırlık gerekçe ve maliyet tahmini. Her rolün iki yedeği olur.",
+        "body": "Crewyard işi kimin planlayacağını, yazacağını, test edeceğini ve inceleyeceğini önerir: her rol için çalıştırıcı, model ve hesabıyla bir kart, tek satırlık gerekçe ve maliyet tahmini. Her rolün iki yedeği olur.",
         "go": "Ekip grafiğini aç"
       },
       "approve": {
@@ -41,9 +41,9 @@
         "go": "Görevleri aç"
       },
       "worktrees": {
-        "title": "Ajanlar çalışma ağaçlarında çalışır",
-        "body": "Kod yazan her çalıştırmanın kendi git çalışma ağacı olur, senin kopyan olduğu gibi kalır. Projenin testleri her tur sonunda çalışır, başarısız olursa sonuç aynı oturuma döner. Ajanlar yalnızca yerelde commit atar.",
-        "go": "Çalışma ağaçlarını gör"
+        "title": "Ajanlar worktree'lerde çalışır",
+        "body": "Kod yazan her çalıştırmanın kendi git worktree'si olur, senin kopyan olduğu gibi kalır. Projenin testleri her tur sonunda çalışır, başarısız olursa sonuç aynı oturuma döner. Ajanlar yalnızca yerelde commit atar.",
+        "go": "Worktree'leri gör"
       },
       "inbox": {
         "title": "Gelen kutusunda yanıtla",
@@ -57,7 +57,7 @@
       },
       "ship": {
         "title": "Push, PR ve birleştirme",
-        "body": "Dallar sen tıklayana kadar GitHub ekranında push sırasında bekler. Pull request ancak inceleme kapısı geçilip sen tıklayınca açılır; birleştirme için her kapı ve senin onayın gerekir.",
+        "body": "Dallar sen tıklayana kadar GitHub ekranındaki Push bekleyenler bölümünde bekler. Pull request ancak inceleme kapısı geçilip sen tıklayınca açılır; birleştirme için her kapı ve senin onayın gerekir.",
         "go": "GitHub'ı aç"
       }
     }
@@ -75,14 +75,17 @@
     },
     "rows": {
       "machine": {
-        "label": "Bilgisayar denetimi geçti",
-        "hint": "Git ve Crewyard'ın denendiği sürümde en az bir ajan CLI'si (Claude Code, Codex, OpenCode ya da Gemini CLI).",
-        "problem": "Git yok ya da bulunan ajan CLI'lerinin hepsi Crewyard'ın denemediği bir sürümde. Bu bilgisayar bölümü çözümünü gösterir.",
+        "label": "Bu bilgisayar görev çalıştırabilir",
+        "hint": "Git ve Crewyard'ın başlatabildiği en az bir ajan CLI'si: Claude Code, Codex, OpenCode ya da Gemini CLI.",
+        "attention_one": "Görevler çalışabilir. Bu bilgisayarda ilgilenmeni bekleyen {{count}} kontrol daha var.",
+        "attention_other": "Görevler çalışabilir. Bu bilgisayarda ilgilenmeni bekleyen {{count}} kontrol daha var.",
+        "problem": "Git kurulu değil ve görevler onsuz çalışamaz. Git'i kurduktan sonra Bu bilgisayar bölümünde Yeniden kontrol et'e bas.",
+        "refused": "Bulunan ajan CLI'lerinin hiçbirini Crewyard bu sürümleriyle başlatmıyor: Gemini CLI profilleri ayıramayacak kadar eski ya da OpenCode 2.x henüz denetimlerden geçmedi. Düzelten komut Bu bilgisayar bölümünde.",
         "go": "Bu bilgisayarı aç"
       },
       "profile": {
         "label": "Çalışmaya hazır bir profil",
-        "hint": "Kayıtlı ve reddedilmemiş bir API anahtarı olan, oturumu açık bir ajan girişi olan ya da yerel bir sağlayıcıya bağlı bir profil.",
+        "hint": "Kayıtlı ve reddedilmemiş bir API anahtarı olan, oturumu açık bir çalıştırıcı girişi olan ya da yerel bir sağlayıcıya bağlı bir profil.",
         "problem": "Bir anahtar reddedildi ya da kayıtlı değil, veya bir oturum için daha yeni bir CLI gerekiyor.",
         "go": "Sağlayıcıları aç"
       },
@@ -172,9 +175,9 @@
       "title": "Kendi ajan dosyaların ve skill'lerin",
       "body": "Ayarlar, her araç için yazdığın talimatları, kuralları, skill'leri, komutları ve alt ajanları listeler; hiçbir anahtar ya da ayar dosyasını açmaz.",
       "points": {
-        "a": "Birini tek bir profille ya da bir ajanın tüm profilleriyle paylaş: o profilin kendi klasörüne, ajanın biçiminde kopyalanır, hiçbir zaman bağlantı olarak eklenmez.",
+        "a": "Birini tek bir profille ya da bir çalıştırıcının tüm profilleriyle paylaş: o profilin kendi klasörüne, çalıştırıcının biçiminde kopyalanır, hiçbir zaman bağlantı olarak eklenmez.",
         "b": "Betikler kopyalanmadan önce senin işaretlemeni bekler; güncelliğini yitiren bir kopya Eşitle'ye basana kadar öyle kalır.",
-        "c": "Projedeki AGENTS.md, CLAUDE.md ya da GEMINI.md, onu okumayan ajanlara da ulaşabilir; proje başına açılır ve başlangıçta kapalıdır."
+        "c": "Projedeki AGENTS.md, CLAUDE.md ya da GEMINI.md, onu kendiliğinden okumayan çalıştırıcılara da ulaşabilir; proje başına açılır ve başlangıçta kapalıdır."
       },
       "go": "Talimatlar ve skill'leri aç"
     },
@@ -197,7 +200,7 @@
   "faq": {
     "keys": {
       "q": "API anahtarlarım nereye gidiyor?",
-      "a": "Windows DPAPI ile şifrelenirler ve bir ajana yalnızca onun sürecinin ortam değişkeni olarak ulaşırlar. Hiçbir zaman komut satırına, günlüğe, git'e ya da bir URL'ye yazılmazlar; ajan kabukları ve terminal onları göremez."
+      "a": "Windows DPAPI ile şifrelenirler ve bir çalıştırıcıya yalnızca onun sürecinin ortam değişkeni olarak ulaşırlar. Hiçbir zaman komut satırına, günlüğe, git'e ya da bir URL'ye yazılmazlar; ajan kabukları ve terminal onları göremez."
     },
     "nothingStarts": {
       "q": "Ben bir şey yapmadan bir iş başlayabilir mi?",
@@ -216,8 +219,11 @@
       "a": "Hayır. Her CLI kendi giriş akışıyla, profilin kendi klasöründe oturum açar ve Crewyard bu token'ları hiçbir zaman okumaz. Claude Code profilleri yalnızca Anthropic API anahtarlarıyla çalışır."
     },
     "release": {
-      "q": "Kurarken Windows neden uyarıyor?",
-      "a": "v0.1.0 imzasız bir ön sürüm, bu yüzden SmartScreen bilinmeyen yayıncı uyarısı verir. Bu sürüm hiçbir zaman güncelleme denetlemez; yenisini deponun sürümler sayfasından alırsın."
+      "q": "Bu sürüm imzalı mı, kendini günceller mi?",
+      "reading": "Bu sürümün imzalı olup olmadığını ve güncelleme arayıp aramadığını Ayarlar'daki Güncellemeler bölümü gösterir.",
+      "unsigned": "Crewyard {{version}} kod imzalı değil; bu yüzden kurarken Windows SmartScreen bilinmeyen yayıncı uyarısı verir.",
+      "signed": "Crewyard {{version}} kod imzalı ve yalnızca Windows'un yayıncısının imzasını doğruladığı güncellemeleri kurar.",
+      "feed": "Ayarlar'daki Güncellemeler bölümünde Şimdi denetle'ye bastığında ya da Kendiliğinden denetle'yi açtıysan kendi başına güncelleme arar. İndirme ve kurulum her zaman senin tıklamanı bekler."
     }
   }
 }

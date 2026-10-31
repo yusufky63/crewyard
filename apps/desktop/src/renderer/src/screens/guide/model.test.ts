@@ -1,13 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { CredentialSummary, GithubAuth, KeyCheckView, ProfileSummary, SignInStatus, TaskSummary, ToolCheck, ToolId } from "@crewyard/core";
-import { githubState, guideChecklist, machineState, profileState, taskState, type Read } from "./model.ts";
+import type { UpdateState } from "../../../../shared/api.ts";
+import { githubState, guideChecklist, machineProblem, machineState, profileState, refusedByGate, releaseFacts, taskState, type Read } from "./model.ts";
 
 const ok = <T>(data: T): Read<T> => ({ data, pending: false, error: null });
 const pending = <T>(): Read<T> => ({ data: undefined, pending: true, error: null });
 const failed = <T>(): Read<T> => ({ data: undefined, pending: false, error: new Error("daemon.offline") });
 
 const tool = (id: ToolId, found: boolean, gate: ToolCheck["gate"] = null): ToolCheck => ({ id, found, path: found ? `C:\\Program Files\\${id}\\${id}.exe` : null, version: found ? "1.0.0" : null, detail: null, gate });
-const tooOld: ToolCheck["gate"] = { status: "outdated", verified: "2.0.0", rule: "min", update: "npm i -g x@latest" };
+const gate = (status: NonNullable<ToolCheck["gate"]>["status"], rule: "min" | "exact" = "min"): ToolCheck["gate"] => ({ status, verified: "2.0.0", rule, update: status === "ok" ? null : "npm i -g x@latest" });
+const tooOld = gate("outdated");
 const allTools = (over: Partial<Record<ToolId, Read<ToolCheck>>> = {}) => ({
   claude: ok(tool("claude", false)),
   codex: ok(tool("codex", false)),
@@ -24,9 +26,39 @@ describe("machineState", () => {
   it("is not yet done when no agent CLI is installed", () => {
     expect(machineState(allTools())).toBe("todo");
   });
-  it("is a problem when Git is missing or every installed agent is too old", () => {
+  it("is a problem when Git is missing", () => {
     expect(machineState(allTools({ git: ok(tool("git", false)), codex: ok(tool("codex", true)) }))).toBe("problem");
-    expect(machineState(allTools({ claude: ok(tool("claude", true, tooOld)) }))).toBe("problem");
+  });
+  it("passes an agent whose version gate only warns", () => {
+    // Claude Code and Codex below their checked version, and an unpinned OpenCode 1.x, still start.
+    expect(machineState(allTools({ claude: ok(tool("claude", true, tooOld)) }))).toBe("done");
+    expect(machineState(allTools({ codex: ok(tool("codex", true, gate("outdated"))) }))).toBe("done");
+    expect(machineState(allTools({ opencode: ok(tool("opencode", true, gate("untested", "exact"))) }))).toBe("done");
+    // An unreadable version is refused only where the adapter needs it: Gemini CLI's isolation check.
+    expect(machineState(allTools({ claude: ok(tool("claude", true, gate("unknown"))) }))).toBe("done");
+    expect(machineProblem(allTools({ claude: ok(tool("claude", true, tooOld)) }))).toBeNull();
+  });
+  it("is a problem when every agent found is one the adapters refuse to start", () => {
+    // adapter-acp throws for a Gemini CLI too old (or unreadable) to keep profiles apart, and
+    // adapter-opencode never launches a 2.x that has not passed its checks.
+    for (const only of [{ gemini: ok(tool("gemini", true, gate("isolation"))) }, { gemini: ok(tool("gemini", true, gate("unknown"))) }, { opencode: ok(tool("opencode", true, gate("pending", "exact"))) }]) {
+      expect(machineState(allTools(only))).toBe("problem");
+      expect(machineProblem(allTools(only))).toBe("refused");
+    }
+    // One startable agent next to a refused one is enough.
+    expect(machineState(allTools({ gemini: ok(tool("gemini", true, gate("isolation"))), codex: ok(tool("codex", true)) }))).toBe("done");
+    // A refused agent next to a failed read: the failed one might be startable.
+    expect(machineState(allTools({ gemini: ok(tool("gemini", true, gate("isolation"))), claude: failed() }))).toBe("unknown");
+    expect(machineProblem(allTools({ git: ok(tool("git", false)) }))).toBe("git");
+  });
+  it("names the gates the adapters refuse", () => {
+    expect(refusedByGate(tool("gemini", true, gate("isolation")))).toBe(true);
+    expect(refusedByGate(tool("gemini", true, gate("unknown")))).toBe(true);
+    expect(refusedByGate(tool("opencode", true, gate("pending", "exact")))).toBe(true);
+    expect(refusedByGate(tool("opencode", true, gate("unknown", "exact")))).toBe(false);
+    expect(refusedByGate(tool("claude", true, tooOld))).toBe(false);
+    expect(refusedByGate(tool("gemini", true, gate("ok")))).toBe(false);
+    expect(refusedByGate(tool("git", true))).toBe(false);
   });
   it("waits for every check and never turns a failed read into not done", () => {
     expect(machineState(allTools({ gemini: pending() }))).toBe("checking");
@@ -57,6 +89,15 @@ describe("profileState", () => {
     expect(profileState({ ...base, profiles: ok([codex]), signIns: ok([signIn("blocked")]) })).toBe("problem");
     expect(profileState({ ...base, profiles: ok([codex]), signIns: ok([signIn("signed_in")]) })).toBe("done");
   });
+  it("reads a key on a runner that could also sign in as a key, as the daemon does", () => {
+    // Codex and Gemini CLI may run on an API key; such a profile has no sign-in status row.
+    const codexKey = profile({ runner: "codex", providerId: "openai", credentialId: "c1" });
+    const openaiKey = cred({ providerId: "openai" });
+    expect(profileState({ ...base, profiles: ok([codexKey]), credentials: ok([openaiKey]) })).toBe("done");
+    expect(profileState({ ...base, profiles: ok([codexKey]), credentials: ok([openaiKey]), keyChecks: ok([check("invalid")]) })).toBe("problem");
+    const geminiKey = profile({ runner: "gemini-cli", providerId: "google", credentialId: "c1" });
+    expect(profileState({ ...base, profiles: ok([geminiKey]), credentials: ok([cred({ providerId: "google" })]), keyChecks: ok([check("invalid")]) })).toBe("problem");
+  });
   it("is not yet done without profiles, and unknown when a read failed", () => {
     expect(profileState({ ...base, profiles: ok([]) })).toBe("todo");
     expect(profileState({ ...base, keyChecks: failed() })).toBe("unknown");
@@ -84,5 +125,15 @@ describe("tasks and GitHub", () => {
     expect(githubState(auth({ problem: "signed_out" }))).toBe("todo");
     expect(githubState(auth({ problem: "offline" }))).toBe("unknown");
     expect(githubState(failed())).toBe("unknown");
+  });
+});
+
+describe("releaseFacts", () => {
+  const state = (over: Partial<UpdateState>): UpdateState => ({ phase: "off", off: "no_feed", current: "0.2.0", feed: null, signed: false, publisher: null, autoCheck: false, checkedAt: null, available: null, progress: null, verifiedBy: null, error: null, ...over });
+  it("reads the running build instead of a release written into the text", () => {
+    expect(releaseFacts(null)).toBeNull();
+    expect(releaseFacts(state({}))).toEqual({ version: "0.2.0", signed: false, updates: { looks: false, why: "no_feed" } });
+    expect(releaseFacts(state({ off: "development" }))?.updates).toEqual({ looks: false, why: "development" });
+    expect(releaseFacts(state({ phase: "idle", off: null, signed: true, feed: "https://updates.example/win" }))).toEqual({ version: "0.2.0", signed: true, updates: { looks: true } });
   });
 });

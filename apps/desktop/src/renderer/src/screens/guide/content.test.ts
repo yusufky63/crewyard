@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { resources } from "../../i18n.ts";
 import { FAQ, FEATURES, FLOW, needsProject } from "./content.ts";
+import type { UpdateOff } from "../../../../shared/api.ts";
 import { GUIDE_ROWS } from "./model.ts";
+
+/** Every reason the updater gives for not looking; the release answer quotes Settings' text for it. */
+const UPDATE_OFF: UpdateOff[] = ["development", "platform", "no_feed", "not_installed", "invalid"];
 
 // Every tile, row and question the Guide draws has its words in both languages, and every button
 // goes to a screen that exists.
@@ -15,8 +19,11 @@ describe("guide content", () => {
     it(`has every text in ${lang}`, () => {
       for (const s of FLOW) for (const k of ["title", "body", "go"]) expect(at(ns, `flow.steps.${s.id}.${k}`), `${lang} flow ${s.id}.${k}`).toBeTypeOf("string");
       for (const f of FEATURES) for (const k of ["title", "body", "go"]) expect(at(ns, `features.${f.id}.${k}`), `${lang} feature ${f.id}.${k}`).toBeTypeOf("string");
-      for (const q of FAQ) for (const k of ["q", "a"]) expect(at(ns, `faq.${q}.${k}`), `${lang} faq ${q}.${k}`).toBeTypeOf("string");
+      // The release answer is put together from the running build's state, so it has parts, not one text.
+      for (const q of FAQ) for (const k of q === "release" ? ["q", "reading", "unsigned", "signed", "feed"] : ["q", "a"]) expect(at(ns, `faq.${q}.${k}`), `${lang} faq ${q}.${k}`).toBeTypeOf("string");
+      for (const why of UPDATE_OFF) expect(at(resources[lang]?.settings, `updates.off.${why}`), `${lang} settings updates.off.${why}`).toBeTypeOf("string");
       for (const r of GUIDE_ROWS) expect(at(ns, `checklist.rows.${r}.label`), `${lang} row ${r}`).toBeTypeOf("string");
+      for (const k of ["hint", "problem", "refused", "attention_one", "attention_other", "go"]) expect(at(ns, `checklist.rows.machine.${k}`), `${lang} machine ${k}`).toBeTypeOf("string");
     });
   }
 

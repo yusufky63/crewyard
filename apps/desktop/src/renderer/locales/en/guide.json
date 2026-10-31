@@ -75,9 +75,12 @@
     },
     "rows": {
       "machine": {
-        "label": "Machine check passed",
-        "hint": "Git and at least one agent CLI (Claude Code, Codex, OpenCode or Gemini CLI) at a version Crewyard was checked with.",
-        "problem": "Git is missing, or every agent CLI found is at a version Crewyard has not checked. This machine shows the fix.",
+        "label": "This machine can run tasks",
+        "hint": "Git and at least one agent CLI that Crewyard starts: Claude Code, Codex, OpenCode or Gemini CLI.",
+        "attention_one": "Tasks can run. This machine still has {{count}} check that needs attention.",
+        "attention_other": "Tasks can run. This machine still has {{count}} checks that need attention.",
+        "problem": "Git is not installed, and tasks cannot run without it. Install Git, then press Check again on This machine.",
+        "refused": "Every agent CLI found is at a version Crewyard does not start: a Gemini CLI too old to keep profiles apart, or an OpenCode 2.x that has not passed its checks. This machine has the command that fixes it.",
         "go": "Open This machine"
       },
       "profile": {
@@ -216,8 +219,11 @@
       "a": "No. Each CLI signs in through its own login inside the profile's own folder, and Crewyard never reads its tokens. Claude Code profiles use Anthropic API keys only."
     },
     "release": {
-      "q": "Why does Windows warn when I install it?",
-      "a": "v0.1.0 is an unsigned pre-release, so SmartScreen warns about an unknown publisher. That build never checks for updates; a newer one comes from the repository's releases."
+      "q": "Is this build signed, and does it update itself?",
+      "reading": "Settings, under Updates, shows whether this build is signed and whether it looks for updates.",
+      "unsigned": "Crewyard {{version}} is not code-signed, so Windows SmartScreen warns about an unknown publisher when you install it.",
+      "signed": "Crewyard {{version}} is code-signed, and it installs only updates that Windows verifies as signed by its publisher.",
+      "feed": "It looks for updates when you press Check now under Updates in Settings, or on its own once you turn on Check automatically. Downloading and installing always wait for your click."
     }
   }
 }
