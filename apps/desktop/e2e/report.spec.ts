@@ -5,8 +5,9 @@ import { daemon, launch, running, type Harness } from "./harness.ts";
 
 // A ready-made analysis end to end (docs/adr/0014): the owner typed "projeyi incele" and saw only
 // "Done". Here the composer's preset makes a research task, the fake researcher ends with checked
-// findings, the row shows the report's first line, the inspector the whole report with two
-// suggested drafts, and one is added as a task waiting for its crew. The assistant panel puts a
+// findings, the row shows the report's first line with tone badges, the inspector the whole
+// report with findings that expand, filter, copy and jump to their two suggested drafts, and the
+// Suggested tab adds both as tasks waiting for their crews. The assistant panel puts a
 // preset in its drafts without any model call. Screenshots land in apps/desktop/screens/report.
 
 test.describe.configure({ mode: "serial" });
@@ -84,37 +85,111 @@ test("a preset from the composer runs as a research task and its report shows on
   await look(page, 1280, "dark");
 });
 
-test("Open report shows the whole report in the inspector, and one suggested draft is added", async () => {
+test("Open report shows the whole report in the inspector: findings expand, filter, copy and jump to their drafts", async () => {
   const { page } = h;
   const main = page.locator("main");
   await main.locator(".tk-row", { hasText: "Find bugs and problems" }).getByRole("button", { name: "Open report" }).click();
-  const report = page.locator("#app-inspector").getByRole("region", { name: "Report" });
+  const inspector = page.locator("#app-inspector");
+  const report = inspector.getByRole("region", { name: "Report" });
   await expect(report).toBeVisible();
-  await expect(report.getByText("Findings", { exact: true })).toBeVisible();
+  // The source and the verdict are badges; the summary is text-only Markdown.
+  await expect(report.locator(".tk-report-head .badge", { hasText: "Findings" })).toBeVisible();
+  await expect(report.locator(".tk-report-summary")).toHaveText(FINDINGS.summary);
+  const list = report.getByRole("list", { name: "Findings" });
+  await expect(list.locator(".tk-finding")).toHaveCount(3);
   await expect(report.locator(".tk-finding-title", { hasText: "Token logged on auth failure" })).toBeVisible();
   await expect(report.getByText("src/auth.ts:42", { exact: true })).toBeVisible();
-  // Agent text stays text.
+
+  // The severity bar filters the list, and a second click shows everything again.
+  const bar = report.getByRole("group", { name: "Filter findings by severity" });
+  await expect(bar.getByRole("button")).toHaveText(["High 1", "Medium 1", "Info 1"]);
+  await bar.getByRole("button", { name: "Medium 1" }).click();
+  await expect(bar.getByRole("button", { name: "Medium 1" })).toHaveAttribute("aria-pressed", "true");
+  await expect(list.locator(".tk-finding")).toHaveCount(1);
+  await expect(report.getByText("Showing 1 of 3")).toBeVisible();
+  await bar.getByRole("button", { name: "Medium 1" }).click();
+  await expect(list.locator(".tk-finding")).toHaveCount(3);
+
+  // Rows are buttons: keyboard reaches them, arrows move, Enter expands; the detail stays text.
+  const first = list.locator(".tk-finding-toggle").first();
+  await first.focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(list.locator(".tk-finding-toggle").nth(1)).toBeFocused();
+  await page.keyboard.press("ArrowUp");
+  await expect(first).toBeFocused();
+  await expect(report.locator(".tk-finding-detail")).toHaveCount(0);
+  await page.keyboard.press("Enter");
+  await expect(first).toHaveAttribute("aria-expanded", "true");
   await expect(report.locator("b")).toHaveCount(0);
   await expect(report.locator(".tk-finding-detail", { hasText: "<b>debug.log</b>" })).toBeVisible();
-  const drafts = report.getByRole("article");
-  await expect(drafts).toHaveCount(2);
+
+  // Copy puts the finding on the clipboard as plain text.
+  await report.locator(".tk-finding.open").getByRole("button", { name: "Copy" }).click();
+  await expect(report.locator(".tk-finding.open").getByRole("button", { name: "Copied" })).toBeVisible();
+  // Windows hands clipboard text back with CRLF line ends.
+  expect((await h.app.evaluate(({ clipboard }) => clipboard.readText())).replace(/\r\n/g, "\n")).toBe("[High] Token logged on auth failure\nsrc/auth.ts:42\n\nThe Authorization header is written to <b>debug.log</b> when a request fails.");
+
+  // The file opens in the Files tab when the task has a worktree, and is copied when it has none.
+  const tasks = await daemon<Array<{ id: string; title: string }>>(page, "tasks.list", {});
+  const task = await daemon<{ worktree: { path: string } | null }>(page, "tasks.get", { taskId: tasks.find((t) => t.title === "Find bugs and problems")!.id });
+  if (!task.worktree) {
+    await report.getByRole("button", { name: "src/auth.ts:42" }).click();
+    await expect(report.getByText("Path copied")).toBeVisible();
+    expect(await h.app.evaluate(({ clipboard }) => clipboard.readText())).toBe("src/auth.ts:42");
+  } else {
+    await report.getByRole("button", { name: "src/auth.ts:42" }).click();
+    await expect(inspector.getByRole("tab", { name: "Files" })).toHaveAttribute("aria-selected", "true");
+    await expect(inspector.getByRole("region", { name: /src\/auth\.ts/ })).toBeVisible();
+    await inspector.getByRole("tab", { name: "Details" }).click();
+  }
+
+  // The finding jumps to its suggested draft at the bottom of Details.
+  const suggested = inspector.getByRole("region", { name: "Suggested tasks" });
+  await report.locator(".tk-finding.open").getByRole("button", { name: "Its suggested task" }).click();
+  await expect(suggested.locator(".tk-suggested-slot").first()).toBeFocused();
+  await expect(suggested.locator(".tk-suggested-slot").first().getByRole("article", { name: /Redact the Authorization header/ })).toBeInViewport();
+  await expect(suggested.getByRole("article")).toHaveCount(2);
+  await expect(suggested.getByText("2 open")).toBeVisible();
+
   for (const width of [1280, 1920]) {
     for (const theme of ["dark", "light"] as const) {
       await look(page, width, theme);
+      await report.scrollIntoViewIfNeeded();
       await page.screenshot({ path: join(shots, `inspector-${theme}-${width}.png`) });
     }
   }
   await look(page, 1280, "dark");
+});
 
-  const first = report.getByRole("article", { name: /Redact the Authorization header/ });
-  await first.getByRole("button", { name: "Add as draft" }).click();
+test("the Suggested tab lists the drafts with their count, and Add all adds each as a task waiting for its crew", async () => {
+  const { page } = h;
+  const inspector = page.locator("#app-inspector");
+  const tab = inspector.getByRole("tab", { name: "Suggested 2" });
+  await expect(tab).toBeVisible();
+  await tab.click();
+  await expect(tab).toHaveAttribute("aria-selected", "true");
+  const suggested = inspector.getByRole("region", { name: "Suggested tasks" });
+  await expect(suggested.getByRole("article")).toHaveCount(2);
+  await expect(suggested.getByText("Nothing starts until you approve each crew", { exact: false })).toBeVisible();
+  for (const width of [1280, 1920]) {
+    for (const theme of ["dark", "light"] as const) {
+      await look(page, width, theme);
+      await page.screenshot({ path: join(shots, `suggested-${theme}-${width}.png`) });
+    }
+  }
+  await look(page, 1280, "dark");
+
+  await suggested.getByRole("button", { name: "Add all as drafts (2)" }).click();
+  await expect(suggested.getByText("2 tasks added. Each crew waits for your approval in Tasks.")).toBeVisible();
   await expect.poll(async () => (await daemon<Array<{ title: string; status: string }>>(page, "tasks.list", {})).map((t) => [t.title, t.status]).sort()).toEqual([
+    ["Cap network retries at five", "proposed"],
     ["Find bugs and problems", "done"],
     ["Redact the Authorization header in logs", "proposed"],
   ]);
-  await expect(report.getByText("Added to Tasks. Its crew waits for your approval.")).toBeVisible();
-  await report.getByRole("article", { name: /Cap network retries/ }).getByRole("button", { name: "Discard" }).click();
-  await expect(report.getByRole("article")).toHaveCount(1);
+  // Added drafts stay on show as added; nothing is open, so the count and Add all go.
+  await expect(suggested.getByText("Added to Tasks. Its crew waits for your approval.")).toHaveCount(2);
+  await expect(inspector.getByRole("tab", { name: "Suggested", exact: true })).toBeVisible();
+  await expect(suggested.getByRole("button", { name: /Add all as drafts/ })).toHaveCount(0);
 });
 
 test("the assistant panel puts a ready-made task in its drafts without a model call", async () => {
