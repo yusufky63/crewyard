@@ -318,12 +318,15 @@ export class AccountSwitcher extends Part {
     if (accounts.length === 0) return false;
 
     const member = this.db.member(run.member_id);
-    const ctx = this.scoring(project.id, task.size, task.budget_usd);
+    // A Best of N variant spends on its parent: the parent's budget and per-task caps count every variant.
+    const root = this.budgetTask(task.id);
+    const budget = this.db.task(root).budget_usd;
+    const ctx = this.scoring(project.id, task.size, budget);
     const avoid = this.deps.avoidFor(member);
     const chain = (JSON.parse(member.standby) as CandidateView[]).map((s) => s.profileId);
     const ranked = rankForRole(accounts, this.tpl(member), ctx, avoid).map((v) => v.profileId);
     const left = this.switches.leftAccounts(member.id);
-    const spent = this.db.spend(this.db.runs(task.id)).usd ?? 0;
+    const spent = this.db.spend(this.budgetRuns(root)).usd ?? 0;
     const sourceInfo = sourceOf(trigger, info, this.db.headroom(run.profile_id, this.now()));
     const from = { profileId: source.profile.id, alias: source.profile.alias };
     const skipped: AccountSwitchSkipped[] = [];
@@ -336,8 +339,8 @@ export class AccountSwitcher extends Part {
         roleOk: eligible(c, this.tpl(member), ctx),
         independent: !avoid.models.has(modelKey(c)),
         leftBefore: left.has(accountOf(c)!),
-        overCap: reachedCaps(this.opts.store.db, spendCredential(c), task.id, this.now(), { excludeRunId: run.id }).length > 0,
-        overBudget: task.budget_usd !== null && view.estimate.usd !== 0 && spent >= task.budget_usd,
+        overCap: reachedCaps(this.opts.store.db, spendCredential(c), root, this.now(), { excludeRunId: run.id }).length > 0,
+        overBudget: budget !== null && view.estimate.usd !== 0 && spent >= budget,
         headroom: view.headroom,
       });
       if (reason) {

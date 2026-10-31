@@ -80,12 +80,15 @@ export class Handoffs extends Part {
     const project = this.db.project(task.project_id);
     const member = this.db.member(run.member_id);
     const all = await this.candidates(project);
-    const ctx = this.scoring(project.id, task.size, task.budget_usd);
+    // A Best of N variant spends on its parent: the parent's budget and per-task caps count every variant.
+    const root = this.budgetTask(task.id);
+    const budget = this.db.task(root).budget_usd;
+    const ctx = this.scoring(project.id, task.size, budget);
     const avoid = this.avoidFor(member);
     const chain = (JSON.parse(member.standby) as CandidateView[]).map((s) => s.profileId);
     const original = member.chosen ? (JSON.parse(member.chosen) as CandidateView).profileId : null;
     const order = [...chain, ...(original ? [original] : [])].filter((id, i, a) => a.indexOf(id) === i && id !== run.profile_id);
-    const spent = this.db.spend(this.db.runs(task.id)).usd ?? 0;
+    const spent = this.db.spend(this.budgetRuns(root)).usd ?? 0;
     const crashed = info?.trigger === "crashed" || info?.failure === "credit";
     const failedModel = (run.model ?? `profile:${run.profile_id}`).toLowerCase();
     const source = all.find((c) => c.profile.id === run.profile_id);
@@ -96,9 +99,9 @@ export class Handoffs extends Part {
       .map((id) => all.find((c) => c.profile.id === id))
       .filter((c): c is Candidate => c !== undefined && eligible(c, this.tpl(member), ctx) && !avoid.models.has(modelKey(c)) && usable(c))
       // Budget left (PLAN.md §8.2 step 2): a key past its daily or task cap is no target.
-      .filter((c) => reachedCaps(this.opts.store.db, spendCredential(c), task.id, this.now(), { excludeRunId: run.id }).length === 0)
+      .filter((c) => reachedCaps(this.opts.store.db, spendCredential(c), root, this.now(), { excludeRunId: run.id }).length === 0)
       .map((c) => scoreCandidate(c, this.tpl(member), ctx, avoid))
-      .filter((v) => (v.headroom.pct === null || v.headroom.pct > MIN_HEADROOM) && (task.budget_usd === null || v.estimate.usd === 0 || spent < task.budget_usd));
+      .filter((v) => (v.headroom.pct === null || v.headroom.pct > MIN_HEADROOM) && (budget === null || v.estimate.usd === 0 || spent < budget));
   }
 
   avoidFor(member: MemberRow): { models: Set<string>; providers: Set<string> } {

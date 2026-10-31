@@ -113,7 +113,15 @@ export class RunLifecycle extends Part {
 
   private async onStreamEnd(runId: string, ended: Ended): Promise<void> {
     const run = this.db.run(runId);
-    if (run.ended_at) return;
+    // Read before endRun, which forgets both: the loop's stop rule and a reviewer's verdict.
+    const loopStop = this.loopFailed.get(runId);
+    const verdict = this.verdicts.get(runId);
+    if (run.ended_at) {
+      // Already ended some other way (a stop racing the last event): nobody acts on them now.
+      this.loopFailed.delete(runId);
+      this.verdicts.delete(runId);
+      return;
+    }
     // Stopped for hibernation: the run stays open and holds its step.
     if (this.hibernating.delete(runId)) {
       this.emitTask(run.task_id, "hibernation");
@@ -136,8 +144,6 @@ export class RunLifecycle extends Part {
       return;
     }
     // The loop stopped this implementer (iteration cap, no change, spend cap): the step failed its tests.
-    const loopStop = this.loopFailed.get(runId);
-    this.loopFailed.delete(runId);
     if (ended.reason === "completed" && loopStop) {
       this.endRun(runId, "failed", loopStop);
       return;
@@ -153,8 +159,6 @@ export class RunLifecycle extends Part {
       return;
     }
     if (ended.reason === "failed") await this.deps.onFailure(runId, detail);
-    const verdict = this.verdicts.get(runId);
-    this.verdicts.delete(runId);
     if (ended.reason === "completed" && verdict) await this.deps.reviewLoop(runId, verdict);
   }
 
@@ -177,6 +181,9 @@ export class RunLifecycle extends Part {
     this.turns.end(runId);
     this.resumed.delete(runId);
     this.nativeReviews.delete(runId);
+    // A paused, limited or hibernated run keeps these until it ends; however it ends, they go now.
+    this.loopFailed.delete(runId);
+    this.verdicts.delete(runId);
     this.draining.delete(runId);
     this.drainRelease.get(runId)?.(null);
     this.drainRelease.delete(runId);

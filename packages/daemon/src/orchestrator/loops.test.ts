@@ -7,7 +7,9 @@ import { Store } from "../store.ts";
 import { AdapterRegistry } from "./adapters.ts";
 import type { Candidate } from "./directory.ts";
 import { LoopStore, reviewChangesMessage, testFailureMessage } from "./loops.ts";
+import type { OrchestratorContext } from "./context.ts";
 import { Orchestrator, type OrchestratorOptions } from "./orchestrator.ts";
+import type { RoleResult } from "./results.ts";
 import { CANDIDATES, candidate, cleanTemps, git, model, ScriptedAdapter, tempDir, tempRepo, waitFor, type ScriptedOptions } from "./testing.ts";
 
 // Crew loops (feature scan A9, A11, A12) and handoff hardening, end to end over a real git repo
@@ -157,6 +159,44 @@ describe("run until green", () => {
     await o.approve({ taskId: t.id });
     await waitFor(() => o.get(t.id).status === "review", 30_000);
     expect(kinds(o, t.id)).toEqual(["tests_skipped", "review_passed"]);
+  });
+});
+
+describe("loop notes in memory", () => {
+  // The loop's stop rule and a reviewer's verdict wait in memory until the run's stream ends. A run
+  // that ends any other way (stopped while paused, handed off) must not leave them behind.
+  const hold: Picker = (role) => (role === "implementer" ? [running, say("working"), { awaitAnswer: "never" }] : [running, say(`${role} done`)]);
+  const notes = (o: Orchestrator) => (o as unknown as { ctx: OrchestratorContext }).ctx;
+  const note = (o: Orchestrator, runId: string) => {
+    notes(o).loopFailed.set(runId, "loop.iteration_cap");
+    notes(o).verdicts.set(runId, { kind: "review", verdict: "pass", summary: "ok", comments: [] } as unknown as RoleResult);
+  };
+  const kept = (o: Orchestrator, runId: string) => [notes(o).loopFailed.has(runId), notes(o).verdicts.has(runId)];
+
+  it("keeps them while a paused run may still go on, and forgets them once it is stopped", async () => {
+    const { o, project } = await setup({ pick: hold });
+    const t = await o.propose({ projectId: project.id, ...CODE_S, kind: "code", size: "S" });
+    await o.approve({ taskId: t.id });
+    const run = await waitFor(() => o.get(t.id).runs.find((r) => r.role === "implementer" && r.state === "running"), 30_000);
+    note(o, run.id);
+    await o.pause(run.id);
+    await waitFor(() => o.get(t.id).runs.find((r) => r.id === run.id)!.state === "paused");
+    expect(kept(o, run.id)).toEqual([true, true]);
+    await o.stop(run.id);
+    expect(o.get(t.id).runs.find((r) => r.id === run.id)!.endReason).toBe("stopped");
+    expect(kept(o, run.id)).toEqual([false, false]);
+  });
+
+  it("forgets them for a source run that handed its step off", async () => {
+    const { o, project } = await setup({ pick: hold, candidates: [...CANDIDATES(), candidate("ds-b", "deepseek", model("deepseek-chat", { reasoning: false }))] });
+    const t = await o.propose({ projectId: project.id, ...CODE_S, kind: "code", size: "S", pins: { implementer: "deepseek-key", reviewer: "openai-key" } });
+    await o.approve({ taskId: t.id });
+    const run = await waitFor(() => o.get(t.id).runs.find((r) => r.role === "implementer" && r.state === "running"), 30_000);
+    note(o, run.id);
+    await o.handoff(run.id, "ds-b");
+    await waitFor(() => o.get(t.id).handoffs[0]?.outcome === "completed", 20_000);
+    expect(o.get(t.id).runs.find((r) => r.id === run.id)!.endDetail).toBe("handed_off");
+    expect(kept(o, run.id)).toEqual([false, false]);
   });
 });
 
