@@ -90,6 +90,12 @@ test("Inbox: answers an approval request and a question", async () => {
   await openInbox();
   const list = page.getByRole("listbox", { name: "Requests" });
   await list.getByRole("option", { name: /Run npm view express version\?/ }).click();
+  // State colours (DESIGN.md §3): the risk level is a tone chip with its word, Approve is ok, Deny is bad.
+  const detail = page.locator(".ib-detail");
+  await expect(detail.locator(".ib-eyebrow .badge")).toHaveText(/risk/i);
+  await expect(detail.locator(".ib-eyebrow .badge")).toHaveClass(/badge-(ok|warn|bad)/);
+  await expect(page.getByRole("button", { name: "Approve once" })).toHaveClass(/btn-ok/);
+  await expect(detail.getByRole("button", { name: "Deny" })).toHaveClass(/btn-bad/);
   await page.getByRole("button", { name: "Approve once" }).click();
   await list.getByRole("option", { name: /Which store should the limiter use\?/ }).click();
   await page.getByRole("radio", { name: "redis" }).check();
@@ -333,8 +339,11 @@ test("Fallback: with account switching on, a limit moves the step to the provide
   await toggle().getByRole("button", { name: "On" }).click();
   const note = main.getByRole("alertdialog", { name: "Before you turn it on" });
   await expect(note).toBeVisible();
+  await expect(note.getByRole("button", { name: "I understand, turn it on" })).toHaveClass(/btn-ok/);
   await note.getByRole("button", { name: "I understand, turn it on" }).click();
   await expect(toggle().getByRole("button", { name: "On" })).toHaveAttribute("aria-pressed", "true");
+  // A chosen On takes the ok colour; the word still says it.
+  await expect(toggle().getByRole("button", { name: "On" })).toHaveClass(/seg-ok/);
   // Settings hides the sidebar; Back returns to where it was opened from.
   await main.getByRole("button", { name: "[ Back ]", exact: true }).click();
 
@@ -360,6 +369,7 @@ test("Fallback: with account switching on, a limit moves the step to the provide
   await expect(entry).toContainText("Fake Work");
   await expect(entry).toContainText("Fake Home");
   await expect(entry).toContainText("limit reached");
+  await expect(entry.getByRole("button", { name: "Off for this task" })).toHaveClass(/btn-warn/);
   await entry.getByRole("button", { name: "Off for this task" }).click();
   await expect(entry.getByRole("button", { name: "Off for this task" })).toBeDisabled();
   await entry.getByRole("button", { name: "Dismiss" }).click();

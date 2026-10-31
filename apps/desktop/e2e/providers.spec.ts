@@ -14,7 +14,8 @@ test.beforeAll(async () => {
   await expect(start).toBeVisible({ timeout: 30_000 });
   await start.getByRole("button", { name: "Open folder" }).click();
   await start.locator("button.ptile", { hasText: basename(h.repo) }).click();
-  await h.page.getByRole("button", { name: "Providers" }).click();
+  // The sidebar's own Providers button: until the project opens, Start's checklist links share the name.
+  await h.page.locator("#app-sidebar").getByRole("button", { name: "Providers" }).click();
 });
 
 test.afterAll(async () => {
