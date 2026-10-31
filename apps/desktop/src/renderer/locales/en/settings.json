@@ -548,6 +548,8 @@
     "listenFailed": "Could not start the endpoint: {{error}}",
     "can": "What a client can do",
     "canHint": "Read projects, tasks, reports, crews, the Inbox, events, spend, profiles, project settings and MCP servers. Add an existing folder as a project. Change a project's slots, test and build commands, runners, profiles and loop limit. Lower a budget or tighten a rule. Propose a task. Add or change an MCP server with plain values. Every change shows in the project's activity log with the client's name.",
+    "runs": "Commands and servers crews will run",
+    "runsHint": "A connected agent can change a project's test and build commands and add or change MCP servers. Crews run them in later tasks without asking you first. Each change shows in the project's activity log as changed by that external agent; revoke a client you do not trust.",
     "cannot": "What stays with you",
     "cannotHint": "Approving a crew, starting or stopping work, answering the Inbox, push, pull requests, merges, deleting anything, raising a budget or loosening a rule, spend past a cap, API keys and secret values, Autopilot and this switch. A task a client proposes waits for your approval on the Tasks screen.",
     "fileToken": "On this system each client's token is kept as a file only your account can read; Windows keeps it encrypted with DPAPI.",

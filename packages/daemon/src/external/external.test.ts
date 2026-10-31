@@ -262,6 +262,12 @@ describe("project settings", () => {
       expect(res.isError, JSON.stringify(args)).toBe(true);
       expect(String(res.json!.detail)).toMatch(why);
     }
+    // A command crews will run, changed alone, is logged with the client's name like any other change.
+    expect((await c.call("update_project_settings", { project_id: s.project.id, build_command: "pnpm build" })).isError).toBe(false);
+    const built = s.store.eventsSince(0).filter((e) => e.kind === "external.settings").at(-1);
+    expect((built?.payload as { text: string }).text).toBe('Changed by external agent Claude Code: build_command null → "pnpm build"');
+    file.commands = { ...(file.commands as object), build: "pnpm build" };
+
     // None of the refusals touched the file.
     expect(JSON.parse(readFileSync(join(s.repo, ".crewyard", "project.json"), "utf8"))).toEqual(file);
   });
@@ -336,7 +342,9 @@ describe("MCP servers", () => {
       expect(res.isError, JSON.stringify(args)).toBe(true);
       expect(String(res.json!.detail)).toMatch(why);
     }
-    expect(s.store.eventsSince(0).filter((e) => e.kind === "external.mcp_server")).toHaveLength(1);
+    const servers_ = s.store.eventsSince(0).filter((e) => e.kind === "external.mcp_server");
+    expect(servers_).toHaveLength(1);
+    expect(servers_[0]!.payload).toMatchObject({ client: "Claude Code on this PC", text: "Changed by external agent Claude Code on this PC: MCP server github" });
   });
 });
 

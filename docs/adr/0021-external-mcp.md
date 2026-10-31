@@ -95,6 +95,8 @@ Listed in `packages/core/src/external.ts`. Every read tool but the project list 
 
 A newer or invalid `project.json` is never written (the same codes as the wizard). Secret-looking keys are refused by `validateProjectConfig`, as for the wizard.
 
+**Owner's decision, 2026-11-01: commands and MCP servers stay changeable from outside.** Asked whether test and build commands and MCP servers should be app-only or changeable from outside too, with the risk spelled out (a command or server added from outside runs in a later task, logged but not approved beforehand), the owner answered: "Dışarıdan da değişebilsin" (let them be changed from outside too). So `test_command`, `build_command` and `save_mcp_server` stay in the tool list. Each such change writes an `external.settings` or `external.mcp_server` event with the client's name ("Changed by external agent <name>: …"), and Settings → External access says in plain words that a connected agent can change commands and MCP servers that crews will run.
+
 **MCP servers (`save_mcp_server`).** Plain env values only; a name that looks like a credential is refused (`mcp.env_must_be_secret`), and secret values are never accepted or returned: set them in Settings → MCP servers. A changed server keeps its stored secrets. `read_only_access` may be `marked` or `none`; `all` (you vouch for the whole server) stays in the app. Removing a server is a delete and stays in the app.
 
 **Not offered, on purpose** (a test asserts none is listed and each is refused by name): approving a crew or a step, starting a task, a run, a schedule or Best of N, pause, resume, stop, retry, handoff, messages to a run, push, PR, merge, deleting a task, worktree, branch, project, profile, key or server, any Inbox answer, caps on keys, Autopilot's switch and limits, external access itself, key and secret reads or writes.
@@ -135,6 +137,12 @@ No code was copied. Protocol facts (method names, fields, config shapes) are use
 - **Settings writes** go only toward stricter values for anything that spends or loosens a rule. A test command or an MCP server added from here is a program that crews will run; it is written as the wizard and Settings write it, recorded with the client's name, and its tool calls go through the same approvals as any other.
 - **Client text** (titles, descriptions, names, commands) is cleaned and capped, stored as text and shown as text. A task an external client proposes quotes nothing as an instruction; its crew still waits for your approval.
 - **Reads** return text agents wrote; each result says it is data.
+
+## Known limits
+
+- **Your own processes can use the relay.** Any program running as you, including the agents Crewyard itself runs, can read a client's config, start the relay and decrypt its token. The token keeps other accounts out and separates clients; it does not separate you from your own processes. The guard is the tool list: no tool approves, starts, answers, pushes, merges, deletes, raises a budget or reads a key. A native check of the connecting process (its pid against Crewyard's own agent trees) is the follow-up if this ever needs to be stricter.
+- **Linux and macOS keep the token as a file.** The relay cannot reach the main process's `safeStorage`, so the token is plain text in a 0600 file inside a 0700 folder. Those builds are pre-release (ADR 0010), and Settings says how the token is kept there.
+- **A command or server set from outside is not approved beforehand.** By the owner's choice above, it runs in the next task that uses it; the activity log names the client that set it, and its tool calls go through the same approvals as any other.
 
 ## Rollback
 

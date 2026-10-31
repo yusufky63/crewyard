@@ -110,6 +110,7 @@ export function ExternalSection({ index }: { index: number }) {
       </Row>
       {v?.enabled && <p className={v.error ? "pv-error st-note" : "st-note"}>{v.error ? t("external.listenFailed", { error: v.error }) : v.listening ? t("external.listening") : t("external.starting")}</p>}
       <Row label={t("external.can")} hint={t("external.canHint")} />
+      <Row label={t("external.runs")} hint={<span className="st-warn">{t("external.runsHint")}</span>} />
       <Row label={t("external.cannot")} hint={t("external.cannotHint")} />
       {v?.tokenStorage === "file" && <p className="st-note">{t("external.fileToken")}</p>}
 

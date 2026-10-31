@@ -548,6 +548,8 @@
     "listenFailed": "Uç nokta başlatılamadı: {{error}}",
     "can": "İstemci neler yapabilir",
     "canHint": "Projeleri, görevleri, raporları, ekipleri, Gelen kutusunu, olayları, harcamayı, profilleri, proje ayarlarını ve MCP sunucularını okur. Var olan bir klasörü proje olarak ekler. Bir projenin slot sayısını, test ve build komutlarını, runner'larını, profillerini ve döngü sınırını değiştirir. Bütçeyi düşürür ya da bir kuralı sıkılaştırır. Görev önerir. Düz değerlerle bir MCP sunucusu ekler ya da değiştirir. Her değişiklik projenin etkinlik kaydında istemcinin adıyla görünür.",
+    "runs": "Ekiplerin çalıştıracağı komutlar ve sunucular",
+    "runsHint": "Bağlı bir ajan bir projenin test ve build komutlarını değiştirebilir, MCP sunucusu ekleyip değiştirebilir. Ekipler bunları sonraki görevlerde sana önceden sormadan çalıştırır. Her değişiklik projenin etkinlik kaydında o dış ajanın yaptığı değişiklik olarak görünür; güvenmediğin istemciyi iptal et.",
     "cannot": "Hangileri sende kalır",
     "cannotHint": "Ekibi onaylamak, işi başlatmak ya da durdurmak, Gelen kutusunu yanıtlamak, push, pull request, merge, herhangi bir şeyi silmek, bütçeyi artırmak ya da bir kuralı gevşetmek, limiti aşan harcama, API anahtarları ve gizli değerler, Autopilot ve bu anahtarın kendisi. İstemcinin önerdiği görev, Görevler ekranında senin onayını bekler.",
     "fileToken": "Bu sistemde her istemcinin anahtarı yalnızca senin hesabının okuyabildiği bir dosyada durur; Windows'ta DPAPI ile şifrelenir.",
