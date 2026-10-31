@@ -963,6 +963,21 @@ export const MIGRATIONS: Migration[] = [
      at text not null
    );`,
   },
+  // External access over MCP (docs/adr/0021): the clients you connected, each with the sha256 of
+  // its token (the token itself is a DPAPI blob in <data>/external). Revoked rows stay for the log.
+  {
+    id: "external-mcp",
+    sql: `create table if not exists external_clients (
+     id text primary key,
+     name text not null,
+     token_hash text,
+     created_at text not null,
+     last_seen_at text,
+     reported_as text,
+     calls integer not null default 0,
+     revoked_at text
+   );`,
+  },
 ];
 
 /** What the positional scheme applied: a database at `user_version` N has the first N of these. */

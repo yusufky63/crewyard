@@ -18,6 +18,7 @@ import type { HandlerContext, HandlerMap } from "./types.ts";
 
 const services = new WeakMap<object, AssistantService>();
 const autopilots = new WeakMap<object, Autopilot>();
+const externalTools = new WeakMap<object, AssistantTools>();
 
 /** The one Autopilot per store, built with the assistant service. */
 export function autopilotFor(ctx: HandlerContext): Autopilot {
@@ -60,7 +61,9 @@ export function assistantFor(ctx: HandlerContext, overrides: Partial<Omit<Assist
   };
   // The read tools (docs/adr/0018) reach every part through its own public read; nothing here can
   // start, change or stop a task or a run.
-  const tools = new AssistantTools({
+  // `record: false` builds the same tools for external clients (docs/adr/0021): their reads of an
+  // Autopilot task's report never count as Autopilot reading it.
+  const readTools = (record: boolean) => new AssistantTools({
     store: ctx.store,
     ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}),
     host: {
@@ -73,8 +76,8 @@ export function assistantFor(ctx: HandlerContext, overrides: Partial<Omit<Assist
         }
       },
       taskList: (projectId, status) => autopilot.taskList(projectId, status),
-      taskRead: (projectId, taskId) => autopilot.taskRead(projectId, taskId),
-      reportRead: (projectId, taskId) => autopilot.reportRead(projectId, taskId),
+      taskRead: (projectId, taskId) => autopilot.taskRead(projectId, taskId, record),
+      reportRead: (projectId, taskId) => (record ? autopilot.reportRead(projectId, taskId) : undefined),
       requests: (projectId) => o.requests({ projectId }),
       agentReports: (projectId) => mcp.reports.list({ projectId }),
       stalls: (projectId) => o.stalls.list({ projectId }),
@@ -88,6 +91,8 @@ export function assistantFor(ctx: HandlerContext, overrides: Partial<Omit<Assist
       config: (path, name) => effectiveProjectConfig(path, name),
     },
   });
+  const tools = readTools(true);
+  externalTools.set(ctx.store, readTools(false));
   const service = new AssistantService({
     store: ctx.store,
     emit: ctx.emit,
@@ -137,6 +142,12 @@ export function assistantFor(ctx: HandlerContext, overrides: Partial<Omit<Assist
   services.set(ctx.store, service);
   autopilots.set(ctx.store, autopilot);
   return service;
+}
+
+/** The assistant's read tools for external clients (docs/adr/0021), sharing the assistant's services. */
+export function externalReadToolsFor(ctx: HandlerContext): AssistantTools {
+  assistantFor(ctx);
+  return externalTools.get(ctx.store)!;
 }
 
 export function createAssistantHandlers(ctx: HandlerContext): HandlerMap<AssistantIpc> {

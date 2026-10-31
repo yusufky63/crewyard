@@ -43,6 +43,8 @@ export class McpSession {
     private readonly call: ToolCall,
     private readonly version: string,
     private readonly set: ToolSet = REPORT_TOOLS,
+    /** Gets the client's `clientInfo` from initialize; external access shows it in Settings (docs/adr/0021). */
+    private readonly onInitialize?: (clientInfo: unknown) => void,
   ) {}
 
   /** One line in, at most one line out (notifications get no answer). */
@@ -63,6 +65,7 @@ export class McpSession {
     switch (msg.method) {
       case "initialize": {
         this.initialized = true;
+        this.onInitialize?.(params.clientInfo);
         const asked = typeof params.protocolVersion === "string" ? params.protocolVersion : "";
         return this.result(id, {
           protocolVersion: PROTOCOL_VERSIONS.includes(asked) ? asked : PROTOCOL_VERSIONS[0],
