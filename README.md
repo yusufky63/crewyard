@@ -29,7 +29,7 @@ Status: pre-release. It is built and tested on Windows 11. Linux and macOS are p
   - Reviews are pinned to the exact commit, and the merge gate takes only a pass verdict.
 - **GitHub under your control.** A push queue, pull requests, merge gates and cleanup; every outward step waits for your click.
 - **Windows shell.** The taskbar button shows how many requests wait for you and flashes when a new one arrives while the window is in the background; "Open in Crewyard" in Explorer, `Crewyard.exe <folder>` and a folder dropped on the window open a project or start a new one.
-- **Guide.** `Guide` in the sidebar, `G W`, or `New here? How it works` on the Start screen opens an in-app guide, also before any project exists: the task flow from project to merge as numbered tiles that each open their screen, a Getting started list read from this machine and your data (machine check, a ready profile, a project, a first task, a first approved crew, GitHub), the main features and a short FAQ.
+- **Guide.** `Guide` in the sidebar, `G W`, or `New here? How it works` on the Start screen opens an in-app guide, also before any project exists: the task flow from project to merge as numbered tiles that each open their screen, a Getting started list read from this machine and your data (Git and an agent CLI Crewyard can start, a ready profile, a project, a first task, a first approved crew, GitHub), the main features and a short FAQ that answers for the build you are running.
 - **More:**
   - turn control (queue, steer, undo);
   - images and files on a task or a queued message (paste, drop or pick), passed to each runner its own way;
