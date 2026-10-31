@@ -66,7 +66,8 @@ function useLiveFiles(taskId: string): void {
   }, [qc, taskId]);
 }
 
-export function FilesTab({ detail }: { detail: TaskDetail }) {
+/** `reveal` previews one file, e.g. a report finding's `file:line`; each new object asks once. */
+export function FilesTab({ detail, reveal }: { detail: TaskDetail; reveal?: { path: string } }) {
   const { t } = useTranslation("files");
   if (!detail.worktree) {
     return (
@@ -75,10 +76,10 @@ export function FilesTab({ detail }: { detail: TaskDetail }) {
       </div>
     );
   }
-  return <Files key={detail.id} taskId={detail.id} />;
+  return <Files key={detail.id} taskId={detail.id} reveal={reveal} />;
 }
 
-function Files({ taskId }: { taskId: string }) {
+function Files({ taskId, reveal }: { taskId: string; reveal?: { path: string } }) {
   const { t } = useTranslation("files");
   const [open, setOpen] = useState<Set<string>>(() => new Set(SHOT?.get("files") === "open" ? ["src", "src/auth"] : []));
   const [preview, setPreview] = useState<string | null>(() => SHOT?.get("file") ?? null);
@@ -118,6 +119,11 @@ function Files({ taskId }: { taskId: string }) {
       return next;
     });
   };
+  const [revealed, setRevealed] = useState<{ path: string } | undefined>(undefined);
+  if (reveal && reveal !== revealed) {
+    setRevealed(reveal);
+    show(reveal.path);
+  }
 
   return (
     <>
@@ -324,7 +330,8 @@ function Markdown({ text, label }: { text: string; label: string }) {
   );
 }
 
-function MdBlock({ b }: { b: Block }): ReactNode {
+/** One parsed Markdown block as text-only elements; also used by the task report's summary. */
+export function MdBlock({ b }: { b: Block }): ReactNode {
   switch (b.t) {
     case "heading": {
       const H = `h${Math.min(6, b.level + 2)}` as "h3";
