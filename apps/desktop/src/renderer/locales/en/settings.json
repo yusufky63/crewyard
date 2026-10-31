@@ -52,6 +52,25 @@
     "change": "Change",
     "added": "Projects added: {{count}}"
   },
+  "configNotice": {
+    "lead": "These projects' .crewyard/project.json needs a look. Crewyard never overwrites a file it cannot fully read.",
+    "label": "Project settings files",
+    "newer": "From a newer Crewyard (format {{version}}). Used read-only: the settings this version understands apply, and the file is never written.",
+    "newerUnknown": "From a newer Crewyard (format {{version}}). This version cannot read it, so the defaults apply with approvals from notifications off. The file is never written.",
+    "invalid": "Cannot be used: {{reason}}. The defaults apply with approvals from notifications off until it is fixed.",
+    "reason": {
+      "unreadable": "the file could not be read",
+      "json": "it is not valid JSON",
+      "not_object": "it does not hold a settings object",
+      "version": "it has no usable format number",
+      "schema": "some values break the rules for project settings",
+      "secret": "it holds keys that look like secrets"
+    },
+    "fallbacks_one": "One value is not known to this version; a safe one is used instead.",
+    "fallbacks_other": "{{count}} values are not known to this version; safe ones are used instead.",
+    "fallback": "{{path}}: {{value}}, using {{used}}",
+    "dropped": "{{path}}: {{value}}, skipped"
+  },
   "notifications": {
     "enabled": "Windows notifications",
     "enabledHint": "Questions, approvals and limits. The Inbox and the tray count always show everything.",

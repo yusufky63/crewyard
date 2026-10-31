@@ -52,6 +52,25 @@
     "change": "Değiştir",
     "added": "Eklenen proje: {{count}}"
   },
+  "configNotice": {
+    "lead": "Bu projelerin .crewyard/project.json dosyasına göz atılmalı. Crewyard tam okuyamadığı bir dosyanın üzerine hiçbir zaman yazmaz.",
+    "label": "Proje ayar dosyaları",
+    "newer": "Daha yeni bir Crewyard'dan (biçim {{version}}). Salt okunur kullanılıyor: bu sürümün anladığı ayarlar geçerli, dosyaya hiç yazılmaz.",
+    "newerUnknown": "Daha yeni bir Crewyard'dan (biçim {{version}}). Bu sürüm dosyayı okuyamıyor; varsayılanlar geçerli ve bildirimlerden onay kapalı. Dosyaya hiç yazılmaz.",
+    "invalid": "Kullanılamıyor: {{reason}}. Düzeltilene kadar varsayılanlar geçerli ve bildirimlerden onay kapalı.",
+    "reason": {
+      "unreadable": "dosya okunamadı",
+      "json": "geçerli bir JSON değil",
+      "not_object": "bir ayar nesnesi içermiyor",
+      "version": "kullanılabilir bir biçim numarası yok",
+      "schema": "bazı değerler proje ayarlarının kurallarına uymuyor",
+      "secret": "gizli anahtara benzeyen alanlar içeriyor"
+    },
+    "fallbacks_one": "Bu sürüm bir değeri tanımıyor; yerine güvenli bir değer kullanılıyor.",
+    "fallbacks_other": "Bu sürüm {{count}} değeri tanımıyor; yerlerine güvenli değerler kullanılıyor.",
+    "fallback": "{{path}}: {{value}} yerine {{used}}",
+    "dropped": "{{path}}: {{value}} atlandı"
+  },
   "notifications": {
     "enabled": "Windows bildirimleri",
     "enabledHint": "Sorular, onaylar ve limitler. Gelen kutusu ve bildirim alanındaki sayı her şeyi her zaman gösterir.",

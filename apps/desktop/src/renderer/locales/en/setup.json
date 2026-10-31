@@ -174,7 +174,7 @@
     "title": "How should task worktrees start?",
     "lead": "Each task works in its own git worktree, which starts without node_modules, .env files or caches. Prepare it here.",
     "setup": "Setup",
-    "setupHint": "Runs in each new worktree before the agent starts. A failed step stops the start and shows its last lines.",
+    "setupHint": "Runs in each new worktree before the agent starts, with CREWYARD_REPO (the main checkout), CREWYARD_WORKTREE and CREWYARD_BRANCH set. A failed step stops the start and shows its last lines.",
     "cleanup": "Cleanup",
     "cleanupHint": "Runs before Crewyard removes or parks a worktree. If a step fails, the worktree stays.",
     "setupPlaceholder": "e.g. pnpm install --frozen-lockfile",
@@ -220,6 +220,33 @@
   },
   "errors": {
     "caseTwins": "Not created: {{folders}} differs from this folder only by letter case. Rename one of them, then create the project again.",
-    "caseTwinsUnknown": "another folder"
+    "caseTwinsUnknown": "another folder",
+    "configNewer": "Not written: project.json now comes from a newer Crewyard. Read the folder again before creating the project.",
+    "configInvalid": "Not written: project.json became invalid after the folder was read. Read the folder again, then create the project."
+  },
+  "config": {
+    "unknown_one": "One value is not known to this version of Crewyard, so a safe one is used instead:",
+    "unknown_other": "{{count}} values are not known to this version of Crewyard, so safe ones are used instead:",
+    "fallback": "{{path}}: {{value}}, using {{used}}",
+    "dropped": "{{path}}: {{value}}, skipped",
+    "newer": "From a newer Crewyard",
+    "newerText": "This .crewyard/project.json was written by a newer version of Crewyard (format {{version}}). It is read-only here: Crewyard uses the settings it understands and never writes the file, so changes made in these steps are not saved to it. Update Crewyard to edit it.",
+    "newerUnknown": "This version cannot read its settings, so the defaults apply, with approvals from notifications off:",
+    "newerFoot": "Adds the project. Its project.json came from a newer Crewyard and stays as it is.",
+    "invalid": "Settings file",
+    "reason": {
+      "unreadable": ".crewyard/project.json is there but could not be read:",
+      "json": ".crewyard/project.json is not valid JSON:",
+      "not_object": ".crewyard/project.json does not hold a settings object.",
+      "version": ".crewyard/project.json has no usable format number:",
+      "schema": "Some values in .crewyard/project.json break the rules for project settings:",
+      "secret": ".crewyard/project.json holds keys that look like secrets. Keys belong in the Windows secret store:"
+    },
+    "invalidAfter": "The steps start from the defaults. Create project asks before replacing the file and keeps the old one as project.json.bak.",
+    "replaceTitle": "Replace project.json",
+    "replaceText": "This settings file cannot be used. Creating the project replaces it:",
+    "replaceBackup": "The old file is kept beside it as project.json.bak.",
+    "replace": "Replace and keep a copy",
+    "keep": "Cancel"
   }
 }

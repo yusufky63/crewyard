@@ -38,6 +38,9 @@
 .settings .st-item-name { font-weight: 500; white-space: nowrap; }
 .settings .st-item-path, .settings .st-item-meta { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-size-meta); }
 .settings .st-item-acts { display: flex; gap: 4px; margin-left: auto; }
+.settings .st-config { align-items: flex-start; padding: 10px 12px; }
+.settings .st-config-text { flex: 1; min-width: 0; display: grid; gap: 3px; font-size: var(--font-size-meta); }
+.settings .st-bad { color: var(--bad); }
 
 .settings .st-fact { display: grid; grid-template-columns: 160px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 9px 0; border-top: 1px solid var(--line); }
 .settings .st-body > .st-fact:first-child { border-top: 0; }

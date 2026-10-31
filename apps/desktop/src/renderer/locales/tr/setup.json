@@ -174,7 +174,7 @@
     "title": "Görev worktree'leri nasıl başlasın?",
     "lead": "Her görev kendi git worktree'sinde çalışır; bu klasör node_modules, .env dosyaları ve önbellekler olmadan açılır. Hazırlığını burada tanımlayın.",
     "setup": "Kurulum",
-    "setupHint": "Her yeni worktree'de ajan başlamadan önce çalışır. Bir adım başarısız olursa ajan başlamaz ve çıktının son satırları gösterilir.",
+    "setupHint": "Her yeni worktree'de ajan başlamadan önce çalışır; CREWYARD_REPO (ana klasör), CREWYARD_WORKTREE ve CREWYARD_BRANCH değişkenleri tanımlıdır. Bir adım başarısız olursa ajan başlamaz ve çıktının son satırları gösterilir.",
     "cleanup": "Temizlik",
     "cleanupHint": "Crewyard bir worktree'yi kaldırmadan ya da park etmeden önce çalışır. Bir adım başarısız olursa worktree yerinde kalır.",
     "setupPlaceholder": "ör. pnpm install --frozen-lockfile",
@@ -220,6 +220,33 @@
   },
   "errors": {
     "caseTwins": "Oluşturulmadı: {{folders}} bu klasörden yalnızca büyük-küçük harfle ayrılıyor. Birini yeniden adlandırıp projeyi yeniden oluştur.",
-    "caseTwinsUnknown": "başka bir klasör"
+    "caseTwinsUnknown": "başka bir klasör",
+    "configNewer": "Yazılmadı: project.json artık daha yeni bir Crewyard'dan geliyor. Projeyi oluşturmadan önce klasörü yeniden okutun.",
+    "configInvalid": "Yazılmadı: klasör okunduktan sonra project.json geçersiz hâle geldi. Klasörü yeniden okutup projeyi oluşturun."
+  },
+  "config": {
+    "unknown_one": "Crewyard'ın bu sürümü bir değeri tanımıyor, yerine güvenli bir değer kullanılıyor:",
+    "unknown_other": "Crewyard'ın bu sürümü {{count}} değeri tanımıyor, yerlerine güvenli değerler kullanılıyor:",
+    "fallback": "{{path}}: {{value}} yerine {{used}}",
+    "dropped": "{{path}}: {{value}} atlandı",
+    "newer": "Daha yeni bir Crewyard'dan",
+    "newerText": "Bu .crewyard/project.json dosyasını Crewyard'ın daha yeni bir sürümü yazmış (biçim {{version}}). Dosya burada salt okunur: Crewyard anladığı ayarları kullanır ve dosyaya hiç yazmaz; bu adımlarda yaptığınız değişiklikler dosyaya kaydedilmez. Düzenlemek için Crewyard'ı güncelleyin.",
+    "newerUnknown": "Bu sürüm ayarları okuyamıyor; varsayılanlar geçerli ve bildirimlerden onay kapalı:",
+    "newerFoot": "Proje eklenir. project.json daha yeni bir Crewyard'dan geldiği için olduğu gibi kalır.",
+    "invalid": "Ayar dosyası",
+    "reason": {
+      "unreadable": ".crewyard/project.json var ama okunamadı:",
+      "json": ".crewyard/project.json geçerli bir JSON değil:",
+      "not_object": ".crewyard/project.json bir ayar nesnesi içermiyor.",
+      "version": ".crewyard/project.json içinde kullanılabilir bir biçim numarası yok:",
+      "schema": ".crewyard/project.json içindeki bazı değerler proje ayarlarının kurallarına uymuyor:",
+      "secret": ".crewyard/project.json gizli anahtara benzeyen alanlar içeriyor. Anahtarların yeri Windows gizli deposudur:"
+    },
+    "invalidAfter": "Adımlar varsayılanlardan başlıyor. Proje oluşturulurken dosyayı değiştirmeden önce onayınız istenir ve eski dosya project.json.bak olarak saklanır.",
+    "replaceTitle": "project.json değiştirilsin mi?",
+    "replaceText": "Bu ayar dosyası kullanılamıyor. Projeyi oluşturmak onu yenisiyle değiştirir:",
+    "replaceBackup": "Eski dosya yanında project.json.bak olarak saklanır.",
+    "replace": "Değiştir ve kopyasını sakla",
+    "keep": "Vazgeç"
   }
 }

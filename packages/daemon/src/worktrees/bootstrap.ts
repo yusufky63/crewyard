@@ -127,7 +127,8 @@ export class Bootstrapper {
   /** Variables every setup step and agent in the worktree gets. Never a secret: keys come from the profile. */
   env(ref: WorktreeRef, config: ProjectConfig): Record<string, string> {
     const port = this.port(ref, config);
-    const env: Record<string, string> = { CREWYARD_WORKTREE: ref.path, CREWYARD_BRANCH: ref.branch };
+    // CREWYARD_REPO is the main checkout, for steps that read or copy from it (omux exposes $OMUX_REPO for the same reason).
+    const env: Record<string, string> = { CREWYARD_REPO: ref.repoPath, CREWYARD_WORKTREE: ref.path, CREWYARD_BRANCH: ref.branch };
     if (port !== null && config.bootstrap.port) {
       env.CREWYARD_PORT = String(port);
       env[config.bootstrap.port.envVar] = String(port);
