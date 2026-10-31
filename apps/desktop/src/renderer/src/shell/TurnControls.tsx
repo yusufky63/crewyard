@@ -58,7 +58,7 @@ function QueueItem({ run, m, index, count, onError }: { run: RunView; m: QueuedM
                 <Pencil aria-hidden="true" />
                 {f.t("inspector.queue.edit")}
               </Button>
-              <Button size="sm" variant="ghost" aria-label={`${f.t("inspector.queue.delete")} · ${label}`} onClick={() => go(() => act("queue.delete", { runId: run.id, messageId: m.id }))}>
+              <Button size="sm" variant="ghost" tone="bad" aria-label={`${f.t("inspector.queue.delete")} · ${label}`} onClick={() => go(() => act("queue.delete", { runId: run.id, messageId: m.id }))}>
                 <Trash2 aria-hidden="true" />
                 {f.t("inspector.queue.delete")}
               </Button>
@@ -214,7 +214,8 @@ export function UndoControl({ run, onError }: { run: RunView; onError: OnError }
   if (!preview) {
     return (
       <div className="ins-undo">
-        <Button disabled={!undo.ok || busy} onClick={() => void ask()} aria-describedby={undo.ok ? undefined : `undo-why-${run.id}`}>
+        {/* Undo takes work back, so it is warn (owner, 2026-10-31); its confirm is the danger button below. */}
+        <Button tone="warn" disabled={!undo.ok || busy} onClick={() => void ask()} aria-describedby={undo.ok ? undefined : `undo-why-${run.id}`}>
           <Undo2 aria-hidden="true" />
           {f.t("inspector.undo.button")}
         </Button>

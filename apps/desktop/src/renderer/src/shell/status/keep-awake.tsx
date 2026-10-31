@@ -14,10 +14,12 @@ function KeepAwakeStatus() {
   const line = useKeepAwakeLine();
   if (!s || s.state === "off") return null;
   const Icon = s.state === "battery" ? BatteryLow : Coffee;
+  // Held back by a low battery is warn; the word says why.
+  const warn = s.state === "battery" ? { color: "var(--warn)" } : undefined;
   return (
     <button type="button" className="sb" onClick={() => openSettings("startup")} title={line(s)}>
-      <Icon size={13} strokeWidth={1.75} />
-      {s.state === "active" ? <b>{t("status.awake")}</b> : s.state === "battery" ? t("status.awakeBattery") : t("status.awakeIdle")}
+      <Icon size={13} strokeWidth={1.75} style={warn} />
+      {s.state === "active" ? <b>{t("status.awake")}</b> : s.state === "battery" ? <span style={warn}>{t("status.awakeBattery")}</span> : t("status.awakeIdle")}
     </button>
   );
 }

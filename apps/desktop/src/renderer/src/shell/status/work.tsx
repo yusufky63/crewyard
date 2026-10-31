@@ -25,7 +25,7 @@ function WorkStatus() {
       {needYou > 0 && (
         <button className="sb" onClick={() => go("inbox")} title={t("statusbar.needYouTitle")}>
           <Dot color="var(--warn)" />
-          {t("statusbar.needYou", { count: needYou })}
+          <span style={{ color: "var(--warn)" }}>{t("statusbar.needYou", { count: needYou })}</span>
         </button>
       )}
     </>

@@ -20,7 +20,8 @@ import { badgeCount, openRequests, recentNotices } from "./notices.ts";
 function RequestIcon({ r }: { r: RequestView }) {
   const p = r.payload;
   const Icon = p.kind === "approval" ? Terminal : p.kind === "question" ? CircleHelp : p.trigger === "budget" ? Wallet : p.trigger === "manual" ? ArrowLeftRight : Gauge;
-  return <Icon size={16} strokeWidth={1.75} aria-hidden="true" className={r.risk === "high" ? "tb-n-high" : "tb-n-icon"} />;
+  // The same tones as the Inbox risk chips: high in bad, medium in warn.
+  return <Icon size={16} strokeWidth={1.75} aria-hidden="true" className={r.risk === "high" ? "tb-n-bad" : r.risk === "medium" ? "tb-n-high" : "tb-n-icon"} />;
 }
 
 function useRequestTitle() {
@@ -174,7 +175,7 @@ function Popover({ anchor, requests, notices, error, onClose }: { anchor: RefObj
           <div className="tb-pop-sub lbl">{t("notifications.limits")}</div>
           {notices.map((n) => (
             <button key={`${n.profileId}|${n.window}`} type="button" className="tb-n-item" onClick={() => go(() => openNotice(qc, n, projectOfTask, projects))}>
-              <Gauge size={16} strokeWidth={1.75} aria-hidden="true" className={n.kind === "reached" || n.kind === "critical" ? "tb-n-high" : "tb-n-icon"} />
+              <Gauge size={16} strokeWidth={1.75} aria-hidden="true" className={n.kind === "reached" || n.kind === "critical" ? "tb-n-bad" : "tb-n-high"} />
               <span className="tb-n-text">
                 <span className="t">{t(`notifications.notice.${n.kind}`, { who: who(n.profileId), window: f.window(n.window), pct: n.usedPct === null ? "—" : Math.round(n.usedPct), minutes: n.minutesUntilFull ?? 0 })}</span>
                 <span className="s">

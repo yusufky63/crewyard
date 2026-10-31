@@ -64,6 +64,8 @@
 .tb-n-item:focus-visible { box-shadow: inset 2px 0 0 var(--accent); }
 .tb-n-icon { color: var(--ink-3); margin-top: 1px; flex: none; }
 .tb-n-high { color: var(--warn); margin-top: 1px; flex: none; }
+/* A limit reached or a high-risk request: red, as in the Inbox and the limit meters. */
+.tb-n-bad { color: var(--bad); margin-top: 1px; flex: none; }
 .tb-n-text { display: grid; gap: 3px; min-width: 0; flex: 1; }
 .tb-n-text .t { font-size: 13px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .tb-n-text .t.mono { font-family: var(--mono); font-size: 12px; }
