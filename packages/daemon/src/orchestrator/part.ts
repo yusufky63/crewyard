@@ -1,4 +1,4 @@
-import type { AgentAdapter, ProjectConfig, RolePolicy, RunnerId, StartRequest, TaskChangeCause, TaskSize, TasksTopics, Profile } from "@crewyard/core";
+import type { AgentAdapter, ProjectConfig, RolePolicy, StartRequest, TaskChangeCause, TaskSize, TasksTopics, Profile } from "@crewyard/core";
 import type { OrchestratorContext, ProposeParams } from "./context.ts";
 import type { ScoringContext } from "./crew.ts";
 import type { MemberRow, ProjectRow, RunRow } from "./db.ts";
@@ -181,8 +181,5 @@ export abstract class Part {
   }
   protected freeMb(): number {
     return this.ctx.freeMb();
-  }
-  protected hasAdapter(runner: RunnerId): boolean {
-    return this.ctx.adapters.has(runner);
   }
 }
