@@ -154,7 +154,8 @@ function Confirm({
         <Button size="sm" variant="ghost" onClick={onCancel} disabled={busy}>
           {t("pulls.cancel")}
         </Button>
-        <Button size="sm" variant={tone ? "secondary" : "primary"} tone={tone} onClick={onConfirm} disabled={busy} autoFocus>
+        {/* A removal confirms with the danger button, like every other destructive confirm (DESIGN.md §3 Danger). */}
+        <Button size="sm" variant={tone === "bad" ? "danger" : tone ? "secondary" : "primary"} tone={tone === "bad" ? undefined : tone} onClick={onConfirm} disabled={busy} autoFocus>
           {icon}
           {action}
         </Button>
@@ -423,7 +424,7 @@ export function PullPanel({ v, showTitle = false }: { v: TaskPullView; showTitle
             />
           ) : (
             <div>
-              <Button size="sm" variant={step === "merge" ? "primary" : "secondary"} tone="ok" disabled={!live?.gate?.readyForApproval || busy} title={live?.gate?.readyForApproval ? undefined : t("pulls.blocked")} onClick={() => setAsking("merge")}>
+              <Button size="sm" variant={step === "merge" ? "primary" : "secondary"} disabled={!live?.gate?.readyForApproval || busy} title={live?.gate?.readyForApproval ? undefined : t("pulls.blocked")} onClick={() => setAsking("merge")}>
                 <GitMerge {...ICON} />
                 {t("pulls.reviewMerge")}
               </Button>

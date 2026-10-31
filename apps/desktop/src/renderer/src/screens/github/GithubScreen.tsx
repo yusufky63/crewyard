@@ -127,7 +127,9 @@ function PushPanel({ projectId }: { projectId: string }) {
       <div className="metric num">
         {known ? branches.length : "—"} <small>{known ? `${t("push.branches", { count: branches.length })} · ${t("push.commits", { count: commits })}` : ""}</small>
       </div>
-      {problem && <span className="gh-note">{t(`push.unavailable.${problem}`, { defaultValue: t("push.unavailable.other") })}</span>}
+      {/* A queue Crewyard cannot read (no remote, a remote off GitHub, signed out) needs a look; a read that failed
+          (offline, an error) is bad. The sentence says which. */}
+      {problem && <span className={`gh-note ${problem === "error" || problem === "offline" ? "gh-bad" : "gh-warn"}`}>{t(`push.unavailable.${problem}`, { defaultValue: t("push.unavailable.other") })}</span>}
       {known && branches.length === 0 && <span className="gh-note">{t("push.empty")}</span>}
       {shown.map((b) => (
         <PushRow key={b.branch} projectId={projectId} b={b} primary={branches.length === 1} />

@@ -51,7 +51,8 @@ function DiskRow({ item }: { item: WorktreeDiskItem }) {
             <Button size="sm" variant="ghost" onClick={() => setAsking(false)} disabled={busy}>
               {t("cancel")}
             </Button>
-            <Button size="sm" variant="danger" autoFocus onClick={() => void act()} disabled={busy}>
+            {/* Parking commits the work and keeps the branch, so it can be undone: warn, like the Park that asked. */}
+            <Button size="sm" variant="ghost" tone="warn" autoFocus onClick={() => void act()} disabled={busy}>
               {t("parkNow")}
             </Button>
           </span>
