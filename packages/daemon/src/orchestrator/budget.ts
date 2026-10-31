@@ -9,8 +9,7 @@ import {
   type SpendCap,
   type UnpricedSpend,
 } from "@crewyard/core";
-import type { OrchestratorContext } from "./context.ts";
-import type { HandoffInfo } from "./context.ts";
+import type { HandoffInfo, OrchestratorContext } from "./context.ts";
 import { Part } from "./part.ts";
 import { estimateFor } from "./crew.ts";
 import type { MemberRow, RunRow, TaskRow } from "./db.ts";
