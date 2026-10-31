@@ -14,7 +14,9 @@ test.beforeAll(async () => {
   await expect(start).toBeVisible({ timeout: 30_000 });
   await start.getByRole("button", { name: "Open folder" }).click();
   await start.locator("button.ptile", { hasText: basename(h.repo) }).click();
-  await h.page.getByRole("button", { name: "Providers" }).click();
+  // The sidebar's entry: until the project frame replaces Start, Start's Getting started rows have
+  // their own Providers buttons, and a page-wide match would hit those (a strict-mode error).
+  await h.page.locator("#app-sidebar").getByRole("button", { name: "Providers" }).click();
 });
 
 test.afterAll(async () => {
