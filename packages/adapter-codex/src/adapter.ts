@@ -80,7 +80,8 @@ import { METHOD_NOT_FOUND, RpcError, type RpcId } from "./rpc.ts";
 export const capabilities: AgentCapabilities = {
   launch: true,
   stream: true,
-  // item/tool/requestUserInput is experimental; we opt in through initialize.
+  // item/tool/requestUserInput is experimental; we opt in through initialize, and threadParams turns
+  // on the feature that lets the model ask in Default mode (QUESTIONS_IN_DEFAULT_MODE).
   answerQuestions: true,
   approveTools: true,
   interrupt: true,
@@ -107,6 +108,16 @@ export const capabilities: AgentCapabilities = {
   // `localImage` turn input by path; no input item for other files (input.ts).
   attachments: { images: true, files: false },
 };
+
+/**
+ * codex 0.147 offers request_user_input in every mode but answers "unavailable in Default mode"
+ * unless this feature is on (request_user_input_available_modes, codex-rs/tools/src/tool_config.rs
+ * at rust-v0.147.0). Plan mode would allow it too, but Plan mode also stops the model from editing.
+ * The feature is "under development" in `codex features list`; with it, Default mode still waits for
+ * the answer and only marks the request isBlocking false (core/src/tools/handlers/request_user_input.rs).
+ * Found by the conformance suite on 2026-10-31.
+ */
+export const QUESTIONS_IN_DEFAULT_MODE = { "features.default_mode_request_user_input": true } as const;
 
 /** Oldest codex-cli this adapter was checked against. */
 export const MIN_CODEX_VERSION = "0.147.0";
@@ -508,7 +519,7 @@ export class CodexAdapter implements AgentAdapter {
     if (model) params.model = model;
     // Subagents stay off per thread too (see DEFAULT_ARGS); a profile's config.toml cannot turn them back on.
     const mcp = mcpPlan(req.mcpServers ?? [], req.policy);
-    params.config = { "agents.enabled": false, ...shellEnvPolicy({ ...req.env, ...mcp.env }), ...mcp.config };
+    params.config = { "agents.enabled": false, ...QUESTIONS_IN_DEFAULT_MODE, ...shellEnvPolicy({ ...req.env, ...mcp.env }), ...mcp.config };
     if (!readOnly && req.policy.network === "allowed") params.config.sandbox_workspace_write = { network_access: true };
     return params;
   }

@@ -100,7 +100,7 @@ describe("ACP adapter against a fake Gemini agent", () => {
 
   it("probes version, ACP flag and resume support through initialize", async () => {
     const { adapter, req } = await setup("probe", "");
-    expect(await adapter.probe(req.profile)).toMatchObject({ installed: true, version: "0.66.0", problems: [], capabilities: { launch: true, resume: true } });
+    expect(await adapter.probe(req.profile)).toMatchObject({ installed: true, version: "0.66.0", problems: [], capabilities: { launch: true, resume: true, plan: false } });
     process.env.FAKE_ACP_LOAD = "0";
     expect(await fakeAdapter().probe(req.profile)).toMatchObject({ problems: [], capabilities: { resume: false } });
     process.env.FAKE_ACP_HELP = "none";
@@ -319,6 +319,22 @@ describe("ACP adapter against a fake Gemini agent", () => {
 
     process.env.FAKE_ACP_LOAD = "0";
     await expect(fakeAdapter().resume(ref, first.req)).rejects.toThrow(/does not support session\/load/);
+  });
+
+  it("reads token counts from the prompt response and keeps running totals across resumes", async () => {
+    const first = await setup("tokens", "tokens");
+    const run = await first.adapter.start(first.req);
+    const events = await collect(first.adapter, run);
+    // Before the response, only the context window: no usage.update that would read as zero tokens.
+    expect(events.filter((e) => e.type === "usage.update" || e.type === "limit.update").map((e) => e.type)).toEqual(["limit.update", "usage.update"]);
+    expect(events.find((e) => e.type === "usage.update")).toMatchObject({ tokensIn: 1000, tokensOut: 34, cacheRead: 200, contextUsed: 1234, contextSize: 1048576, costUsd: null, costProvenance: "unknown" });
+    const ref = run.nativeSession;
+    if (!ref) throw new Error("no native session");
+
+    // Each follow-up turn is a new run; the daemon counts growth, so the totals continue.
+    const resumed = await first.adapter.resume(ref, { ...first.req, prompt: "tokens again" });
+    const later = await collect(first.adapter, resumed);
+    expect(later.filter((e) => e.type === "usage.update").at(-1)).toMatchObject({ tokensIn: 2000, tokensOut: 68, cacheRead: 400 });
   });
 
   it("stops a run and kills the agent", async () => {

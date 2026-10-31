@@ -57,9 +57,90 @@ function rawCommand(raw: unknown): string | null {
   return null;
 }
 
+/** Running token totals for a session, in our event model's terms (tokensIn without cache reads). */
+export interface TokenTotals {
+  tokensIn: number;
+  tokensOut: number;
+  cacheRead: number;
+  cacheWrite: number;
+  reasoning: number;
+}
+
+/**
+ * `PromptResponse.usage`, an unstable ACP field (RFD end-turn-token-usage) that the stable SDK types
+ * leave out; read from the raw response and checked here.
+ */
+export interface AcpUsage {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens?: number;
+  cachedReadTokens?: number | null;
+  cachedWriteTokens?: number | null;
+  thoughtTokens?: number | null;
+}
+
+const count = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? Math.round(v) : null);
+
+export function readAcpUsage(raw: unknown): AcpUsage | null {
+  if (!raw || typeof raw !== "object") return null;
+  const u = raw as Record<string, unknown>;
+  const inputTokens = count(u.inputTokens);
+  const outputTokens = count(u.outputTokens);
+  if (inputTokens === null || outputTokens === null) return null;
+  return { inputTokens, outputTokens, cachedReadTokens: count(u.cachedReadTokens), cachedWriteTokens: count(u.cachedWriteTokens), thoughtTokens: count(u.thoughtTokens) };
+}
+
 export class AcpMapper {
   private readonly status = new Map<string, string>();
   private readonly kinds = new Map<string, AcpToolKind>();
+  /** Null until the agent reports token counts; a usage.update before that would read as zero tokens. */
+  private totals: TokenTotals | null;
+  private context: { used: number; size: number | null } | null = null;
+  private costUsd: number | null = null;
+
+  /**
+   * `toCounts` turns one prompt's ACP usage into ours; what the fields include differs per agent.
+   * `totals` are the session's totals from an earlier run, when a resumed session has them.
+   */
+  constructor(
+    private readonly toCounts: (u: AcpUsage) => TokenTotals,
+    totals: TokenTotals | null = null,
+  ) {
+    this.totals = totals;
+  }
+
+  /** The session's running totals, or null when the agent has reported none. */
+  get tokenTotals(): TokenTotals | null {
+    return this.totals;
+  }
+
+  seed(totals: TokenTotals | null): void {
+    this.totals = totals;
+  }
+
+  /**
+   * Adds the token counts of one prompt (`PromptResponse.usage`) to the session's totals; usage.update
+   * carries running totals. Nothing when the agent sent none, e.g. on a cancelled prompt.
+   */
+  promptUsage(raw: unknown): EventBody[] {
+    const usage = readAcpUsage(raw);
+    if (!usage) return [];
+    const add = this.toCounts(usage);
+    const t = this.totals ?? { tokensIn: 0, tokensOut: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 };
+    this.totals = { tokensIn: t.tokensIn + add.tokensIn, tokensOut: t.tokensOut + add.tokensOut, cacheRead: t.cacheRead + add.cacheRead, cacheWrite: t.cacheWrite + add.cacheWrite, reasoning: t.reasoning + add.reasoning };
+    return [this.usageEvent(this.totals)];
+  }
+
+  private usageEvent(t: TokenTotals): EventBody {
+    return {
+      type: "usage.update",
+      ...t,
+      contextUsed: this.context?.used ?? null,
+      contextSize: this.context?.size ?? null,
+      costUsd: this.costUsd,
+      costProvenance: this.costUsd === null ? "unknown" : "reported",
+    };
+  }
 
   update(u: SessionUpdate): EventBody[] {
     switch (u.sessionUpdate) {
@@ -79,22 +160,14 @@ export class AcpMapper {
       case "plan":
         return [{ type: "plan.update", steps: u.entries.map((e) => ({ title: e.content, status: e.status })) }];
       case "usage_update": {
-        const usd = u.cost && u.cost.currency.toUpperCase() === "USD" ? u.cost.amount : null;
-        return [
-          {
-            type: "usage.update",
-            // ACP reports the context window, not per-turn token counts.
-            tokensIn: 0,
-            tokensOut: 0,
-            cacheRead: 0,
-            cacheWrite: 0,
-            reasoning: 0,
-            contextUsed: Math.max(0, Math.round(u.used)),
-            contextSize: u.size > 0 ? Math.round(u.size) : null,
-            costUsd: usd,
-            costProvenance: usd === null ? "unknown" : "reported",
-          },
-        ];
+        // The context window and the session's cost; token counts come with each PromptResponse.
+        this.context = { used: Math.max(0, Math.round(u.used)), size: u.size > 0 ? Math.round(u.size) : null };
+        if (u.cost && u.cost.currency.toUpperCase() === "USD") this.costUsd = u.cost.amount;
+        // A reported cost is what the caps count, so it goes out even before any token count.
+        if (this.totals || this.costUsd !== null) return [this.usageEvent(this.totals ?? { tokensIn: 0, tokensOut: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 })];
+        // No tokens and no cost yet: the context window alone, so nothing reads as zero tokens.
+        const { used, size } = this.context;
+        return size === null ? [] : [{ type: "limit.update", window: "context", usedPct: Math.min(100, (100 * used) / size), resetsAt: null, provenance: "reported", reached: false }];
       }
       default:
         return [];

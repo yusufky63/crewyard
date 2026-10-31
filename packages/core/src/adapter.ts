@@ -12,6 +12,11 @@ export interface AgentCapabilities {
   resume: boolean;
   setModel: boolean;
   usage: boolean;
+  /**
+   * The runner reports its plan as `plan.update`. False: it never does (Gemini CLI over ACP), so a
+   * view says the plan is not reported instead of showing none. Absent: it does.
+   */
+  plan?: boolean;
   /** Subscription limit data straight from the runner, without touching tokens ourselves. */
   reportedLimits: boolean;
   /** Read-only enforcement (needed for reviewer roles): the runner's own engine where it has one, plus our approval layer. */

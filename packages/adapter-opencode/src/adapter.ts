@@ -110,6 +110,11 @@ interface Run {
   sawBusy: boolean;
   promptAt: number;
   interrupted: boolean;
+  /**
+   * interrupt()'s abort request until it settles. OpenCode publishes the turn's idle before it
+   * answers the abort, so the run can end first; the server stays up until the answer is in.
+   */
+  aborting: Promise<void> | null;
   /** stop() was called; the idle that follows its abort must not read as a completed turn. */
   stopping: boolean;
   error: string | null;
@@ -278,7 +283,16 @@ export class OpenCodeAdapter implements AgentAdapter {
       this.end(run, "interrupted");
       return;
     }
-    await run.client.session.abort({ sessionID: run.mapper.rootSession });
+    const abort = run.client.session.abort({ sessionID: run.mapper.rootSession });
+    run.aborting = abort.then(
+      () => undefined,
+      () => undefined,
+    );
+    try {
+      await abort;
+    } finally {
+      run.aborting = null;
+    }
     // The idle status after an abort ends the run; this covers a server that never sends it.
     setTimeout(() => this.end(run, "interrupted"), 5_000).unref();
   }
@@ -461,6 +475,7 @@ export class OpenCodeAdapter implements AgentAdapter {
       sawBusy: false,
       promptAt: 0,
       interrupted: false,
+      aborting: null,
       stopping: false,
       error: null,
       structured: undefined,
@@ -759,8 +774,11 @@ export class OpenCodeAdapter implements AgentAdapter {
     run.ended = true;
     run.queue.close();
     run.sse.abort();
-    // The run owns its server; a later turn starts a new one through resume().
-    void run.server.close();
+    // The run owns its server; a later turn starts a new one through resume(). An abort still in
+    // flight gets its answer first, bounded like the end-of-turn fallback.
+    const aborting = run.aborting;
+    if (aborting) void Promise.race([aborting, sleep(5_000)]).then(() => run.server.close());
+    else void run.server.close();
   }
 
   private async discard(run: Run): Promise<void> {

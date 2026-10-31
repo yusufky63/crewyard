@@ -48,6 +48,8 @@ export interface RunnerSpec {
   plan(tools: string[], transcript: string): ToolShape[];
   /** The runner's own question tool. */
   question(tools: string[]): ToolShape | null;
+  /** Scenarios the CLI itself cannot pass, with the source that shows it; the adapter's capabilities say so too. */
+  gaps?: { plan?: string };
 }
 
 const PLAN_STEPS = [
@@ -166,6 +168,7 @@ export const gemini: RunnerSpec = {
   plan: (tools) => (has(tools, "write_todos") ? [{ name: "write_todos", args: { todos: PLAN_STEPS.map((s) => ({ description: s.title, status: s.status })) } }] : []),
   question: (tools) =>
     has(tools, "ask_user") ? { name: "ask_user", args: { questions: [{ question: QUESTION.prompt, header: "Colour", type: "choice", options: QUESTION.options.map((label) => ({ label, description: `Use ${label}.` })) }] } } : null,
+  gaps: { plan: "Gemini CLI's ACP session sends no plan session update, write_todos is a plain tool call (google-gemini/gemini-cli packages/cli/src/acp/acpSession.ts, v0.66.0)" },
 };
 
 export const RUNNERS: RunnerSpec[] = [codex, claude, opencode, gemini];

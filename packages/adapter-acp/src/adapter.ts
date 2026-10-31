@@ -9,7 +9,7 @@ import type { AgentAdapter, AgentCapabilities, Attachment, AgentEvent, Answer, E
 import { ensureSystemEnv, exitCodeWithin, isShutdownExit, killTree, parseVersion, resolveBin, run as runCommand, start } from "@crewyard/proc";
 import { AGENTS, type AgentSpec } from "./agents.ts";
 import { acpPrompt } from "./input.ts";
-import { AcpMapper, chooseOutcome, mustReject, type EventBody } from "./mapper.ts";
+import { AcpMapper, chooseOutcome, mustReject, type EventBody, type TokenTotals } from "./mapper.ts";
 import { EventQueue } from "./queue.ts";
 import { acpMcpServers, mcpServerOf } from "./mcp.ts";
 
@@ -92,6 +92,12 @@ export class AcpAdapter implements AgentAdapter {
   private readonly opts: AcpAdapterOptions & { prefixArgs: string[]; initTimeoutMs: number; cancelGraceMs: number };
   private readonly runs = new Map<string, Run>();
   private readonly info = new Map<string, CliInfo>();
+  /**
+   * Token totals per agent session. Every follow-up turn is a new run that resumes the session, and
+   * the daemon counts the growth of running totals, so a resumed run continues from these. They
+   * live as long as the daemon: after a restart a resumed session counts from zero again.
+   */
+  private readonly sessionTotals = new Map<string, TokenTotals>();
 
   constructor(capabilities: AgentCapabilities, opts: AcpAdapterOptions = {}) {
     this.capabilities = capabilities;
@@ -107,7 +113,7 @@ export class AcpAdapter implements AgentAdapter {
     const isolation = spec.isolationProblem(cli.version);
     if (isolation) problems.push(isolation);
     if (!cli.acpArgs) problems.push(`${spec.label} ${cli.version ?? ""} has no ACP mode flag in its --help`.replace("  ", " "));
-    let capabilities = this.capabilities;
+    let capabilities: AgentCapabilities = { ...this.capabilities, plan: spec.reportsPlan };
     // Resume depends on the agent: ask it (initialize only, no session, no model call).
     if (problems.length === 0) {
       try {
@@ -223,6 +229,7 @@ export class AcpAdapter implements AgentAdapter {
       await run.conn.agent.request(acp.methods.agent.session.load, { sessionId: ref.sessionId, cwd: req.cwd, mcpServers: acpMcpServers(req.mcpServers ?? []) });
       run.loading = false;
       run.sessionId = ref.sessionId;
+      run.mapper.seed(this.sessionTotals.get(ref.sessionId) ?? null);
       run.handle.nativeSession = { runner: "acp", sessionId: ref.sessionId };
       if (req.prompt.trim()) this.enqueue(run, withOutputInstruction(req.prompt, req.outputSchema), req.attachments);
       else this.setState(run, "waiting_input");
@@ -340,7 +347,7 @@ export class AcpAdapter implements AgentAdapter {
       conn: opened.conn,
       canLoad: false,
       sessionId: "",
-      mapper: new AcpMapper(),
+      mapper: new AcpMapper((u) => spec.promptUsage(u)),
       queue: new EventQueue<AgentEvent>(),
       cliVersion: cli.version,
       seq: 0,
@@ -449,6 +456,9 @@ export class AcpAdapter implements AgentAdapter {
       try {
         const res = await run.conn.agent.request(acp.methods.agent.session.prompt, { sessionId: run.sessionId, prompt: acpPrompt(input.text, input.attachments, run.promptCaps) });
         stop = res.stopReason;
+        this.emit(run, run.mapper.promptUsage((res as { usage?: unknown }).usage));
+        const totals = run.mapper.tokenTotals;
+        if (totals) this.sessionTotals.set(run.sessionId, totals);
       } catch (err) {
         run.busy = false;
         // The connection can drop before the exit status arrives; a shutdown exit wins over the error.

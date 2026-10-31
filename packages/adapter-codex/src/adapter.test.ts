@@ -75,7 +75,7 @@ describe("CodexAdapter against a fake app-server", () => {
     expect(log[0]).toMatchObject({ env: { CODEX_HOME: dir, CREWYARD_TEST_SECRET: "s3cret", OPENAI_API_KEY: null }, cwd: dir });
     expect(sentBy(log, "initialize")[0]).toMatchObject({ clientInfo: { name: "crewyard" }, capabilities: { experimentalApi: true } });
     expect(log.some((e) => (e.in as { method?: string } | undefined)?.method === "initialized")).toBe(true);
-    expect(sentBy(log, "thread/start")[0]).toEqual({ cwd: dir, approvalPolicy: "on-request", sandbox: "workspace-write", model: "gpt-5.5-codex", config: { "agents.enabled": false, ...shellEnvPolicy({ CREWYARD_TEST_SECRET: "s3cret" }) } });
+    expect(sentBy(log, "thread/start")[0]).toEqual({ cwd: dir, approvalPolicy: "on-request", sandbox: "workspace-write", model: "gpt-5.5-codex", config: { "agents.enabled": false, "features.default_mode_request_user_input": true, ...shellEnvPolicy({ CREWYARD_TEST_SECRET: "s3cret" }) } });
     expect((sentBy(log, "thread/start")[0] as { config: object }).config).toMatchObject({ "shell_environment_policy.ignore_default_excludes": false, "shell_environment_policy.exclude": ["CODEX_API_KEY", "CREWYARD_TEST_SECRET", "OPENAI_API_KEY"] });
     expect(JSON.stringify(sentBy(log, "thread/start"))).not.toContain("s3cret");
     expect(sentBy(log, "turn/start")[0]).toEqual({ threadId: "thr-1", input: [{ type: "text", text: "Fix the bug", text_elements: [] }], model: "gpt-5.5-codex", effort: "high" });
@@ -162,6 +162,18 @@ describe("CodexAdapter against a fake app-server", () => {
     expect(events.find((e) => e.type === "request.question")).toMatchObject({ questions: [{ prompt: "Which database?", allowFreeText: true }, { prompt: "Table name?" }] });
     expect(events.some((e) => e.type === "run.state" && e.state === "waiting_input")).toBe(true);
     expect(received(dir).find((e) => e.answered)).toEqual({ answered: "question", response: { answers: { db: { answers: ["SQLite"] }, name: { answers: ["users"] } } } });
+    expect(received(dir).some((e) => e.refused)).toBe(false);
+  });
+
+  it("turns on questions in Default mode for resumed threads too", async () => {
+    const dir = home({ scenario: "question" });
+    const adapter = new CodexAdapter(launcher);
+    const run = await adapter.resume({ runner: "codex", sessionId: "thr-old" }, request(dir));
+    const events = await collect(adapter, run, async (e) => {
+      if (e.type === "request.question") await adapter.answer(run, e.requestId, { kind: "question", answers: [{ selected: ["Postgres"] }, { selected: [], text: "t" }] });
+    });
+    expect(sentBy(received(dir), "thread/resume")[0]).toMatchObject({ config: { "features.default_mode_request_user_input": true } });
+    expect(events.some((e) => e.type === "request.question")).toBe(true);
   });
 
   it("drops a pending request that codex resolved itself", async () => {

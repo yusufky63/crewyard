@@ -88,7 +88,7 @@ pnpm e2e
 pnpm conformance
 ```
 
-`pnpm conformance` (with `CREWYARD_CONFORMANCE=1`) runs the installed Claude Code, Codex, OpenCode and Gemini CLI through Crewyard's own adapters against a scripted model server on `127.0.0.1`. It covers start, plan, tool call, approve, deny, question, interrupt, resume, usage, limits and stop, and it costs nothing, so run it before accepting a new runner CLI version. A runner whose CLI is missing is skipped. It is not part of `pnpm check` or CI.
+`pnpm conformance` (with `CREWYARD_CONFORMANCE=1`) runs the installed Claude Code, Codex, OpenCode and Gemini CLI through Crewyard's own adapters against a scripted model server on `127.0.0.1`. It covers start, plan, tool call, approve, deny, question, interrupt, resume, usage, limits and stop, and it costs nothing, so run it before accepting a new runner CLI version. A runner whose CLI is missing is skipped. A scenario the CLI itself cannot pass, such as a plan from Gemini CLI, shows `n/a` with the source that shows it, and fails once the CLI starts passing it. It is not part of `pnpm check` or CI.
 
 Live tests with real runners and keys cost a few cents and run only when asked. CLAUDE.md lists the flags, and `packages/daemon/src/live/flows.live.ts` holds the flows.
 
