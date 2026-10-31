@@ -25,6 +25,10 @@ Download from this repository's [Releases](https://github.com/yusufky63/crewyard
 
 The same steps are at the top of every release's notes ([docs/release-notes/install.md](docs/release-notes/install.md)). How a release is cut is in [docs/release.md](docs/release.md).
 
+## Website
+
+`apps/web` is the project's website: what Crewyard is, how it works, downloads (Windows today; macOS and Linux files appear when a release includes them), the changelog, the FAQ and the security model. It reads releases from this repository's GitHub releases, so each new release appears on the download and changelog pages within the hour with no code change. It is a Next.js app deployed on Vercel with `apps/web` as the root directory; [apps/web/README.md](apps/web/README.md) covers development, the screenshots, the deploy and its environment variables.
+
 ## What it does
 
 - **Crews per task.** Describe a task and Crewyard proposes who plans, implements, tests and reviews it, with the reason for each pick and a cost estimate. Nothing starts until you approve.
@@ -124,6 +128,7 @@ Live tests with real runners and keys cost a few cents and run only when asked. 
 | Where | What |
 |---|---|
 | `apps/desktop` | The Electron app: main process, renderer screens, e2e tests |
+| `apps/web` | The website (Next.js on Vercel): downloads and changelog from GitHub releases, how it works, FAQ, security |
 | `packages/core` | Event model, adapter contract, state rules, catalog and project schemas, IPC contract |
 | `packages/daemon` | The utility-process daemon: SQLite store, orchestrator, providers, GitHub, MCP, setup |
 | `packages/proc` | Windows-safe process helpers |
