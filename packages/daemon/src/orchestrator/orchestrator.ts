@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { existsSync, readdirSync, rmdirSync } from "node:fs";
 import { join } from "node:path";
 import {
-  type AccountSwitchSkipped,
   capEvent,
   EVENT_LIMITS,
   type AgentAdapter,
@@ -39,17 +38,17 @@ import type { McpHook } from "../mcp/service.ts";
 import { Bootstrapper } from "../worktrees/bootstrap.ts";
 import { admit, admitGroup, DEFAULT_LIMITS } from "./admission.ts";
 import { BEST_OF_MAX, BEST_OF_MIN, groupFact, groupPhase, pickVariants, worktreeDiff, type DiffStat, type GroupRow } from "./best-of.ts";
-import { OrchestratorContext, type Ended, type HandoffInfo, type LaunchSpec, type Live, type OrchestratorOptions, type ProposeParams } from "./context.ts";
+import { OrchestratorContext, type Ended, type LaunchSpec, type Live, type OrchestratorOptions, type ProposeParams } from "./context.ts";
 import { Part } from "./part.ts";
+import { AccountSwitcher } from "./account-switch.ts";
 import { Fallback } from "./fallback.ts";
 import { Handoffs } from "./handoffs.ts";
 import { Budget } from "./budget.ts";
 import { Inbox } from "./inbox.ts";
-import { accountOf, isClaudeSubscription, refusalOf, sameProviderAccounts, sourceOf, switchOrder, switchTrigger } from "./account-switch.ts";
 import { classifyTask } from "./classify.ts";
-import { eligible, estimateFor, modelKey, proposeCrew, rankForRole, readOnlyConflict, sameModel, scoreCandidate, sumEstimates, type ScoringContext } from "./crew.ts";
-import { type MemberRow, type OrchestratorDb, type ProjectRow, type RunRow, type TaskRow, type WorktreeRow } from "./db.ts";
-import { type Candidate, type ProfileDirectory } from "./directory.ts";
+import { eligible, estimateFor, proposeCrew, rankForRole, readOnlyConflict, sameModel, scoreCandidate, sumEstimates, type ScoringContext } from "./crew.ts";
+import type { MemberRow, OrchestratorDb, ProjectRow, RunRow, TaskRow, WorktreeRow } from "./db.ts";
+import type { Candidate, ProfileDirectory } from "./directory.ts";
 import { errorCode, errorDetail, OrchestratorError, redactDetail } from "./errors.ts";
 import { addDetachedCheckout, checkpoint, ensureWorktree, git, headSha, isClean, removeDetachedCheckout, sameDir, taskSlug, writeFileAtomic } from "./git.ts";
 import { reviewChangesMessage, reviewContext, testFailureMessage } from "./loops.ts";
@@ -127,13 +126,17 @@ export class Orchestrator extends Part {
     approvalsFor: (runId) => this.budget.approvalsFor(runId),
   });
   private readonly fallback: Fallback = new Fallback(this.ctx, {
-    switchAccount: (run, task, info) => this.switchAccount(run, task, info),
+    switchAccount: (run, task, info) => this.switcher.switchAccount(run, task, info),
     handoffCandidates: (run, task, info) => this.handoffs.handoffCandidates(run, task, info),
     autoTargets: (run, task, candidates) => this.handoffs.autoTargets(run, task, candidates),
     performHandoff: (sourceRunId, target, trigger) => this.handoffs.performHandoff(sourceRunId, target, trigger),
     insertRequest: (taskId, runId, nativeId, risk, payload) => this.inbox.insertRequest(taskId, runId, nativeId, risk, payload),
     launch: (spec) => this.launch(spec),
     proceed: (runId, text) => this.proceed(runId, text),
+  });
+  private readonly switcher: AccountSwitcher = new AccountSwitcher(this.ctx, {
+    avoidFor: (member) => this.handoffs.avoidFor(member),
+    performHandoff: (sourceRunId, target, trigger, opts) => this.handoffs.performHandoff(sourceRunId, target, trigger, opts),
   });
 
   override get db() {
@@ -2055,68 +2058,6 @@ export class Orchestrator extends Part {
   }
 
   // ---------------------------------------------------------------- handoff (PLAN.md §8)
-
-  /**
-   * Same-provider account switch (docs/adr/0009). With Settings on and the task not held out, a
-   * limit, an empty credit or the key's own spend cap moves the step to the next account of the
-   * same runner and provider that passes preflight, whatever the task's fallback mode. True when
-   * the switch started. Otherwise the task's mode decides, and when there was an account to try,
-   * why each was passed over goes to the timeline.
-   */
-  private async switchAccount(run: RunRow, task: TaskRow, info: HandoffInfo): Promise<boolean> {
-    const trigger = switchTrigger(info);
-    // A Best of N variant follows the task you see, whose proposal held it in or out.
-    if (!trigger || task.cancelled_at || !this.switches.allowed(this.bestOf.parentOf(task.id) ?? task.id)) return false;
-    const project = this.db.project(task.project_id);
-    const all = await this.candidates(project);
-    const source = all.find((c) => c.profile.id === run.profile_id);
-    const sourceAccount = source ? accountOf(source) : null;
-    if (!source || sourceAccount === null || isClaudeSubscription(source)) return false;
-    const accounts = sameProviderAccounts(source, all);
-    if (accounts.length === 0) return false;
-
-    const member = this.db.member(run.member_id);
-    const ctx = this.scoring(project.id, task.size, task.budget_usd);
-    const avoid = this.handoffs.avoidFor(member);
-    const chain = (JSON.parse(member.standby) as CandidateView[]).map((s) => s.profileId);
-    const ranked = rankForRole(accounts, this.tpl(member), ctx, avoid).map((v) => v.profileId);
-    const left = this.switches.leftAccounts(member.id);
-    const spent = this.db.spend(this.db.runs(task.id)).usd ?? 0;
-    const sourceInfo = sourceOf(trigger, info, this.db.headroom(run.profile_id, this.now()));
-    const from = { profileId: source.profile.id, alias: source.profile.alias };
-    const skipped: AccountSwitchSkipped[] = [];
-    for (const c of switchOrder(accounts, chain, ranked)) {
-      const view = scoreCandidate(c, this.tpl(member), ctx, avoid);
-      const reason = refusalOf({
-        sameKind: c.profile.credential.kind === source.profile.credential.kind,
-        ready: c.ready && this.adapters.has(c.profile.runner),
-        claudeSubscription: isClaudeSubscription(c),
-        roleOk: eligible(c, this.tpl(member), ctx),
-        independent: !avoid.models.has(modelKey(c)),
-        leftBefore: left.has(accountOf(c)!),
-        overCap: reachedCaps(this.opts.store.db, spendCredential(c), task.id, this.now(), { excludeRunId: run.id }).length > 0,
-        overBudget: task.budget_usd !== null && view.estimate.usd !== 0 && spent >= task.budget_usd,
-        headroom: view.headroom,
-      });
-      if (reason) {
-        skipped.push({ profileId: c.profile.id, alias: c.profile.alias, reason });
-        continue;
-      }
-      const to = { profileId: c.profile.id, alias: c.profile.alias };
-      this.track(
-        this.handoffs.performHandoff(run.id, view, info.trigger === "budget" ? "budget" : "limit", {
-          mode: "auto",
-          onClaim: (handoffId) => {
-            const rec = this.switches.record({ taskId: task.id, memberId: member.id, fromRunId: run.id, handoffId, runner: source.profile.runner, providerId: source.profile.providerId, from: { ...from, account: sourceAccount }, to, trigger, source: sourceInfo, headroom: view.headroom, estimate: view.estimate, skipped });
-            this.audit(task.id, run.id, "account.switched", { phase: "switched", switchId: rec.id, handoffId, trigger, providerId: rec.providerId, from, to, source: sourceInfo, headroom: view.headroom, estimate: view.estimate, skipped });
-          },
-        }),
-      );
-      return true;
-    }
-    this.audit(task.id, run.id, "account.switch_refused", { phase: "refused", switchId: null, trigger, providerId: source.profile.providerId, from, to: null, source: sourceInfo, headroom: null, estimate: null, skipped });
-    return false;
-  }
 
   // ---------------------------------------------------------------- recovery (PLAN.md §4)
 

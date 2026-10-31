@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { type CandidateView, type FallbackMode, type HandoffTrigger, type RequestPayload } from "@crewyard/core";
+import type { CandidateView, FallbackMode, HandoffTrigger, RequestPayload } from "@crewyard/core";
 import type { OrchestratorContext, HandoffInfo, LaunchSpec } from "./context.ts";
 import { Part } from "./part.ts";
 import type { RunRow, TaskRow, RequestRow } from "./db.ts";

@@ -9,12 +9,12 @@ import {
   type SpendCap,
   type UnpricedSpend,
 } from "@crewyard/core";
-import type { OrchestratorContext} from "./context.ts";
-import { type HandoffInfo } from "./context.ts";
+import type { OrchestratorContext } from "./context.ts";
+import type { HandoffInfo } from "./context.ts";
 import { Part } from "./part.ts";
 import { estimateFor } from "./crew.ts";
-import { type MemberRow, type RunRow, type TaskRow } from "./db.ts";
-import { type Candidate } from "./directory.ts";
+import type { MemberRow, RunRow, TaskRow } from "./db.ts";
+import type { Candidate } from "./directory.ts";
 import { capResetsAt, capWindow, credentialCaps, overCap, reachedCaps, recordRunSpend, reservedUsd, spendCredential } from "./spend.ts";
 
 // What runs spend and the caps that hold them (PLAN.md §6, feature scan F3, F4): usage reports

@@ -13,7 +13,7 @@ import {
 } from "@crewyard/core";
 import type { OrchestratorContext } from "./context.ts";
 import { Part } from "./part.ts";
-import { type RequestRow, type RunRow, type TaskRow } from "./db.ts";
+import type { RequestRow, RunRow, TaskRow } from "./db.ts";
 import { OrchestratorError } from "./errors.ts";
 import { onlyDocPaths } from "./roles.ts";
 import { answerAfterSleep, type WakeCause } from "./hibernation.ts";

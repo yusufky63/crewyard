@@ -1,10 +1,14 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
-import type { AccountSwitchRefusal, AccountSwitchSkipped, AccountSwitchSource, AccountSwitchTrigger, AccountSwitchView, CostEstimate, Headroom, RunnerId, SpendCap, TasksTopics } from "@crewyard/core";
+import type { AccountSwitchRefusal, AccountSwitchSkipped, AccountSwitchSource, AccountSwitchTrigger, AccountSwitchView, CostEstimate, Headroom, RunnerId, SpendCap, TasksTopics, CandidateView, HandoffTrigger, FallbackMode } from "@crewyard/core";
 import { ACCOUNT_SWITCH_KEY, readAccountSwitch } from "../settings/values.ts";
-import { MIN_HEADROOM } from "./crew.ts";
+import { MIN_HEADROOM, eligible, modelKey, rankForRole, scoreCandidate } from "./crew.ts";
 import type { Candidate } from "./directory.ts";
 import { OrchestratorError } from "./errors.ts";
+import type { OrchestratorContext, HandoffInfo } from "./context.ts";
+import { Part } from "./part.ts";
+import type { MemberRow, RunRow, TaskRow } from "./db.ts";
+import { reachedCaps, spendCredential } from "./spend.ts";
 
 // Same-provider account switching (docs/adr/0009). With Settings on and the task not held out, a
 // step stopped by a limit, an empty credit or its key's spend cap continues on the next account of
@@ -279,4 +283,80 @@ export function sourceOf(trigger: AccountSwitchTrigger, info: { window: AccountS
   if (trigger === "credit") return { window: null, usedPct: null, provenance: "reported" };
   if (headroom.pct !== null) return { window: headroom.window ?? info.window, usedPct: Math.round(100 - headroom.pct), provenance: headroom.provenance };
   return { window: info.window, usedPct: null, provenance: "unknown" };
+}
+
+// The switch itself, as an orchestrator part: preflight over the same provider's accounts, then a
+// handoff that records why it moved and why every account before it was passed over.
+
+export interface AccountSwitcherDeps {
+  avoidFor(member: MemberRow): { models: Set<string>; providers: Set<string> };
+  performHandoff(sourceRunId: string, target: CandidateView, trigger: HandoffTrigger, opts?: { mode?: FallbackMode; onClaim?: (handoffId: string) => void }): Promise<void>;
+}
+
+export class AccountSwitcher extends Part {
+  constructor(ctx: OrchestratorContext, private readonly deps: AccountSwitcherDeps) {
+    super(ctx);
+  }
+
+  /**
+   * Same-provider account switch (docs/adr/0009). With Settings on and the task not held out, a
+   * limit, an empty credit or the key's own spend cap moves the step to the next account of the
+   * same runner and provider that passes preflight, whatever the task's fallback mode. True when
+   * the switch started. Otherwise the task's mode decides, and when there was an account to try,
+   * why each was passed over goes to the timeline.
+   */
+  async switchAccount(run: RunRow, task: TaskRow, info: HandoffInfo): Promise<boolean> {
+    const trigger = switchTrigger(info);
+    // A Best of N variant follows the task you see, whose proposal held it in or out.
+    if (!trigger || task.cancelled_at || !this.switches.allowed(this.bestOf.parentOf(task.id) ?? task.id)) return false;
+    const project = this.db.project(task.project_id);
+    const all = await this.candidates(project);
+    const source = all.find((c) => c.profile.id === run.profile_id);
+    const sourceAccount = source ? accountOf(source) : null;
+    if (!source || sourceAccount === null || isClaudeSubscription(source)) return false;
+    const accounts = sameProviderAccounts(source, all);
+    if (accounts.length === 0) return false;
+
+    const member = this.db.member(run.member_id);
+    const ctx = this.scoring(project.id, task.size, task.budget_usd);
+    const avoid = this.deps.avoidFor(member);
+    const chain = (JSON.parse(member.standby) as CandidateView[]).map((s) => s.profileId);
+    const ranked = rankForRole(accounts, this.tpl(member), ctx, avoid).map((v) => v.profileId);
+    const left = this.switches.leftAccounts(member.id);
+    const spent = this.db.spend(this.db.runs(task.id)).usd ?? 0;
+    const sourceInfo = sourceOf(trigger, info, this.db.headroom(run.profile_id, this.now()));
+    const from = { profileId: source.profile.id, alias: source.profile.alias };
+    const skipped: AccountSwitchSkipped[] = [];
+    for (const c of switchOrder(accounts, chain, ranked)) {
+      const view = scoreCandidate(c, this.tpl(member), ctx, avoid);
+      const reason = refusalOf({
+        sameKind: c.profile.credential.kind === source.profile.credential.kind,
+        ready: c.ready && this.adapters.has(c.profile.runner),
+        claudeSubscription: isClaudeSubscription(c),
+        roleOk: eligible(c, this.tpl(member), ctx),
+        independent: !avoid.models.has(modelKey(c)),
+        leftBefore: left.has(accountOf(c)!),
+        overCap: reachedCaps(this.opts.store.db, spendCredential(c), task.id, this.now(), { excludeRunId: run.id }).length > 0,
+        overBudget: task.budget_usd !== null && view.estimate.usd !== 0 && spent >= task.budget_usd,
+        headroom: view.headroom,
+      });
+      if (reason) {
+        skipped.push({ profileId: c.profile.id, alias: c.profile.alias, reason });
+        continue;
+      }
+      const to = { profileId: c.profile.id, alias: c.profile.alias };
+      this.track(
+        this.deps.performHandoff(run.id, view, info.trigger === "budget" ? "budget" : "limit", {
+          mode: "auto",
+          onClaim: (handoffId) => {
+            const rec = this.switches.record({ taskId: task.id, memberId: member.id, fromRunId: run.id, handoffId, runner: source.profile.runner, providerId: source.profile.providerId, from: { ...from, account: sourceAccount }, to, trigger, source: sourceInfo, headroom: view.headroom, estimate: view.estimate, skipped });
+            this.audit(task.id, run.id, "account.switched", { phase: "switched", switchId: rec.id, handoffId, trigger, providerId: rec.providerId, from, to, source: sourceInfo, headroom: view.headroom, estimate: view.estimate, skipped });
+          },
+        }),
+      );
+      return true;
+    }
+    this.audit(task.id, run.id, "account.switch_refused", { phase: "refused", switchId: null, trigger, providerId: source.profile.providerId, from, to: null, source: sourceInfo, headroom: null, estimate: null, skipped });
+    return false;
+  }
 }
