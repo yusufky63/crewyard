@@ -1,8 +1,8 @@
-import { useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { CircleAlert, CircleHelp, CircleX, FileText, GitBranch, GitMerge, ListChecks, Terminal } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { GOAL_LIMITS, GOAL_TASK_KINDS, GOAL_TASK_MODES, type GoalDecisionAction, type GoalDecisionView, type GoalDetail, type GoalStopPreview, type GoalTaskView, type RequestView, type TaskKind, type TaskMode } from "@crewyard/core";
+import { GOAL_LIMITS, GOAL_TASK_KINDS, GOAL_TASK_MODES, type ActivityEvent, type GoalDecisionAction, type GoalDecisionView, type GoalDetail, type GoalStopPreview, type GoalTaskView, type RequestView, type TaskKind, type TaskMode } from "@crewyard/core";
 import { Button, Label, Panel } from "@crewyard/ui";
 import { useInspector } from "../../inspector.ts";
 import { useListKeys } from "../../listKeys.ts";
@@ -12,8 +12,8 @@ import { RiskBadge } from "../inbox/RiskBadge.tsx";
 import { ProvBadge } from "../providers/shared.tsx";
 import { act, useErrorText, useWork } from "./data.ts";
 import { GoalSpend, GoalStatusLabel, GoalTaskLabel, useGoalFormat, useGoalsChanged } from "./GoalRow.tsx";
-import { codeKey, currentRun, formatDuration, goalNeeds, goalNumber, goalStatusLine, goalTaskLine, type GoalNeed } from "./model.ts";
-import { ConfirmButton, ErrorLine, useFormat, useNow } from "./parts.tsx";
+import { codeKey, currentRun, formatDuration, GOAL_FEED_PAGE, goalNeeds, goalNumber, goalStatusLine, goalTaskLine, haltKey, planCost, utf8Bytes, type GoalNeed } from "./model.ts";
+import { ErrorLine, useFormat, useNow } from "./parts.tsx";
 
 // The goal view (docs/adr/0019, design §3.3): the goal bar with its status, spend against the goal
 // budget, elapsed time and goal branch; what needs you, first; then the goal's tasks with why each
@@ -21,8 +21,8 @@ import { ConfirmButton, ErrorLine, useFormat, useNow } from "./parts.tsx";
 // report and agent text is untrusted: React renders it as plain text, capped here for the row.
 
 /** Untrusted text shown in a row (findings, a provider's message): one line's worth, never markup. */
-const ROW_TEXT_MAX = 600;
-const capRow = (s: string) => (s.length > ROW_TEXT_MAX ? `${s.slice(0, ROW_TEXT_MAX - 1)}…` : s);
+export const ROW_TEXT_MAX = 600;
+export const capRow = (s: string) => (s.length > ROW_TEXT_MAX ? `${s.slice(0, ROW_TEXT_MAX - 1)}…` : s);
 
 /** Goal refusals arrive as `goal.*` codes and read from the goals namespace; anything else as Tasks reads it. */
 export function useGoalErrorText(): (err: unknown) => string {
@@ -51,17 +51,28 @@ export function useGoalApply(goalId: string, onError: (message: string | null) =
   };
 }
 
+/** A planning run's cost as a button says it, or why no planning run can start. */
+export interface ReplanCost {
+  /** "~$0.31 Estimated, up to $0.93", "cost unknown" or "no API cost"; null until it is known. */
+  label: string | null;
+  /** Set when no profile can plan here (or Orchestra is off): the button stays disabled with this beside it. */
+  blocked: string | null;
+}
+
 /**
- * The cost a planning run would have, read from goals.preview (which writes nothing), as the
- * Replan button says it: "~$0.31 Estimated" or "cost unknown". Null until it is known, and a
- * Replan button without its cost stays disabled: every model call starts from a click that showed it.
+ * The cost a planning run would have, read from goals.preview (which writes nothing), with the
+ * planning run's ceiling. A Replan button without its cost stays disabled: every model call starts
+ * from a click that showed it (design §1.3).
  */
-export function useReplanCost(goal: Pick<GoalDetail, "projectId" | "text">, enabled: boolean): string | null {
+export function useReplanCost(goal: Pick<GoalDetail, "projectId" | "text">, enabled: boolean): ReplanCost {
   const g = useGoalFormat();
   const preview = useWork("goals.preview", { projectId: goal.projectId, text: goal.text }, { enabled, staleTime: 60_000 });
-  const e = preview.data?.estimate;
-  if (!e) return null;
-  return e.usd === null ? g.t("replan.unknown") : g.t("replan.estimate", { usd: g.f.usd(e.usd) });
+  const p = preview.data;
+  // Screenshot fixtures answer unknown methods with a task; only a preview has `canPlan`.
+  if (!enabled || !p || typeof p.canPlan !== "boolean") return { label: null, blocked: null };
+  if (!p.canPlan) return { label: null, blocked: g.t(`errors.${codeKey(p.reason?.code ?? "goal.no_planner")}`, { defaultValue: g.t("errors.goal_no_planner") }) };
+  const c = planCost(p.estimate, p.ceilingUsd);
+  return { label: g.t(`replan.${c.key}`, { usd: c.usd === null ? "" : g.f.usd(c.usd), ceiling: c.ceiling === null ? "" : g.f.usd(c.ceiling) }), blocked: null };
 }
 
 /** "02 Server: passkey registration", or the last review, for decision and need lines. */
@@ -127,17 +138,37 @@ function useDecisionText(goal: Pick<GoalDetail, "tasks" | "integration" | "stuck
 
 const DECISION_ICON = { conflict: GitMerge, prerequisite: CircleX, stop_rule: CircleAlert, stuck: CircleAlert, changes: ListChecks, report: FileText, profile_gone: CircleAlert } as const;
 
+/** A Replan button: its planning cost on the button, disabled until that cost is known. */
+function ReplanButton({ cost, locked, onClick, label }: { cost: ReplanCost; locked: boolean; onClick: (e: MouseEvent<HTMLElement>) => void; label?: string }) {
+  const { t } = useTranslation("goals");
+  return (
+    <>
+      <Button size="sm" disabled={locked || cost.label === null} onClick={onClick}>
+        {cost.label ? t("replan.go", { cost: cost.label }) : (label ?? t("answer.replan"))}
+      </Button>
+      {cost.blocked && <span className="muted tk-small">{cost.blocked}</span>}
+    </>
+  );
+}
+
 /**
  * One goal decision with its answers (GOAL_DECISION_ACTIONS, suggested first). The Inbox's goal
- * list shows the same row with the same buttons. Replan states its planning cost on the button.
+ * list shows the same row with the same buttons. Replan states its planning cost on the button,
+ * and Stop goal names what it cancels and the spend so far before it asks.
  */
-export function GoalDecisionRow({ goal, decision, apply, replanCost, locked = false }: { goal: GoalDetail; decision: GoalDecisionView; apply: Apply; replanCost: string | null; locked?: boolean }) {
+export function GoalDecisionRow({ goal, decision, apply, replanCost, locked = false }: { goal: GoalDetail; decision: GoalDecisionView; apply: Apply; replanCost: ReplanCost; locked?: boolean }) {
   const { t } = useTranslation("goals");
   const text = useDecisionText(goal)(decision);
   const { selectTask } = useNav();
   const inspect = useInspector((s) => s.open);
+  const [stopping, setStopping] = useState(false);
+  const stopButton = useRef<HTMLElement | null>(null);
   const Icon = DECISION_ICON[decision.kind];
   const answer = (action: GoalDecisionAction) => apply(() => act("goals.decide", { goalId: goal.id, decisionId: decision.id, action }));
+  const closeStop = () => {
+    setStopping(false);
+    stopButton.current?.focus();
+  };
   return (
     <div className="gv-need">
       <Icon size={16} strokeWidth={1.75} aria-hidden="true" className="gv-need-icon st-wait" />
@@ -151,11 +182,21 @@ export function GoalDecisionRow({ goal, decision, apply, replanCost, locked = fa
         <span className="gv-acts">
           {decision.actions.map((a) =>
             a === "stop" ? (
-              <ConfirmButton key={a} label={t("answer.stop")} confirm={t("answer.stopConfirm")} confirmLabel={t("answer.stop")} disabled={locked} onConfirm={() => answer(a)} />
-            ) : a === "replan" ? (
-              <Button key={a} size="sm" disabled={locked || replanCost === null} onClick={() => void answer(a)}>
-                {replanCost ? t("replan.go", { cost: replanCost }) : t("answer.replan")}
+              <Button
+                key={a}
+                size="sm"
+                variant="danger"
+                aria-expanded={stopping}
+                disabled={locked}
+                onClick={(e) => {
+                  stopButton.current = e.currentTarget;
+                  setStopping((v) => !v);
+                }}
+              >
+                {t("action.stop")}
               </Button>
+            ) : a === "replan" ? (
+              <ReplanButton key={a} cost={replanCost} locked={locked} onClick={() => void answer(a)} />
             ) : (
               <Button key={a} size="sm" tone={DECISION_TONE[a]} disabled={locked} onClick={() => void answer(a)}>
                 {t(`answer.${a}`)}
@@ -175,6 +216,7 @@ export function GoalDecisionRow({ goal, decision, apply, replanCost, locked = fa
             </Button>
           )}
         </span>
+        {stopping && <StopConfirm goal={goal} onConfirm={() => answer("stop")} onDone={closeStop} />}
       </span>
     </div>
   );
@@ -223,7 +265,37 @@ function RequestNeed({ q, name }: { q: RequestView; name: string }) {
   );
 }
 
-function NeedRow({ need, goal, apply, replanCost, locked, onReviewPlan }: { need: GoalNeed; goal: GoalDetail; apply: Apply; replanCost: string | null; locked: boolean; onReviewPlan?: () => void }) {
+/** Opens one of the goal view's forms (Replan, Stop goal…, Add task) from a Needs you line. */
+type OpenSlot = (slot: "replan" | "stop" | "add", e: MouseEvent<HTMLElement>) => void;
+
+/**
+ * A Needs you line with no open decision behind it (halted after its decision was answered, stuck,
+ * nothing left): what can be done without one (design §3.8). Replan opens its form, which states
+ * the planning cost; Stop goal… shows what it cancels first.
+ */
+function FallbackActions({ goal, locked, onSlot, add = false }: { goal: GoalDetail; locked: boolean; onSlot?: OpenSlot; add?: boolean }) {
+  const { t } = useTranslation("goals");
+  if (!onSlot) return null;
+  return (
+    <>
+      {add && (
+        <Button size="sm" disabled={locked} onClick={(e) => onSlot("add", e)}>
+          {t("action.addTask")}
+        </Button>
+      )}
+      {goal.replansLeft > 0 && (
+        <Button size="sm" disabled={locked} onClick={(e) => onSlot("replan", e)}>
+          {t("action.replan", { count: goal.replansLeft })}
+        </Button>
+      )}
+      <Button size="sm" variant="danger" disabled={locked} onClick={(e) => onSlot("stop", e)}>
+        {t("action.stop")}
+      </Button>
+    </>
+  );
+}
+
+function NeedRow({ need, goal, apply, replanCost, locked, onReviewPlan, onSlot }: { need: GoalNeed; goal: GoalDetail; apply: Apply; replanCost: ReplanCost; locked: boolean; onReviewPlan?: () => void; onSlot?: OpenSlot }) {
   const { t } = useTranslation("goals");
   const name = useTaskName(goal);
   const { selectTask } = useNav();
@@ -286,17 +358,29 @@ function NeedRow({ need, goal, apply, replanCost, locked, onReviewPlan }: { need
       );
     }
     case "halted":
-      return plain(CircleAlert, t("view.halted", { reason: need.reason }), null, null);
+      return plain(CircleAlert, t("view.halted", { reason: t(`halt.${haltKey(need.reason)}`) }), null, <FallbackActions goal={goal} locked={locked} onSlot={onSlot} />);
     case "stuck": {
       const s = goal.stuck;
       const num = (id: string) => {
         const x = goal.tasks.find((y) => y.taskId === id);
         return x ? goalNumber(x.number) : id;
       };
-      return plain(CircleAlert, s ? t("decision.stuck", { task: num(s.taskId), waitsFor: num(s.waitsFor), why: t(`why.${s.why}`) }) : t("decision.stuckPlain"), null, null);
+      return plain(
+        CircleAlert,
+        s ? t("decision.stuck", { task: num(s.taskId), waitsFor: num(s.waitsFor), why: t(`why.${s.why}`) }) : t("decision.stuckPlain"),
+        null,
+        <>
+          {s && (
+            <Button size="sm" onClick={() => open(s.waitsFor)}>
+              {t("action.openBlocking", { number: num(s.waitsFor) })}
+            </Button>
+          )}
+          <FallbackActions goal={goal} locked={locked} onSlot={onSlot} />
+        </>,
+      );
     }
     case "empty":
-      return plain(CircleAlert, t("view.empty"), null, null);
+      return plain(CircleAlert, t("view.empty"), null, <FallbackActions goal={goal} locked={locked} onSlot={onSlot} add />);
   }
 }
 
@@ -351,8 +435,12 @@ function IntegrationLine({ goal }: { goal: GoalDetail }) {
   const { selectTask } = useNav();
   const inspect = useInspector((s) => s.open);
   const i = goal.integration;
+  const started = i !== null && i.status !== "proposed" && i.status !== "queued";
+  // Once the last review runs it spends; GoalDetail carries only its estimate, so its spend is read
+  // from the task, as its own row would.
+  const detail = useWork("tasks.get", { taskId: i?.taskId ?? "" }, { enabled: started });
   if (!i) return null;
-  const started = i.status !== "proposed" && i.status !== "queued";
+  const spend = started && detail.data && detail.data.spend ? detail.data.spend : null;
   const line = i.reviewPassed
     ? { key: "integrationPassed", tone: "st-ok" }
     : i.status === "failed"
@@ -377,7 +465,10 @@ function IntegrationLine({ goal }: { goal: GoalDetail }) {
       <span className={`gv-task-state st ${line.tone}`}>{text}</span>
       <span className="gv-task-spend">
         {started ? (
-          <span className="muted">{g.t("task.noSpend")}</span>
+          <>
+            {spend && spend.usd !== null && <span className="num">{g.f.usd(spend.usd)}</span>}
+            <ProvBadge value={spend && spend.usd !== null ? spend.provenance : "unknown"} />
+          </>
         ) : i.estimate.usd !== null ? (
           <>
             <span className="num">{g.f.usd(i.estimate.usd)}</span>
@@ -392,15 +483,18 @@ function IntegrationLine({ goal }: { goal: GoalDetail }) {
 }
 
 /** `Add task`: a task you write, joined to the goal as a one-task revision with no planner call (§4.10). */
-function AddTaskForm({ goal, apply, onDone }: { goal: GoalDetail; apply: Apply; onDone: () => void }) {
+export function AddTaskForm({ goal, apply, onDone, initialTitle = "" }: { goal: GoalDetail; apply: Apply; onDone: () => void; initialTitle?: string }) {
   const g = useGoalFormat();
-  const [title, setTitle] = useState("");
+  const [title, setTitle] = useState(initialTitle);
   const [description, setDescription] = useState("");
   const [kind, setKind] = useState<TaskKind>("code");
   const [mode, setMode] = useState<TaskMode>("crew");
   const [waits, setWaits] = useState<string[]>([]);
   const candidates = goal.tasks.filter((x) => x.accepted === true && !x.discarded && x.status !== "cancelled");
-  const ready = title.trim().length > 0 && new TextEncoder().encode(title.trim()).length <= GOAL_LIMITS.titleBytes;
+  // The cap counts UTF-8 bytes; the field's maxLength counts characters, so a Turkish title can
+  // fit the field and still be too long. The reason is said beside the field, never a bare disabled button.
+  const tooLong = utf8Bytes(title.trim()) > GOAL_LIMITS.titleBytes;
+  const ready = title.trim().length > 0 && !tooLong;
   return (
     <form
       className="gv-form"
@@ -414,8 +508,9 @@ function AddTaskForm({ goal, apply, onDone }: { goal: GoalDetail; apply: Apply; 
       <Label>{g.t("add.title")}</Label>
       <label className="gv-field">
         <span className="lbl">{g.t("add.taskTitle")}</span>
-        <input value={title} maxLength={GOAL_LIMITS.titleBytes} onChange={(e) => setTitle(e.target.value)} autoFocus />
+        <input value={title} maxLength={GOAL_LIMITS.titleBytes} aria-invalid={tooLong || undefined} onChange={(e) => setTitle(e.target.value)} autoFocus />
       </label>
+      {tooLong && <p className="tk-small st-bad">{g.t("add.titleTooLong", { max: GOAL_LIMITS.titleBytes })}</p>}
       <label className="gv-field">
         <span className="lbl">{g.t("add.description")}</span>
         <textarea rows={3} value={description} maxLength={GOAL_LIMITS.descriptionBytes} onChange={(e) => setDescription(e.target.value)} />
@@ -468,7 +563,7 @@ function AddTaskForm({ goal, apply, onDone }: { goal: GoalDetail; apply: Apply; 
 }
 
 /** `Replan`: your note and the current plan go to the planner as a new revision, at the cost on the button. */
-function ReplanForm({ goal, apply, cost, onDone }: { goal: GoalDetail; apply: Apply; cost: string | null; onDone: () => void }) {
+function ReplanForm({ goal, apply, cost, onDone }: { goal: GoalDetail; apply: Apply; cost: ReplanCost; onDone: () => void }) {
   const g = useGoalFormat();
   const [note, setNote] = useState("");
   return (
@@ -476,7 +571,7 @@ function ReplanForm({ goal, apply, cost, onDone }: { goal: GoalDetail; apply: Ap
       className="gv-form"
       onSubmit={(e) => {
         e.preventDefault();
-        if (cost === null) return;
+        if (cost.label === null) return;
         void apply(() => act("goals.replan", { goalId: goal.id, note: note.trim() || undefined })).then(onDone);
       }}
       onKeyDown={(e) => e.key === "Escape" && onDone()}
@@ -490,16 +585,20 @@ function ReplanForm({ goal, apply, cost, onDone }: { goal: GoalDetail; apply: Ap
         <Button size="sm" variant="ghost" onClick={onDone}>
           {g.t("replan.cancel")}
         </Button>
-        <Button size="sm" type="submit" disabled={cost === null}>
-          {g.t("replan.go", { cost: cost ?? "…" })}
+        <Button size="sm" type="submit" disabled={cost.label === null}>
+          {g.t("replan.go", { cost: cost.label ?? "…" })}
         </Button>
+        {cost.blocked && <span className="muted tk-small">{cost.blocked}</span>}
       </div>
     </form>
   );
 }
 
-/** `Stop goal…`: names how many tasks it cancels, the running agents and the spend so far first. */
-function StopConfirm({ goal, apply, onDone }: { goal: GoalDetail; apply: Apply; onDone: () => void }) {
+/**
+ * `Stop goal…`: names how many tasks it cancels, the running agents and the spend so far first
+ * (goals.stopPreview). The goal bar's Stop and a decision's Stop answer both confirm here.
+ */
+export function StopConfirm({ goal, onConfirm, onDone }: { goal: Pick<GoalDetail, "id">; onConfirm: () => Promise<unknown>; onDone: () => void }) {
   const g = useGoalFormat();
   const preview = useWork("goals.stopPreview", { goalId: goal.id }, { staleTime: 0 });
   const p: GoalStopPreview | undefined = preview.data && typeof preview.data.cancelTasks === "number" ? preview.data : undefined;
@@ -517,7 +616,7 @@ function StopConfirm({ goal, apply, onDone }: { goal: GoalDetail; apply: Apply; 
         <Button size="sm" variant="ghost" onClick={onDone} autoFocus>
           {g.t("stop.keep")}
         </Button>
-        <Button size="sm" variant="danger" disabled={!p} onClick={() => void apply(() => act("goals.stop", { goalId: goal.id })).then(onDone)}>
+        <Button size="sm" variant="danger" disabled={!p} onClick={() => void onConfirm().then(onDone)}>
           {g.t("stop.confirm")}
         </Button>
       </div>
@@ -571,6 +670,73 @@ function LimitsForm({ goal, apply, onDone }: { goal: GoalDetail; apply: Apply; o
   );
 }
 
+/** A goal event as one plain line: when, what happened, and its readable text when it has one. */
+function FeedLine({ e }: { e: ActivityEvent }) {
+  const g = useGoalFormat();
+  // A payload with no readable string comes back as its JSON; that is for the Activity drawer, not this line.
+  const preview = e.preview.trim();
+  const readable = preview !== "" && !preview.startsWith("{") && !preview.startsWith("[");
+  return (
+    <li className="gv-feed-line">
+      <span className="num muted">{g.f.when.at(e.at)}</span>
+      <span>{g.t(`feed.kind.${codeKey(e.kind)}`, { defaultValue: e.kind })}</span>
+      {readable && <span className="muted as-typed">{capRow(preview)}</span>}
+    </li>
+  );
+}
+
+/** One page of the goal's events, newest first; the last page offers the next older one. */
+function FeedPage({ goal, before, onOlder }: { goal: Pick<GoalDetail, "id" | "projectId">; before: number | null; onOlder: ((seq: number) => void) | null }) {
+  const g = useGoalFormat();
+  const page = useWork("activity.events", { projectId: goal.projectId, kind: "goal.", goalId: goal.id, limit: GOAL_FEED_PAGE, before }, { staleTime: 10_000 });
+  const data = page.data && Array.isArray(page.data.events) ? page.data : null;
+  if (!data) return null;
+  if (data.events.length === 0 && before === null) return <li className="muted">{g.t("feed.empty")}</li>;
+  return (
+    <>
+      {data.events.map((e) => (
+        <FeedLine key={e.seq} e={e} />
+      ))}
+      {onOlder && data.older !== null && (
+        <li>
+          <Button size="sm" variant="ghost" onClick={() => onOlder(data.older!)}>
+            {g.t("feed.older")}
+          </Button>
+        </li>
+      )}
+    </>
+  );
+}
+
+/**
+ * The goal's `goal.*` events in a `Details` fold, newest first, in pages of 40 (design §3.3). It
+ * reads only while open, and a goal change refreshes it. The inspector's timeline for a task is unchanged.
+ */
+export function GoalFeed({ goal, defaultOpen = false }: { goal: Pick<GoalDetail, "id" | "projectId">; defaultOpen?: boolean }) {
+  const g = useGoalFormat();
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(defaultOpen);
+  const [pages, setPages] = useState<Array<number | null>>([null]);
+  useEffect(() => {
+    if (!open) return;
+    return window.crewyard.on("goals.changed", (p) => {
+      if ((p as { goalId?: string } | null)?.goalId === goal.id) void qc.invalidateQueries({ queryKey: ["activity.events", { goalId: goal.id }] });
+    });
+  }, [open, goal.id, qc]);
+  return (
+    <details className="gv-section gv-feed" open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
+      <summary className="lbl">{g.t("feed.title")}</summary>
+      {open && (
+        <ol>
+          {pages.map((before, i) => (
+            <FeedPage key={before ?? "newest"} goal={goal} before={before} onOlder={i === pages.length - 1 ? (seq) => setPages((x) => [...x, seq]) : null} />
+          ))}
+        </ol>
+      )}
+    </details>
+  );
+}
+
 type Slot = "add" | "replan" | "stop" | "limits" | null;
 
 /**
@@ -593,7 +759,9 @@ export function GoalView({ goal, requests, offline = false, keyboard = false, on
   const locked = offline || ended;
   const needs = goalNeeds(goal, requests);
   const rows = goal.tasks.filter((x) => !x.discarded).sort((a, b) => a.number - b.number);
-  const replanCost = useReplanCost(goal, !locked && goal.replansLeft > 0 && (slot === "replan" || needs.some((n) => n.kind === "decision" && n.decision.actions.includes("replan"))));
+  const approved = goal.approvedRevision !== null;
+  // Read whenever a replan can start, so the top button states its cost too (design §3.3).
+  const replanCost = useReplanCost(goal, !locked && approved && goal.replansLeft > 0);
   const writersWaitOn = new Set(goal.tasks.filter((x) => x.writes && x.accepted === true && !x.discarded).flatMap((x) => x.dependsOn.map((d) => d.taskId)));
   const joined = goal.joins.filter((j) => j.outcome === "joined");
   useListKeys(
@@ -611,11 +779,14 @@ export function GoalView({ goal, requests, offline = false, keyboard = false, on
     opener.current = e.currentTarget;
     setSlot((cur) => (cur === s ? null : s));
   };
+  const openSlot: OpenSlot = (s, e) => {
+    opener.current = e.currentTarget;
+    setSlot(s);
+  };
   const close = () => {
     setSlot(null);
     opener.current?.focus();
   };
-  const approved = goal.approvedRevision !== null;
 
   return (
     <Panel className="gv" aria-label={g.t("view.label", { title: goal.title })}>
@@ -663,7 +834,7 @@ export function GoalView({ goal, requests, offline = false, keyboard = false, on
           {g.t("action.addTask")}
         </Button>
         <Button size="sm" aria-expanded={slot === "replan"} disabled={locked || !approved || goal.replansLeft <= 0} onClick={(e) => toggle("replan", e)}>
-          {goal.replansLeft > 0 ? g.t("action.replan", { count: goal.replansLeft }) : g.t("action.replanNone")}
+          {goal.replansLeft <= 0 ? g.t("action.replanNone") : replanCost.label ? g.t("action.replanCost", { count: goal.replansLeft, cost: replanCost.label }) : g.t("action.replan", { count: goal.replansLeft })}
         </Button>
         <Button size="sm" aria-expanded={slot === "limits"} variant="ghost" disabled={locked || !approved} onClick={(e) => toggle("limits", e)}>
           {g.t("action.more")}
@@ -685,10 +856,11 @@ export function GoalView({ goal, requests, offline = false, keyboard = false, on
           </Button>
         )}
       </div>
+      {replanCost.blocked && <p className="muted tk-small">{replanCost.blocked}</p>}
       {goal.status === "ready_for_review" && <p className="gv-note st-ok">{g.t("view.readyForPr")}</p>}
       {slot === "add" && <AddTaskForm goal={goal} apply={apply} onDone={close} />}
       {slot === "replan" && <ReplanForm goal={goal} apply={apply} cost={replanCost} onDone={close} />}
-      {slot === "stop" && <StopConfirm goal={goal} apply={apply} onDone={close} />}
+      {slot === "stop" && <StopConfirm goal={goal} onConfirm={() => apply(() => act("goals.stop", { goalId: goal.id }))} onDone={close} />}
       {slot === "limits" && <LimitsForm goal={goal} apply={apply} onDone={close} />}
       <ErrorLine>{error}</ErrorLine>
 
@@ -696,7 +868,7 @@ export function GoalView({ goal, requests, offline = false, keyboard = false, on
         <section className="gv-section" aria-label={g.t("view.needsYou", { count: needs.length })}>
           <div className="lbl gv-sub st-wait">{g.t("view.needsYou", { count: needs.length })}</div>
           {needs.map((n, i) => (
-            <NeedRow key={n.kind === "decision" ? n.decision.id : n.kind === "request" ? n.request.id : `${n.kind}-${i}`} need={n} goal={goal} apply={apply} replanCost={replanCost} locked={locked} onReviewPlan={onReviewPlan} />
+            <NeedRow key={n.kind === "decision" ? n.decision.id : n.kind === "request" ? n.request.id : `${n.kind}-${i}`} need={n} goal={goal} apply={apply} replanCost={replanCost} locked={locked} onReviewPlan={onReviewPlan} onSlot={openSlot} />
           ))}
         </section>
       )}
@@ -726,6 +898,7 @@ export function GoalView({ goal, requests, offline = false, keyboard = false, on
           </ol>
         </details>
       )}
+      <GoalFeed goal={goal} />
     </Panel>
   );
 }

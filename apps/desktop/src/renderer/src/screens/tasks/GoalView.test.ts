@@ -2,11 +2,11 @@ import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it } from "vitest";
-import type { GoalDetail, GoalPreview, GoalSummary, RequestView, TaskDetail, TaskSummary } from "@crewyard/core";
+import type { ActivityPage, GoalDetail, GoalPreview, GoalStopPreview, GoalSummary, RequestView, TaskDetail, TaskSummary } from "@crewyard/core";
 import { initI18n } from "../../i18n.ts";
 import { approvalRequest, cost, decision, goalDetail } from "./goalTestData.ts";
 import { GoalRow } from "./GoalRow.tsx";
-import { GoalView } from "./GoalView.tsx";
+import { AddTaskForm, capRow, GoalFeed, GoalView, ROW_TEXT_MAX, StopConfirm } from "./GoalView.tsx";
 import { TaskRow } from "./TaskRow.tsx";
 
 // Component tests for the goal view, the goal row and a goal task's own row (design §3.3, §3.4).
@@ -44,6 +44,8 @@ const enabled = (html: string, label: string, exact = false) => {
 };
 
 const view = (goal: GoalDetail, requests: RequestView[] = [], seed?: (qc: QueryClient) => void, offline = false) => render(createElement(GoalView, { goal, requests, offline }), seed);
+const seedPreview = (goal: GoalDetail, preview: Partial<GoalPreview>) => (qc: QueryClient) => qc.setQueryData(["goals.preview", { projectId: goal.projectId, text: goal.text }], preview);
+const halted = (over: Partial<GoalDetail> = {}) => goalDetail({ status: "needs_you", reason: "halted", halted: { reason: "same_failure", at: "2026-10-31T10:00:00.000Z" }, ...over });
 
 describe("GoalView", () => {
   it("running: status with n of m, spend against the budget with its provenance, branch and why each task waits", () => {
@@ -101,11 +103,86 @@ describe("GoalView", () => {
     expect(button(unpriced, "Stop goal")).not.toBeNull();
     // Every model call starts from a click that showed its cost: no price read yet, no Replan.
     expect(enabled(unpriced, "Replan", true)).toBe(false);
-    const preview: Partial<GoalPreview> = { estimate: cost(0.31), ceilingUsd: 0.93 };
-    const priced = view(goal, [], (qc) => qc.setQueryData(["goals.preview", { projectId: goal.projectId, text: goal.text }], preview));
-    expect(enabled(priced, "Replan · ~$0.31 Estimated")).toBe(true);
+    const priced = view(goal, [], seedPreview(goal, { canPlan: true, estimate: cost(0.31), ceilingUsd: 0.93 }));
+    // The estimate and the planning run's ceiling, on the decision's button and on the goal bar's.
+    expect(enabled(priced, "Replan · ~$0.31 Estimated, up to $0.93")).toBe(true);
+    expect(text(priced)).toContain("Replan · 3 left · ~$0.31 Estimated, up to $0.93");
     // The halt is said once, by its decision.
     expect(text(priced).match(/Halted:/g)?.length).toBe(1);
+  });
+
+  it("Replan says no API cost for a sign-in planner, cost unknown with its ceiling, and why no planner can run", () => {
+    const goal = halted({ decisions: [decision({ payload: { rule: "same_failure" } })] });
+    expect(enabled(view(goal, [], seedPreview(goal, { canPlan: true, estimate: cost(0), ceilingUsd: 0.25 })), "Replan · no API cost")).toBe(true);
+    expect(enabled(view(goal, [], seedPreview(goal, { canPlan: true, estimate: cost(null, "unknown"), ceilingUsd: 0.75 })), "Replan · cost unknown, up to $0.75")).toBe(true);
+    const blocked = view(goal, [], seedPreview(goal, { canPlan: false, reason: { code: "goal.no_planner" as never }, estimate: cost(null, "unknown"), ceilingUsd: null }));
+    expect(enabled(blocked, "Replan", true)).toBe(false);
+    expect(text(blocked)).toContain("No profile can plan read-only here. Add one, or use Crew.");
+  });
+
+  it("halted after its decision was answered: the halt in words, never the rule's code, with Replan and Stop goal…", () => {
+    const answered = decision({ payload: { rule: "same_failure" }, answeredAt: "2026-10-31T10:05:00.000Z", answer: "replan" });
+    const html = view(halted({ decisions: [answered] }));
+    const t = text(html);
+    expect(t).toContain("Halted: two tasks failed the same way");
+    expect(t).not.toContain("same_failure");
+    expect(button(html, "Replan · 3 left")).not.toBeNull();
+    expect(html.split("Stop goal…").length - 1).toBe(2);
+    expect(text(view(halted({ halted: { reason: "failed_tasks", at: "2026-10-31T10:00:00.000Z" } })))).toContain("Halted: three tasks failed");
+    expect(text(view(halted({ halted: { reason: "something_new", at: "2026-10-31T10:00:00.000Z" } })))).toContain("Halted: a stop rule fired");
+  });
+
+  it("a decision's Stop goal opens the same confirm as the goal bar's, never a fixed sentence", () => {
+    const html = view(halted({ decisions: [decision({ payload: { rule: "same_failure" } })] }));
+    expect(text(html)).not.toContain("Unfinished tasks are cancelled");
+    expect(button(html, "Stop goal…")).toContain('aria-expanded="false"');
+  });
+
+  it("Stop goal… names the tasks it cancels, the running agents and the spend so far with its label", () => {
+    const preview: GoalStopPreview = { cancelTasks: 3, runningRuns: 1, spend: cost(1.12, "reported") };
+    const props = { goal: { id: "g1" }, onConfirm: async () => undefined, onDone: () => undefined };
+    const html = render(createElement(StopConfirm, props), (qc) => qc.setQueryData(["goals.stopPreview", { goalId: "g1" }], preview));
+    expect(text(html)).toContain("Stop this goal? It cancels 3 tasks and stops 1 running agent. Spent so far: $1.12. Worktrees and branches are kept. Reported");
+    expect(enabled(html, "Stop goal", true)).toBe(true);
+    const loading = render(createElement(StopConfirm, props));
+    expect(text(loading)).toContain("Counting what it stops");
+    expect(enabled(loading, "Stop goal", true)).toBe(false);
+  });
+
+  it("stuck with no decision open still offers the task it waits for, Replan and Stop goal…", () => {
+    const goal = goalDetail({ status: "needs_you", reason: "stuck", stuck: { taskId: "t3", waitsFor: "t2", why: "finish" } });
+    const html = view(goal);
+    expect(text(html)).toContain("Stuck: 03 waits for 02, which has not finished");
+    expect(button(html, "Open 02")).not.toBeNull();
+    expect(html.split("Stop goal…").length - 1).toBe(2);
+  });
+
+  it("the last review shows its spend with a label once it runs, Unknown until that is read", () => {
+    const goal = goalDetail({ integration: { taskId: "ti", status: "running", reviewPassed: false, estimate: cost(0.17), shareUsd: 0.2 } });
+    expect(text(view(goal))).toContain("Last review of all changes Running Unknown");
+    const t = text(view(goal, [], (qc) => qc.setQueryData(["tasks.get", { taskId: "ti" }], { id: "ti", spend: cost(0.05, "reported") })));
+    expect(t).toMatch(/Last review of all changes Running \$0\.050? Reported/);
+  });
+
+  it("caps untrusted decision text at 600 characters, Turkish included", () => {
+    const long = "Doğrulama başarısız; çıktı şöyle: ".repeat(40);
+    expect(long.length).toBeGreaterThan(1000);
+    const capped = capRow(long);
+    expect(capped.length).toBe(ROW_TEXT_MAX);
+    expect(capped.endsWith("…")).toBe(true);
+    const t = text(view(goalDetail({ status: "needs_you", reason: "decision", decisions: [decision({ kind: "changes", payload: { findings: long } })] })));
+    expect(t).toContain(capped.trim());
+    expect(t).not.toContain(long.slice(0, 700).trim());
+  });
+
+  it("Add task says a Turkish title over the byte cap is too long instead of a bare disabled button", () => {
+    const apply = async () => undefined;
+    const tooLong = render(createElement(AddTaskForm, { goal: goalDetail(), apply, onDone: () => undefined, initialTitle: "Şifre sıfırlama akışını güçlendir ".repeat(4) }));
+    expect(text(tooLong)).toContain("The title is too long: at most 120 bytes");
+    expect(enabled(tooLong, "Add to the goal")).toBe(false);
+    const fits = render(createElement(AddTaskForm, { goal: goalDetail(), apply, onDone: () => undefined, initialTitle: "Şifre sıfırlama" }));
+    expect(text(fits)).not.toContain("too long");
+    expect(enabled(fits, "Add to the goal")).toBe(true);
   });
 
   it("stuck: names the task that cannot start and the failed one it waits for", () => {
@@ -209,6 +286,32 @@ const taskSummary = (id: string, goal: TaskSummary["goal"], over: Partial<TaskSu
   ...over,
 });
 const ref = (number: number, over: Partial<NonNullable<TaskSummary["goal"]>> = {}): NonNullable<TaskSummary["goal"]> => ({ goalId: "g1", key: `k${number}`, number, waiting: false, hold: null, joined: false, hidden: false, role: "task", ...over });
+
+describe("GoalFeed", () => {
+  const goal = { id: "g1", projectId: "p1" };
+  const key = (before: number | null) => ["activity.events", { projectId: "p1", kind: "goal.", goalId: "g1", limit: 40, before }];
+  const event = (seq: number, kind: string, preview: string) => ({ seq, at: "2026-10-31T10:00:00.000Z", kind, source: "orchestrator", taskId: null, runId: null, preview, size: preview.length });
+
+  it("lists the goal's events newest first in pages of 40, as plain lines, with Show older", () => {
+    const page: ActivityPage = { events: [event(12, "goal.paused", '{"goalId":"g1"}'), event(11, "goal.joined", "aaaaaaa"), event(10, "goal.created", "Geçiş anahtarları")], older: 10 };
+    const html = render(createElement(GoalFeed, { goal, defaultOpen: true }), (qc) => qc.setQueryData(key(null), page));
+    const t = text(html);
+    expect(t).toContain("Details");
+    expect(t.indexOf("Paused")).toBeLessThan(t.indexOf("Merged into the goal branch"));
+    expect(t).toContain("Goal created");
+    expect(t).toContain("Geçiş anahtarları");
+    // A payload without readable text is the Activity drawer's business, not a raw JSON line here.
+    expect(t).not.toContain("goalId");
+    expect(button(html, "Show older")).not.toBeNull();
+  });
+
+  it("reads nothing while folded, and says when there is nothing yet", () => {
+    expect(text(render(createElement(GoalFeed, { goal }))).trim()).toBe("Details");
+    const empty = render(createElement(GoalFeed, { goal, defaultOpen: true }), (qc) => qc.setQueryData(key(null), { events: [], older: null }));
+    expect(text(empty)).toContain("No goal events yet.");
+    expect(button(empty, "Show older")).toBeNull();
+  });
+});
 
 describe("GoalRow", () => {
   const tasks = [taskSummary("t2", ref(2)), taskSummary("t1", ref(1)), taskSummary("tp", ref(0, { hidden: true, role: "planning" })), taskSummary("other", null)];

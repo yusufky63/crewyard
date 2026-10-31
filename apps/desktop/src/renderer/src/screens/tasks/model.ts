@@ -1,4 +1,4 @@
-import { providerErrorLine, providerErrorRaw, splitEndDetail, STATUS_FILTER, type CandidateView, type GoalDecisionView, type GoalDetail, type GoalNeedsReason, type GoalSummary, type GoalTaskView, type HandoffView, type LoopDecisionKind, type CrewMemberView, type LimitNoticePayload, type LimitWindow, type Reason, type RequestKind, type RequestView, type RunView, type TaskDetail, type TaskGoalRef, type TaskStatus, type TaskSummary } from "@crewyard/core";
+import { providerErrorLine, providerErrorRaw, splitEndDetail, STATUS_FILTER, type CandidateView, type CostEstimate, type GoalDecisionView, type GoalDetail, type GoalNeedsReason, type GoalSummary, type GoalTaskView, type HandoffView, type LoopDecisionKind, type CrewMemberView, type LimitNoticePayload, type LimitWindow, type Reason, type RequestKind, type RequestView, type RunView, type TaskDetail, type TaskGoalRef, type TaskStatus, type TaskSummary } from "@crewyard/core";
 import type { InspectorTarget } from "../../inspector.ts";
 
 // Pure view logic for the Tasks screen, the Inbox and the inspector. The app has no DOM test
@@ -168,6 +168,27 @@ export function reportsToAccept(tasks: readonly Pick<GoalTaskView, "taskId" | "w
   const writersWaitOn = new Set(tasks.filter((t) => t.writes && t.accepted === true && !t.discarded).flatMap((t) => t.dependsOn.map((d) => d.taskId)));
   return tasks.filter((t) => !t.writes && t.accepted === true && !t.discarded && (t.status === "done" || t.status === "review") && !t.reportAcceptedAt && writersWaitOn.has(t.taskId)).map((t) => t.taskId);
 }
+
+/**
+ * What a planning run costs, as the Replan button says it (design §1.3): "~$x Estimated, up to $y",
+ * "cost unknown", or no API cost for a sign-in or local planner (its estimate is $0). The ceiling is
+ * the planning run's own budget, never more than it may spend.
+ */
+export function planCost(estimate: CostEstimate, ceilingUsd: number | null): { key: "noApiCost" | "estimate" | "estimateUpTo" | "unknown" | "unknownUpTo"; usd: number | null; ceiling: number | null } {
+  const ceiling = ceilingUsd !== null && ceilingUsd > 0 ? ceilingUsd : null;
+  if (estimate.usd === 0) return { key: "noApiCost", usd: 0, ceiling: null };
+  if (estimate.usd === null) return { key: ceiling === null ? "unknown" : "unknownUpTo", usd: null, ceiling };
+  return { key: ceiling === null ? "estimate" : "estimateUpTo", usd: estimate.usd, ceiling };
+}
+
+/** UTF-8 bytes, the unit every goal text cap counts in (GOAL_LIMITS); ç, ğ, ı, ö, ş and ü are two each. */
+export const utf8Bytes = (s: string) => new TextEncoder().encode(s).length;
+
+/** Which `halt.*` line a goal's halt reads with: the runner stores its stop-rule code, never words. */
+export const haltKey = (reason: string): "same_failure" | "failed_tasks" | "other" => (reason === "same_failure" || reason === "failed_tasks" ? reason : "other");
+
+/** Goal events per page in the goal view's Details fold (design §3.3). */
+export const GOAL_FEED_PAGE = 40;
 
 /** The goal budget meter: spend as a share of the budget; null (Unknown) without a number on either side. */
 export function goalSpendPct(g: Pick<GoalSummary, "spend" | "budgetUsd">): number | null {
@@ -408,6 +429,12 @@ export function limitBanner(detail: TaskDetail, notices: LimitNoticePayload[]): 
   const { n, run } = best;
   return { kind: n.kind as LimitBannerInfo["kind"], runId: run.id, profileId: run.profileId, window: n.window, usedPct: n.usedPct, resetsAt: n.resetsAt, minutesUntilFull: n.minutesUntilFull, target: n.window === "context" ? null : standbyFor(run) };
 }
+
+/**
+ * Whether selecting a task opens its crew proposal with Approve. A goal task waiting for its turn
+ * derives `proposed` too, but it starts with its plan: the daemon refuses its approval (design §3.2).
+ */
+export const offersCrewProposal = (t: Pick<TaskSummary, "status" | "goal"> | undefined): boolean => t?.status === "proposed" && !t.goal;
 
 /** Tasks with a proposal you still have to approve or cancel; a goal task starts with its plan instead. */
 export const awaitingApproval = (tasks: TaskSummary[]) => tasks.filter((t) => t.status === "proposed" && !t.goal);

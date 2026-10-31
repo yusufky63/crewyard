@@ -11,6 +11,7 @@ import {
   filterCounts,
   FILTERS,
   formatDuration,
+  GOAL_FEED_PAGE,
   goalBucket,
   goalFolded,
   goalMatchesFilter,
@@ -20,14 +21,18 @@ import {
   goalSpendPct,
   goalStatusLine,
   goalTaskLine,
+  haltKey,
   limitBanner,
   loopLook,
   matchesFilter,
+  offersCrewProposal,
+  planCost,
   reportsToAccept,
   resolveTarget,
   runnersOf,
   splitTaskText,
   statusLine,
+  utf8Bytes,
   stepState,
   taskBucket,
   taskMatchesFilter,
@@ -391,10 +396,52 @@ describe("goal needs you", () => {
     expect(goalNeeds({ ...g, status: "stopped" }, [approvalRequest("t2")])).toEqual([]);
   });
 
+  it("still says a halt once its stop-rule decision is answered, as long as the goal stays halted", () => {
+    const g = goalDetail({ status: "needs_you", reason: "halted", halted: { reason: "same_failure", at: "x" }, decisions: [decision({ answeredAt: "x", answer: "replan" })] });
+    expect(goalNeeds(g, [])).toEqual([{ kind: "halted", reason: "same_failure" }]);
+  });
+
   it("asks for a report only when a writing task waits for it, until you accept it", () => {
     const tasks = [goalTask(1, { writes: false, status: "done" }), goalTask(2, { released: false, status: "proposed", dependsOn: [{ taskId: "t1", key: "k1", source: "plan" }] }), goalTask(4, { writes: false, status: "done" })];
     expect(reportsToAccept(tasks)).toEqual(["t1"]);
     expect(reportsToAccept([{ ...tasks[0]!, reportAcceptedAt: "x" }, tasks[1]!])).toEqual([]);
     expect(reportsToAccept([tasks[0]!, { ...tasks[1]!, accepted: false }])).toEqual([]);
+  });
+});
+
+describe("goal tasks in the Tasks screen", () => {
+  it("never opens a crew proposal with Approve for a waiting goal task", () => {
+    const waiting: TaskGoalRef = { goalId: "g1", key: "k3", number: 3, waiting: true, hold: null, joined: false, hidden: false };
+    expect(offersCrewProposal({ status: "proposed", goal: null })).toBe(true);
+    expect(offersCrewProposal({ status: "proposed", goal: waiting })).toBe(false);
+    expect(offersCrewProposal({ status: "running", goal: null })).toBe(false);
+    expect(offersCrewProposal(undefined)).toBe(false);
+  });
+});
+
+describe("goal costs, caps and words", () => {
+  it("states a planning run's estimate with its ceiling, no API cost for $0, and Unknown never as a number", () => {
+    expect(planCost(cost(0.31), 0.93)).toEqual({ key: "estimateUpTo", usd: 0.31, ceiling: 0.93 });
+    expect(planCost(cost(0.31), null)).toEqual({ key: "estimate", usd: 0.31, ceiling: null });
+    expect(planCost(cost(0), 0.25)).toEqual({ key: "noApiCost", usd: 0, ceiling: null });
+    expect(planCost(cost(null, "unknown"), 0.75)).toEqual({ key: "unknownUpTo", usd: null, ceiling: 0.75 });
+    expect(planCost(cost(null, "unknown"), 0)).toEqual({ key: "unknown", usd: null, ceiling: null });
+  });
+
+  it("counts goal text caps in UTF-8 bytes, as the daemon does", () => {
+    expect(utf8Bytes("abc")).toBe(3);
+    // Sixty Turkish letters fit a 120-character field but are 120 bytes; one more is over.
+    expect(utf8Bytes("ş".repeat(60))).toBe(120);
+    expect(utf8Bytes("ş".repeat(61))).toBeGreaterThan(120);
+  });
+
+  it("reads a halt's stored rule code as words, with a line for codes it does not know", () => {
+    expect(haltKey("same_failure")).toBe("same_failure");
+    expect(haltKey("failed_tasks")).toBe("failed_tasks");
+    expect(haltKey("budget")).toBe("other");
+  });
+
+  it("pages the goal feed by 40", () => {
+    expect(GOAL_FEED_PAGE).toBe(40);
   });
 });

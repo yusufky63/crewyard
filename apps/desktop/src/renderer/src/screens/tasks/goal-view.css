@@ -57,6 +57,12 @@
 .gv-merges summary { cursor: pointer; padding: 4px 0; }
 .gv-merges ol { margin: 6px 0 0; padding-left: 20px; display: grid; gap: 4px; font-size: 12px; color: var(--ink-2); }
 
+/* The goal's events, newest first, as plain lines. */
+.gv-feed summary { cursor: pointer; padding: 4px 0; }
+.gv-feed ol { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; font-size: 12px; color: var(--ink-2); }
+.gv-feed-line { display: grid; grid-template-columns: 96px minmax(0, auto) minmax(0, 1fr); gap: 10px; align-items: baseline; }
+.gv-feed-line .as-typed { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* Add task, Replan, Stop and Limits open in place, one at a time. */
 .gv-form { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--line); background: var(--surface); }
 .gv-form p { margin: 0; }

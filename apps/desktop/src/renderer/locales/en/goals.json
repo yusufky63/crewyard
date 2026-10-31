@@ -112,6 +112,8 @@
     "addTask": "Add task",
     "replan_one": "Replan · {{count}} left",
     "replan_other": "Replan · {{count}} left",
+    "replanCost_one": "Replan · {{count}} left · {{cost}}",
+    "replanCost_other": "Replan · {{count}} left · {{cost}}",
     "replanNone": "No replans left",
     "stop": "Stop goal…",
     "openPr": "Open pull request",
@@ -122,7 +124,8 @@
     "reviewPlan": "Review plan",
     "openGoal": "Open goal",
     "more": "Limits",
-    "close": "Close"
+    "close": "Close",
+    "openBlocking": "Open {{number}}"
   },
   "replan": {
     "note": "Note to the planner (optional)",
@@ -130,7 +133,10 @@
     "cancel": "Cancel",
     "estimate": "~{{usd}} Estimated",
     "unknown": "cost unknown",
-    "hint": "One read-only planning run. Done, running and merged tasks stay as they are; the new plan waits for your approval."
+    "hint": "One read-only planning run. Done, running and merged tasks stay as they are; the new plan waits for your approval.",
+    "noApiCost": "no API cost",
+    "estimateUpTo": "~{{usd}} Estimated, up to {{ceiling}}",
+    "unknownUpTo": "cost unknown, up to {{ceiling}}"
   },
   "stop": {
     "preview": "Stop this goal? It cancels {{tasks}} and stops {{runs}}. Spent so far: {{spend}}. Worktrees and branches are kept.",
@@ -158,7 +164,8 @@
     "none": "Nothing: it may start at once",
     "submit": "Add to the goal",
     "cancel": "Cancel",
-    "note": "It joins the goal as a one-task plan that you approve with one click. No planner runs."
+    "note": "It joins the goal as a one-task plan that you approve with one click. No planner runs.",
+    "titleTooLong": "The title is too long: at most {{max}} bytes, and letters such as ç or ş count as two."
   },
   "decision": {
     "conflict": "Merging {{task}} into the goal branch conflicts",
@@ -193,8 +200,7 @@
     "resume": "Resume",
     "retry": "Retry",
     "stop": "Stop goal",
-    "accept_report": "Accept report",
-    "stopConfirm": "Stop the goal? Unfinished tasks are cancelled; worktrees and branches are kept."
+    "accept_report": "Accept report"
   },
   "inbox": {
     "section_one": "Goals · {{count}}",
@@ -240,5 +246,38 @@
     "goal_not_paused": "The goal is not paused.",
     "goal_no_integration": "This goal has no goal branch.",
     "goal_collapse_after_approval": "Run as one task works only before approval."
+  },
+  "halt": {
+    "same_failure": "two tasks failed the same way",
+    "failed_tasks": "three tasks failed",
+    "other": "a stop rule fired"
+  },
+  "feed": {
+    "title": "Details",
+    "older": "Show older",
+    "empty": "No goal events yet.",
+    "kind": {
+      "goal_created": "Goal created",
+      "goal_planning_started": "Planning started",
+      "goal_planned": "Plan ready",
+      "goal_plan_failed": "Planning failed",
+      "goal_revised": "Plan revised",
+      "goal_approved": "Plan approved",
+      "goal_task_released": "Task released",
+      "goal_task_held": "Task held",
+      "goal_task_failed": "Task failed",
+      "goal_report_accepted": "Report accepted",
+      "goal_joined": "Merged into the goal branch",
+      "goal_join_conflict": "Merge conflict",
+      "goal_decision": "Decision raised",
+      "goal_decided": "Decision answered",
+      "goal_paused": "Paused",
+      "goal_resumed": "Resumed",
+      "goal_halted": "Halted",
+      "goal_stopped": "Stopped",
+      "goal_finished": "Finished",
+      "goal_error": "Scheduling error",
+      "goal_limits": "Limits changed"
+    }
   }
 }
