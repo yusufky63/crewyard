@@ -4,7 +4,7 @@ import { useNav } from "../../nav.ts";
 // Settings is a launch screen, so the sidebar hides while it shows; it remembers where it was
 // opened from so Back returns there, and which section to scroll to.
 
-export const SECTIONS = ["general", "projects", "notifications", "startup", "fallback", "autopilot", "mcp", "roles", "agentfiles", "data", "updates", "about"] as const;
+export const SECTIONS = ["general", "projects", "notifications", "startup", "fallback", "autopilot", "mcp", "external", "roles", "agentfiles", "data", "updates", "about"] as const;
 export type SectionId = (typeof SECTIONS)[number];
 
 interface SettingsNav {

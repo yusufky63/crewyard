@@ -15,6 +15,7 @@ import { createActivityHandlers } from "./handlers/activity.ts";
 import { createAgentFilesHandlers } from "./handlers/agentfiles.ts";
 import { createAssistantHandlers } from "./handlers/assistant.ts";
 import { createProblemsHandlers } from "./handlers/problems.ts";
+import { createExternalHandlers } from "./handlers/external.ts";
 import type { HandlerContext, HandlerMap } from "./handlers/types.ts";
 import { checkDefender, checkEnv, checkMachine, checkTool, TOOL_BINS } from "./machine.ts";
 import { assertFolder, scanForRepos } from "./projects.ts";
@@ -63,6 +64,7 @@ export function createHandlers(ctx: HandlerContext): Handlers {
     ...createAgentFilesHandlers(ctx),
     ...createAssistantHandlers(ctx),
     ...createProblemsHandlers(ctx),
+    ...createExternalHandlers(ctx),
   };
 }
 

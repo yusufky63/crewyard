@@ -38,3 +38,5 @@ export * from "./autopilot.ts";
 export * from "./ipc/assistant.ts";
 export * from "./ipc/problems.ts";
 export * from "./presets.ts";
+export * from "./external.ts";
+export * from "./ipc/external.ts";

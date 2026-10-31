@@ -181,6 +181,16 @@
       },
       "go": "Talimatlar ve skill'leri aç"
     },
+    "external": {
+      "title": "Crewyard'a başka bir ajandan ulaş",
+      "body": "Ayarlar'da Dış erişim'i açarsan Claude Code, Claude Desktop, Codex ya da Cursor MCP üzerinden projelerini, görevlerini, raporlarını, Gelen kutusunu ve harcamanı okuyabilir, bir klasörü proje olarak ekleyip ayarlarını düzenleyebilir.",
+      "points": {
+        "a": "Varsayılan olarak kapalıdır. Bağladığın her program ayrı bir istemcidir; bağlıyken görürsün ve istediğin zaman iptal edersin.",
+        "b": "İstemci görev önerebilir ama ekibi senin onayını bekler; onaylar, Gelen kutusu yanıtları, push, merge, silme ve limiti aşan harcama sende kalır.",
+        "c": "Her program için yapılandırmayı Ayarlar yazar. İçinde anahtar yoktur: Crewyard onu şifreli saklar ve aktarıcı kendisi okur."
+      },
+      "go": "Dış erişimi aç"
+    },
     "crew": {
       "title": "Ekibi düzenlemek",
       "body": "Ekip grafiğinde her değişiklik ayrı bir işlemdir; bir düğümü taşımak yalnızca yerleşimi değiştirir.",
@@ -217,6 +227,10 @@
     "subscriptions": {
       "q": "Crewyard abonelik oturumlarımı okuyor mu?",
       "a": "Hayır. Her CLI kendi giriş akışıyla, profilin kendi klasöründe oturum açar ve Crewyard bu token'ları hiçbir zaman okumaz. Claude Code profilleri yalnızca Anthropic API anahtarlarıyla çalışır."
+    },
+    "external": {
+      "q": "Claude Code ya da başka bir ajan projelerimi değiştirebilir mi?",
+      "a": "Yalnızca Ayarlar'da Dış erişim'i açarsan. Bağlı bir ajan okuyabilir, bir klasörü proje olarak ekleyebilir, bir projenin ayarlarını sıkılaştırabilir, düz değerlerle bir MCP sunucusu kaydedebilir ve görev önerebilir. Ekibi onaylayamaz, işi başlatamaz, Gelen kutusunu yanıtlayamaz, push, merge ya da silme yapamaz, bütçeyi artıramaz, anahtar okuyamaz; yaptığı her değişiklik etkinlik kaydında onun adıyla görünür."
     },
     "release": {
       "q": "Bu sürüm imzalı mı, kendini günceller mi?",

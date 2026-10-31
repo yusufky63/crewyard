@@ -26,6 +26,7 @@
     "data": "Veri",
     "about": "Hakkında",
     "mcp": "MCP sunucuları",
+    "external": "Dış erişim",
     "autopilot": "Autopilot",
     "fallback": "Yedeğe geçiş",
     "updates": "Güncellemeler",
@@ -538,5 +539,56 @@
       "fallback": "AGENTS.md olmayan klasörlerde",
       "none": "yol alamıyor"
     }
+  },
+  "external": {
+    "enabled": "Dış erişim",
+    "enabledHint": "Crewyard dışında çalıştırdığın bir ajanın (terminalde Claude Code, Claude Desktop, Codex, Cursor) MCP üzerinden Crewyard'a ulaşmasını sağlar: projelerini, görevlerini, raporlarını, Gelen kutusunu ve harcamanı okur, iş önerir. Varsayılan olarak kapalıdır. Kapalıyken Crewyard hiçbir bağlantı dinlemez.",
+    "listening": "Açık: yalnızca bu Windows hesabına açık özel bir uç noktada dinliyor.",
+    "starting": "Uç nokta başlatılıyor…",
+    "listenFailed": "Uç nokta başlatılamadı: {{error}}",
+    "can": "İstemci neler yapabilir",
+    "canHint": "Projeleri, görevleri, raporları, ekipleri, Gelen kutusunu, olayları, harcamayı, profilleri, proje ayarlarını ve MCP sunucularını okur. Var olan bir klasörü proje olarak ekler. Bir projenin slot sayısını, test ve build komutlarını, runner'larını, profillerini ve döngü sınırını değiştirir. Bütçeyi düşürür ya da bir kuralı sıkılaştırır. Görev önerir. Düz değerlerle bir MCP sunucusu ekler ya da değiştirir. Her değişiklik projenin etkinlik kaydında istemcinin adıyla görünür.",
+    "runs": "Ekiplerin çalıştıracağı komutlar ve sunucular",
+    "runsHint": "Bağlı bir ajan bir projenin test ve build komutlarını değiştirebilir, MCP sunucusu ekleyip değiştirebilir. Ekipler bunları sonraki görevlerde sana önceden sormadan çalıştırır. Her değişiklik projenin etkinlik kaydında o dış ajanın yaptığı değişiklik olarak görünür; güvenmediğin istemciyi iptal et.",
+    "cannot": "Hangileri sende kalır",
+    "cannotHint": "Ekibi onaylamak, işi başlatmak ya da durdurmak, Gelen kutusunu yanıtlamak, push, pull request, merge, herhangi bir şeyi silmek, bütçeyi artırmak ya da bir kuralı gevşetmek, limiti aşan harcama, API anahtarları ve gizli değerler, Autopilot ve bu anahtarın kendisi. İstemcinin önerdiği görev, Görevler ekranında senin onayını bekler.",
+    "fileToken": "Bu sistemde her istemcinin anahtarı yalnızca senin hesabının okuyabildiği bir dosyada durur; Windows'ta DPAPI ile şifrelenir.",
+    "clients": "İstemciler",
+    "clientsHint": "Bağladığın her program için bir tane; böylece her birini görür ve tek tek iptal edebilirsin. Yapılandırmasını programa bir kez kopyala.",
+    "none": "Henüz istemci yok.",
+    "connected": "Şu an bağlı: {{count}}",
+    "lastSeen": "Son görülme {{time}}",
+    "never": "Hiç bağlanmadı",
+    "reportedAs": "kendini {{name}} olarak tanıtıyor",
+    "calls": "Çağrı: {{count}}",
+    "showConfig": "Yapılandırmayı göster",
+    "hideConfig": "Yapılandırmayı gizle",
+    "revoke": "İptal et",
+    "revokeConfirm": "{{name}} iptal edilsin mi? Bağlantıları kapanır ve yapılandırması artık çalışmaz. Yaptığı değişiklikler etkinlik kaydında kalır.",
+    "newName": "Yeni istemci",
+    "namePlaceholder": "Bu bilgisayardaki Claude Code",
+    "add": "İstemci ekle",
+    "configFor": "{{name}} için yapılandırma",
+    "copy": "Kopyala",
+    "copied": "Kopyalandı",
+    "snippet": {
+      "claudeCode": "Claude Code",
+      "json": "Claude Desktop, Cursor",
+      "codex": "Codex"
+    },
+    "snippetHint": {
+      "claudeCode": "Bunu bir terminalde bir kez çalıştır. Crewyard'ı tüm klasörler için ekler (--scope user).",
+      "json": "Bu girdiyi claude_desktop_config.json, Cursor'ın mcp.json dosyası ya da bir projenin .mcp.json dosyasında mcpServers altına ekle, sonra programı yeniden başlat.",
+      "codex": "Bu tabloyu ~/.codex/config.toml dosyasına ekle."
+    },
+    "error": {
+      "external.name_invalid": "İstemciye tek satırlık, en fazla 80 karakterlik bir ad ver.",
+      "external.too_many": "En fazla 20 istemci olabilir. Artık kullanmadığın birini iptal et.",
+      "external.not_found": "Bu istemci artık yok. Listeyi yenile.",
+      "external.unsupported": "Bu sistem istemci anahtarını saklayamıyor."
+    },
+    "status": "Dış erişim · bağlı: {{count}}",
+    "statusFailed": "Dış erişim başlatılamadı",
+    "statusTitle": "Ayarlar > Dış erişim'i aç"
   }
 }
