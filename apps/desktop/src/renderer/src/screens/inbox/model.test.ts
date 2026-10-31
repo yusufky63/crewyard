@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CandidateView, LimitNoticePayload, RequestPayload, RequestView } from "@crewyard/core";
-import { canAllowAlways, defaultTarget, denyAnswer, emptyForm, formAnswer, formReady, handoffChoices, infoNotices, orderRequests, stallText, titleKey } from "./model.ts";
+import { canAllowAlways, defaultTarget, denyAnswer, emptyForm, formAnswer, formReady, handoffChoices, infoNotices, orderRequests, riskTone, stallText, titleKey } from "./model.ts";
 
 type Handoff = Extract<RequestPayload, { kind: "handoff" }>;
 const req = (id: string, taskId: string, createdAt: string): RequestView =>
@@ -28,6 +28,7 @@ describe("inbox", () => {
 
   it("never offers always-allow for high risk, and continue only for a spend pause", () => {
     expect([canAllowAlways("low"), canAllowAlways("medium"), canAllowAlways("high")]).toEqual([true, true, false]);
+    expect([riskTone("low"), riskTone("medium"), riskTone("high")]).toEqual(["ok", "warn", "bad"]);
     expect(handoffChoices(handoff({}))).toEqual({ handOff: true, waitForReset: false, continuePastCap: false });
     expect(handoffChoices(handoff({ trigger: "budget", resetsAt: "x", candidates: [] }))).toEqual({ handOff: false, waitForReset: true, continuePastCap: true });
     expect(handoffChoices(handoff({ trigger: "unpriced" })).continuePastCap).toBe(true);

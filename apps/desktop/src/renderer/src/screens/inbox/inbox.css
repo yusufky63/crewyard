@@ -26,6 +26,9 @@ button.ib-item:hover { background: var(--raised); }
 .ib-stall-acts { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 6px; }
 
 .ib-detail { padding: 20px; min-width: 0; }
+/* The eyebrow and the risk chip on one line, so the level reads before the command. */
+.ib-eyebrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ib-scope .badge { margin-right: 6px; }
 .ib-detail h2 { font-size: 17px; font-weight: 600; margin: 8px 0 6px; letter-spacing: -0.01em; overflow-wrap: anywhere; }
 .ib-line { font-size: 13px; margin-top: 4px; }
 .ib-link { color: var(--ink); font-weight: 500; text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }

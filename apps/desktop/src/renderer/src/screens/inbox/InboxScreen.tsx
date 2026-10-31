@@ -17,7 +17,7 @@ import { InboxSplit } from "./InboxSplit.tsx";
 import { ReportList, useReports } from "./Reports.tsx";
 import { StallList, useStalls } from "./Stalls.tsx";
 import { SwitchList, useSwitches } from "./Switches.tsx";
-import { defaultTarget, emptyForm, formAnswer, formReady, handoffChoices, infoNotices, orderRequests, titleKey, type QuestionForm } from "./model.ts";
+import { defaultTarget, emptyForm, formAnswer, formReady, handoffChoices, infoNotices, orderRequests, riskTone, titleKey, type QuestionForm } from "./model.ts";
 import "../tasks/tasks.css";
 import "./inbox.css";
 
@@ -27,6 +27,12 @@ function KindIcon({ q }: { q: RequestView }) {
   const p = q.payload;
   const Icon = p.kind === "approval" ? Terminal : p.kind === "question" ? CircleHelp : p.trigger === "budget" ? Wallet : p.trigger === "unpriced" ? CircleDollarSign : p.trigger === "manual" ? ArrowLeftRight : Gauge;
   return <Icon size={16} strokeWidth={1.75} aria-hidden="true" className={q.risk === "high" ? "ib-high" : "ib-icon"} />;
+}
+
+/** Low, Medium or High risk as a tone chip: the colour repeats the word, never replaces it. */
+function RiskBadge({ risk }: { risk: NonNullable<RequestView["risk"]> }) {
+  const { t } = useTranslation("inbox");
+  return <span className={`badge badge-${riskTone(risk)}`}>{t(`risk.${risk}`)}</span>;
 }
 
 function useTitle() {
@@ -60,7 +66,10 @@ function Item({ q, selected, onSelect }: { q: RequestView; selected: boolean; on
       <KindIcon q={q} />
       <span className="ib-text">
         <span className={`t${q.payload.kind === "approval" && q.payload.command ? " mono" : ""}`}>{title(q)}</span>
-        <span className="s">{asleep ? `${asker} · ${f.t("tasks:step.hibernated")}` : asker}</span>
+        <span className="s">
+          {q.risk && <RiskBadge risk={q.risk} />}
+          {asleep ? `${asker} · ${f.t("tasks:step.hibernated")}` : asker}
+        </span>
       </span>
       <span className="k">{f.when.ago(q.createdAt)}</span>
     </button>
@@ -89,8 +98,8 @@ function Approval({ q, p, task, answer }: { q: RequestView; p: Payload<"approval
           </>
         )}
         <dt>{t("detail.scope")}</dt>
-        <dd>
-          {t(`scope.${risk}`)} {p.network ? t("scope.network") : t("scope.noNetwork")}
+        <dd className="ib-scope">
+          <RiskBadge risk={risk} /> {t(`scope.${risk}`)} {p.network ? t("scope.network") : t("scope.noNetwork")}
         </dd>
         <dt>{t("detail.policy")}</dt>
         <dd>{p.policy ? t(`policy.${p.policy.replace(/\./g, "_")}`, { defaultValue: p.policy }) : t("policy.notAllowlisted")}</dd>
@@ -217,7 +226,7 @@ function Handoff({ p, answer }: { p: Payload<"handoff">; answer: (a: RequestAnsw
             {picked ? t("action.handOffTo", { target: `${f.runner(picked.runner)} · ${picked.alias}` }) : t("action.pickTarget")}
           </Button>
         )}
-        {choices.waitForReset && p.resetsAt && <Button onClick={() => void answer({ kind: "handoff", decision: "wait_for_reset" })}>{t("action.waitForReset", { time: f.when.at(p.resetsAt) })}</Button>}
+        {choices.waitForReset && p.resetsAt && <Button tone="warn" onClick={() => void answer({ kind: "handoff", decision: "wait_for_reset" })}>{t("action.waitForReset", { time: f.when.at(p.resetsAt) })}</Button>}
         {choices.continuePastCap && <Button onClick={() => void answer({ kind: "handoff", decision: "continue" })}>{p.trigger === "unpriced" ? t("action.continueUnpriced") : t("action.continuePastCap")}</Button>}
         <ConfirmButton label={t("action.stop")} confirm={t("action.stopConfirm")} onConfirm={() => answer({ kind: "handoff", decision: "stop" })} size="md" />
       </div>
@@ -251,10 +260,10 @@ function Detail({ q }: { q: RequestView }) {
   };
   return (
     <Panel className="ib-detail" aria-live="polite">
-      <Label>
-        {t(`eyebrow.${p.kind}`)}
-        {q.risk && ` · ${t(`risk.${q.risk}`)}`}
-      </Label>
+      <div className="ib-eyebrow">
+        <Label>{t(`eyebrow.${p.kind}`)}</Label>
+        {q.risk && <RiskBadge risk={q.risk} />}
+      </div>
       <h2>{title(q)}</h2>
       {task.data && (
         <p className="sec ib-line">
