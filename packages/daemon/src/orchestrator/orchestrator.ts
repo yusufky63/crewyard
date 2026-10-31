@@ -1,6 +1,5 @@
 import type {
   HandoffStop,
-  HandoffTrigger,
   RequestAnswer,
   RequestView,
   RunView,
@@ -13,6 +12,7 @@ import type { McpHook } from "../mcp/service.ts";
 import { Bootstrapper } from "../worktrees/bootstrap.ts";
 import { OrchestratorContext, type OrchestratorOptions, type ProposeParams } from "./context.ts";
 import { Part } from "./part.ts";
+import { Recovery } from "./recovery.ts";
 import { TaskFlow } from "./tasks.ts";
 import { Dispatcher } from "./dispatch.ts";
 import { RunActions } from "./run-actions.ts";
@@ -29,7 +29,6 @@ import { Budget } from "./budget.ts";
 import { Inbox } from "./inbox.ts";
 import type { ProfileDirectory } from "./directory.ts";
 import type { LimitMonitor } from "./limits.ts";
-import { settleReservation } from "./spend.ts";
 import { Scheduler } from "./schedules.ts";
 
 export type { OrchestratorOptions } from "./context.ts";
@@ -37,15 +36,6 @@ export type { OrchestratorOptions } from "./context.ts";
 // The deterministic scheduler (PLAN.md D7, D8, §8, §9): it runs the crew you approved as a DAG,
 // under admission control, and never lets an agent start another agent. All state lives in the
 // store as facts; this class only holds live process handles, timers and the admission notes.
-
-const pidAlive = (pid: number) => {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-};
 
 export class Orchestrator extends Part {
   private hibernateTimer: NodeJS.Timeout | null = null;
@@ -171,6 +161,12 @@ export class Orchestrator extends Part {
     closeHandoff: (id, outcome, detail) => this.handoffs.closeHandoff(id, outcome, detail),
     tick: () => this.dispatcher.tick(),
   });
+  private readonly recovery: Recovery = new Recovery(this.ctx, {
+    closeRequest: (q, by) => this.inbox.closeRequest(q, by),
+    closeHandoff: (id, outcome, detail) => this.handoffs.closeHandoff(id, outcome, detail),
+    offerHandoff: (run, task, mode, info, detail) => this.fallback.offerHandoff(run, task, mode, info, detail),
+    dropCheckout: (runId) => this.loopRunner.dropCheckout(runId),
+  });
 
   override get db() {
     return this.ctx.db;
@@ -248,7 +244,7 @@ export class Orchestrator extends Part {
 
   /** Recovers from the last session, then starts scheduling. */
   start(): void {
-    this.recover();
+    this.recovery.recover();
     const ms = this.opts.tickMs ?? 5_000;
     if (ms > 0) this.interval = setInterval(() => void this.dispatcher.tick(), ms).unref();
     const stallMs = this.opts.stallCheckMs ?? 30_000;
@@ -433,51 +429,6 @@ export class Orchestrator extends Part {
   // ---------------------------------------------------------------- handoff (PLAN.md §8)
 
   // ---------------------------------------------------------------- recovery (PLAN.md §4)
-
-  /** Runs left open by the last daemon have no process we own any more: they become interrupted. */
-  private recover(): void {
-    const alive = this.opts.isAlive ?? pidAlive;
-    const tasks = new Set<string>();
-    for (const r of this.db.openRuns()) {
-      // A hibernated run has no process to lose; it stays open and waits to wake as before.
-      if (this.hibernation.asleep(r.id)) {
-        tasks.add(r.task_id);
-        continue;
-      }
-      // We never kill a recorded pid: Windows reuses pids, and the number may belong to something else now.
-      const detail = r.pid !== null && alive(r.pid) ? "process_orphaned" : "process_gone";
-      this.db.exec("update runs set ended_at = ?, end_reason = 'interrupted', end_detail = ?, resume_at = null where id = ?", this.iso(), detail, r.id);
-      settleReservation(this.opts.store.db, r.id, this.now());
-      for (const q of this.db.openRequestsForRun(r.id)) this.inbox.closeRequest(q, "system");
-      this.audit(r.task_id, r.id, "run.recovered", { detail });
-      tasks.add(r.task_id);
-    }
-    // Same-profile retries were timers of the last daemon; the failed run is offered for Retry instead.
-    for (const r of this.db.pendingRetries()) {
-      this.db.exec("update runs set resume_at = null where id = ?", r.id);
-      tasks.add(r.task_id);
-    }
-    for (const h of this.db.openHandoffs()) {
-      // The phase it died in tells you how far it got (e.g. a WIP commit exists after "checkpoint").
-      this.handoffs.closeHandoff(h.id, "interrupted", h.phase);
-      this.audit(h.task_id, h.from_run_id, "handoff.reconciled", { handoffId: h.id, phase: h.phase });
-      tasks.add(h.task_id);
-      // The target never confirmed, so the source still holds the step: ask what to do with it.
-      this.track(this.reconcileHandoff(h.from_run_id, h.trigger_kind));
-    }
-    // Review checkouts of runs the last daemon left behind.
-    for (const c of this.loops.openCheckouts()) if (this.db.run(c.run_id).ended_at) this.track(this.loopRunner.dropCheckout(c.run_id));
-    tasks.forEach((t) => this.emitTask(t, "recovered"));
-  }
-
-  private async reconcileHandoff(sourceRunId: string, trigger: HandoffTrigger): Promise<void> {
-    const source = this.db.run(sourceRunId);
-    const task = this.db.task(source.task_id);
-    if (task.cancelled_at || this.superseded(source) || source.end_reason === "completed") return;
-    if (this.db.openRequestsForRun(source.id).some((q) => q.kind === "handoff")) return;
-    await this.fallback.offerHandoff(source, task, "manual", { trigger, window: null, resetsAt: null }, "handoff_interrupted");
-    this.emitTask(task.id, "recovered");
-  }
 
   // ---------------------------------------------------------------- helpers
 
