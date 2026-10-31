@@ -8,18 +8,19 @@
     "logs": "Günlükler",
     "problems": "Sorunlar"
   },
-  "closeNote": "Bu paneli kapatmak hiçbir şeyi durdurmaz.",
-  "closeNoteAssistant": "Paneli gizlemek asistanı olduğu gibi bırakır; Durdur ve kapat onu durdurur.",
-  "closeNoteTerminal": "Paneli gizlemek kabukları çalışır bırakır; bir terminalin sekmesini kapatmak onu sonlandırır.",
-  "close": "Paneli kapat",
-  "closeTitle": "Kapat ({{keys}} ya da Esc). Hiçbir şey durmaz.",
+  "collapseNote": "Paneli daraltmak hiçbir şeyi durdurmaz.",
+  "collapseNoteAssistant": "Daraltınca asistan çalışmaya devam eder; onu Durdur ve kapat ya da içindeyken Esc durdurur.",
+  "collapseNoteTerminal": "Daraltınca kabuklar çalışmaya devam eder; bir terminalin sekmesini kapatmak onu sonlandırır.",
+  "collapsedNote": "Daraltıldı. Açmak için bir sekme seçin.",
   "resize": "Paneli yeniden boyutlandır",
-  "resizeHint": "Boyutlandırmak için sürükleyin, kapatmak için aşağı çekin. Sıfırlamak için çift tıklayın.",
+  "resizeCollapseHint": "Boyutlandırmak için sürükleyin, daraltmak için aşağı çekin. Sıfırlamak için çift tıklayın.",
+  "resizeExpandHint": "Genişletmek için yukarı sürükleyin ya da Enter'a basın. Sıfırlamak için çift tıklayın.",
   "loading": "Yükleniyor…",
   "toggle": {
     "label": "Panel",
-    "show": "Paneli göster: asistan, terminal, olaylar, günlükler, sorunlar ({{keys}})",
-    "hide": "Paneli gizle ({{keys}}). Hiçbir şey durmaz."
+    "expand": "Paneli genişlet: asistan, terminal, olaylar, günlükler, sorunlar ({{keys}})",
+    "collapse": "Paneli daralt ({{keys}} ya da Esc). Hiçbir şey durmaz.",
+    "collapseAssistant": "Paneli daralt ({{keys}}). Asistan çalışmaya devam eder."
   },
   "events": {
     "filters": "Olay filtreleri",

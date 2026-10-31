@@ -5,8 +5,9 @@ import { daemon, launch, running, say, type Harness } from "./harness.ts";
 
 // The bottom panel's Events and Logs tabs (DESIGN.md §4) against scripted runners: Ctrl J and
 // the status bar toggle, the live event feed with its filters, paging and "Show all", the redacted
-// Logs tab, Esc order, the splitter by keyboard, and the height surviving a reload. Screenshots land in
-// apps/desktop/screens/activity (git-ignored) for the dark and light, 960 / 1280 / 1920 px check.
+// Logs tab, Esc order, the splitter by keyboard and by pointer, and the height and the collapsed
+// strip surviving a reload. Screenshots land in apps/desktop/screens/activity (git-ignored) for the
+// dark and light, 960 / 1280 / 1920 px check.
 
 test.describe.configure({ mode: "serial" });
 
@@ -24,6 +25,10 @@ test.afterAll(async () => {
 
 const drawer = (page: Page) => page.getByRole("region", { name: "Panel", exact: true });
 const toggle = (page: Page) => page.locator("#activity-toggle");
+/** The panel's own collapse toggle, at the right end of its head. */
+const headToggle = (page: Page) => page.locator("#drawer-toggle");
+/** The view under the tabs, there only while the panel is expanded. */
+const body = (page: Page) => drawer(page).getByRole("tabpanel");
 
 async function startTask(title: string) {
   const { page } = h;
@@ -52,9 +57,11 @@ test("opens a project and runs a task whose output needs the drawer", async () =
   await start.getByRole("button", { name: "Open folder" }).click();
   await start.locator("button.ptile", { hasText: basename(repo) }).click();
   await expect(page.locator("#app-sidebar")).toBeVisible();
-  // Closed by default, and the toggle says so.
-  await expect(drawer(page)).toHaveCount(0);
+  // Collapsed to its head strip by default, and both toggles say so.
+  await expect(drawer(page)).toBeVisible();
+  await expect(body(page)).toHaveCount(0);
   await expect(toggle(page)).toHaveAttribute("aria-expanded", "false");
+  await expect(headToggle(page)).toHaveAttribute("aria-expanded", "false");
 
   h.setScripts({
     researcher: [
@@ -75,7 +82,7 @@ test("Ctrl J opens the drawer on Events with the newest first, untrusted text as
   await page.locator("main").click({ position: { x: 5, y: 5 } });
   await page.keyboard.press("Control+j");
   const d = drawer(page);
-  await expect(d).toBeVisible();
+  await expect(body(page)).toBeVisible();
   await expect(d.getByRole("tab", { name: "Events" })).toBeFocused();
   await expect(toggle(page)).toHaveAttribute("aria-expanded", "true");
   const list = d.getByRole("list", { name: "Events, newest first" });
@@ -143,23 +150,30 @@ test("Logs tab shows Crewyard's own lines, newest first", async () => {
   await page.screenshot({ path: join(shots, "logs-light-1280.png") });
 });
 
-test("Esc inside the drawer closes it first and returns focus; closing stops nothing", async () => {
+test("Esc inside the drawer collapses it first and returns focus; collapsing stops nothing", async () => {
   const { page } = h;
   const d = drawer(page);
   await d.getByRole("tab", { name: "Logs" }).focus();
   await page.keyboard.press("Escape");
-  await expect(d).toHaveCount(0);
-  await expect(toggle(page)).toBeFocused();
+  await expect(body(page)).toHaveCount(0);
+  await expect(d).toBeVisible();
+  await expect(headToggle(page)).toBeFocused();
   await expect(page.locator("#app-sidebar")).toBeVisible();
+  // The status bar item expands and collapses it too, and keeps focus where you clicked.
   await toggle(page).click();
-  await expect(drawer(page)).toBeVisible();
+  await expect(body(page)).toBeVisible();
+  await expect(toggle(page)).toBeFocused();
+  await toggle(page).click();
+  await expect(body(page)).toHaveCount(0);
+  await toggle(page).click();
+  await expect(body(page)).toBeVisible();
   await page.keyboard.press("Control+j");
-  await expect(drawer(page)).toHaveCount(0);
+  await expect(body(page)).toHaveCount(0);
   await page.keyboard.press("Control+j");
-  await expect(drawer(page)).toBeVisible();
+  await expect(body(page)).toBeVisible();
 });
 
-test("the splitter resizes by keyboard, Enter closes, and the height survives a reload", async () => {
+test("the splitter resizes by keyboard, Enter collapses, and the height and the strip survive a reload", async () => {
   const { page } = h;
   const sep = page.getByRole("separator", { name: "Resize the panel" });
   await expect(sep).toHaveAttribute("aria-orientation", "horizontal");
@@ -178,9 +192,22 @@ test("the splitter resizes by keyboard, Enter closes, and the height survives a 
   expect(Math.round((await drawer(page).boundingBox())!.height)).toBe(312);
   await page.getByRole("separator", { name: "Resize the panel" }).focus();
   await page.keyboard.press("Enter");
-  await expect(drawer(page)).toHaveCount(0);
-  await page.keyboard.press("Control+j");
+  // Enter collapses to the strip; the handle stays and keeps focus, and reports the strip's height.
+  await expect(body(page)).toHaveCount(0);
+  await expect(page.getByRole("separator", { name: "Resize the panel" })).toBeFocused();
+  await expect(page.getByRole("separator", { name: "Resize the panel" })).toHaveAttribute("aria-valuenow", "36");
+  expect(Math.round((await drawer(page).boundingBox())!.height)).toBeLessThanOrEqual(40);
+  // Collapsed survives a reload too, applied before the first paint.
+  await page.reload();
+  await page.getByRole("region", { name: "Start" }).locator("button.ptile", { hasText: basename(h.repo) }).click();
   await expect(drawer(page)).toBeVisible();
+  await expect(body(page)).toHaveCount(0);
+  await expect(page.locator("html")).toHaveAttribute("data-drawer", "collapsed");
+  // Up on the handle expands it again to the height it had.
+  await page.getByRole("separator", { name: "Resize the panel" }).focus();
+  await page.keyboard.press("ArrowUp");
+  await expect(body(page)).toBeVisible();
+  expect(Math.round((await drawer(page).boundingBox())!.height)).toBe(312);
   const again = page.getByRole("separator", { name: "Resize the panel" });
   await again.focus();
   await page.keyboard.press("Home");
@@ -188,6 +215,44 @@ test("the splitter resizes by keyboard, Enter closes, and the height survives a 
   // Double-click returns to the default height.
   await again.dblclick();
   await expect(again).toHaveAttribute("aria-valuenow", "280");
+});
+
+test("dragging the edge under 96 px collapses to the strip, and dragging the strip up expands it", async () => {
+  const { page } = h;
+  const sep = page.getByRole("separator", { name: "Resize the panel" });
+  await expect(body(page)).toBeVisible();
+  const pane = (await drawer(page).boundingBox())!;
+  const floor = pane.y + pane.height;
+  const height = async () => Math.round((await drawer(page).boundingBox())!.height);
+  /** Presses on the handle and drags it to `y`, in steps, as a hand would. */
+  const dragTo = async (y: number) => {
+    const handle = (await sep.boundingBox())!;
+    const x = handle.x + handle.width / 2;
+    await page.mouse.move(x, handle.y + handle.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(x, y, { steps: 10 });
+    await page.mouse.up();
+  };
+
+  // Down to 60 px above the status bar: under 96 px, so it collapses to the strip and stops nothing.
+  await dragTo(floor - 60);
+  await expect(body(page)).toHaveCount(0);
+  await expect(headToggle(page)).toHaveAttribute("aria-expanded", "false");
+  await expect(sep).toHaveAttribute("aria-valuenow", "36");
+  expect(await height()).toBeLessThanOrEqual(40);
+
+  // Up from the strip to 120 px: above 96 px it expands, and never under its 160 px minimum.
+  await dragTo(floor - 120);
+  await expect(body(page)).toBeVisible();
+  await expect(headToggle(page)).toHaveAttribute("aria-expanded", "true");
+  expect(await height()).toBe(160);
+
+  // Up to 300 px: it follows the pointer.
+  await dragTo(floor - 300);
+  await expect.poll(height).toBeGreaterThanOrEqual(290);
+  expect(await height()).toBeLessThanOrEqual(310);
+  await sep.dblclick();
+  await expect(sep).toHaveAttribute("aria-valuenow", "280");
 });
 
 test("screenshots in dark and light at 960, 1280 and 1920 px", async () => {

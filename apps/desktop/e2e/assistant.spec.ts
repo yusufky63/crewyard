@@ -334,7 +334,7 @@ test("keyboard: the log is one Tab stop with arrows inside; the info tip; Esc st
 
   // Reopening shows the kept conversation and the added draft; the session is not running.
   await page.locator("#tk-assistant-toggle").press("Enter");
-  await expect(panel(page).getByRole("log").getByText("Stopped: you closed the panel.", { exact: false })).toBeVisible();
+  await expect(panel(page).getByRole("log").getByText("Stopped: you pressed Stop and close or Esc.", { exact: false })).toBeVisible();
   await expect(panel(page).getByText("Stopped", { exact: true })).toBeVisible();
   await expect(panel(page).getByRole("button", { name: "Stop and close" })).toHaveClass(/btn-bad/);
   await shoot(page, "stopped");

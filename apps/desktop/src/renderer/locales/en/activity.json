@@ -8,18 +8,19 @@
     "logs": "Logs",
     "problems": "Problems"
   },
-  "closeNote": "Closing this panel does not stop anything.",
-  "closeNoteAssistant": "Hiding the panel keeps the assistant as it is; Stop and close stops it.",
-  "closeNoteTerminal": "Hiding the panel keeps shells running; closing a terminal's tab ends it.",
-  "close": "Close the panel",
-  "closeTitle": "Close ({{keys}} or Esc). Nothing stops.",
+  "collapseNote": "Collapsing this panel does not stop anything.",
+  "collapseNoteAssistant": "Collapsing keeps the assistant running; Stop and close, or Esc inside it, stops it.",
+  "collapseNoteTerminal": "Collapsing keeps shells running; closing a terminal's tab ends it.",
+  "collapsedNote": "Collapsed. Pick a tab to expand.",
   "resize": "Resize the panel",
-  "resizeHint": "Drag to resize, or drag down to close. Double-click to reset.",
+  "resizeCollapseHint": "Drag to resize, or drag down to collapse. Double-click to reset.",
+  "resizeExpandHint": "Drag up or press Enter to expand. Double-click to reset.",
   "loading": "Loading…",
   "toggle": {
     "label": "Panel",
-    "show": "Show the panel: assistant, terminal, events, logs, problems ({{keys}})",
-    "hide": "Hide the panel ({{keys}}). Nothing stops."
+    "expand": "Expand the panel: assistant, terminal, events, logs, problems ({{keys}})",
+    "collapse": "Collapse the panel ({{keys}} or Esc). Nothing stops.",
+    "collapseAssistant": "Collapse the panel ({{keys}}). The assistant keeps running."
   },
   "events": {
     "filters": "Event filters",

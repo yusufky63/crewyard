@@ -9,8 +9,11 @@ export const SIDEBAR_ID = "app-sidebar";
 export const SIDEBAR = { default: 224, min: 184, max: 360, rail: 56, collapseBelow: 136 } as const;
 export const INSPECTOR = { default: 380, min: 320, max: 720, collapsed: 44 } as const;
 export const INBOX_LIST = { default: 360, min: 280, max: 560 } as const;
-/** The Activity drawer under the main view (DESIGN.md §4); a drag under `closeBelow` closes it. */
-export const DRAWER = { default: 280, min: 160, max: 640, closeBelow: 96 } as const;
+/**
+ * The bottom panel under the main view (DESIGN.md §4). It never closes inside a project: collapsed it
+ * is its 36 px head strip (`strip`), and a drag under `collapseBelow` collapses it to that strip.
+ */
+export const DRAWER = { default: 280, min: 160, max: 640, collapseBelow: 96, strip: 36 } as const;
 /** id of the drawer region, for aria-controls on its toggle and handle. */
 export const DRAWER_ID = "activity-drawer";
 /** Title bar and status bar heights; the drawer never pushes the main view under MAIN_MIN_HEIGHT. */
@@ -35,6 +38,7 @@ export interface LayoutPrefs {
   inspectorCollapsed: boolean;
   inboxListWidth: number;
   drawerHeight: number;
+  /** Expanded to `drawerHeight`; false is the collapsed head strip, never a hidden panel. */
   drawerOpen: boolean;
 }
 
@@ -45,7 +49,8 @@ export const DEFAULT_LAYOUT: LayoutPrefs = {
   inspectorCollapsed: false,
   inboxListWidth: INBOX_LIST.default,
   drawerHeight: DRAWER.default,
-  // Closed by default (DESIGN.md §2): normal telemetry stays out of the first view.
+  // Collapsed by default (DESIGN.md §2): normal telemetry stays out of the first view, while the
+  // strip keeps the tabs and their counts one click away.
   drawerOpen: false,
 };
 

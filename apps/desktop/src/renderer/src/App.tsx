@@ -21,7 +21,8 @@ function applyLayout(): void {
   for (const [k, v] of Object.entries(layoutVars(sanitizeLayout(s)))) root.style.setProperty(k, v);
   root.dataset.sidebar = s.sidebarCollapsed ? "rail" : "full";
   root.dataset.inspector = s.inspectorCollapsed ? "collapsed" : "open";
-  root.dataset.drawer = s.drawerOpen ? "open" : "closed";
+  // Inside a project the bottom panel never closes: it is expanded or collapsed to its head strip.
+  root.dataset.drawer = s.drawerOpen ? "open" : "collapsed";
 }
 applyLayout();
 usePrefs.subscribe(applyLayout);
