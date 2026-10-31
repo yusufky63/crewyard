@@ -11,7 +11,6 @@ import {
   type CandidateView,
   type CrewEdit,
   type EndReason,
-  type FallbackMode,
   type ForkResult,
   type HandoffStop,
   type LoopDecisionKind,
@@ -42,6 +41,7 @@ import { admit, admitGroup, DEFAULT_LIMITS } from "./admission.ts";
 import { BEST_OF_MAX, BEST_OF_MIN, groupFact, groupPhase, pickVariants, worktreeDiff, type DiffStat, type GroupRow } from "./best-of.ts";
 import { OrchestratorContext, type Ended, type HandoffInfo, type LaunchSpec, type Live, type OrchestratorOptions, type ProposeParams } from "./context.ts";
 import { Part } from "./part.ts";
+import { Fallback } from "./fallback.ts";
 import { Handoffs } from "./handoffs.ts";
 import { Budget } from "./budget.ts";
 import { Inbox } from "./inbox.ts";
@@ -51,7 +51,6 @@ import { eligible, estimateFor, modelKey, proposeCrew, rankForRole, readOnlyConf
 import { type MemberRow, type OrchestratorDb, type ProjectRow, type RunRow, type TaskRow, type WorktreeRow } from "./db.ts";
 import { type Candidate, type ProfileDirectory } from "./directory.ts";
 import { errorCode, errorDetail, OrchestratorError, redactDetail } from "./errors.ts";
-import { classifyFailure, RETRY, retryDelayMs, type Failure } from "./failures.ts";
 import { addDetachedCheckout, checkpoint, ensureWorktree, git, headSha, isClean, removeDetachedCheckout, sameDir, taskSlug, writeFileAtomic } from "./git.ts";
 import { reviewChangesMessage, reviewContext, testFailureMessage } from "./loops.ts";
 import { snapshot } from "./checkpoints.ts";
@@ -71,9 +70,6 @@ export type { OrchestratorOptions } from "./context.ts";
 // The deterministic scheduler (PLAN.md D7, D8, §8, §9): it runs the crew you approved as a DAG,
 // under admission control, and never lets an agent start another agent. All state lives in the
 // store as facts; this class only holds live process handles, timers and the admission notes.
-
-/** How many handoffs one crew step may take on its own before it asks you (the standby chain is 2 long). */
-const MAX_AUTO_HANDOFFS = 2;
 
 /** Longest the Test step may run the project's test command. */
 const TEST_TIMEOUT_SEC = 900;
@@ -104,31 +100,40 @@ export class Orchestrator extends Part {
   private tickAgain = false;
   private interval: NodeJS.Timeout | null = null;
   private readonly creating = new Map<string, Promise<WorktreeRow>>();
-  private readonly inbox = new Inbox(this.ctx, {
+  private readonly inbox: Inbox = new Inbox(this.ctx, {
     checkSeen: (run, seen) => this.checkSeen(run, seen),
     resolveTarget: (run, profileId, payload) => this.handoffs.resolveTarget(run, profileId, payload),
     performHandoff: (sourceRunId, target, trigger) => this.handoffs.performHandoff(sourceRunId, target, trigger),
-    scheduleResume: (runId, resetsAt) => this.scheduleResume(runId, resetsAt),
+    scheduleResume: (runId, resetsAt) => this.fallback.scheduleResume(runId, resetsAt),
     stopRun: (runId, detail, reason) => this.stopRun(runId, detail, reason),
-    continuePastCap: (runId) => this.continuePastCap(runId),
+    continuePastCap: (runId) => this.fallback.continuePastCap(runId),
     wakeRun: (runId, cause) => this.wakeRun(runId, cause),
     proceed: (runId, text) => this.proceed(runId, text),
     endRun: (runId, reason, detail) => this.endRun(runId, reason, detail),
     tick: () => this.tick(),
   });
-  private readonly budget = new Budget(this.ctx, {
-    onLimitReached: (runId, info) => this.onLimitReached(runId, info),
+  private readonly budget: Budget = new Budget(this.ctx, {
+    onLimitReached: (runId, info) => this.fallback.onLimitReached(runId, info),
   });
-  private readonly handoffs = new Handoffs(this.ctx, {
-    cancelAutoRetry: (runId) => this.cancelAutoRetry(runId),
+  private readonly handoffs: Handoffs = new Handoffs(this.ctx, {
+    cancelAutoRetry: (runId) => this.fallback.cancelAutoRetry(runId),
     closeRequest: (q, by) => this.inbox.closeRequest(q, by),
-    offerHandoff: (run, task, mode, info, detail) => this.offerHandoff(run, task, mode, info, detail),
+    offerHandoff: (run, task, mode, info, detail) => this.fallback.offerHandoff(run, task, mode, info, detail),
     launch: (spec) => this.launch(spec),
     stopRun: (runId, detail, reason) => this.stopRun(runId, detail, reason),
     endRun: (runId, reason, detail) => this.endRun(runId, reason, detail),
     copyTranscript: (runId) => this.copyTranscript(runId),
     capFor: (taskId, runId, candidate, addUsd, alsoApproved) => this.budget.capFor(taskId, runId, candidate, addUsd, alsoApproved),
     approvalsFor: (runId) => this.budget.approvalsFor(runId),
+  });
+  private readonly fallback: Fallback = new Fallback(this.ctx, {
+    switchAccount: (run, task, info) => this.switchAccount(run, task, info),
+    handoffCandidates: (run, task, info) => this.handoffs.handoffCandidates(run, task, info),
+    autoTargets: (run, task, candidates) => this.handoffs.autoTargets(run, task, candidates),
+    performHandoff: (sourceRunId, target, trigger) => this.handoffs.performHandoff(sourceRunId, target, trigger),
+    insertRequest: (taskId, runId, nativeId, risk, payload) => this.inbox.insertRequest(taskId, runId, nativeId, risk, payload),
+    launch: (spec) => this.launch(spec),
+    proceed: (runId, text) => this.proceed(runId, text),
   });
 
   override get db() {
@@ -444,7 +449,7 @@ export class Orchestrator extends Part {
     const task = this.db.task(taskId);
     if (!task.cancelled_at) {
       this.db.exec("update tasks set cancelled_at = ? where id = ?", this.iso(), task.id);
-      for (const r of this.db.runs(task.id).filter((r) => r.ended_at && r.resume_at)) this.cancelAutoRetry(r.id);
+      for (const r of this.db.runs(task.id).filter((r) => r.ended_at && r.resume_at)) this.fallback.cancelAutoRetry(r.id);
       for (const r of this.db.runs(task.id).filter((r) => !r.ended_at)) await this.stopRun(r.id, "task_cancelled");
       for (const q of this.db.requests({ taskId: task.id })) this.inbox.closeRequest(q, "system");
       for (const h of this.db.handoffs(task.id).filter((h) => !h.closed_at)) this.handoffs.closeHandoff(h.id, "cancelled", null);
@@ -552,7 +557,7 @@ export class Orchestrator extends Part {
       // The runner could not resume the session: the run failed, and the usual handoff or retry follows.
       const detail = errorDetail(err, await this.secretsFor(run.profile_id));
       this.endRun(runId, "failed", detail);
-      await this.onFailure(runId, detail);
+      await this.fallback.onFailure(runId, detail);
     }
   }
 
@@ -955,7 +960,7 @@ export class Orchestrator extends Part {
     if (this.superseded(run) || !["interrupted", "stopped", "failed"].includes(run.end_reason ?? "")) throw new OrchestratorError("run.not_resumable");
     const adapter = this.adapters.get(run.runner);
     if (!adapter?.capabilities.resume || !run.native_session_id) throw new OrchestratorError("run.resume_unsupported", { runner: run.runner });
-    this.cancelAutoRetry(run.id);
+    this.fallback.cancelAutoRetry(run.id);
     const newId = await this.launch({
       task,
       member: this.db.member(run.member_id),
@@ -971,7 +976,7 @@ export class Orchestrator extends Part {
   async stop(runId: string, seen?: SessionSeen): Promise<RunView> {
     const run = this.db.run(runId);
     this.checkSeen(run, seen);
-    if (run.ended_at && run.resume_at) this.cancelAutoRetry(runId);
+    if (run.ended_at && run.resume_at) this.fallback.cancelAutoRetry(runId);
     if (!run.ended_at) await this.stopRun(runId, "user_stop");
     return this.db.runView(this.db.run(runId));
   }
@@ -988,7 +993,7 @@ export class Orchestrator extends Part {
     if (run.end_reason === "completed") throw new OrchestratorError("run.ended");
     if (this.superseded(run)) throw new OrchestratorError("run.superseded");
     if (run.ended_at) {
-      this.cancelAutoRetry(run.id);
+      this.fallback.cancelAutoRetry(run.id);
       // The crash or limit question about the old run is answered by retrying it.
       for (const q of this.db.openRequestsForRun(run.id).filter((q) => q.kind === "handoff")) this.inbox.closeRequest(q, "system");
       const id = await this.launch({ task, member: this.db.member(run.member_id), target: { profileId: run.profile_id, runner: run.runner, model: run.model }, resumedFrom: run.id });
@@ -1011,7 +1016,7 @@ export class Orchestrator extends Part {
         this.emitTask(task.id, "run_resumed");
       } catch (err) {
         this.db.exec("update runs set paused_at = ? where id = ?", this.iso(), run.id);
-        await this.offerHandoff(this.db.run(run.id), task, "manual", { trigger: "limit", window: null, resetsAt: null }, errorCode(err));
+        await this.fallback.offerHandoff(this.db.run(run.id), task, "manual", { trigger: "limit", window: null, resetsAt: null }, errorCode(err));
         this.emitTask(task.id, "limit");
       }
       return this.db.runView(this.db.run(run.id));
@@ -1601,7 +1606,7 @@ export class Orchestrator extends Part {
       const unpriced = this.budget.unpricedFor(task, runId, candidate, target.model, estimateFor(candidate, this.tpl(member), task.size, this.now()).usd === null);
       if (unpriced) {
         this.held.set(runId, spec);
-        await this.onLimitReached(runId, { trigger: "unpriced", window: null, resetsAt: null, unpriced });
+        await this.fallback.onLimitReached(runId, { trigger: "unpriced", window: null, resetsAt: null, unpriced });
         return;
       }
       // Check and hold in one synchronous step, so a parallel step cannot slip in between (F3).
@@ -1856,7 +1861,7 @@ export class Orchestrator extends Part {
         break;
       case "limit.update":
         this.limits.ingest({ profileId: run.profile_id, window: ev.window, usedPct: ev.usedPct, resetsAt: ev.resetsAt, provenance: ev.provenance, observedAt: ev.at }, { runId, taskId: task.id, reached: ev.reached });
-        if (ev.reached) await this.onLimitReached(runId, { trigger: "limit", window: ev.window, resetsAt: ev.resetsAt });
+        if (ev.reached) await this.fallback.onLimitReached(runId, { trigger: "limit", window: ev.window, resetsAt: ev.resetsAt });
         break;
       case "request.question":
         this.inbox.insertRequest(task.id, runId, ev.requestId, null, { kind: "question", questions: ev.questions });
@@ -1890,7 +1895,7 @@ export class Orchestrator extends Part {
       return;
     }
     if (ended.reason === "limit") {
-      await this.onLimitReached(runId, { trigger: "limit", window: null, resetsAt: null });
+      await this.fallback.onLimitReached(runId, { trigger: "limit", window: null, resetsAt: null });
       return;
     }
     // The loop stopped this implementer (iteration cap, no change, spend cap): the step failed its tests.
@@ -1910,7 +1915,7 @@ export class Orchestrator extends Part {
       await this.replaceSession(runId, problem as SessionProblem);
       return;
     }
-    if (ended.reason === "failed") await this.onFailure(runId, detail);
+    if (ended.reason === "failed") await this.fallback.onFailure(runId, detail);
     const verdict = this.verdicts.get(runId);
     this.verdicts.delete(runId);
     if (ended.reason === "completed" && verdict) await this.reviewLoop(runId, verdict);
@@ -2027,21 +2032,6 @@ export class Orchestrator extends Part {
     await this.continueRun(runId, text);
   }
 
-  /** "Continue" on a budget request: the approval is stored on the request, so later checks skip that cap for this run. */
-  private async continuePastCap(runId: string): Promise<void> {
-    const run = this.db.run(runId);
-    this.clearTimer(runId);
-    this.db.exec("update runs set limit_reached = 0, paused_at = null, resume_at = null where id = ?", runId);
-    this.audit(run.task_id, runId, "run.cap_approved", {});
-    try {
-      await this.proceed(runId, "Spending past the cap was approved. Continue the task where you stopped.");
-      this.emitTask(run.task_id, "run_resumed");
-    } catch (err) {
-      this.db.exec("update runs set paused_at = ? where id = ?", this.iso(), runId);
-      await this.offerHandoff(this.db.run(runId), this.db.task(run.task_id), "manual", { trigger: "budget", window: null, resetsAt: null }, errorCode(err));
-    }
-  }
-
   // ---------------------------------------------------------------- approvals
 
   // ---------------------------------------------------------------- usage and limits
@@ -2065,137 +2055,6 @@ export class Orchestrator extends Part {
   }
 
   // ---------------------------------------------------------------- handoff (PLAN.md §8)
-
-  private async onLimitReached(runId: string, info: HandoffInfo): Promise<void> {
-    const run = this.db.run(runId);
-    if (run.limit_reached || run.ended_at) return;
-    this.db.exec("update runs set limit_reached = 1, paused_at = coalesce(paused_at, ?) where id = ?", this.iso(), runId);
-    this.audit(run.task_id, runId, "run.limit", info);
-    // Stop at a turn boundary; the session stays open for resume or handoff.
-    const live = this.live.get(runId);
-    if (live) await this.safe(() => live.adapter.interrupt(live.handle));
-    this.emitTask(run.task_id, "limit");
-
-    const task = this.db.task(run.task_id);
-    // A budget cap, or a model without a price, never continues on a paid key without your click.
-    let mode: FallbackMode = info.trigger === "budget" || info.trigger === "unpriced" ? "manual" : task.fallback;
-    if (mode === "wait_for_reset") {
-      if (info.resetsAt && Date.parse(info.resetsAt) - this.now().getTime() <= task.wait_reset_minutes * 60_000) {
-        this.scheduleResume(runId, info.resetsAt);
-        return;
-      }
-      mode = "ask";
-    }
-    if (await this.switchAccount(this.db.run(runId), task, info)) return;
-    await this.offerHandoff(this.db.run(runId), task, mode, info, null);
-  }
-
-  /**
-   * A run that failed after it started (feature scan F8). A request every provider would refuse
-   * stays failed: no handoff, no fallback, no retry. A transient error moves to the next profile at
-   * once when Auto has one, and otherwise retries the same profile after a jittered backoff, a few
-   * times. Anything else, and a transient error out of retries, is handed off like a limit, per
-   * the task's mode.
-   */
-  private async onFailure(runId: string, detail: string | null): Promise<void> {
-    const run = this.db.run(runId);
-    const task = this.db.task(run.task_id);
-    if (task.cancelled_at) return;
-    const failure = classifyFailure(detail);
-    this.audit(task.id, runId, "run.failure", { kind: failure.kind, status: failure.status, retryAfterMs: failure.retryAfterMs });
-    if (failure.kind === "request_invalid") return;
-    const mode = task.fallback === "wait_for_reset" ? "ask" : task.fallback;
-    // An empty prepaid balance is a spend stop, not a crash: no retry on the same key, and the
-    // handoff (per the task's mode) only offers keys that are not the one out of credit.
-    if (failure.kind === "credit") {
-      const info: HandoffInfo = { trigger: "limit", window: null, resetsAt: null, failure: "credit" };
-      if (await this.switchAccount(run, task, info)) return;
-      await this.offerHandoff(run, task, mode, info, "credit_depleted");
-      return;
-    }
-    if (failure.kind === "transient") {
-      // Never wait when the next step is another profile: Auto with a target switches now.
-      const switching = mode === "auto" && this.handoffsTaken(run) < MAX_AUTO_HANDOFFS && (await this.handoffs.autoTargets(run, task, await this.handoffs.handoffCandidates(run, task, { trigger: "crashed", failure: "transient" }))).length > 0;
-      const attempt = this.db.retryAttempt(run.id) + 1;
-      const delay = !switching && attempt <= RETRY.max ? retryDelayMs(attempt, failure.retryAfterMs) : null;
-      if (delay !== null) {
-        this.scheduleRetry(run, attempt, delay, failure);
-        return;
-      }
-    }
-    await this.offerHandoff(run, task, mode, { trigger: "crashed", window: null, resetsAt: null, failure: failure.kind }, null);
-  }
-
-  private handoffsTaken(run: RunRow): number {
-    return this.db.handoffs(run.task_id).filter((h) => this.db.run(h.from_run_id).member_id === run.member_id).length;
-  }
-
-  /** Same-profile retry after a transient error; the failed run shows when (resumeAt) until it starts. */
-  private scheduleRetry(run: RunRow, attempt: number, delayMs: number, failure: Failure): void {
-    const at = new Date(this.now().getTime() + delayMs).toISOString();
-    this.clearTimer(run.id);
-    this.db.exec("update runs set resume_at = ? where id = ?", at, run.id);
-    this.audit(run.task_id, run.id, "run.retry_scheduled", { attempt, delayMs, failure: failure.kind, status: failure.status });
-    const timer = setTimeout(() => {
-      this.timers.delete(run.id);
-      this.track(this.autoRetry(run.id, attempt, delayMs, failure));
-    }, delayMs);
-    timer.unref();
-    this.timers.set(run.id, timer);
-    this.emitTask(run.task_id, "retried");
-  }
-
-  private async autoRetry(runId: string, attempt: number, delayMs: number, failure: Failure): Promise<void> {
-    const run = this.db.run(runId);
-    const task = this.db.task(run.task_id);
-    // A stop, retry, resume, handoff or cancel in the meantime cleared resume_at.
-    if (run.resume_at === null || task.cancelled_at || this.superseded(run)) return;
-    this.db.exec("update runs set resume_at = null where id = ?", runId);
-    const adapter = this.adapters.get(run.runner);
-    const native = Boolean(adapter?.capabilities.resume && run.native_session_id);
-    // A session with history is never replaced on its own: without a native resume, you decide.
-    if (!native && run.native_session_id) {
-      this.audit(task.id, run.id, "run.retry_skipped", { reason: "no_resume" });
-      await this.offerHandoff(run, task, "manual", { trigger: "crashed", window: null, resetsAt: null, failure: failure.kind }, null);
-      this.emitTask(task.id, "retried");
-      return;
-    }
-    const id = randomUUID();
-    // Recorded before the run exists, so a run that fails at once already counts as this attempt.
-    this.db.exec("insert into run_retries (run_id, from_run_id, attempt, failure, status, delay_ms, created_at) values (?, ?, ?, ?, ?, ?, ?)", id, run.id, attempt, failure.kind, failure.status, delayMs, this.iso());
-    const resume = native
-      ? { cwd: run.cwd, prompt: "The last attempt stopped on a temporary provider error. Check `git status`, then continue the task where you stopped.", resumeRef: { runner: run.runner, sessionId: run.native_session_id! } }
-      : {};
-    await this.launch({ runId: id, task, member: this.db.member(run.member_id), target: { profileId: run.profile_id, runner: run.runner, model: run.model }, ...resume, resumedFrom: run.id });
-    this.audit(task.id, id, "run.auto_retry", { from: run.id, attempt, delayMs, native });
-    this.emitTask(task.id, "retried");
-  }
-
-  /** Drops a pending same-profile retry; whatever you chose instead takes over the step. */
-  private cancelAutoRetry(runId: string): void {
-    this.clearTimer(runId);
-    this.db.exec("update runs set resume_at = null where id = ? and ended_at is not null", runId);
-  }
-
-  private async offerHandoff(run: RunRow, task: TaskRow, mode: FallbackMode, info: HandoffInfo, detail: string | null): Promise<void> {
-    const candidates = await this.handoffs.handoffCandidates(run, task, info);
-    const next = mode === "auto" ? (await this.handoffs.autoTargets(run, task, candidates))[0] : undefined;
-    if (next && this.handoffsTaken(run) < MAX_AUTO_HANDOFFS) {
-      this.track(this.handoffs.performHandoff(run.id, next, info.trigger === "unpriced" ? "budget" : info.trigger));
-      return;
-    }
-    this.inbox.insertRequest(task.id, run.id, null, null, {
-      kind: "handoff",
-      trigger: detail === "handoff_failed" || detail === "handoff_interrupted" ? "handoff_failed" : info.trigger,
-      window: info.window,
-      resetsAt: info.resetsAt,
-      proposedTarget: mode === "manual" ? null : (candidates[0] ?? null),
-      candidates,
-      detail: candidates.length === 0 ? "no_target" : detail,
-      cap: info.cap ?? null,
-      ...(info.unpriced ? { unpriced: info.unpriced } : {}),
-    });
-  }
 
   /**
    * Same-provider account switch (docs/adr/0009). With Settings on and the task not held out, a
@@ -2259,35 +2118,6 @@ export class Orchestrator extends Part {
     return false;
   }
 
-  /** Wait-for-reset: the same session continues when its window resets. */
-  private scheduleResume(runId: string, resetsAt: string): void {
-    this.clearTimer(runId);
-    this.db.exec("update runs set resume_at = ? where id = ?", resetsAt, runId);
-    this.audit(this.db.run(runId).task_id, runId, "run.wait_for_reset", { resetsAt });
-    const delay = Math.max(0, Date.parse(resetsAt) - this.now().getTime());
-    const timer = setTimeout(() => {
-      this.timers.delete(runId);
-      this.track(this.resumeAfterReset(runId));
-    }, delay);
-    timer.unref();
-    this.timers.set(runId, timer);
-    this.emitTask(this.db.run(runId).task_id, "limit");
-  }
-
-  private async resumeAfterReset(runId: string): Promise<void> {
-    const run = this.db.run(runId);
-    if (run.ended_at) return;
-    this.db.exec("update runs set limit_reached = 0, paused_at = null, resume_at = null where id = ?", runId);
-    try {
-      await this.proceed(runId, "Your usage window has reset. Continue the task where you stopped.");
-      this.audit(run.task_id, runId, "run.resumed", { after: "reset" });
-      this.emitTask(run.task_id, "run_resumed");
-    } catch (err) {
-      this.db.exec("update runs set paused_at = ? where id = ?", this.iso(), runId);
-      await this.offerHandoff(this.db.run(runId), this.db.task(run.task_id), "manual", { trigger: "limit", window: null, resetsAt: null }, errorCode(err));
-    }
-  }
-
   // ---------------------------------------------------------------- recovery (PLAN.md §4)
 
   /** Runs left open by the last daemon have no process we own any more: they become interrupted. */
@@ -2331,7 +2161,7 @@ export class Orchestrator extends Part {
     const task = this.db.task(source.task_id);
     if (task.cancelled_at || this.superseded(source) || source.end_reason === "completed") return;
     if (this.db.openRequestsForRun(source.id).some((q) => q.kind === "handoff")) return;
-    await this.offerHandoff(source, task, "manual", { trigger, window: null, resetsAt: null }, "handoff_interrupted");
+    await this.fallback.offerHandoff(source, task, "manual", { trigger, window: null, resetsAt: null }, "handoff_interrupted");
     this.emitTask(task.id, "recovered");
   }
 
