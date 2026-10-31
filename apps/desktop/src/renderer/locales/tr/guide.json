@@ -1,0 +1,219 @@
+{
+  "nav": "Rehber",
+  "eyebrow": "Rehber",
+  "title": "Nasıl çalışır",
+  "sub": "Bir görevden birleştirilmiş bir pull request'e kadar, her adım nerede olur",
+  "back": "Başlangıca dön",
+  "startLink": "Yeni misin? Nasıl çalıştığına bak",
+  "needsProject": "Önce bir proje aç",
+  "index": "Bu sayfada",
+  "sections": {
+    "flow": "Akış",
+    "checklist": "Başlarken",
+    "features": "Başka neler yapar",
+    "faq": "Sorular"
+  },
+  "flow": {
+    "lead": "Her görev aynı yoldan geçer. Bu yolda hiçbir şey sen tıklamadan başlamaz, push edilmez, birleştirilmez.",
+    "steps": {
+      "project": {
+        "title": "Proje ekle",
+        "body": "Bir klasör aç, GitHub'dan klonla ya da boş bir klasörle başla. Kurulum adımlarında hangi ajanların, hesapların, harcama sınırlarının ve kuralların geçerli olacağını seçersin; Projeyi oluştur'a basana kadar hiçbir şey yazılmaz.",
+        "go": "Başlangıcı aç"
+      },
+      "task": {
+        "title": "Görevi anlat",
+        "body": "Ne istediğini Görevler ekranındaki yazma alanına yaz, işe yarıyorsa görsel ya da dosya ekle. İstersen görev asistanıyla konuş, o da konuşmayı görev taslaklarına çevirsin.",
+        "go": "Görev yaz"
+      },
+      "proposal": {
+        "title": "Ekip önerisini gör",
+        "body": "Crewyard işi kimin planlayacağını, yazacağını, test edeceğini ve inceleyeceğini önerir: her rol için ajan, model ve hesabıyla bir kart, tek satırlık gerekçe ve maliyet tahmini. Her rolün iki yedeği olur.",
+        "go": "Ekip grafiğini aç"
+      },
+      "approve": {
+        "title": "Onayla",
+        "body": "Onayla ve başlat'a basmadan hiçbir şey başlamaz. O zamana kadar her rolü, profili, modeli ve bağımlılığı değiştirebilirsin; değiştirdiğin seçim tercih olarak hatırlanır.",
+        "go": "Görevleri aç"
+      },
+      "worktrees": {
+        "title": "Ajanlar çalışma ağaçlarında çalışır",
+        "body": "Kod yazan her çalıştırmanın kendi git çalışma ağacı olur, senin kopyan olduğu gibi kalır. Projenin testleri her tur sonunda çalışır, başarısız olursa sonuç aynı oturuma döner. Ajanlar yalnızca yerelde commit atar.",
+        "go": "Çalışma ağaçlarını gör"
+      },
+      "inbox": {
+        "title": "Gelen kutusunda yanıtla",
+        "body": "Ajanların soruları, araç onayları ve limit kararları risk düzeyleriyle burada bekler. Yüksek riskli komutlar tek tek onaylanır; yanıtlamadığın bir istek hiçbir zaman kendiliğinden onaya dönmez.",
+        "go": "Gelen kutusunu aç"
+      },
+      "review": {
+        "title": "Sonucu incele",
+        "body": "Farklı bir modeldeki inceleyici tam o commit'e bakar ve İncelemeye hazır hiçbir zaman birleştirildi diye gösterilmez. Araştırma, inceleme ve doküman görevleri bulgular ve önerilen görevlerle bir raporla biter.",
+        "go": "Görevleri aç"
+      },
+      "ship": {
+        "title": "Push, PR ve birleştirme",
+        "body": "Dallar sen tıklayana kadar GitHub ekranında push sırasında bekler. Pull request ancak inceleme kapısı geçilip sen tıklayınca açılır; birleştirme için her kapı ve senin onayın gerekir.",
+        "go": "GitHub'ı aç"
+      }
+    }
+  },
+  "checklist": {
+    "lead": "Bu bilgisayarın ve projelerinin şu anki durumundan okunur.",
+    "count": "{{total}} adımın {{done}} tanesi tamam",
+    "unknownHint": "Crewyard bunu şu an okuyamadı.",
+    "state": {
+      "done": "Tamam",
+      "todo": "Henüz değil",
+      "problem": "Bakılmalı",
+      "unknown": "Bilinmiyor",
+      "checking": "Denetleniyor"
+    },
+    "rows": {
+      "machine": {
+        "label": "Bilgisayar denetimi geçti",
+        "hint": "Git ve Crewyard'ın denendiği sürümde en az bir ajan CLI'si (Claude Code, Codex, OpenCode ya da Gemini CLI).",
+        "problem": "Git yok ya da bulunan ajan CLI'lerinin hepsi Crewyard'ın denemediği bir sürümde. Bu bilgisayar bölümü çözümünü gösterir.",
+        "go": "Bu bilgisayarı aç"
+      },
+      "profile": {
+        "label": "Çalışmaya hazır bir profil",
+        "hint": "Kayıtlı ve reddedilmemiş bir API anahtarı olan, oturumu açık bir ajan girişi olan ya da yerel bir sağlayıcıya bağlı bir profil.",
+        "problem": "Bir anahtar reddedildi ya da kayıtlı değil, veya bir oturum için daha yeni bir CLI gerekiyor.",
+        "go": "Sağlayıcıları aç"
+      },
+      "project": {
+        "label": "Açık bir proje",
+        "hint": "Başlangıç ekranından bir klasör aç ya da yeni proje oluştur.",
+        "goOpen": "Proje aç",
+        "goNew": "Yeni proje"
+      },
+      "firstTask": {
+        "label": "İlk görev",
+        "hint": "Görevler ekranındaki yazma alanında bir görev anlat. Göndermek yalnızca ekip önerisini açar.",
+        "go": "Görev yaz"
+      },
+      "firstCrew": {
+        "label": "İlk onaylanan ekip",
+        "hint": "Bir ekip önerisine göz at ve Onayla ve başlat'a bas.",
+        "go": "Görevleri aç",
+        "goProposal": "Öneriyi aç"
+      },
+      "github": {
+        "label": "GitHub bağlı",
+        "hint": "Crewyard GitHub CLI'nin kendi oturumunu (gh auth login) kullanır, kendine ait bir token saklamaz.",
+        "problem": "Bu bilgisayarda GitHub CLI (gh) bulunamadı.",
+        "go": "GitHub'ı aç",
+        "goMachine": "Bu bilgisayarı aç"
+      }
+    }
+  },
+  "features": {
+    "assistant": {
+      "title": "Görev asistanı ve hazır analizler",
+      "body": "Alt paneldeki salt okunur sohbet; anlattığını görev taslaklarına çevirir.",
+      "points": {
+        "a": "Dosya düzenlemez, çalıştırma başlatmaz. Taslak olarak ekle'ye basınca ekibi yine senin onayını bekleyen bir görev oluşur.",
+        "b": "Altı hazır analiz (inceleme, iyileştirmeler, hatalar, güvenlik, bağımlılıklar ve lisanslar, test boşlukları) model çağırmayan yerel şablonlardır; projeye göre en fazla üçü öne çıkarılır.",
+        "c": "Harcaması profil anahtarının günlük sınırından düşer ve Tahmini olarak gösterilir. Durdur ve kapat'a basınca ya da bir süre boşta kalınca durur."
+      },
+      "go": "Asistanı aç"
+    },
+    "autopilot": {
+      "title": "Autopilot",
+      "body": "Görev asistanının isteğe bağlı modu; proje başına açılır ve başlangıçta kapalıdır.",
+      "points": {
+        "a": "Onay kartını kabul edince görev oluşturabilir, başlamamış görevleri düzenleyebilir, Tahmini maliyet sınırına sığan ekipleri onaylayabilir, başarısız bir adımı bir kez yeniden deneyebilir ve kendi görevlerini iptal edebilir.",
+        "b": "Sınırları sen belirlersin: görev başına, günlük, saatte başlatılan görev ve aynı anda çalışan görev (varsayılan 1,00 $, 5,00 $, 4 ve 2). Onları yalnızca senin tıklaman değiştirir.",
+        "c": "Push edemez, pull request açamaz, birleştiremez, silemez, bir sınırı aşacak harcama yapamaz, Gelen kutusunu yanıtlayamaz, oturum açamaz. Autopilot'u durdur her şeyi bir anda reddeder ama çalışan ajanları durdurmaz."
+      },
+      "go": "Asistanda aç"
+    },
+    "panel": {
+      "title": "Alt panel",
+      "body": "Beş sekmeli tek panel: Asistan, Terminal, Olaylar, Günlükler ve Sorunlar.",
+      "points": {
+        "a": "Terminal, proje klasöründe ya da bir görevin çalışma ağacında açılan kendi kabuğundur. Yalnızca Yeni terminal'e basınca başlar ve içine hiçbir API anahtarı verilmez.",
+        "b": "Sorunlar, projedeki her hatayı tek listede toplar; her satırda düzeltileceği yere giden bir düğme vardır.",
+        "c": "Paneli gizlemek hiçbir şeyi durdurmaz; bir terminalin sekmesini kapatmak ise sorduktan sonra kabuğu sonlandırır."
+      },
+      "go": "Sorunları aç"
+    },
+    "fallback": {
+      "title": "Yedeğe geçiş ve devir",
+      "body": "Bir limit ya da kredi bitince her görev kendi kuralına göre davranır.",
+      "points": {
+        "a": "Varsayılan olan Elle modu durup Gelen kutusunda sorar. Sor modu önerilen yedeği adıyla gösterir, tek tıkla devam edersin. Otomatik mod denetimlerden geçen sıradaki yedeğe geçer ve sonra haber verir.",
+        "b": "Devir bir tur sınırında durur, yarım kalan işi yerelde commit'ler ve yedeğe bir paket verir: hedef, plan, fark, başarısız testler ve açık sorular. Hiçbir şey push edilmez.",
+        "c": "Aynı sağlayıcının başka bir hesabına geçmek Ayarlar'da ayrıca açılan, başlangıçta kapalı bir seçenektir."
+      },
+      "go": "Yedeğe geçiş ayarlarını aç"
+    },
+    "limits": {
+      "title": "Limitler ve sayıların kaynağı",
+      "body": "Her kota ya da maliyet sayısı bu etiketlerden birini taşır.",
+      "badges": {
+        "reported": { "term": "Bildirilen", "meaning": "sağlayıcı kendisi söyledi" },
+        "estimated": { "term": "Tahmini", "meaning": "Crewyard token'lardan ve katalog fiyatlarından hesapladı" },
+        "unknown": { "term": "Bilinmiyor", "meaning": "güvenilir bir kaynak yok, asla yüzde olarak çizilmez" },
+        "plan": { "term": "Plan", "meaning": "abonelik ya da yerel model: token'lar sayılır, dolar sayılmaz" }
+      },
+      "points": {
+        "a": "Bir zaman penceresi %80'i geçince sarıya, %95'i geçince kırmızıya döner ve her seferinde bir kez bildirim gelir.",
+        "b": "Harcama sınırları anahtar ve görev başınadır; sınıra gelen çalıştırma durur ve sorar."
+      },
+      "go": "Limitleri aç"
+    },
+    "agentfiles": {
+      "title": "Kendi ajan dosyaların ve skill'lerin",
+      "body": "Ayarlar, her araç için yazdığın talimatları, kuralları, skill'leri, komutları ve alt ajanları listeler; hiçbir anahtar ya da ayar dosyasını açmaz.",
+      "points": {
+        "a": "Birini tek bir profille ya da bir ajanın tüm profilleriyle paylaş: o profilin kendi klasörüne, ajanın biçiminde kopyalanır, hiçbir zaman bağlantı olarak eklenmez.",
+        "b": "Betikler kopyalanmadan önce senin işaretlemeni bekler; güncelliğini yitiren bir kopya Eşitle'ye basana kadar öyle kalır.",
+        "c": "Projedeki AGENTS.md, CLAUDE.md ya da GEMINI.md, onu okumayan ajanlara da ulaşabilir; proje başına açılır ve başlangıçta kapalıdır."
+      },
+      "go": "Talimatlar ve skill'leri aç"
+    },
+    "crew": {
+      "title": "Ekibi düzenlemek",
+      "body": "Ekip grafiğinde her değişiklik ayrı bir işlemdir; bir düğümü taşımak yalnızca yerleşimi değiştirir.",
+      "points": {
+        "a": "Öneri aşamasında: adım ekle ya da çıkar, rolünü, profilini ya da modelini değiştir, bağımlılık çiz ve yedeklerin sırasını belirle.",
+        "b": "Çalışırken: başarısız bir adımı yeniden dene, başlamamış birini atla, hepsini duraklat ya da sürdür, onayını bekleyen bir ek adım ekle.",
+        "c": "Bir düğüme sağ tıkla ya da Shift F10'a bas; tüm işlemler orada, kapalı olanların nedeniyle birlikte."
+      },
+      "go": "Ekip grafiğini aç"
+    },
+    "keyboard": {
+      "title": "Klavye",
+      "body": "Her kısayol tek bir yerde tanımlıdır ve klavye haritasında listelenir.",
+      "go": "Klavye haritasını aç"
+    }
+  },
+  "faq": {
+    "keys": {
+      "q": "API anahtarlarım nereye gidiyor?",
+      "a": "Windows DPAPI ile şifrelenirler ve bir ajana yalnızca onun sürecinin ortam değişkeni olarak ulaşırlar. Hiçbir zaman komut satırına, günlüğe, git'e ya da bir URL'ye yazılmazlar; ajan kabukları ve terminal onları göremez."
+    },
+    "nothingStarts": {
+      "q": "Ben bir şey yapmadan bir iş başlayabilir mi?",
+      "a": "Onayla ve başlat'a basmadan hiçbir ekip başlamaz; push, pull request, birleştirme ve sınırı aşan harcama her zaman senin tıklamanı bekler. Tek istisna proje başına senin açtığın Autopilot'tur: kendi oluşturduğu görevlerin ekiplerini senin sınırların içinde onaylayabilir, yine de asla push etmez ve birleştirmez."
+    },
+    "closePanel": {
+      "q": "Bir paneli kapatmak ajanı durdurur mu?",
+      "a": "Hayır. Denetçiyi, alt paneli ya da pencereyi kapatmak ajanları çalışır halde bırakır, tepsi simgesi de yerinde kalır. Gösterdiğini durduran yalnızca iki düğme vardır ve bunu açıkça söylerler: asistanın Durdur ve kapat düğmesi ile bir terminalin kendi kapatma düğmesi."
+    },
+    "estimated": {
+      "q": "Bir sayı neden Tahmini diyor?",
+      "a": "Çünkü onu Crewyard hesapladı: token sayısı çarpı sürümü belli katalog fiyatı, üstüne yoğun saatler ya da ücretli web aramaları gibi sağlayıcının kendi faturalama kuralları. Bildirilen, sayıyı sağlayıcının verdiği anlamına gelir; Bilinmiyor ise güvenilir bir kaynak olmadığını söyler ve asla yüzde olarak çizilmez."
+    },
+    "subscriptions": {
+      "q": "Crewyard abonelik oturumlarımı okuyor mu?",
+      "a": "Hayır. Her CLI kendi giriş akışıyla, profilin kendi klasöründe oturum açar ve Crewyard bu token'ları hiçbir zaman okumaz. Claude Code profilleri yalnızca Anthropic API anahtarlarıyla çalışır."
+    },
+    "release": {
+      "q": "Kurarken Windows neden uyarıyor?",
+      "a": "v0.1.0 imzasız bir ön sürüm, bu yüzden SmartScreen bilinmeyen yayıncı uyarısı verir. Bu sürüm hiçbir zaman güncelleme denetlemez; yenisini deponun sürümler sayfasından alırsın."
+    }
+  }
+}
