@@ -26,8 +26,9 @@ describe("versionGate", () => {
     expect(versionGate("opencode", "1.25.0")).toMatchObject({ status: "untested", rule: "exact", update: `opencode upgrade v${opencode}` });
   });
 
-  it("marks OpenCode 2.x as waiting for its conformance run, with the way back to the checked 1.x", () => {
-    expect(versionGate("opencode", "2.2.4")).toMatchObject({ status: "pending", verified: opencode, update: `npm install -g opencode-ai@${opencode}` });
+  it("passes the checked OpenCode 2.x and marks other 2.x versions as waiting, with the checked 2.x to install", () => {
+    expect(versionGate("opencode", "2.2.4")).toMatchObject({ status: "ok", update: null });
+    expect(versionGate("opencode", "2.3.0")).toMatchObject({ status: "pending", verified: "2.2.4", update: "npm install -g @opencode/cli@2.2.4" });
     expect(versionGate("opencode", "99.0.0")?.status).toBe("pending");
   });
 

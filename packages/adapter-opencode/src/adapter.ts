@@ -44,13 +44,13 @@ export const TESTED_VERSION = "1.19.5";
  * npm @opencode/cli) redesigned the server API: `/api/...` routes, OPENCODE_PASSWORD, an ordered
  * `permissions` list, forms for questions, and plugins that 1.x's do not run in
  * (opencode.ai/v2/docs/migrate-v1). It gets a client of its own (src/v2, docs/adr/0012), written
- * against the 2.2.4 API. Until a 2.x version passes the conformance and live runs it is not
+ * against the 2.2.4 API. A 2.x version that has not passed the conformance and live runs is not
  * offered to crews and refuses to start, with the reason; the 1.x path below is unchanged.
  */
 export const V2_API_VERSION = "2.2.4";
 
-/** The 2.x version that passed the conformance and live runs; null until one has. */
-export const TESTED_V2_VERSION: string | null = null;
+/** The 2.x version that passed the conformance and live runs (live on DeepSeek, 2026-10-31). */
+export const TESTED_V2_VERSION: string | null = "2.2.4";
 
 export function majorOf(version: string | null): number | null {
   const major = version ? Number(version.split(".")[0]) : NaN;
@@ -60,7 +60,8 @@ export function majorOf(version: string | null): number | null {
 /** Why this 2.x version is not run yet, or null when it may run (1.x, or a 2.x that passed). */
 export function v2Pending(version: string | null): string | null {
   if ((majorOf(version) ?? 0) < 2 || version === TESTED_V2_VERSION) return null;
-  return `OpenCode ${version} runs through Crewyard's OpenCode 2.x client, which has not passed its conformance and live runs yet, so crews do not use it. Install opencode-ai ${TESTED_VERSION} ("npm install -g opencode-ai@${TESTED_VERSION}") to keep using OpenCode now.`;
+  const passed = TESTED_V2_VERSION ? `; of the 2.x line only ${TESTED_V2_VERSION} has ("npm install -g @opencode/cli@${TESTED_V2_VERSION}")` : "";
+  return `OpenCode ${version} has not passed Crewyard's conformance and live runs yet, so crews do not use it${passed}. Or install opencode-ai ${TESTED_VERSION} ("npm install -g opencode-ai@${TESTED_VERSION}").`;
 }
 
 /**
@@ -151,14 +152,14 @@ function providerEnv(req: { profile: Profile; model?: string | null }): Record<s
 
 export class OpenCodeAdapter implements AgentAdapter {
   readonly id = "opencode" as const;
-  readonly capabilities: AgentCapabilities;
+  private readonly base: AgentCapabilities;
   private readonly opts: Required<Omit<OpenCodeAdapterOptions, "executable">> & { executable: string | null };
   private readonly runs = new Map<string, Run>();
   private readonly v2 = new OpenCodeV2Runner();
   private version: string | null = null;
 
   constructor(capabilities: AgentCapabilities, opts: OpenCodeAdapterOptions = {}) {
-    this.capabilities = capabilities;
+    this.base = capabilities;
     this.opts = {
       executable: opts.executable ?? null,
       prefixArgs: opts.prefixArgs ?? [],
@@ -167,6 +168,11 @@ export class OpenCodeAdapter implements AgentAdapter {
       forkTimeoutMs: opts.forkTimeoutMs ?? 240_000,
       allowUntestedV2: opts.allowUntestedV2 ?? false,
     };
+  }
+
+  /** 1.19.5's until the CLI version is read; on 2.x, what the 2.x path does (no transcript or fork). */
+  get capabilities(): AgentCapabilities {
+    return (majorOf(this.version) ?? 0) >= 2 ? v2Capabilities(this.base, this.version) : this.base;
   }
 
   async probe(_profile: Profile): Promise<Probe> {
@@ -182,7 +188,7 @@ export class OpenCodeAdapter implements AgentAdapter {
     else if (pending) problems.push(pending);
     else if (!v2 && version !== TESTED_VERSION) problems.push(`OpenCode ${version} has not passed the conformance suite yet (checked: ${TESTED_VERSION})`);
     // Sign-in state lives in the profile's auth.json, which we never read; provider keys may also come from env.
-    const capabilities = v2 ? v2Capabilities(this.capabilities, version) : this.capabilities;
+    const capabilities = v2 ? v2Capabilities(this.base, version) : this.base;
     return { installed: true, executable, version, signedIn: null, capabilities, problems };
   }
 

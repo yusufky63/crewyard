@@ -35,14 +35,15 @@ git("add", ".");
 git("commit", "-qm", "init");
 
 const secrets = Object.fromEntries((process.env.CREWYARD_LIVE_ENV ?? "").split(",").filter(Boolean).flatMap((k) => (process.env[k] ? [[k, process.env[k]]] : [])));
-const profile = { id: "live", alias: "live", runner: "opencode", providerId: model.split("/")[0], credential: { kind: "api_key", secretRef: null }, defaultModel: model, configDir: join(root, "profile dir"), baseUrl: null };
+// A profile keeps the catalog model id without the provider (PLAN.md D9); 2.x joins the two itself.
+const profile = { id: "live", alias: "live", runner: "opencode", providerId: model.split("/")[0], credential: { kind: "api_key", secretRef: null }, defaultModel: model.slice(model.indexOf("/") + 1), configDir: join(root, "profile dir"), baseUrl: null };
 const env = { ...secrets, OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX: "1024" };
 const queued = ["Now use the write tool to create a file named b.txt containing exactly the word beta. Then reply DONE and nothing else."];
 const adapter = createAdapter();
 const run = await adapter.start({
   profile,
   cwd: repo,
-  model,
+  model: profile.defaultModel,
   prompt: "Use the write tool to create a file named a.txt containing exactly the word alpha. Then reply DONE and nothing else.",
   policy: { writes: "worktree", allowCommands: [], network: "denied" },
   env,

@@ -1,6 +1,6 @@
 # ADR 0012: OpenCode 2.x next to 1.19.5
 
-**Status:** accepted, 2026-10-31, for the code. 2.x is detected and has its own client, but no 2.x version has passed the conformance and live runs, so crews never use it and the adapter refuses to start it. Nothing in this ADR was checked against a real 2.x server (see "What was not verified").
+**Status:** accepted, 2026-10-31. 2.x is detected at probe and has its own client. OpenCode 2.2.4 passed the fake suite and a live run on 2026-10-31 (see "Live verification"), so it is offered to crews; any other 2.x is not, and the adapter refuses to start it with the reason.
 
 ## Problem
 
@@ -32,8 +32,8 @@ For the client itself:
 
 ## Decision
 
-- **Version detection.** `probe()` and every start read `opencode --version`. A 1.x keeps the 1.19.5 path and its rules (exact version, others flagged). A 2.x is "pending" until `TESTED_V2_VERSION` names it: the probe reports `launch: false` with the reason, `start()`/`resume()` throw it, and the machine check shows the new `pending` gate status with the way back (`npm install -g opencode-ai@1.19.5`). `OpenCodeAdapterOptions.allowUntestedV2` lets the conformance and live runs drive it; the app never sets it.
-- **Capabilities stay honest.** The static `capabilities` (what the daemon offers crews with) are 1.19.5's. For 2.x the probe reports `v2Capabilities()`: no `transcript` and no `fork` (2.x has export and import only under `/api/experimental`, and no documented `opencode export`/`import` CLI), `undo` through `revert/stage` + `revert/commit`. `transcript()` returns null and `fork()` refuses on 2.x.
+- **Version detection.** `probe()` and every start read `opencode --version`. A 1.x keeps the 1.19.5 path and its rules (exact version, others flagged). A 2.x is "pending" until `TESTED_V2_VERSION` names it: the probe reports `launch: false` with the reason, `start()`/`resume()` throw it, and the machine check shows the new `pending` gate status with the checked 2.x to install (`npm install -g @opencode/cli@2.2.4`); 2.2.4 itself shows as ok. `OpenCodeAdapterOptions.allowUntestedV2` lets the conformance and live runs drive it; the app never sets it.
+- **Capabilities stay honest.** The static `capabilities` (what the daemon offers crews with) are 1.19.5's. For 2.x the probe reports `v2Capabilities()`: no `transcript` and no `fork` (2.x has export and import only under `/api/experimental`, and no documented `opencode export`/`import` CLI), `undo` through `revert/stage` + `revert/commit`. `transcript()` returns null and `fork()` refuses on 2.x; the adapter instance's `capabilities` switch to these once it has read the version. A handoff by fork from a 2.x run therefore fails at once with the reason, and the orchestrator's existing fallback hands over the written package instead (`forkInto` returns null).
 - **Run loop** (`src/v2/runner.ts`): one `opencode serve --hostname 127.0.0.1 --port 0` per run, as on 1.x. Session rules at create; on resume the role's rules replace the session's (`PATCH`) and the model is switched when it differs. Prompts go with `delivery: "queue"`, so a message sent during a turn waits for the next turn; the run tracks undelivered inbox entries (`session.inbox.delivered`) so a queued prompt does not read as the end. A schema run always asks for the JSON in the prompt (2.x prompts have no `format`) and retries once, like 1.x's fallback. After an SSE reconnect, the history, `GET /api/session/active`, open permissions and open forms are read again, and the last `idle` marker after our prompt says how the turn ended.
 - **Mapper** (`src/v2/mapper.ts`): idempotent like 1.x's. Text and reasoning blocks are keyed by kind and ordinal, because the server counts the two apart. A form becomes one question per field; the answer goes back with option labels turned into values, booleans and numbers typed.
 - **Policy** (`src/v2/policy.ts`): 1.x's `permissionRules()` and `mcpPermissionRules()` build the rules, then are only renamed (`shell`, `subagent`), so both lines follow one role model. Two rules lead: `external_directory: ask` (restores 1.x's default, which the approval layer expects) and `execute` (Code Mode) asked for writers, denied for read-only roles. `mustRejectV2` keeps the adapter's second line of defence on 2.x names.
@@ -53,24 +53,42 @@ For the client itself:
 | CLI (`opencode debug paths`, `OPENCODE_DB`) | https://opencode.ai/v2/docs/cli | 2026-10-31 | | | |
 | `@opencode/client` 2.2.4 on npm, generated Promise client and types (routes, bodies, event union) | https://www.npmjs.com/package/@opencode/client | 2026-10-31 | (repo above) | MIT | no |
 | `@opencode/plugin` 2.2.4 on npm (`Plugin.define` returns its argument; `ShellCreateBefore`) | https://www.npmjs.com/package/@opencode/plugin | 2026-10-31 | (repo above) | MIT | no |
-| npm versions: `opencode-ai` latest 1.19.5; `@opencode-ai/sdk` latest 1.19.5 (no 2.x); `@opencode/cli` 2.2.4 (bin `opencode`, `opencode2`) | `npm view` | 2026-10-31 | | MIT | |
+| npm versions: `opencode-ai` latest 1.19.5; `@opencode-ai/sdk` latest 1.19.5 (no 2.x); `@opencode/cli` 2.2.4 (bin `opencode`, `opencode2`), with SLSA provenance from `anomalyco/opencode` `release.yml` | `npm view`, npm attestations | 2026-10-31 | | MIT | |
 | ai-sdk-provider-opencode-sdk (OSS implementation on `@opencode/client`: turn end on `session.execution.*`, per-kind ordinals, `form.created` session id at `data.form.sessionID`) | https://github.com/ben-vargas/ai-sdk-provider-opencode-sdk | 2026-10-31 | 124 | MIT | no |
 | omux (how another supervisor keeps agent CLIs behind a stable interface across versions) | https://github.com/onurozcan/omux | 2026-10-31 | 75 | MIT | no |
 
 No code was copied or ported from any of these; routes, field names and event names are used as facts.
 
-## What was not verified
+## Live verification on 2026-10-31 (Windows 11 Pro 10.0.26200)
 
-Installing the 2.x CLI here (npm `@opencode/cli` 2.2.4, into a scratch folder, not over the 1.19.5 install) was blocked by this session's permission check, so every 2.x claim below rests on the docs and the generated client, and on the fake server in `src/fixtures/fake-opencode-v2.mjs` that implements the same reading:
+OpenCode 2.2.4 from npm `@opencode/cli`, installed with `npm --prefix` into a temp folder and put first on `PATH` for the run only; the global 1.19.5 stayed as it was. Before installing, the package was checked: published by GitHub Actions through npm's OIDC trusted publishing, with SLSA provenance naming `https://github.com/anomalyco/opencode` and `.github/workflows/release.yml` for both `@opencode/cli` and `@opencode/cli-windows-x64`, the same npm maintainer as `opencode-ai`, and the version of GitHub release v2.2.4. Its `postinstall` (blocked by npm's script allowlist) only copies the platform package's `opencode.exe` over the launcher, so the platform package's binary was used directly. Model `deepseek/deepseek-flash`, key from the secret vault; about $0.01 in all.
 
-- that `opencode serve --port 0` picks a free port and prints `server listening on http://127.0.0.1:<port>`;
-- that 2.x honours `XDG_*` for its config, data (`opencode.db`), state and cache folders, so profiles stay apart;
-- that 2.x reads `OPENCODE_CONFIG_CONTENT` at all (not in the 2.x docs), and loads a `plugins` entry with an absolute directory path;
-- that the guard's `create.before` hook covers the shell tool, `!` commands and terminals, and that a plain-object default export (no `@opencode/plugin` import) loads as a Promise plugin;
-- that the prompt response's inbox id is the user message id that `revert/stage` takes;
-- that session `permissions` are appended after the agent's rules (the docs describe global and agent layers only);
-- that `ordinal` counts per kind (taken from the OSS implementation above, not from OpenCode's docs);
-- the env names 2.x reads provider keys from, and the `aisdk:` provider block for a local base URL.
+`scripts/live.mjs` (steps approve, resume, question, readonly, interrupt, stop, envcheck), on the app's own path (no `allowUntestedV2`) after `TESTED_V2_VERSION` was set: **16 of 16 PASS**, probe included. Also `live-turns.mjs` (a queued follow-up taken at the turn boundary, then undo of the second turn) and `live-verdict.mjs` (schema-checked reviewer verdict under the read-only ruleset): both did their work; `live-turns` exits non-zero only because 2.x has no transcript, as designed.
+
+What the live run confirmed:
+
+- `opencode serve --hostname 127.0.0.1 --port 0` picks a free port and prints `server listening on http://127.0.0.1:<port>`; Basic auth as `opencode` with `OPENCODE_PASSWORD`.
+- `XDG_*` move config, data (`opencode.db`), state, cache and logs into the profile folder (`opencode debug paths`).
+- `OPENCODE_CONFIG_CONTENT` is read, and a `plugins` entry with an absolute directory path loads; the plain-object default export (no `@opencode/plugin` import) loads as a Promise plugin and is listed `active` under its own id.
+- **The key guard works:** a command the agent ran through its shell tool saw `DEEPSEEK_API_KEY`, `OPENCODE_PASSWORD` and `OPENCODE_SERVER_PASSWORD` as empty (lengths only were printed).
+- The prompt response's id is the user message id: `revert/stage` + `revert/commit` with it removed the second turn's file and kept the first's.
+- Session `permissions` apply: a read-only role got no edit tool at all; commands were asked and denied; the role's rules replace the session's on resume; the model switch on resume works.
+- Forms come as questions and the answer by field is accepted; interrupt ends the run as interrupted, stop as stopped, with no process left.
+- Streaming text and reasoning showed no repeated or lost text, which is consistent with ordinals counted per kind.
+
+Found by the live run and fixed in the same change (each now reproduced by the fake server):
+
+- Node's type stripping (the live scripts load sources directly) refuses TypeScript parameter properties; the 2.x client uses plain fields.
+- 2.2.4 loads a location's plugins only once the location is first used, in the background: the plugin list is empty at first, then holds the built-ins and ours together. The guard check now touches `GET /api/location` and reads the list until it has entries (20 s at most) before it decides.
+- `GET /api/session/{id}/message` refuses a `cursor` together with `order` ("Cursor cannot be combined with order"); later pages send the cursor alone.
+- 2.x joins `providerID` and the model id itself, so a model id must not carry its provider; the live scripts now pass the catalog id as profiles do.
+
+Still not verified:
+
+- whether the `create.before` hook also covers `!` commands typed in OpenCode's own UI and its persistent terminals (Crewyard drives neither);
+- the run's MCP servers under `mcp.servers` with `codemode: false`, and the `aisdk:` provider block for a local base URL (no MCP server or local provider in the live run);
+- the SSE reconnect path against a real server (tested on the fake only);
+- any 2.x other than 2.2.4.
 
 ## Windows notes
 
@@ -82,16 +100,16 @@ Installing the 2.x CLI here (npm `@opencode/cli` 2.2.4, into a scratch folder, n
 ## Security notes
 
 - **The server password reaches the child only through its environment** (`OPENCODE_PASSWORD`, and `OPENCODE_SERVER_PASSWORD` as on 1.x), generated per launch, never on the command line or in a URL. 2.x prints it at start: stdout is read only for the port line, and the stderr tail that goes into failure messages has the password replaced with `[password]` (tested).
-- **Key scrubbing on 2.x.** The 1.x `shell.env` plugin does not run in 2.x. The 2.x guard registers `ctx.shell.hook("create.before")` and blanks the provider key names, both password variables and, when the run has MCP servers, the inline config. **Fail closed:** after the server starts, the adapter reads `GET /api/plugin` and starts nothing unless `crewyard-env-guard` is listed `active`; a missing guard or one that failed to load closes the server with the reason (tested both ways). This is what makes the unverified loading details above safe: if 2.x ignores our config, no run starts, instead of a run with a readable key.
+- **Key scrubbing on 2.x.** The 1.x `shell.env` plugin does not run in 2.x. The 2.x guard registers `ctx.shell.hook("create.before")` and blanks the provider key names, both password variables and, when the run has MCP servers, the inline config. **Fail closed:** after the server starts, the adapter reads `GET /api/plugin` and starts nothing unless `crewyard-env-guard` is listed `active`; a missing guard or one that failed to load closes the server with the reason (tested both ways). If a later 2.x stops loading our config, no run starts, instead of a run with a readable key. The live run confirmed the guard on 2.2.4.
 - **Permissions** keep 1.x's role model: a read-only role cannot edit, run unlisted commands, start subagents or run Code Mode, and the adapter rejects such requests itself if the server asks anyway. `external_directory` is set back to `ask`.
-- 2.x is never run by the app until a version passes its conformance and live runs; only those runs pass `allowUntestedV2`.
+- The app runs only the 2.x version that passed (`TESTED_V2_VERSION`, 2.2.4); only the conformance and live runs pass `allowUntestedV2` for another one.
 
 ## Rollback
 
 - To drop 2.x support: delete `src/v2/` and `src/fixtures/fake-opencode-v2.mjs`, and restore the 2.x refusal in `adapter.ts` (`git revert` of this change does all of it). The `pending` gate status can stay; nothing else reads it.
-- A user on 2.x goes back with `npm install -g opencode-ai@1.19.5` (the machine check shows it), after removing the 2.x binary if its installer put one first on `PATH`.
+- A user on 2.x goes back with `npm install -g opencode-ai@1.19.5`, after removing the 2.x binary if its installer put one first on `PATH`. Setting `TESTED_V2_VERSION` back to `null` alone stops crews from using 2.x again.
 - Whether 2.x sees 1.x sessions is unverified (it has an experimental `/api/experimental/migration/v1` route that we do not call). A resume of a session id the other line does not know fails as "gone", and the step starts fresh.
 
-## Promotion to supported
+## Moving to a newer 2.x
 
-Run the conformance suite (PLAN.md §5.4) and a live run against a real 2.x with `allowUntestedV2`, confirm each item under "What was not verified" (the `envcheck` question to the agent's shell is the key one), then set `TESTED_V2_VERSION` and update PLAN.md §5.2 and the README.
+Install it next to the current one (a temp folder first on `PATH`), run the fake suite and `scripts/live.mjs` with `CREWYARD_LIVE_OPENCODE_V2=1` and the `envcheck` step (the key guard is the item that must pass), then `live-turns.mjs` and `live-verdict.mjs`, and only then change `TESTED_V2_VERSION`, PLAN.md §5.2 and the README.

@@ -78,12 +78,27 @@ async function gone(pid: number | null): Promise<boolean> {
 }
 
 describe("OpenCode 2.x adapter against a fake opencode serve", () => {
-  it("is not offered and refuses to start until a 2.x version passes conformance", async () => {
-    const { adapter, req } = await setup("gate", "basic", WORKTREE, {}, false);
+  it("offers the checked 2.x with what its path does, and reports the 2.x capabilities once the version is known", async () => {
+    const { adapter, req } = await setup("checked", "basic", WORKTREE, {}, false);
+    expect(adapter.capabilities.fork).toEqual({ compact: true });
     const probe = await adapter.probe(req.profile);
-    expect(probe).toMatchObject({ installed: true, version: "2.2.4", capabilities: { launch: false } });
-    expect(probe.problems).toEqual([expect.stringContaining("has not passed its conformance and live runs")]);
-    await expect(adapter.start(req)).rejects.toThrow(/crews do not use it/);
+    expect(probe).toMatchObject({ installed: true, version: "2.2.4", problems: [], capabilities: { launch: true, undo: { files: true, history: true } } });
+    expect(probe.capabilities.fork).toBeUndefined();
+    expect(adapter.capabilities.fork).toBeUndefined();
+    expect(adapter.capabilities.transcript).toBeUndefined();
+  });
+
+  it("does not offer another 2.x, and refuses to start it, naming the checked one", async () => {
+    process.env.FAKE_OPENCODE_VERSION = "2.3.0";
+    try {
+      const { adapter, req } = await setup("gate", "basic", WORKTREE, {}, false);
+      const probe = await adapter.probe(req.profile);
+      expect(probe).toMatchObject({ installed: true, version: "2.3.0", capabilities: { launch: false } });
+      expect(probe.problems).toEqual([expect.stringContaining("only 2.2.4 has")]);
+      await expect(adapter.start(req)).rejects.toThrow(/crews do not use it/);
+    } finally {
+      process.env.FAKE_OPENCODE_VERSION = "2.2.4";
+    }
   });
 
   it("streams a turn through the /api routes with the session's rules, the guard and no process left", async () => {

@@ -37,12 +37,13 @@ git("commit", "-qm", "init");
 writeFileSync(join(repo, "sum.js"), "export function sum(a, b) {\n  return a - b;\n}\n");
 
 const secrets = Object.fromEntries((process.env.CREWYARD_LIVE_ENV ?? "").split(",").filter(Boolean).flatMap((k) => (process.env[k] ? [[k, process.env[k]]] : [])));
-const profile = { id: "live", alias: "live", runner: "opencode", providerId: model.split("/")[0], credential: { kind: "api_key", secretRef: null }, defaultModel: model, configDir: join(root, "profile dir"), baseUrl: null };
+// A profile keeps the catalog model id without the provider (PLAN.md D9); 2.x joins the two itself.
+const profile = { id: "live", alias: "live", runner: "opencode", providerId: model.split("/")[0], credential: { kind: "api_key", secretRef: null }, defaultModel: model.slice(model.indexOf("/") + 1), configDir: join(root, "profile dir"), baseUrl: null };
 const adapter = createAdapter();
 const run = await adapter.start({
   profile,
   cwd: repo,
-  model,
+  model: profile.defaultModel,
   prompt: "You are the reviewer. Review the uncommitted change in this git repository (run `git diff`). Do not change any file.",
   policy: { writes: "none", allowCommands: [], network: "denied" },
   env: { ...secrets, OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX: "2048" },

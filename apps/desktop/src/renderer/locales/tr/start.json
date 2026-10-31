@@ -32,7 +32,7 @@
     "gateShort": {
       "outdated": "güncellenmeli",
       "untested": "denetlenen sürüm değil",
-      "pending": "2.x henüz sunulmuyor",
+      "pending": "denetlenen 2.x değil",
       "isolation": "profilleri ayıramayacak kadar eski",
       "unknown": "sürüm bilinmiyor"
     },
@@ -45,7 +45,7 @@
       },
       "outdated": "Crewyard, {{tool}} {{need}} sürümüyle denetlendi. Eski sürümler olayları kaçırabilir ya da hiç başlamayabilir. Bir terminalde güncelleyin:",
       "untested": "Crewyard'ın uyumluluk denetiminden yalnızca {{tool}} {{verified}} geçti. Diğer sürümler protokolü haber vermeden değiştirebilir. Denetlenen sürüme geçin:",
-      "pending": "Crewyard'ın {{tool}} 2.x için bir istemcisi var, ancak bu istemci uyumluluk ve canlı denetimlerden henüz geçmedi; bu yüzden ekipler şimdilik {{tool}} {{verified}} ile çalışır. {{tool}} aracını şimdi kullanmak için denetlenen sürümü kurun:",
+      "pending": "2.x serisinden yalnızca {{tool}} {{verified}}, Crewyard'ın uyumluluk ve canlı denetimlerinden geçti; bu yüzden ekipler bu sürümü kullanmaz. Denetlenen sürüme geçin:",
       "isolation": "{{verified}} sürümünden eski {{tool}}, profile özel klasörü yok sayar; her çalıştırma sizin kendi ~/.gemini oturumunuzu ve ayarlarınızı kullanır. Güncelleyene kadar Crewyard onu başlatmaz:",
       "unknown": "Kurulu sürüm okunamadı. Crewyard için {{tool}} {{need}} gerekiyor. Emin olmak için şunu çalıştırın:"
     },

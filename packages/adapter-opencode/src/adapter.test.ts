@@ -90,7 +90,7 @@ describe("OpenCode adapter against a fake opencode serve", () => {
     expect(probe).toMatchObject({ installed: true, version: "1.19.5", problems: [] });
   });
 
-  it("does not offer OpenCode 2.x before its conformance run, at probe and at start, with the reason", async () => {
+  it("does not offer a 2.x that has not passed its conformance run, at probe and at start, with the reason", async () => {
     process.env.FAKE_OPENCODE_VERSION = "2.2.2";
     try {
       const { adapter, req } = await setup("v2", "basic");
@@ -99,8 +99,8 @@ describe("OpenCode adapter against a fake opencode serve", () => {
       expect(probe.capabilities).toMatchObject({ launch: false, undo: { files: true, history: true } });
       expect(probe.capabilities.fork).toBeUndefined();
       expect(probe.capabilities.transcript).toBeUndefined();
-      expect(probe.problems).toEqual([expect.stringContaining("OpenCode 2.2.2 runs through Crewyard's OpenCode 2.x client, which has not passed")]);
-      await expect(adapter.start(req)).rejects.toThrow(/has not passed its conformance and live runs/);
+      expect(probe.problems).toEqual([expect.stringContaining("OpenCode 2.2.2 has not passed Crewyard's conformance and live runs yet")]);
+      await expect(adapter.start(req)).rejects.toThrow(/crews do not use it; of the 2.x line only 2.2.4 has/);
     } finally {
       delete process.env.FAKE_OPENCODE_VERSION;
     }
@@ -358,7 +358,8 @@ describe("OpenCode child environment", () => {
     expect(v2Pending("1.19.5")).toBeNull();
     expect(v2Pending("1.25.0")).toBeNull();
     expect(v2Pending(null)).toBeNull();
-    expect(v2Pending("2.0.0")).toMatch(/has not passed its conformance and live runs/);
+    expect(v2Pending("2.0.0")).toMatch(/has not passed Crewyard's conformance and live runs/);
+    expect(v2Pending("2.2.4")).toBeNull();
   });
 });
 

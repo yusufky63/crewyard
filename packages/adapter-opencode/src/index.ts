@@ -3,6 +3,7 @@ import { OpenCodeAdapter, type OpenCodeAdapterOptions } from "./adapter.ts";
 
 // opencode serve on 127.0.0.1:0 with Basic auth: SSE /event (live only, resynced after reconnects), permission and question replies, interrupt, per-session tokens and cost. Third-party quota comes from balance endpoints, not from OpenCode.
 // Verified against official sources on 2026-10-29 (PLAN.md §5.2) and against opencode 1.19.5 on 2026-10-30. Change only with conformance evidence.
+// These are 1.19.5's; on OpenCode 2.x the adapter reports v2Capabilities() instead (no transcript, no fork; docs/adr/0012).
 
 export const runner: RunnerId = "opencode";
 
