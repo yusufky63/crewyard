@@ -3,9 +3,9 @@ import { basename, join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import { daemon, launch, running, say, type Harness } from "./harness.ts";
 
-// The Activity drawer (DESIGN.md §4) against scripted runners: Ctrl J and the status bar toggle,
-// the live event feed with its filters, paging and "Show all", the redacted Logs tab, Esc order,
-// the splitter by keyboard, and the height surviving a reload. Screenshots land in
+// The bottom panel's Events and Logs tabs (DESIGN.md §4) against scripted runners: Ctrl J and
+// the status bar toggle, the live event feed with its filters, paging and "Show all", the redacted
+// Logs tab, Esc order, the splitter by keyboard, and the height surviving a reload. Screenshots land in
 // apps/desktop/screens/activity (git-ignored) for the dark and light, 960 / 1280 / 1920 px check.
 
 test.describe.configure({ mode: "serial" });
@@ -22,7 +22,7 @@ test.afterAll(async () => {
   await h?.close();
 });
 
-const drawer = (page: Page) => page.getByRole("region", { name: "Activity", exact: true });
+const drawer = (page: Page) => page.getByRole("region", { name: "Panel", exact: true });
 const toggle = (page: Page) => page.locator("#activity-toggle");
 
 async function startTask(title: string) {
@@ -161,7 +161,7 @@ test("Esc inside the drawer closes it first and returns focus; closing stops not
 
 test("the splitter resizes by keyboard, Enter closes, and the height survives a reload", async () => {
   const { page } = h;
-  const sep = page.getByRole("separator", { name: "Resize the Activity drawer" });
+  const sep = page.getByRole("separator", { name: "Resize the panel" });
   await expect(sep).toHaveAttribute("aria-orientation", "horizontal");
   await sep.focus();
   await expect(sep).toHaveAttribute("aria-valuenow", "280");
@@ -176,12 +176,12 @@ test("the splitter resizes by keyboard, Enter closes, and the height survives a 
   await expect(drawer(page)).toBeVisible();
   // The stored height is on <html> before the first render, so the drawer opens at it.
   expect(Math.round((await drawer(page).boundingBox())!.height)).toBe(312);
-  await page.getByRole("separator", { name: "Resize the Activity drawer" }).focus();
+  await page.getByRole("separator", { name: "Resize the panel" }).focus();
   await page.keyboard.press("Enter");
   await expect(drawer(page)).toHaveCount(0);
   await page.keyboard.press("Control+j");
   await expect(drawer(page)).toBeVisible();
-  const again = page.getByRole("separator", { name: "Resize the Activity drawer" });
+  const again = page.getByRole("separator", { name: "Resize the panel" });
   await again.focus();
   await page.keyboard.press("Home");
   await expect(again).toHaveAttribute("aria-valuenow", "160");

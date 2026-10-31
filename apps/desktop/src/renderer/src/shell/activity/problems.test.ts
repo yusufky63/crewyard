@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { KeyCheckView, ProblemSources, ShareView, StallAlertView } from "@crewyard/core";
-import { buildProblems, problemCounts, pruneDismissed, visibleProblems, type ProblemInputs } from "./problems.ts";
+import { buildProblems, problemCounts, pruneDismissed, visibleProblems, type Dismissed, type ProblemInputs } from "./problems.ts";
 
 const P = "p1";
 
@@ -132,7 +132,7 @@ describe("dismissing", () => {
   it("forgets a dismissal once the cause is gone, so it shows again when it comes back", () => {
     const input = { projectId: P, keyChecks: [keyCheck("invalid")] };
     const first = buildProblems(input);
-    let dismissed = { "key:c1": first[0]!.fingerprint };
+    let dismissed: Dismissed = { "key:c1": first[0]!.fingerprint };
     expect(visibleProblems(buildProblems(input), dismissed)).toHaveLength(0);
     // The key was replaced and checked fine: the cause is gone.
     dismissed = pruneDismissed(dismissed, buildProblems({ projectId: P, keyChecks: [keyCheck("valid")] }));

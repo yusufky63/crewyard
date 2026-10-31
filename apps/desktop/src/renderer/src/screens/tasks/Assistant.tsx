@@ -6,6 +6,7 @@ import { TASK_PRESETS, type AssistantDraftView, type AssistantLine, type Assista
 import { BrandIcon, Button, Label, Panel, ProvenanceBadge } from "@crewyard/ui";
 import { matches } from "../../keys.ts";
 import { useNav } from "../../nav.ts";
+import { takeAssistantFocus } from "../../shell/activity/panel.ts";
 import { act, useWork } from "./data.ts";
 import "./assistant.css";
 
@@ -32,7 +33,8 @@ function pickProfile(view: AssistantView | undefined, options: AssistantProfileO
   return ok[0]?.profileId ?? null;
 }
 
-export function AssistantPanel({ projectId, onClose }: { projectId: string; onClose(): void }) {
+/** `docked`: inside the bottom panel's Assistant tab, which gives it its height and frame. */
+export function AssistantPanel({ projectId, onClose, docked = false }: { projectId: string; onClose(): void; docked?: boolean }) {
   const { t } = useTranslation("assistant");
   const errorText = useAssistantError();
   const qc = useQueryClient();
@@ -58,8 +60,8 @@ export function AssistantPanel({ projectId, onClose }: { projectId: string; onCl
   }, [projectId, qc]);
 
   useEffect(() => {
-    input.current?.focus();
-  }, []);
+    if (!docked || takeAssistantFocus()) input.current?.focus();
+  }, [docked]);
 
   const v = view.data;
   const options = profiles.data ?? [];
@@ -164,8 +166,9 @@ export function AssistantPanel({ projectId, onClose }: { projectId: string; onCl
 
   const running = options.find((o) => o.profileId === profileId);
 
+  const Frame = docked ? "div" : Panel;
   return (
-    <Panel className="as-panel" role="region" aria-label={t("label")} onKeyDown={onKey}>
+    <Frame className={docked ? "as-panel as-docked" : "as-panel"} role="region" aria-label={t("label")} onKeyDown={onKey}>
       <div className="as-head">
         <Label>{t("title")}</Label>
         {live && v ? (
@@ -284,7 +287,7 @@ export function AssistantPanel({ projectId, onClose }: { projectId: string; onCl
       <div className="sr" aria-live="polite">
         {announce}
       </div>
-    </Panel>
+    </Frame>
   );
 }
 

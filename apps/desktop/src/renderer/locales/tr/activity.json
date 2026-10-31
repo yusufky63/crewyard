@@ -1,20 +1,25 @@
 {
-  "label": "Etkinlik",
-  "tabsLabel": "Etkinlik görünümleri",
+  "label": "Panel",
+  "tabsLabel": "Panel görünümleri",
   "tab": {
+    "assistant": "Asistan",
+    "terminal": "Terminal",
     "events": "Olaylar",
-    "logs": "Günlükler"
+    "logs": "Günlükler",
+    "problems": "Sorunlar"
   },
-  "closeNote": "Bu çekmeceyi kapatmak hiçbir şeyi durdurmaz.",
-  "close": "Etkinlik çekmecesini kapat",
+  "closeNote": "Bu paneli kapatmak hiçbir şeyi durdurmaz.",
+  "closeNoteAssistant": "Paneli gizlemek asistanı olduğu gibi bırakır; Durdur ve kapat onu durdurur.",
+  "closeNoteTerminal": "Paneli gizlemek kabukları çalışır bırakır; bir terminalin sekmesini kapatmak onu sonlandırır.",
+  "close": "Paneli kapat",
   "closeTitle": "Kapat ({{keys}} ya da Esc). Hiçbir şey durmaz.",
-  "resize": "Etkinlik çekmecesini yeniden boyutlandır",
+  "resize": "Paneli yeniden boyutlandır",
   "resizeHint": "Boyutlandırmak için sürükleyin, kapatmak için aşağı çekin. Sıfırlamak için çift tıklayın.",
   "loading": "Yükleniyor…",
   "toggle": {
-    "label": "Etkinlik",
-    "show": "Olayları ve günlükleri göster ({{keys}})",
-    "hide": "Olayları ve günlükleri gizle ({{keys}}). Hiçbir şey durmaz."
+    "label": "Panel",
+    "show": "Paneli göster: asistan, terminal, olaylar, günlükler, sorunlar ({{keys}})",
+    "hide": "Paneli gizle ({{keys}}). Hiçbir şey durmaz."
   },
   "events": {
     "filters": "Olay filtreleri",
@@ -75,5 +80,92 @@
     "none": "Henüz günlük satırı yok.",
     "noneFiltered": "Bu filtrelere uyan günlük satırı yok.",
     "error": "Günlük dosyaları okunamadı."
+  },
+  "terminal": {
+    "shell": "Kabuk",
+    "shells": {
+      "powershell": "Windows PowerShell",
+      "pwsh": "PowerShell 7",
+      "gitbash": "Git Bash",
+      "cmd": "Komut İstemi",
+      "posix": "Oturum kabuğu"
+    },
+    "where": "Başlangıç yeri",
+    "project": "Proje klasörü",
+    "worktree": "Görevin çalışma ağacı",
+    "noWorktree": "Orada başlatmak için çalışma ağacı olan bir görev seçin.",
+    "new": "Yeni terminal",
+    "tabsLabel": "Terminaller",
+    "tabName": "{{shell}} {{n}}",
+    "state": {
+      "starting": "Başlıyor",
+      "running": "Çalışıyor",
+      "exited": "Sona erdi",
+      "failed": "Başlatılamadı"
+    },
+    "close": "{{n}}. terminali kapat",
+    "closeTitle": "Bu terminali kapat (sekmesinde Delete). Kabuğunu sonlandırır.",
+    "confirm": "Bu kabuk sonlandırılsın mı? Kendisi ve başlattığı her şey durur.",
+    "keep": "Kalsın",
+    "end": "Kabuğu sonlandır",
+    "empty": "Bu projede açık terminal yok.",
+    "emptyNote": "Yeni terminal, kabuğunuzu proje klasöründe ya da seçili görevin çalışma ağacında başlatır. Sizin adınıza çalışır, içine hiçbir API anahtarı verilmez ve Crewyard kendiliğinden hiç terminal açmaz.",
+    "failed": "Kabuk başlamadı: {{reason}}",
+    "refused": {
+      "folder": "klasör artık yok",
+      "shell": "bu kabuk kurulu değil",
+      "limit": "8 terminal açık, önce birini kapatın",
+      "failed": "terminal sunucusu onu başlatamadı"
+    },
+    "endedHost": "Terminal sunucusu durdu, bu yüzden bu kabuk sona erdi.",
+    "ended": "Kabuk {{code}} çıkış koduyla sona erdi.",
+    "foot": "Tab kabuğa gider · F6 terminalden çıkar · içine anahtar verilmez",
+    "countLabel_one": "{{count}} kabuk çalışıyor",
+    "countLabel_other": "{{count}} kabuk çalışıyor"
+  },
+  "problems": {
+    "none": "Sorun yok",
+    "summary_one": "{{count}} sorun · {{danger}} başarısız, {{warning}} bakılacak",
+    "summary_other": "{{count}} sorun · {{danger}} başarısız, {{warning}} bakılacak",
+    "restore_one": "Gizlenen {{count}} sorunu göster",
+    "restore_other": "Gizlenen {{count}} sorunu göster",
+    "error": "Bazı kaynaklar okunamadı, bu yüzden listede eksik sorun olabilir.",
+    "empty": "Bu projede başarısız olan bir şey yok.",
+    "allDismissed": "Bütün sorunlar gizlendi. Nedeni değişen ya da geri gelen sorun yeniden görünür.",
+    "listLabel": "Sorunlar, en yenisi önce",
+    "severity": {
+      "danger": "Başarısız",
+      "warning": "Bakılması gerekiyor"
+    },
+    "title": {
+      "run": "{{runner}} üzerindeki {{role}} başarısız oldu",
+      "event": "{{kind}}",
+      "check": "#{{pr}} numaralı çekme isteğinde {{name}} denetimi başarısız",
+      "stall": {
+        "no_events": "Bir adım {{minutes}} dakikadır sessiz",
+        "request_unanswered": "Bir istek {{minutes}} dakikadır yanıtınızı bekliyor",
+        "same_failure": "Bir adım art arda {{count}} kez başarısız oldu"
+      },
+      "configInvalid": "project.json kullanılamıyor",
+      "configNewer": "project.json daha yeni bir Crewyard sürümünden (sürüm {{version}}), salt okunur",
+      "configNewerUnknown": "project.json daha yeni bir Crewyard sürümünden (sürüm {{version}}) ve bu sürümün bilmediği alanlar içeriyor",
+      "configReplaced": "project.json içinde bu sürümün değiştirdiği değerler var: {{count}}",
+      "role": "Rol dosyası kullanılmadı: {{role}}",
+      "agentfileError": "{{name}}, {{profile}} profiline kopyalanamadı",
+      "agentfileGone": "{{name}} ögesinin aslı yok ({{profile}} profiliyle paylaşılmıştı)",
+      "key": "Anahtar denetimi başarısız: {{alias}}"
+    },
+    "open": {
+      "task": "Görevi aç",
+      "inbox": "Gelen kutusunu aç",
+      "github": "GitHub'ı aç",
+      "settings": "Ayarları aç",
+      "providers": "Sağlayıcıları aç",
+      "events": "Olayları göster"
+    },
+    "dismiss": "Gizle",
+    "dismissLabel": "Gizle: {{title}}",
+    "countLabel_one": "{{count}} sorun",
+    "countLabel_other": "{{count}} sorun"
   }
 }

@@ -29,9 +29,7 @@ module.exports = {
   // Electron's own LICENSE.electron.txt and LICENSES.chromium.html in the install folder.
   extraFiles: [{ from: "out/third-party", to: ".", filter: ["NOTICE.txt", "THIRD-PARTY-LICENSES.txt"] }],
   // node-pty, the terminal's one native module (docs/adr/0016-terminal.md), cannot load from inside
-  // app.asar: its runtime files go next to the archive in resources
-ative
-ode-pty, which the pty
+  // app.asar: its runtime files go next to the archive in resources/native/node-pty, which the pty
   // host loads by path. Only this platform's prebuilt binaries, without debug symbols.
   extraResources: [
     {

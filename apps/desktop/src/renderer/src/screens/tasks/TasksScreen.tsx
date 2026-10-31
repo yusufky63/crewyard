@@ -1,18 +1,18 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Panel } from "@crewyard/ui";
 import { useInspector } from "../../inspector.ts";
 import { useDaemon } from "../../ipc.ts";
-import { matches } from "../../keys.ts";
 import { useListKeys } from "../../listKeys.ts";
 import { useNav } from "../../nav.ts";
-import { AssistantPanel } from "./Assistant.tsx";
 import { BestOfCompare } from "./BestOfCompare.tsx";
 import { Composer } from "./Composer.tsx";
 import { FIXTURE } from "./fixture.ts";
 import { Schedules } from "./Schedules.tsx";
 import { CrewProposal } from "./CrewProposal.tsx";
-import { act, useWork } from "./data.ts";
+import { useWork } from "./data.ts";
+import { usePrefs } from "../../prefs.ts";
+import { toggleAssistant } from "../../shell/activity/panel.ts";
 import { useFixtureState } from "./fixtureState.ts";
 import { FILTERS, filterCounts, matchesFilter, type Filter } from "./model.ts";
 import { TaskRow } from "./TaskRow.tsx";
@@ -37,29 +37,9 @@ export function TasksScreen() {
   const comparing = selected?.bestOf && ["running", "choosing", "failed"].includes(selected.bestOf.phase) && !selected.cancelledAt;
   const group = useWork("tasks.get", { taskId: selected?.id ?? "" }, { enabled: Boolean(comparing) });
   const inspect = useInspector((s) => s.open);
-  // The task assistant (docs/adr/0014) opens beside the composer; closing it stops its session.
-  const [assistant, setAssistant] = useState(false);
-  const closeAssistant = useCallback(() => {
-    setAssistant(false);
-    // Closing returns focus to the button that opens it again.
-    requestAnimationFrame(() => document.getElementById("tk-assistant-toggle")?.focus({ preventScroll: true }));
-  }, []);
-  const toggleAssistant = useCallback(() => {
-    if (!assistant) return setAssistant(true);
-    // Closing stops the session; the conversation and drafts stay.
-    if (projectId) void act("assistant.stop", { projectId }).catch(() => undefined);
-    closeAssistant();
-  }, [assistant, projectId, closeAssistant]);
-  useEffect(() => {
-    if (!projectId || view !== "tasks") return;
-    const onKey = (e: KeyboardEvent) => {
-      if (!matches(e, "assistant") || e.defaultPrevented || e.repeat || document.querySelector("dialog[open]")) return;
-      e.preventDefault();
-      toggleAssistant();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [projectId, view, toggleAssistant]);
+  // The task assistant (docs/adr/0014) lives in the bottom panel's Assistant tab; this button opens
+  // it there, or stops it and closes the panel, as Ctrl Shift A does on every project screen.
+  const assistant = usePrefs((s) => s.drawerOpen && s.drawerTab === "assistant");
   const all = tasks.data ?? [];
   const shown = all.filter((x) => matchesFilter(x.status, filter));
   // J and K select as a click on the row does: the task, and the inspector on it.
@@ -112,8 +92,7 @@ export function TasksScreen() {
       )}
       {view === "tasks" && (
         <>
-          <Composer projectId={projectId} projectName={project?.name ?? ""} assistantOpen={assistant} onAssistant={toggleAssistant} />
-          {assistant && <AssistantPanel key={projectId} projectId={projectId} onClose={closeAssistant} />}
+          <Composer projectId={projectId} projectName={project?.name ?? ""} assistantOpen={assistant} onAssistant={() => toggleAssistant(projectId)} />
           {selected?.status === "proposed" && draft.data && draft.data.id === selected.id && <CrewProposal key={selected.id} task={draft.data} onClose={() => selectTask(selected.id)} />}
           {comparing && group.data && group.data.id === selected.id && <BestOfCompare detail={group.data} />}
 

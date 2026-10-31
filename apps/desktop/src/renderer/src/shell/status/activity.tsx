@@ -6,10 +6,12 @@ import { useNav } from "../../nav.ts";
 import { usePrefs } from "../../prefs.ts";
 import type { StatusItemDef } from "../../registry.ts";
 import { DRAWER_TOGGLE_ID, focusOnOpen, focusToggle } from "../activity/focus.ts";
+import { toggleAssistant, togglePanelTab } from "../activity/panel.ts";
 import { DRAWER_ID } from "../layout.ts";
 
-// Opens and closes the Activity drawer (DESIGN.md §4), here and with Ctrl J. Only inside a
-// project, where the drawer lives. Closing it hides the view; nothing it shows stops.
+// Opens and closes the bottom panel (DESIGN.md §4), here and with Ctrl J; Ctrl ` (or Ctrl Shift T),
+// Ctrl Shift M and Ctrl Shift A open it on the Terminal, Problems and Assistant tabs. Only inside
+// a project, where the panel lives. Closing it hides the view; nothing it shows stops.
 
 function ActivityStatus() {
   const { t } = useTranslation("activity");
@@ -20,7 +22,18 @@ function ActivityStatus() {
   useEffect(() => {
     if (!projectId) return;
     const onKey = (e: KeyboardEvent) => {
-      if (!matches(e, "drawer") || e.defaultPrevented || e.repeat || document.querySelector("dialog[open]")) return;
+      if (e.defaultPrevented || e.repeat || document.querySelector("dialog[open]")) return;
+      if (matches(e, "panel.terminal") || matches(e, "panel.problems")) {
+        e.preventDefault();
+        togglePanelTab(matches(e, "panel.terminal") ? "terminal" : "problems");
+        return;
+      }
+      if (matches(e, "assistant")) {
+        e.preventDefault();
+        toggleAssistant(projectId);
+        return;
+      }
+      if (!matches(e, "drawer")) return;
       e.preventDefault();
       if (usePrefs.getState().drawerOpen) focusToggle();
       else focusOnOpen();

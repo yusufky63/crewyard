@@ -136,8 +136,7 @@ const daemon = new DaemonHost(join(here, "daemon.js"), join(app.getPath("userDat
 }, hostSecrets, logs);
 
 // The panel's Terminal tab (docs/adr/0016-terminal.md): shells live in their own utility process,
-// started on the first terminal. Packaged, node-pty ships outside app.asar in resources
-ative.
+// started on the first terminal. Packaged, node-pty ships outside app.asar in resources/native.
 const terminals = new TerminalHost(join(here, "pty-host.js"), app.isPackaged ? join(process.resourcesPath, "native", "node-pty") : null);
 
 const callDaemon = <M extends IpcMethod>(method: M, params: IpcParams<M>) => daemon.call(method, params) as Promise<IpcResult<M>>;
