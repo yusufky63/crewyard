@@ -11,12 +11,15 @@ import {
   globBase,
   goalBasisMatches,
   goalDependents,
+  goalReportExcerpt,
   goalStopRule,
   goalTitle,
   layers,
   overlapPairs,
   parseGoalLimits,
+  parseGoalNote,
   parseGoalPlan,
+  parseGoalTask,
   parseGoalText,
   pathsOverlap,
   planRevisionRefusal,
@@ -191,6 +194,34 @@ describe("parseGoalPlan (design §4.3)", () => {
     expect(item.additionalProperties).toBe(false);
     const json = JSON.stringify(GOAL_PLAN_OUTPUT.jsonSchema);
     for (const bound of ["maxItems", "minItems", "maxLength", "minLength", "pattern", "minimum", "maximum"]) expect(json).not.toContain(bound);
+  });
+});
+
+describe("parseGoalTask (Add task and tile edits)", () => {
+  it("checks one task with the plan's rules, depending only on the goal's other tasks", () => {
+    const others = new Set(["server", "client"]);
+    expect(parseGoalTask(task("docs", { kind: "docs", dependsOn: ["server"], paths: ["docs/kullanım kılavuzu/"] }), others)).toMatchObject({ ok: true, value: { key: "docs", dependsOn: ["server"] } });
+    expect(parseGoalTask(task("docs", { dependsOn: ["ghost"] }), others)).toMatchObject({ ok: false, error: expect.stringContaining('"ghost"') });
+    expect(parseGoalTask(task("server"), others)).toMatchObject({ ok: false, error: 'task.key "server" is used twice' });
+    expect(parseGoalTask(task("docs", { paths: ["C:/x"] }), others)).toMatchObject({ ok: false });
+    expect(parseGoalTask({ ...task("docs"), run: "now" }, others)).toMatchObject({ ok: false, error: 'task has an unknown field "run"' });
+  });
+});
+
+describe("notes and report excerpts", () => {
+  it("caps your note to the planner and allows it empty", () => {
+    expect(parseGoalNote(undefined)).toEqual({ ok: true, value: "" });
+    expect(parseGoalNote("  Önce sunucu tarafı  ")).toEqual({ ok: true, value: "Önce sunucu tarafı" });
+    expect(parseGoalNote("n".repeat(2_001))).toMatchObject({ ok: false, error: "note is 2001 bytes; the limit is 2000" });
+    expect(parseGoalNote(5)).toMatchObject({ ok: false });
+  });
+
+  it("cuts an accepted report's summary to 4 KB at whole characters for a writing task's prompt", () => {
+    expect(goalReportExcerpt("Short report")).toBe("Short report");
+    const long = goalReportExcerpt("ş".repeat(3_000));
+    expect(new TextEncoder().encode(long).length).toBeLessThanOrEqual(GOAL_LIMITS.reportSummaryBytes);
+    expect(long).toContain("[truncated, 6000 bytes]");
+    expect(long).not.toContain("�");
   });
 });
 

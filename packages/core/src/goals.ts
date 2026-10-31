@@ -1,6 +1,6 @@
 import { basisMatch, failureKey } from "./autopilot.ts";
 import { MAX_CREW_STEPS } from "./crew-edit.ts";
-import { utf8Length } from "./event-caps.ts";
+import { capText, utf8Length } from "./event-caps.ts";
 import type { CostEstimate, Reason, TaskKind, TaskMode, TaskSize } from "./ipc/tasks.ts";
 import { cleanText } from "./mcp.ts";
 import type { TaskStatus } from "./state.ts";
@@ -233,45 +233,59 @@ export function parseGoalPlan(value: unknown, opts: { maxTasks?: number | null }
   const tasks: GoalPlanTask[] = [];
   const keys = new Set<string>();
   for (let i = 0; i < a.tasks.length; i++) {
-    const at = `tasks[${i}]`;
-    const t = rec(a.tasks[i]);
-    if (!t) return invalid(`${at} must be an object`);
-    const ex = unknownKey(t, TASK_KEYS, at);
-    if (ex) return invalid(ex);
-    if (typeof t.key !== "string" || !GOAL_TASK_KEY.test(t.key)) return invalid(`${at}.key must be 1 to 16 lowercase letters, digits or dashes`);
-    const key = t.key;
-    if (keys.has(key)) return invalid(`${at}.key "${key}" is used twice`);
-    const title = text(t.title, `${at}.title`, GOAL_LIMITS.titleBytes, { required: true, oneLine: true });
-    if (!title.ok) return invalid(title.error);
-    const kind = oneOf(t.kind, `${at}.kind`, GOAL_TASK_KINDS);
-    if (!kind.ok) return invalid(kind.error);
-    const mode = oneOf(t.mode, `${at}.mode`, GOAL_TASK_MODES);
-    if (!mode.ok) return invalid(mode.error);
-    const size = oneOf(t.size, `${at}.size`, GOAL_TASK_SIZES);
-    if (!size.ok) return invalid(size.error);
-    const priority = oneOf(t.priority, `${at}.priority`, GOAL_PRIORITIES);
-    if (!priority.ok) return invalid(priority.error);
-    const description = text(t.description, `${at}.description`, GOAL_LIMITS.descriptionBytes, { required: false });
-    if (!description.ok) return invalid(description.error);
-    const acc = acceptance(t.acceptance, `${at}.acceptance`);
-    if (!acc.ok) return invalid(acc.error);
-    const basis = text(t.basis, `${at}.basis`, GOAL_LIMITS.basisBytes, { required: false });
-    if (!basis.ok) return invalid(basis.error);
-    const reason = text(t.reason, `${at}.reason`, GOAL_LIMITS.reasonBytes, { required: true });
-    if (!reason.ok) return invalid(reason.error);
-    if (!Array.isArray(t.dependsOn)) return invalid(`${at}.dependsOn must be an array of keys`);
-    const deps: string[] = [];
-    for (const d of t.dependsOn) {
-      if (typeof d !== "string") return invalid(`${at}.dependsOn must be an array of keys`);
-      if (d === key) return invalid(`${at} ("${key}") must not depend on itself`);
-      // Only keys listed earlier: task-master's "lower ids" rule, which makes a cycle impossible.
-      if (!keys.has(d)) return invalid(`${at} ("${key}") depends on "${d}", which is not a task listed before it`);
-      if (!deps.includes(d)) deps.push(d);
-    }
-    const p = paths(t.paths, `${at}.paths`, kind.value);
-    if (!p.ok) return invalid(p.error);
-    keys.add(key);
-    tasks.push({
+    const t = parseGoalTask(a.tasks[i], keys, `tasks[${i}]`);
+    if (!t.ok) return invalid(t.error);
+    keys.add(t.value.key);
+    tasks.push(t.value);
+  }
+  return { ok: true, value: { summary: summary.value, tasks } };
+}
+
+/**
+ * Checks one plan task with the same rules as parseGoalPlan. `earlier` holds the keys it may depend
+ * on: the tasks listed before it, or for `Add task` and tile edits, the goal's other tasks (the
+ * caller still refuses a loop with wouldCycle). Its own key must not be among them.
+ */
+export function parseGoalTask(value: unknown, earlier: ReadonlySet<string>, at = "task"): Parsed<GoalPlanTask> {
+  const t = rec(value);
+  if (!t) return { ok: false, error: `${at} must be an object` };
+  const ex = unknownKey(t, TASK_KEYS, at);
+  if (ex) return { ok: false, error: ex };
+  if (typeof t.key !== "string" || !GOAL_TASK_KEY.test(t.key)) return { ok: false, error: `${at}.key must be 1 to 16 lowercase letters, digits or dashes` };
+  const key = t.key;
+  if (earlier.has(key)) return { ok: false, error: `${at}.key "${key}" is used twice` };
+  const title = text(t.title, `${at}.title`, GOAL_LIMITS.titleBytes, { required: true, oneLine: true });
+  if (!title.ok) return title;
+  const kind = oneOf(t.kind, `${at}.kind`, GOAL_TASK_KINDS);
+  if (!kind.ok) return kind;
+  const mode = oneOf(t.mode, `${at}.mode`, GOAL_TASK_MODES);
+  if (!mode.ok) return mode;
+  const size = oneOf(t.size, `${at}.size`, GOAL_TASK_SIZES);
+  if (!size.ok) return size;
+  const priority = oneOf(t.priority, `${at}.priority`, GOAL_PRIORITIES);
+  if (!priority.ok) return priority;
+  const description = text(t.description, `${at}.description`, GOAL_LIMITS.descriptionBytes, { required: false });
+  if (!description.ok) return description;
+  const acc = acceptance(t.acceptance, `${at}.acceptance`);
+  if (!acc.ok) return acc;
+  const basis = text(t.basis, `${at}.basis`, GOAL_LIMITS.basisBytes, { required: false });
+  if (!basis.ok) return basis;
+  const reason = text(t.reason, `${at}.reason`, GOAL_LIMITS.reasonBytes, { required: true });
+  if (!reason.ok) return reason;
+  if (!Array.isArray(t.dependsOn)) return { ok: false, error: `${at}.dependsOn must be an array of keys` };
+  const deps: string[] = [];
+  for (const d of t.dependsOn) {
+    if (typeof d !== "string") return { ok: false, error: `${at}.dependsOn must be an array of keys` };
+    if (d === key) return { ok: false, error: `${at} ("${key}") must not depend on itself` };
+    // Only keys listed earlier: task-master's "lower ids" rule, which makes a cycle impossible.
+    if (!earlier.has(d)) return { ok: false, error: `${at} ("${key}") depends on "${d}", which is not a task listed before it` };
+    if (!deps.includes(d)) deps.push(d);
+  }
+  const p = paths(t.paths, `${at}.paths`, kind.value);
+  if (!p.ok) return p;
+  return {
+    ok: true,
+    value: {
       key,
       title: title.value,
       kind: kind.value,
@@ -284,9 +298,22 @@ export function parseGoalPlan(value: unknown, opts: { maxTasks?: number | null }
       paths: p.value,
       reason: reason.value.replace(/\s+/g, " "),
       priority: priority.value,
-    });
-  }
-  return { ok: true, value: { summary: summary.value, tasks } };
+    },
+  };
+}
+
+/** Your note to the planner on Revise or Replan: cleaned, may be empty, refused past the limit. */
+export function parseGoalNote(v: unknown): Parsed<string> {
+  if (v === undefined || v === null) return { ok: true, value: "" };
+  return text(v, "note", GOAL_LIMITS.noteBytes, { required: false });
+}
+
+/**
+ * An accepted report's summary as a writing task's prompt quotes it (design §4.11): cut at whole
+ * characters to 4 KB with a marker. You read and accepted the full report; the excerpt only bounds the prompt.
+ */
+export function goalReportExcerpt(summary: string): string {
+  return capText(cleanText(summary), GOAL_LIMITS.reportSummaryBytes).text;
 }
 
 // Dotless ı and dotted İ fold to i, accents and smart quotes to their plain forms, so a planner
