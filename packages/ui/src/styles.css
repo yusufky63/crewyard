@@ -47,6 +47,12 @@ body {
 button, input, textarea, select { font: inherit; color: inherit; }
 button { background: none; border: 0; cursor: pointer; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Text fields and selects show focus inside their own frame, not as a ring around them (owner,
+   2026-10-31: "searchbar ve selectbox daki outline leri kaldır"): the border turns accent and an
+   inset line doubles it, so focus stays visible at 3:1 without the outer outline. */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus-visible,
+select:focus-visible,
+textarea:focus-visible { outline: none; border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 svg.i, .i { width: 16px; height: 16px; flex: none; }
 
 .mono { font-family: var(--mono); }

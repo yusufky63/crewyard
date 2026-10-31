@@ -207,7 +207,7 @@ A failure's reason is our code in words, or for a provider's error its HTTP stat
 
 ## 8. Accessibility
 
-- WCAG 2.2 AA: text 4.5:1, UI boundaries and focus 3:1 (checked by the script), 2 px focus ring with 2 px offset.
+- WCAG 2.2 AA: text 4.5:1, UI boundaries and focus 3:1 (checked by the script), 2 px focus ring with 2 px offset. Text fields, selects and the title-bar search have no ring: their own border turns accent and an inset 1 px accent line doubles it, so focus stays 2 px and visible inside the frame (owner, 2026-10-31: "searchbar ve selectbox daki outline leri kaldır").
 - Targets at least 28 px in compact and 34 px in comfortable.
 - The graph has an equivalent list view (`Show as list`). Meters expose `role="meter"` with values; unknown quota is announced as unknown.
 - Live updates are batched: one polite announcement per state change, never per token.

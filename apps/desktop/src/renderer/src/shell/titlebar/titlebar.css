@@ -11,6 +11,8 @@
 }
 .tb-search::before { content: ""; position: absolute; inset: -1px; pointer-events: none; background: var(--tk, var(--ink-3)); -webkit-mask: var(--tick-mask); mask: var(--tick-mask); }
 .tb-search:hover { border-color: var(--line-strong); color: var(--ink-2); --tk: var(--ink); }
+/* Like the fields (packages/ui styles.css): focus is the frame and its ticks in accent, no outer ring. */
+.tb-search:focus-visible { outline: none; border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); --tk: var(--accent); }
 .tb-search-t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tb-search .kbd { flex: none; }
 
