@@ -26,7 +26,8 @@ Ranked by stars, then by how directly the project informs ours.
 | 16 | [agentclientprotocol/agent-client-protocol](https://github.com/agentclientprotocol/agent-client-protocol) | 4.5k | Apache-2.0 | n/a | Protocol for Gemini and as a common shape for events |
 | 17 | [realiti4/claude-swap](https://github.com/realiti4/claude-swap) | 4.2k | MIT | partial | Lessons on Windows credential storage and auto-rotation |
 | 18 | [stravu/crystal](https://github.com/stravu/crystal) | 3.1k | MIT | source only | Deprecated. MCP permission tool as a fallback approval path |
-| 19 | [hoangsonww/Claude-Code-Agent-Monitor](https://github.com/hoangsonww/Claude-Code-Agent-Monitor) | 1.1k | MIT | native exe | Reference for Windows spawning hygiene, cost buckets, alert rules |
+| 19 | [eneskirca/nodeterm](https://github.com/eneskirca/nodeterm) | 2.3k | BUSL-1.1 (not OSI) | beta (session host) | Ideas only, kept for later: sessions that outlive the app, hook-reply approvals, consent before touching agent configs, memory per session ([notes](docs/research/2026-11-01-nodeterm.md)). No code reuse |
+| 20 | [hoangsonww/Claude-Code-Agent-Monitor](https://github.com/hoangsonww/Claude-Code-Agent-Monitor) | 1.1k | MIT | native exe | Reference for Windows spawning hygiene, cost buckets, alert rules |
 
 Not used: n8n (209k, Sustainable Use License, a workflow tool), langflow (156k, a flow builder). Neither fits a coding-agent control panel.
 
@@ -107,6 +108,15 @@ Build our own app, small and Windows-first, using these projects as references, 
 ## Follow-up scan (2026-10-30)
 
 A second, deeper pass over these repos, the four runners' docs and six newer projects is in [docs/research/2026-10-30-feature-scan.md](docs/research/2026-10-30-feature-scan.md): fixes for what we already built, ranked additions, Windows pitfalls, quota endpoint facts and corrections to this page.
+
+## nodeterm (2026-11-01)
+
+A canvas-based terminal manager for agent CLIs, under BUSL-1.1, so it is read for ideas only. The owner wants its ideas kept for when we need them. [docs/research/2026-11-01-nodeterm.md](docs/research/2026-11-01-nodeterm.md) has five, each with its source doc, what Crewyard has today and the size of the change:
+1. a Windows session host that keeps terminals and agents alive across app restarts;
+2. hook-reply approvals for Claude Code sessions started outside the app;
+3. consent before writing into an agent's global configuration;
+4. memory per session;
+5. distribution details.
 
 ## Not verified
 
