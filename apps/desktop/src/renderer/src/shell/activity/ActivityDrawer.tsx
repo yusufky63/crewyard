@@ -155,7 +155,7 @@ export function ActivityDrawer() {
   useLayoutEffect(() => {
     if (!open) return;
     takeFocus(root.current);
-    const box = tab === "assistant" ? root.current?.querySelector<HTMLTextAreaElement>(".as-input textarea") : null;
+    const box = tab === "assistant" ? root.current?.querySelector<HTMLTextAreaElement>(".as-compose textarea") : null;
     if (box && takeAssistantFocus()) box.focus();
   }, [open, tab]);
 

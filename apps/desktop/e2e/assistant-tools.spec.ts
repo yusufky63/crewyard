@@ -92,6 +92,8 @@ test("the assistant reads with Autopilot off, refines its own draft, and starts 
 
   const log = p.getByRole("log", { name: "Conversation with the task assistant" });
   await expect(log.getByText("I drafted a follow-up.", { exact: false })).toBeVisible({ timeout: 40_000 });
+  // Consecutive tool lines fold into one burst line; open each burst to see the lines it holds.
+  for (const head of await log.locator(".as-burst-head[aria-expanded='false']").all()) await head.click();
   for (const line of ["Listed tasks", "Read task: Fix the login redirect", "Read crew: Fix the login redirect", "Read spend and limits: last 7 days", `Read git status: ${basename(repo)}`, "Could not read task"]) {
     await expect(log.getByText(line, { exact: true })).toBeVisible();
   }
@@ -138,6 +140,8 @@ test("the assistant reads with Autopilot off, refines its own draft, and starts 
   await expect(page.locator("html")).toHaveAttribute("lang", "tr");
   await page.locator("main").getByRole("button", { name: "[ Geri ]", exact: true }).click();
   const trLog = page.getByRole("log", { name: "Görev asistanıyla sohbet" });
+  await expect(trLog).toBeVisible();
+  for (const head of await trLog.locator(".as-burst-head[aria-expanded='false']").all()) await head.click();
   for (const line of ["Görevlere baktı", "Görevi okudu: Fix the login redirect", "Ekibe baktı: Fix the login redirect", "Harcamaya ve limitlere baktı: son 7 gün", `Git durumuna baktı: ${basename(repo)}`, "Görev okunamadı", "Taslağı düzenledi: Fix the login redirect for SSO users"]) {
     await expect(trLog.getByText(line, { exact: true })).toBeVisible();
   }

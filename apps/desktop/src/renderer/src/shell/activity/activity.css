@@ -96,9 +96,6 @@
 .as-docked .as-body { flex: 1; min-height: 0; grid-template-columns: minmax(0, 1fr) minmax(260px, 34%); }
 .as-docked .as-term { grid-template-rows: minmax(0, 1fr) auto auto auto; min-height: 0; }
 .as-docked .as-log { height: auto; min-height: 48px; }
-.as-docked .as-input { padding: 6px 8px 6px 16px; }
-.as-docked .as-input textarea { min-height: 24px; resize: none; }
-.as-docked .as-foot { padding: 4px 16px 6px; }
 .as-docked .as-drafts { max-height: none; min-height: 0; border-left: 1px solid var(--line); border-top: 0; }
 /* The Autopilot strip (its consent and log) can be taller than the panel: it scrolls on its own and
    leaves the conversation a usable minimum, and nothing in a tab ever spills over the status bar. */
