@@ -1,0 +1,251 @@
+{
+  "$comment": "Matches of scripts/scan-history.mjs reviewed as fake test values (path, pattern, SHA-256 prefix of the value; never the value). Add an entry only after looking at the value; a real one is rotated, not listed.",
+  "reviewed": "2026-10-31",
+  "matches": [
+    {
+      "path": "apps/desktop/src/main/logs.test.ts",
+      "pattern": "github-token",
+      "masked": "ghp_...(34)",
+      "fingerprint": "de58a9bb8f090174",
+      "why": "fake: log redaction test input"
+    },
+    {
+      "path": "apps/desktop/src/main/terminal/env.test.ts",
+      "pattern": "anthropic-key",
+      "masked": "sk-a...(39)",
+      "fingerprint": "f25d36b2e754b314",
+      "why": "fake: terminal environment filter test: sample values per key shape"
+    },
+    {
+      "path": "apps/desktop/src/main/terminal/env.test.ts",
+      "pattern": "aws-access-key-id",
+      "masked": "AKIA...(20)",
+      "fingerprint": "457643f44d19aed8",
+      "why": "fake: terminal environment filter test: sample values per key shape"
+    },
+    {
+      "path": "apps/desktop/src/main/terminal/env.test.ts",
+      "pattern": "github-fine-grained-pat",
+      "masked": "gith...(38)",
+      "fingerprint": "33e3fdcd8b36799f",
+      "why": "fake: terminal environment filter test: sample values per key shape"
+    },
+    {
+      "path": "apps/desktop/src/main/terminal/env.test.ts",
+      "pattern": "github-token",
+      "masked": "ghp_...(34)",
+      "fingerprint": "de58a9bb8f090174",
+      "why": "fake: terminal environment filter test: sample values per key shape"
+    },
+    {
+      "path": "apps/desktop/src/main/terminal/env.test.ts",
+      "pattern": "jwt",
+      "masked": "eyJh...(64)",
+      "fingerprint": "7e7d5128f894fd24",
+      "why": "fake: terminal environment filter test: sample values per key shape"
+    },
+    {
+      "path": "apps/desktop/src/main/terminal/env.test.ts",
+      "pattern": "openai-project-key",
+      "masked": "sk-p...(34)",
+      "fingerprint": "46f5e651c1e373d3",
+      "why": "fake: terminal environment filter test: sample values per key shape"
+    },
+    {
+      "path": "apps/desktop/src/main/terminal/env.test.ts",
+      "pattern": "openrouter-key",
+      "masked": "sk-o...(35)",
+      "fingerprint": "efa4451f6ca146c7",
+      "why": "fake: terminal environment filter test: sample values per key shape"
+    },
+    {
+      "path": "apps/desktop/src/main/terminal/env.test.ts",
+      "pattern": "slack-token",
+      "masked": "xoxb...(26)",
+      "fingerprint": "05f2de23a285d157",
+      "why": "fake: terminal environment filter test: sample values per key shape"
+    },
+    {
+      "path": "apps/desktop/src/main/terminal/env.test.ts",
+      "pattern": "url-with-credentials",
+      "masked": "hunt...(14)",
+      "fingerprint": "76880d60191af3b3",
+      "why": "fake: terminal environment filter test: sample values per key shape"
+    },
+    {
+      "path": "apps/desktop/src/renderer/src/shell/activity/problems.test.ts",
+      "pattern": "url-with-credentials",
+      "masked": "hunt...(14)",
+      "fingerprint": "76880d60191af3b3",
+      "why": "fake: Problems tab redaction test: URL with a sample password"
+    },
+    {
+      "path": "packages/adapter-claude/src/adapter.test.ts",
+      "pattern": "anthropic-key",
+      "masked": "sk-a...(34)",
+      "fingerprint": "561da246c224aea6",
+      "why": "fake: adapter test key"
+    },
+    {
+      "path": "packages/adapter-claude/src/fork.test.ts",
+      "pattern": "generic-sk-key",
+      "masked": "sk-d...(33)",
+      "fingerprint": "15f110d5f017bba6",
+      "why": "fake: fork test keys for two profiles"
+    },
+    {
+      "path": "packages/adapter-claude/src/fork.test.ts",
+      "pattern": "generic-sk-key",
+      "masked": "sk-d...(33)",
+      "fingerprint": "b2a11e749a0392c1",
+      "why": "fake: fork test keys for two profiles"
+    },
+    {
+      "path": "packages/core/src/redact.test.ts",
+      "pattern": "anthropic-key",
+      "masked": "sk-a...(29)",
+      "fingerprint": "2c625cd7ff6145bf",
+      "why": "fake: redaction rule table: one sample per secret shape"
+    },
+    {
+      "path": "packages/core/src/redact.test.ts",
+      "pattern": "anthropic-key",
+      "masked": "sk-a...(35)",
+      "fingerprint": "d044ff41822a93e9",
+      "why": "fake: redaction rule table: one sample per secret shape"
+    },
+    {
+      "path": "packages/core/src/redact.test.ts",
+      "pattern": "authorization-header",
+      "masked": "abcd...(19)",
+      "fingerprint": "88838e0b4d1f867f",
+      "why": "fake: redaction rule table: one sample per secret shape"
+    },
+    {
+      "path": "packages/core/src/redact.test.ts",
+      "pattern": "authorization-header",
+      "masked": "dXNl...(20)",
+      "fingerprint": "bdfeaef44475711c",
+      "why": "fake: redaction rule table: one sample per secret shape"
+    },
+    {
+      "path": "packages/core/src/redact.test.ts",
+      "pattern": "github-fine-grained-pat",
+      "masked": "gith...(47)",
+      "fingerprint": "a928368c270b9019",
+      "why": "fake: redaction rule table: one sample per secret shape"
+    },
+    {
+      "path": "packages/core/src/redact.test.ts",
+      "pattern": "github-token",
+      "masked": "ghp_...(34)",
+      "fingerprint": "de58a9bb8f090174",
+      "why": "fake: redaction rule table: one sample per secret shape"
+    },
+    {
+      "path": "packages/core/src/redact.test.ts",
+      "pattern": "jwt",
+      "masked": "eyJh...(69)",
+      "fingerprint": "d80597df6ad05b1b",
+      "why": "fake: redaction rule table: one sample per secret shape"
+    },
+    {
+      "path": "packages/core/src/redact.test.ts",
+      "pattern": "openai-project-key",
+      "masked": "sk-p...(28)",
+      "fingerprint": "d9605d446b9e767c",
+      "why": "fake: redaction rule table: one sample per secret shape"
+    },
+    {
+      "path": "packages/core/src/redact.test.ts",
+      "pattern": "private-key-block",
+      "masked": "----...(31)",
+      "fingerprint": "8bcac7908eb95041",
+      "why": "fake: redaction rule table: one sample per secret shape"
+    },
+    {
+      "path": "packages/core/src/redact.test.ts",
+      "pattern": "url-with-credentials",
+      "masked": "hunt...(13)",
+      "fingerprint": "5ccefdc7743291df",
+      "why": "fake: redaction rule table: one sample per secret shape"
+    },
+    {
+      "path": "packages/daemon/src/activity/logs.test.ts",
+      "pattern": "openai-project-key",
+      "masked": "sk-p...(28)",
+      "fingerprint": "24f15c16c815ebcd",
+      "why": "fake: log parser redaction test input"
+    },
+    {
+      "path": "packages/daemon/src/assistant/service.test.ts",
+      "pattern": "generic-sk-key",
+      "masked": "sk-t...(29)",
+      "fingerprint": "3aa2e697227724a8",
+      "why": "fake: assistant test environment value"
+    },
+    {
+      "path": "packages/daemon/src/assistant/tools.test.ts",
+      "pattern": "authorization-header",
+      "masked": "abcd...(16)",
+      "fingerprint": "f39dac6cbaba535e",
+      "why": "fake: assistant tool output redaction test input"
+    },
+    {
+      "path": "packages/daemon/src/assistant/tools.test.ts",
+      "pattern": "generic-sk-key",
+      "masked": "sk-t...(26)",
+      "fingerprint": "e728b693501e9ae1",
+      "why": "fake: assistant tool output redaction test input"
+    },
+    {
+      "path": "packages/daemon/src/assistant/tools.test.ts",
+      "pattern": "openai-project-key",
+      "masked": "sk-p...(32)",
+      "fingerprint": "38750363110a3eda",
+      "why": "fake: assistant tool output redaction test input"
+    },
+    {
+      "path": "packages/daemon/src/assistant/tools.test.ts",
+      "pattern": "url-with-credentials",
+      "masked": "hunt...(13)",
+      "fingerprint": "5ccefdc7743291df",
+      "why": "fake: assistant tool output redaction test input"
+    },
+    {
+      "path": "packages/daemon/src/github/git.test.ts",
+      "pattern": "url-with-credentials",
+      "masked": "secr...(6)",
+      "fingerprint": "2bb80d537b1da3e3",
+      "why": "fake: remote URL parser test with sample credentials"
+    },
+    {
+      "path": "packages/daemon/src/orchestrator/orchestrator.test.ts",
+      "pattern": "authorization-header",
+      "masked": "abcd...(16)",
+      "fingerprint": "25f94a2a5c7fbaf4",
+      "why": "fake: error redaction test input"
+    },
+    {
+      "path": "packages/daemon/src/orchestrator/orchestrator.test.ts",
+      "pattern": "generic-secret-assignment",
+      "masked": "s3cr...(21)",
+      "fingerprint": "316e351ac9328323",
+      "why": "fake: error redaction test input"
+    },
+    {
+      "path": "packages/daemon/src/settings/data.test.ts",
+      "pattern": "generic-sk-key",
+      "masked": "sk-r...(31)",
+      "fingerprint": "42e59fa2e849e979",
+      "why": "fake: export test marker that must not appear in a backup"
+    },
+    {
+      "path": "packages/daemon/src/setup/config.test.ts",
+      "pattern": "generic-secret-assignment",
+      "masked": "ghp_...(20)",
+      "fingerprint": "02008d7d30d9b4af",
+      "why": "fake: project.json test: a token field that must be refused"
+    }
+  ]
+}
