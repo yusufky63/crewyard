@@ -142,7 +142,7 @@
       "points": {
         "a": "The terminal is your own shell in the project folder or a task's worktree. It starts only when you press New terminal and never gets an API key.",
         "b": "Problems lists every failure of the project in one place, each with a button to where you fix it.",
-        "c": "Hiding the panel stops nothing; closing a terminal's tab ends its shell after asking."
+        "c": "Inside a project the panel never closes: its toggle, or Ctrl J, folds it to its tab strip and back. Folding stops nothing, the assistant included; closing a terminal's tab ends its shell after asking."
       },
       "go": "Open Problems"
     },
@@ -208,7 +208,7 @@
     },
     "closePanel": {
       "q": "Does closing a panel stop an agent?",
-      "a": "No. Closing the inspector, the bottom panel or the window keeps agents running, and the tray icon stays. Only two controls stop what they show, and they say so: the assistant's Stop and close, and a terminal's own close."
+      "a": "No. Closing the inspector or the window, or folding the bottom panel, keeps agents running, and the tray icon stays. Only two controls stop what they show, and they say so: the assistant's Stop and close, and a terminal's own close."
     },
     "estimated": {
       "q": "Why does a number say Estimated?",

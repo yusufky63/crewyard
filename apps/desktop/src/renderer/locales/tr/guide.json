@@ -142,7 +142,7 @@
       "points": {
         "a": "Terminal, proje klasöründe ya da bir görevin worktree'sinde açılan kendi kabuğundur. Yalnızca Yeni terminal'e basınca başlar ve içine hiçbir API anahtarı verilmez.",
         "b": "Sorunlar, projedeki her hatayı tek listede toplar; her satırda düzeltileceği yere giden bir düğme vardır.",
-        "c": "Paneli gizlemek hiçbir şeyi durdurmaz; bir terminalin sekmesini kapatmak ise sorduktan sonra kabuğu sonlandırır."
+        "c": "Proje içinde panel hiç kapanmaz: düğmesi ya da Ctrl J onu sekme şeridine indirir, sonra yeniden açar. İndirmek hiçbir şeyi durdurmaz, asistan da çalışmaya devam eder; bir terminalin sekmesini kapatmak ise sorduktan sonra kabuğu sonlandırır."
       },
       "go": "Sorunları aç"
     },
@@ -208,7 +208,7 @@
     },
     "closePanel": {
       "q": "Bir paneli kapatmak ajanı durdurur mu?",
-      "a": "Hayır. Denetçiyi, alt paneli ya da pencereyi kapatmak ajanları çalışır halde bırakır, tepsi simgesi de yerinde kalır. Gösterdiğini durduran yalnızca iki düğme vardır ve bunu açıkça söylerler: asistanın Durdur ve kapat düğmesi ile bir terminalin kendi kapatma düğmesi."
+      "a": "Hayır. Denetçiyi ya da pencereyi kapatmak, alt paneli indirmek ajanları çalışır halde bırakır, tepsi simgesi de yerinde kalır. Gösterdiğini durduran yalnızca iki düğme vardır ve bunu açıkça söylerler: asistanın Durdur ve kapat düğmesi ile bir terminalin kendi kapatma düğmesi."
     },
     "estimated": {
       "q": "Bir sayı neden Tahmini diyor?",
