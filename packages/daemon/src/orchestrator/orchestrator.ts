@@ -1,35 +1,25 @@
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
 import {
-  type AgentAdapter,
-  type Attachment,
   type CandidateView,
-  type ForkResult,
   type HandoffStop,
   type HandoffTrigger,
   type Reason,
-  type ReviewTarget,
   type RequestAnswer,
   type RequestView,
-  type RoleId,
-  type RunHandle,
   type RunView,
-  type SessionProblem,
   type SessionSeen,
-  type StartRequest,
   type TaskDetail,
   type TaskSummary,
   type TasksIpc,
-  sessionProblemOf,
   type UserInput,
   withAttachments,
 } from "@crewyard/core";
 import type { McpHook } from "../mcp/service.ts";
 import { Bootstrapper } from "../worktrees/bootstrap.ts";
 import { admit, DEFAULT_LIMITS } from "./admission.ts";
-import { OrchestratorContext, type LaunchSpec, type Live, type OrchestratorOptions, type ProposeParams } from "./context.ts";
+import { OrchestratorContext, type OrchestratorOptions, type ProposeParams } from "./context.ts";
 import { Part } from "./part.ts";
+import { Launcher } from "./launch.ts";
 import { RunLifecycle } from "./run-lifecycle.ts";
 import { BestOfRunner } from "./best-of.ts";
 import { Hibernator } from "./hibernation.ts";
@@ -40,17 +30,14 @@ import { Handoffs } from "./handoffs.ts";
 import { Budget } from "./budget.ts";
 import { Inbox } from "./inbox.ts";
 import { classifyTask } from "./classify.ts";
-import { eligible, estimateFor, proposeCrew, readOnlyConflict, sameModel, scoreCandidate, sumEstimates } from "./crew.ts";
-import type { MemberRow, ProjectRow, RunRow, TaskRow, WorktreeRow } from "./db.ts";
+import { eligible, proposeCrew, readOnlyConflict, sameModel, scoreCandidate, sumEstimates } from "./crew.ts";
+import type { MemberRow, RunRow, TaskRow } from "./db.ts";
 import type { Candidate, ProfileDirectory } from "./directory.ts";
-import { errorCode, errorDetail, OrchestratorError } from "./errors.ts";
-import { ensureWorktree, sameDir, taskSlug } from "./git.ts";
-import { reviewContext } from "./loops.ts";
-import { outputSchemaFor } from "./results.ts";
+import { errorCode, OrchestratorError } from "./errors.ts";
 import type { LimitMonitor } from "./limits.ts";
 import { rolePrompt } from "./prompts.ts";
 import { projectRoles } from "./role-files.ts";
-import { capResetsAt, capWindow, reserveSpend, settleReservation, spendCredential } from "./spend.ts";
+import { capResetsAt, capWindow, settleReservation } from "./spend.ts";
 import { joinMessages } from "./queue.ts";
 import { Scheduler } from "./schedules.ts";
 
@@ -59,9 +46,6 @@ export type { OrchestratorOptions } from "./context.ts";
 // The deterministic scheduler (PLAN.md D7, D8, §8, §9): it runs the crew you approved as a DAG,
 // under admission control, and never lets an agent start another agent. All state lives in the
 // store as facts; this class only holds live process handles, timers and the admission notes.
-
-/** Roles that read a pinned, detached checkout of the commit they review instead of the live worktree. */
-const PINNED_ROLES: RoleId[] = ["reviewer", "security"];
 
 const pidAlive = (pid: number) => {
   try {
@@ -78,7 +62,6 @@ export class Orchestrator extends Part {
   private ticking = false;
   private tickAgain = false;
   private interval: NodeJS.Timeout | null = null;
-  private readonly creating = new Map<string, Promise<WorktreeRow>>();
   private readonly inbox: Inbox = new Inbox(this.ctx, {
     checkSeen: (run, seen) => this.checkSeen(run, seen),
     resolveTarget: (run, profileId, payload) => this.handoffs.resolveTarget(run, profileId, payload),
@@ -87,7 +70,7 @@ export class Orchestrator extends Part {
     stopRun: (runId, detail, reason) => this.lifecycle.stopRun(runId, detail, reason),
     continuePastCap: (runId) => this.fallback.continuePastCap(runId),
     wakeRun: (runId, cause) => this.hibernator.wakeRun(runId, cause),
-    proceed: (runId, text) => this.proceed(runId, text),
+    proceed: (runId, text) => this.launcher.proceed(runId, text),
     endRun: (runId, reason, detail) => this.lifecycle.endRun(runId, reason, detail),
     tick: () => this.tick(),
   });
@@ -98,7 +81,7 @@ export class Orchestrator extends Part {
     cancelAutoRetry: (runId) => this.fallback.cancelAutoRetry(runId),
     closeRequest: (q, by) => this.inbox.closeRequest(q, by),
     offerHandoff: (run, task, mode, info, detail) => this.fallback.offerHandoff(run, task, mode, info, detail),
-    launch: (spec) => this.launch(spec),
+    launch: (spec) => this.launcher.launch(spec),
     stopRun: (runId, detail, reason) => this.lifecycle.stopRun(runId, detail, reason),
     endRun: (runId, reason, detail) => this.lifecycle.endRun(runId, reason, detail),
     copyTranscript: (runId) => this.lifecycle.copyTranscript(runId),
@@ -111,8 +94,8 @@ export class Orchestrator extends Part {
     autoTargets: (run, task, candidates) => this.handoffs.autoTargets(run, task, candidates),
     performHandoff: (sourceRunId, target, trigger) => this.handoffs.performHandoff(sourceRunId, target, trigger),
     insertRequest: (taskId, runId, nativeId, risk, payload) => this.inbox.insertRequest(taskId, runId, nativeId, risk, payload),
-    launch: (spec) => this.launch(spec),
-    proceed: (runId, text) => this.proceed(runId, text),
+    launch: (spec) => this.launcher.launch(spec),
+    proceed: (runId, text) => this.launcher.proceed(runId, text),
   });
   private readonly switcher: AccountSwitcher = new AccountSwitcher(this.ctx, {
     avoidFor: (member) => this.handoffs.avoidFor(member),
@@ -120,17 +103,17 @@ export class Orchestrator extends Part {
   });
   private readonly loopRunner: LoopRunner = new LoopRunner(this.ctx, {
     capFor: (taskId, runId, candidate) => this.budget.capFor(taskId, runId, candidate),
-    launch: (spec) => this.launch(spec),
+    launch: (spec) => this.launcher.launch(spec),
   });
   private readonly hibernator: Hibernator = new Hibernator(this.ctx, {
-    continueRun: (runId, text) => this.continueRun(runId, text),
+    continueRun: (runId, text) => this.launcher.continueRun(runId, text),
     endRun: (runId, reason, detail) => this.lifecycle.endRun(runId, reason, detail),
     onFailure: (runId, detail) => this.fallback.onFailure(runId, detail),
     tick: () => this.tick(),
   });
   private readonly bestOfRunner: BestOfRunner = new BestOfRunner(this.ctx, {
-    insertRun: (spec) => this.insertRun(spec),
-    boot: (runId, spec) => this.boot(runId, spec),
+    insertRun: (spec) => this.launcher.insertRun(spec),
+    boot: (runId, spec) => this.launcher.boot(runId, spec),
     stopRun: (runId, detail, reason) => this.lifecycle.stopRun(runId, detail, reason),
     cancel: (taskId) => this.cancel(taskId),
     get: (taskId) => this.get(taskId),
@@ -145,12 +128,25 @@ export class Orchestrator extends Part {
     insertRequest: (taskId, runId, nativeId, risk, payload) => this.inbox.insertRequest(taskId, runId, nativeId, risk, payload),
     routeApproval: (run, task, ev) => this.inbox.routeApproval(run, task, ev),
     closeRequest: (q, by) => this.inbox.closeRequest(q, by),
-    replaceSession: (failedRunId, problem) => this.replaceSession(failedRunId, problem),
+    replaceSession: (failedRunId, problem) => this.launcher.replaceSession(failedRunId, problem),
     pinHead: (runId) => this.loopRunner.pinHead(runId),
     reviewLoop: (reviewerRunId, result) => this.loopRunner.reviewLoop(reviewerRunId, result),
     dropCheckout: (runId) => this.loopRunner.dropCheckout(runId),
     refreshVariantDiff: (variantId) => this.bestOfRunner.refreshVariantDiff(variantId),
     tick: () => this.tick(),
+  });
+  private readonly launcher: Launcher = new Launcher(this.ctx, {
+    reviewCheckout: (runId, task, wt) => this.loopRunner.reviewCheckout(runId, task, wt),
+    unpricedFor: (task, runId, candidate, model, unknownPrice) => this.budget.unpricedFor(task, runId, candidate, model, unknownPrice),
+    reservationFor: (task, m, candidate) => this.budget.reservationFor(task, m, candidate),
+    capFor: (taskId, runId, candidate, addUsd) => this.budget.capFor(taskId, runId, candidate, addUsd),
+    pauseForCap: (runId, cap, at) => this.budget.pauseForCap(runId, cap, at),
+    onUsage: (run, task, ev) => this.budget.onUsage(run, task, ev),
+    onLimitReached: (runId, info) => this.fallback.onLimitReached(runId, info),
+    nextTurn: (runId) => this.nextTurn(runId),
+    endRun: (runId, reason, detail) => this.lifecycle.endRun(runId, reason, detail),
+    writePackage: (task, source, trigger, name) => this.handoffs.writePackage(task, source, trigger, name),
+    pump: (runId, live) => this.lifecycle.pump(runId, live),
   });
 
   override get db() {
@@ -526,7 +522,7 @@ export class Orchestrator extends Part {
       this.clearTimer(runId);
       this.db.exec("update runs set paused_at = null, resume_at = null, limit_reached = 0 where id = ?", runId);
       for (const q of this.db.openRequestsForRun(runId).filter((q) => q.kind === "handoff")) this.inbox.closeRequest(q, "system");
-      await this.proceed(runId, "Continue the task where you stopped.");
+      await this.launcher.proceed(runId, "Continue the task where you stopped.");
       this.emitTask(run.task_id, "run_resumed");
       return this.db.runView(this.db.run(runId));
     }
@@ -534,7 +530,7 @@ export class Orchestrator extends Part {
     const adapter = this.adapters.get(run.runner);
     if (!adapter?.capabilities.resume || !run.native_session_id) throw new OrchestratorError("run.resume_unsupported", { runner: run.runner });
     this.fallback.cancelAutoRetry(run.id);
-    const newId = await this.launch({
+    const newId = await this.launcher.launch({
       task,
       member: this.db.member(run.member_id),
       target: { profileId: run.profile_id, runner: run.runner, model: run.model },
@@ -569,7 +565,7 @@ export class Orchestrator extends Part {
       this.fallback.cancelAutoRetry(run.id);
       // The crash or limit question about the old run is answered by retrying it.
       for (const q of this.db.openRequestsForRun(run.id).filter((q) => q.kind === "handoff")) this.inbox.closeRequest(q, "system");
-      const id = await this.launch({ task, member: this.db.member(run.member_id), target: { profileId: run.profile_id, runner: run.runner, model: run.model }, resumedFrom: run.id });
+      const id = await this.launcher.launch({ task, member: this.db.member(run.member_id), target: { profileId: run.profile_id, runner: run.runner, model: run.model }, resumedFrom: run.id });
       this.audit(task.id, id, "run.retried", { from: run.id });
       this.emitTask(task.id, "retried");
       return this.db.runView(this.db.run(id));
@@ -585,7 +581,7 @@ export class Orchestrator extends Part {
       for (const q of this.db.openRequestsForRun(run.id).filter((q) => q.kind === "handoff")) this.inbox.closeRequest(q, "system");
       this.audit(task.id, run.id, "run.retried", { after: "limit" });
       try {
-        await this.proceed(run.id, "Your limit has cleared. Continue the task where you stopped.");
+        await this.launcher.proceed(run.id, "Your limit has cleared. Continue the task where you stopped.");
         this.emitTask(task.id, "run_resumed");
       } catch (err) {
         this.db.exec("update runs set paused_at = ? where id = ?", this.iso(), run.id);
@@ -710,7 +706,7 @@ export class Orchestrator extends Part {
     const member = this.db.member(run.member_id);
     const wt = this.db.worktree(task.id);
     const prompt = native ? text : `${rolePrompt(this.tpl(member), task, { plan: this.latestPlan(task.id), branch: wt?.branch ?? null })}\n\n${text}`;
-    const id = await this.launch({
+    const id = await this.launcher.launch({
       task,
       member,
       target: { profileId: run.profile_id, runner: run.runner, model: run.model },
@@ -789,16 +785,6 @@ export class Orchestrator extends Part {
     this.audit(run.task_id, runId, "queue.flushed", { count: queued.length });
     this.emitTask(run.task_id, "queue");
     return withAttachments(joinMessages(queued.map((m) => m.text)), this.attachments.forMessages(queued.map((m) => m.id)), live.adapter.capabilities);
-  }
-
-  /**
-   * The prompt a run starts or resumes with, plus the step's queued messages. A note left by an
-   * undo only makes sense to the same conversation, so a new session drops it.
-   */
-  private withQueued(memberId: string, prompt: string, sameSession: boolean): { prompt: string; ids: string[]; attachments: Attachment[] } {
-    const queued = this.turns.queue.pending(memberId);
-    const sent = queued.filter((m) => sameSession || m.kind !== "note");
-    return { prompt: joinMessages([prompt, ...sent.map((m) => m.text)]), ids: queued.map((m) => m.id), attachments: this.attachments.forMessages(sent.map((m) => m.id)) };
   }
 
   // ---------------------------------------------------------------- crew loops (feature scan A9)
@@ -897,8 +883,8 @@ export class Orchestrator extends Part {
         }
         this.blocked.delete(m.id);
         // A re-run stays on the profile that last ran the step (a handoff may have moved it off the proposal).
-        if (again) await this.launch({ task, member: m, target: { profileId: again.profile_id, runner: again.runner, model: again.model }, resumedFrom: again.id });
-        else await this.launch({ task, member: m, target: chosen! });
+        if (again) await this.launcher.launch({ task, member: m, target: { profileId: again.profile_id, runner: again.runner, model: again.model }, resumedFrom: again.id });
+        else await this.launcher.launch({ task, member: m, target: chosen! });
       }
     }
   }
@@ -919,314 +905,6 @@ export class Orchestrator extends Part {
       },
       { ...DEFAULT_LIMITS, ...this.opts.limits, projectSlots },
     );
-  }
-
-  /**
-   * Starts one run of a crew step. The run row goes in before any await, so admission control
-   * counts it at once; a failure to start ends it as failed with a code.
-   */
-  private async launch(spec: LaunchSpec): Promise<string> {
-    const runId = this.insertRun(spec);
-    await this.boot(runId, spec);
-    return runId;
-  }
-
-  /** The run row of a launch, written before any await so admission control counts it at once. */
-  private insertRun(spec: LaunchSpec): string {
-    const { task, member, target } = spec;
-    const project = this.db.project(task.project_id);
-    const runId = spec.runId ?? randomUUID();
-    this.db.exec(
-      `insert into runs (id, task_id, member_id, role, profile_id, runner, model, cwd, started_at, last_state, resumed_from, handoff_id)
-       values (?, ?, ?, ?, ?, ?, ?, ?, ?, 'starting', ?, ?)`,
-      runId,
-      task.id,
-      member.id,
-      member.role,
-      target.profileId,
-      target.runner,
-      target.model,
-      spec.cwd ?? project.path,
-      this.iso(),
-      spec.resumedFrom ?? null,
-      spec.handoffId ?? null,
-    );
-    if (spec.handoffId) this.confirming.set(runId, spec.handoffId);
-    this.loops.enlist(runId, member.id);
-    this.emitTask(task.id, "run_started");
-    return runId;
-  }
-
-  /**
-   * Prepares the worktree and starts the process of a run row. A paid run whose key is past a
-   * spend cap is held here instead, paused with an Inbox request, and booted once you approve.
-   */
-  private async boot(runId: string, spec: LaunchSpec): Promise<void> {
-    const { task, member, target } = spec;
-    const project = this.db.project(task.project_id);
-    try {
-      const { config } = this.config(project);
-      let wt = this.db.worktree(task.id);
-      let cwd = spec.cwd ?? null;
-      if (!cwd && member.writes_code) wt = await this.ensureTaskWorktree(task, project, config.worktreeRoot);
-      cwd ??= wt?.path ?? project.path;
-      // Pinned review: a read-only reviewer of a code task reads a detached checkout of the exact
-      // head, never the live worktree the implementer may still change.
-      const pinned = !spec.cwd && PINNED_ROLES.includes(member.role) && task.kind === "code" && wt && existsSync(wt.path) ? await this.loopRunner.reviewCheckout(runId, task, wt) : null;
-      if (pinned) cwd = pinned.path;
-      const worktreeId = wt && sameDir(wt.path, cwd) ? wt.id : null;
-      this.db.exec("update runs set cwd = ?, worktree_id = ? where id = ?", cwd, worktreeId, runId);
-      if (member.writes_code && worktreeId) this.db.exec("update worktrees set owner_run_id = ?, last_heartbeat_at = ? where id = ?", runId, this.iso(), worktreeId);
-
-      const candidate = (await this.candidates(project)).find((c) => c.profile.id === target.profileId);
-      if (!candidate) throw new OrchestratorError("crew.unknown_profile", { profileId: target.profileId });
-      const adapter = this.adapters.get(target.runner);
-      if (!adapter) throw new OrchestratorError("adapter.failed", { detail: "no_adapter" });
-      // A capped task never starts on a model nobody can price without your click (feature scan F4).
-      const unpriced = this.budget.unpricedFor(task, runId, candidate, target.model, estimateFor(candidate, this.tpl(member), task.size, this.now()).usd === null);
-      if (unpriced) {
-        this.held.set(runId, spec);
-        await this.fallback.onLimitReached(runId, { trigger: "unpriced", window: null, resetsAt: null, unpriced });
-        return;
-      }
-      // Check and hold in one synchronous step, so a parallel step cannot slip in between (F3).
-      const amount = candidate.profile.credential.kind === "api_key" ? this.budget.reservationFor(task, member, candidate) : 0;
-      const cap = this.budget.capFor(task.id, runId, candidate, amount);
-      if (cap) {
-        this.held.set(runId, spec);
-        await this.budget.pauseForCap(runId, cap, this.iso());
-        return;
-      }
-      // Worktree bootstrap: setup steps wait for their Inbox approval (the run is held, like a cap) and must pass.
-      const boot = wt && worktreeId ? await this.bootstrap.prepare({ taskId: task.id, projectId: project.id, repoPath: wt.repo_path, path: wt.path, branch: wt.branch }, runId, config) : null;
-      if (boot?.status === "waiting") {
-        this.held.set(runId, spec);
-        return;
-      }
-      this.held.delete(runId);
-      if (candidate.profile.credential.kind === "api_key") reserveSpend(this.opts.store.db, { runId, taskId: this.budgetTask(task.id), credentialId: spendCredential(candidate), amountUsd: amount }, this.now());
-      // Handoff by fork: the target continues a copy of the source's conversation; on any failure it
-      // gets the written package in a new session instead, as before.
-      const forked = spec.fork ? await this.forkInto(runId, spec, candidate, cwd) : null;
-      const resumeRef = forked?.session ?? spec.resumeRef ?? null;
-      if (resumeRef) this.resumed.add(runId);
-      // Messages typed for the step while it had no process go with the first prompt.
-      let base = forked && spec.fork ? spec.fork.prompt : (spec.prompt ?? rolePrompt(this.tpl(member), task, { plan: this.latestPlan(task.id), branch: worktreeId ? (wt?.branch ?? null) : null }));
-      if (pinned && !spec.prompt) base += reviewContext({ sha: pinned.sha, baseSha: wt?.base_sha ?? null, branch: wt?.branch ?? null, test: this.loops.lastTaskTest(task.id), previous: this.loops.previousVerdict(member.id, null) });
-      const queued = this.withQueued(member.id, base, Boolean(resumeRef));
-      // A new session has not seen the description's attachments; a resumed or forked one has.
-      const first = withAttachments(queued.prompt, [...(resumeRef ? [] : this.attachments.forTask(task.id)), ...queued.attachments], adapter.capabilities);
-      // Codex reviews with its own review/start against the task's base; the verdict schema still applies.
-      const review: ReviewTarget | null = pinned && member.role === "reviewer" && !resumeRef && adapter.capabilities.nativeReview ? { kind: "base_branch", branch: task.base_branch ?? wt!.base_sha } : null;
-      if (review) this.nativeReviews.add(runId);
-      const policy = this.policyFor(this.tpl(member), config);
-      const req: StartRequest = {
-        profile: candidate.profile,
-        cwd,
-        model: target.model,
-        prompt: first.text,
-        ...(first.attachments ? { attachments: first.attachments } : {}),
-        policy,
-        env: { ...(await this.directory.envFor(target.profileId)), ...(boot?.status === "ready" ? boot.env : {}) },
-        outputSchema: outputSchemaFor(member.role),
-        nextTurn: () => this.nextTurn(runId),
-        ...(review ? { review: { target: review } } : {}),
-        ...(await this.mcpFor(runId, task.id, project.id, policy, adapter)),
-      };
-      await this.turns.begin(runId);
-      const handle = resumeRef ? await adapter.resume(resumeRef, req) : await adapter.start(req);
-      for (const id of queued.ids) this.turns.queue.deliver(id, runId);
-      this.db.exec("update runs set native_session_id = ?, pid = ? where id = ?", handle.nativeSession?.sessionId ?? null, handle.pid, runId);
-      this.attach(runId, adapter, handle, candidate);
-      this.audit(task.id, runId, "run.started", { role: member.role, profileId: target.profileId, runner: target.runner, resumed: Boolean(resumeRef), forked: Boolean(forked), pinned: pinned?.sha ?? null, nativeReview: Boolean(review) });
-      if (forked) await this.recordForkSpend(runId, forked);
-    } catch (err) {
-      this.held.delete(runId);
-      this.confirming.delete(runId);
-      // The runner itself says the session is gone, or still locked after a crash: only then is a
-      // session with history replaced, by a fresh run fed the handoff package. A handoff target
-      // has its own fallback (the source stays paused), so it is never replaced here.
-      const problem = spec.resumeRef && !spec.replacing && !spec.handoffId ? sessionProblemOf(err) : null;
-      // The reason stays with the run (redacted), so the UI can say why it never started.
-      this.lifecycle.endRun(runId, "failed", problem ? `session.${problem}` : errorDetail(err, await this.secretsFor(target.profileId)));
-      if (problem) await this.replaceSession(runId, problem);
-    }
-  }
-
-  /** Copies the source's session into the target profile for a handoff by fork; null on any failure. */
-  private async forkInto(runId: string, spec: LaunchSpec, candidate: Candidate, cwd: string): Promise<ForkResult | null> {
-    const source = this.db.run(spec.fork!.sourceRunId);
-    const adapter = this.adapters.get(source.runner);
-    const sourceCandidate = await this.candidateFor(source);
-    if (!adapter?.fork || !sourceCandidate || !source.native_session_id) return null;
-    try {
-      const res = await adapter.fork({
-        source: { profile: sourceCandidate.profile, session: { runner: source.runner, sessionId: source.native_session_id }, env: await this.directory.envFor(source.profile_id) },
-        target: { profile: candidate.profile, model: spec.target.model, env: await this.directory.envFor(candidate.profile.id) },
-        cwd,
-        compact: adapter.capabilities.fork?.compact ?? false,
-      });
-      if (spec.handoffId) {
-        this.db.exec("update handoffs set kind = 'fork' where id = ?", spec.handoffId);
-        this.db.exec("update handoff_extras set forked = 1 where handoff_id = ?", spec.handoffId);
-      }
-      this.audit(spec.task.id, runId, "handoff.forked", { from: source.id, compacted: res.compacted, summaryChars: res.summary?.length ?? 0 });
-      return res;
-    } catch (err) {
-      this.audit(spec.task.id, runId, "handoff.fork_failed", { from: source.id, code: errorCode(err), problem: sessionProblemOf(err) });
-      return null;
-    }
-  }
-
-  /**
-   * A fork's compaction spent tokens on the target's key before the run existed; they count on the
-   * target run like any usage report. The new session's totals become its baseline, so the
-   * runner's later reports add only their growth.
-   */
-  private async recordForkSpend(runId: string, f: ForkResult): Promise<void> {
-    const run = this.db.run(runId);
-    if (!run.native_session_id || !f.usage) return;
-    const totals = f.totals ?? f.usage;
-    const less = (a: number, b: number) => Math.max(0, a - b);
-    this.db.setNativeUsage(
-      run.runner,
-      run.native_session_id,
-      {
-        tokensIn: less(totals.tokensIn, f.usage.tokensIn),
-        tokensOut: less(totals.tokensOut, f.usage.tokensOut),
-        cacheRead: less(totals.cacheRead, f.usage.cacheRead),
-        costUsd: totals.costUsd !== null && f.usage.costUsd !== null ? less(totals.costUsd, f.usage.costUsd) : null,
-        // Compaction searches nothing: the requests a fork copied with the history are all baseline.
-        webSearchRequests: totals.webSearchRequests,
-        webFetchRequests: totals.webFetchRequests,
-      },
-      this.iso(),
-    );
-    await this.budget.onUsage(run, this.db.task(run.task_id), {
-      type: "usage.update",
-      runId,
-      seq: -1,
-      at: this.iso(),
-      source: { adapter: run.runner, cliVersion: null },
-      tokensIn: totals.tokensIn,
-      tokensOut: totals.tokensOut,
-      cacheRead: totals.cacheRead,
-      cacheWrite: 0,
-      reasoning: 0,
-      contextUsed: null,
-      contextSize: null,
-      costUsd: totals.costUsd,
-      costProvenance: totals.costUsd === null ? "unknown" : "estimated",
-      webSearchRequests: totals.webSearchRequests,
-      webFetchRequests: totals.webFetchRequests,
-    });
-  }
-
-  /**
-   * The runner said the step's session is gone or locked (a Claude session whose resume is locked
-   * after a crash): a fresh run of the same step on the same profile, fed the handoff package,
-   * since a fresh session has none of the conversation. Recorded with the reason.
-   */
-  private async replaceSession(failedRunId: string, problem: SessionProblem): Promise<void> {
-    const failed = this.db.run(failedRunId);
-    const task = this.db.task(failed.task_id);
-    if (task.cancelled_at || this.db.successor(failed)) return;
-    const pkg = await this.handoffs.writePackage(task, failed, `the previous session is ${problem === "locked" ? "locked by another process" : "gone"}`, `session-${failedRunId}`);
-    this.audit(task.id, failedRunId, "session.replaced", { problem, packagePath: pkg.path });
-    await this.launch({ task, member: this.db.member(failed.member_id), target: { profileId: failed.profile_id, runner: failed.runner, model: failed.model }, cwd: failed.cwd, prompt: pkg.text, resumedFrom: failed.id, replacing: true });
-  }
-
-  private ensureTaskWorktree(task: TaskRow, project: ProjectRow, root: string): Promise<WorktreeRow> {
-    // One creation per task at a time; a second caller waits for the first instead of racing git.
-    const pending = this.creating.get(task.id);
-    if (pending) return pending;
-    const p = this.createTaskWorktree(task, project, root).finally(() => this.creating.delete(task.id));
-    this.creating.set(task.id, p);
-    return p;
-  }
-
-  private async createTaskWorktree(task: TaskRow, project: ProjectRow, root: string): Promise<WorktreeRow> {
-    const existing = this.db.worktree(task.id);
-    const slug = taskSlug(task.title, task.id);
-    const path = existing?.path ?? join(root, slug);
-    const info = await ensureWorktree(project.path, path, existing?.branch ?? `crewyard/${slug}`, task.base_branch, this.opts.gitBin);
-    if (!existing) {
-      this.db.exec(
-        "insert into worktrees (id, task_id, repo_path, path, branch, base_sha, created_at) values (?, ?, ?, ?, ?, ?, ?)",
-        randomUUID(),
-        task.id,
-        project.path,
-        info.path,
-        info.branch,
-        info.baseSha,
-        this.iso(),
-      );
-      this.audit(task.id, null, "worktree.created", { path: info.path, branch: info.branch });
-    }
-    return this.db.worktree(task.id)!;
-  }
-
-  private attach(runId: string, adapter: AgentAdapter, handle: RunHandle, candidate: Candidate): void {
-    let finish!: () => void;
-    // Every start and resume hands over a prompt, so a turn runs from here; its boundary takes what is queued.
-    // A new process for a hibernated run is its wake-up, whoever started it (resume, retry, answer).
-    const wokeBy = this.pendingWake.get(runId) ?? "resume";
-    if (this.hibernation.wake(runId, wokeBy)) this.audit(this.db.run(runId).task_id, runId, "run.woke", { by: wokeBy });
-    this.pendingWake.delete(runId);
-    const live: Live = { adapter, handle, candidate, done: new Promise<void>((r) => (finish = r)), inTurn: true, turnBegun: false };
-    this.live.set(runId, live);
-    this.track(this.lifecycle.pump(runId, live).finally(finish));
-  }
-
-  /** Native resume on the same run; used after a pause and at a limit reset. */
-  private async continueRun(runId: string, text: string): Promise<void> {
-    const live = this.live.get(runId);
-    const run = this.db.run(runId);
-    // What you queued while it was paused goes with the continue prompt, in the same turn.
-    const queued = this.withQueued(run.member_id, text, true);
-    if (live) {
-      live.inTurn = true;
-      await this.turns.begin(runId);
-      await live.adapter.send(live.handle, withAttachments(queued.prompt, queued.attachments, live.adapter.capabilities));
-      for (const id of queued.ids) this.turns.queue.deliver(id, runId);
-      return;
-    }
-    const adapter = this.adapters.get(run.runner);
-    if (!adapter?.capabilities.resume || !run.native_session_id) throw new OrchestratorError("run.resume_unsupported", { runner: run.runner });
-    const task = this.db.task(run.task_id);
-    const project = this.db.project(task.project_id);
-    const candidate = (await this.candidates(project)).find((c) => c.profile.id === run.profile_id);
-    if (!candidate) throw new OrchestratorError("crew.unknown_profile", { profileId: run.profile_id });
-    const policy = this.policyFor(this.tpl(run), this.config(project).config);
-    const input = withAttachments(queued.prompt, queued.attachments, adapter.capabilities);
-    const req: StartRequest = {
-      profile: candidate.profile,
-      cwd: run.cwd,
-      model: run.model,
-      prompt: input.text,
-      ...(input.attachments ? { attachments: input.attachments } : {}),
-      policy,
-      env: { ...(await this.directory.envFor(run.profile_id)), ...this.bootstrapEnv(run, project) },
-      outputSchema: outputSchemaFor(run.role),
-      nextTurn: () => this.nextTurn(runId),
-      ...(await this.mcpFor(runId, task.id, project.id, policy, adapter)),
-    };
-    await this.turns.begin(runId);
-    const handle = await adapter.resume({ runner: run.runner, sessionId: run.native_session_id }, req);
-    for (const id of queued.ids) this.turns.queue.deliver(id, runId);
-    this.db.exec("update runs set native_session_id = ?, pid = ? where id = ?", handle.nativeSession?.sessionId ?? run.native_session_id, handle.pid, runId);
-    this.attach(runId, adapter, handle, candidate);
-  }
-
-  /** Continues a run however it can: a live turn, a native resume, or a first start if a cap held it. */
-  private async proceed(runId: string, text: string): Promise<void> {
-    const spec = this.held.get(runId);
-    if (spec && !this.live.has(runId)) {
-      this.held.delete(runId);
-      await this.boot(runId, { ...spec, task: this.db.task(spec.task.id) });
-      return;
-    }
-    await this.continueRun(runId, text);
   }
 
   // ---------------------------------------------------------------- approvals
