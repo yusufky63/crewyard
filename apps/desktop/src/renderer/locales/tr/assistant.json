@@ -124,6 +124,8 @@
     "open": "Raporu aç",
     "findingsCount_one": "{{count}} bulgu",
     "findingsCount_other": "{{count}} bulgu",
+    "findingsWorst_one": "{{count}} bulgu · {{n}} {{worst}}",
+    "findingsWorst_other": "{{count}} bulgu · {{n}} {{worst}}",
     "suggestedCount_one": "{{count}} önerilen görev",
     "suggestedCount_other": "{{count}} önerilen görev",
     "source": {
@@ -164,7 +166,8 @@
     "openCount_other": "{{count}} açık",
     "addAll": "Hepsini taslak olarak ekle ({{count}})",
     "addingAll": "Ekleniyor…",
-    "addAllNote": "Hepsini ekle, açık önerileri tek tek Görevler'e taslak olarak koyar. Her ekibi sen onaylamadan hiçbiri başlamaz.",
+    "addAllNote": "“Hepsini taslak olarak ekle” açık kartları şu anki halleriyle, yaptığın düzenlemelerle birlikte Görevler'e tek tek ekler. Her ekibi sen onaylamadan hiçbiri başlamaz.",
+    "addAllInvalid": "Bir kartın başlığı yok. Hepsini eklemeden önce ona bir başlık ver ya da karttan vazgeç.",
     "addedAll_one": "{{count}} görev eklendi. Ekibi Görevler'de onayını bekliyor.",
     "addedAll_other": "{{count}} görev eklendi. Her birinin ekibi Görevler'de onayını bekliyor.",
     "suggestedEmpty": "Bekleyen öneri kalmadı."

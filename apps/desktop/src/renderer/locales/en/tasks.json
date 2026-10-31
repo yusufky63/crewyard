@@ -282,6 +282,8 @@
     "eyebrow": "Run · {{index}} {{role}}",
     "task": "Task",
     "tab": { "details": "Details", "suggested": "Suggested", "changes": "Changes", "usage": "Usage", "files": "Files" },
+    "tabsBack": "Earlier tabs",
+    "tabsMore": "More tabs",
     "now": "Now",
     "plan": "Plan",
     "planStatus": { "pending": "to do", "in_progress": "in progress", "completed": "done" },

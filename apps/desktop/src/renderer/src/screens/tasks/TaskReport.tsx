@@ -11,7 +11,8 @@ import { parseMarkdown } from "../../shell/files/markdown.ts";
 import { FIXTURE } from "../../shell/timeline/fixture.ts";
 import { DraftCard } from "./Assistant.tsx";
 import { act, useWork } from "./data.ts";
-import { badgeClass, findingLocation, findingPath, findingText, openDrafts, SEVERITY_TONE, severityCounts, verdictTone, visibleDrafts, worstTone } from "./report.ts";
+import { draftEdit, useDraftEdits, withEdits } from "./draftEdits.ts";
+import { badgeClass, findingLocation, findingPath, findingText, openDrafts, SEVERITY_TONE, severityCounts, verdictTone, visibleDrafts, worstSeverity } from "./report.ts";
 import "./assistant.css";
 import "./report.css";
 
@@ -43,11 +44,14 @@ function useRefreshReport(taskId: string) {
   return () => void qc.invalidateQueries({ queryKey: ["assistant.report", { taskId }] });
 }
 
-/** Daemon errors arrive as codes ("assistant.draft_added"); the assistant namespace has the words. */
+/** Daemon errors arrive as codes ("assistant.draft_added"), wrapped by IPC as "...Error: <code>". */
+const codeOf = (err: unknown): string => (err instanceof Error ? err.message : String(err)).replace(/^.*Error: /, "").trim();
+
+/** The words for a daemon error code, from the assistant namespace. */
 function useReportError(): (err: unknown) => string {
   const { t } = useTranslation("assistant");
   return (err) => {
-    const code = (err instanceof Error ? err.message : String(err)).replace(/^.*Error: /, "").trim();
+    const code = codeOf(err);
     return t(`errors.${code.replace(/\./g, "_")}`, { defaultValue: t("errors.other", { message: code }) });
   };
 }
@@ -97,10 +101,11 @@ export function ReportLine({ detail }: { detail: TaskDetail }) {
   if (!report) return null;
   const open = openDrafts(report).length;
   const line = firstLine(report.summary) || (report.findings[0]?.title ?? "");
-  const tone = worstTone(report.findings);
-  const show = (tab?: "suggested") => {
+  const worst = worstSeverity(report.findings);
+  // Each names its tab: the inspector keeps the tab shown last, which may be Files or Suggested.
+  const show = (tab: "details" | "suggested") => {
     selectTask(detail.id);
-    inspect({ taskId: detail.id, ...(tab ? { tab } : {}) });
+    inspect({ taskId: detail.id, tab });
   };
   return (
     <div className="tk-report-line">
@@ -109,14 +114,19 @@ export function ReportLine({ detail }: { detail: TaskDetail }) {
           {line}
         </span>
       )}
-      {report.findings.length > 0 && tone && <span className={`${badgeClass(tone)} num`}>{t("report.findingsCount", { count: report.findings.length })}</span>}
+      {/* The worst severity is named, so the badge's colour is never the only signal. */}
+      {worst && (
+        <span className={`${badgeClass(SEVERITY_TONE[worst.severity])} num`}>
+          {t("report.findingsWorst", { count: report.findings.length, n: worst.count, worst: t(`report.severity.${worst.severity}`) })}
+        </span>
+      )}
       {report.completed && <span className="badge badge-ok">{t("report.completedShort")}</span>}
       {open > 0 && (
         <button type="button" className="badge badge-info num tk-badge-btn" title={t("report.openSuggested")} onClick={() => show("suggested")}>
           {t("report.suggestedCount", { count: open })}
         </button>
       )}
-      <Button size="sm" variant="ghost" onClick={() => show()}>
+      <Button size="sm" variant="ghost" onClick={() => show("details")}>
         {t("report.open")}
       </Button>
     </div>
@@ -129,12 +139,18 @@ const SUGGESTED_ID = "tk-suggested";
 /** Where a draft card sits in the page, so a finding can jump to it. */
 const draftAnchor = (draftId: string) => `tk-draft-${draftId}`;
 
-function jumpToDraft(draftId: string) {
-  const el = document.getElementById(draftAnchor(draftId));
+/** Smooth scrolling is motion; with reduced motion asked for, a jump is instant (DESIGN.md §7). */
+const scrollBehavior = (): ScrollBehavior => (matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth");
+
+/** Scrolls to an element and moves the keyboard there too, so a screen reader follows the jump. */
+function jumpTo(id: string, block: ScrollLogicalPosition) {
+  const el = document.getElementById(id);
   if (!el) return;
-  el.scrollIntoView({ block: "center", behavior: "smooth" });
+  el.scrollIntoView({ block, behavior: scrollBehavior() });
   el.focus({ preventScroll: true });
 }
+
+const jumpToDraft = (draftId: string) => jumpTo(draftAnchor(draftId), "center");
 
 function FindingRow({ finding, expanded, onToggle, detail, draftShown }: { finding: TaskReportFinding; expanded: boolean; onToggle: () => void; detail: TaskDetail; draftShown: boolean }) {
   const { t } = useTranslation("assistant");
@@ -280,7 +296,7 @@ export function ReportSection({ detail }: { detail: TaskDetail }) {
         <span className="badge">{t(`report.source.${report.source}`)}</span>
         {report.verdict && vTone && <span className={badgeClass(vTone)}>{t(`report.verdict.${report.verdict}`)}</span>}
         {suggested > 0 && (
-          <button type="button" className="badge badge-info num tk-badge-btn tk-report-jump" onClick={() => document.getElementById(SUGGESTED_ID)?.scrollIntoView({ block: "start", behavior: "smooth" })}>
+          <button type="button" className="badge badge-info num tk-badge-btn tk-report-jump" onClick={() => jumpTo(SUGGESTED_ID, "start")}>
             <ArrowDownToLine {...ICON} />
             {t("report.suggestedCount", { count: suggested })}
           </button>
@@ -299,7 +315,8 @@ export function ReportSection({ detail }: { detail: TaskDetail }) {
       )}
       {report.summary && <ReportMarkdown text={report.summary} className="tk-report-summary" />}
       {report.truncated && <p className="muted tk-small">{t("report.truncated")}</p>}
-      {report.findings.length > 0 && <Findings report={report} detail={detail} />}
+      {/* Keyed by the result: a follow-up's newer findings start unfiltered and closed. */}
+      {report.findings.length > 0 && <Findings key={report.at} report={report} detail={detail} />}
     </section>
   );
 }
@@ -307,13 +324,18 @@ export function ReportSection({ detail }: { detail: TaskDetail }) {
 /**
  * The suggested follow-up tasks as draft cards, with their count and, when several are open,
  * `Add all as drafts`. Each add goes through the same assistant.addDraft as a card's own button,
- * so every task still waits for its crew approval; nothing starts here.
+ * with the card's fields as they read now, so every task still waits for its crew approval;
+ * nothing starts here. What you type lives in useDraftEdits, so Details and the Suggested tab show
+ * the same edits and Add all adds them.
  */
 export function SuggestedTasks({ detail, inTab = false }: { detail: TaskDetail; inTab?: boolean }) {
   const { t } = useTranslation("assistant");
   const report = useTaskReport(detail).data;
   const refresh = useRefreshReport(detail.id);
   const errorText = useReportError();
+  const edits = useDraftEdits((s) => s.edits);
+  const setEdit = useDraftEdits((s) => s.set);
+  const clearEdit = useDraftEdits((s) => s.clear);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -322,6 +344,8 @@ export function SuggestedTasks({ detail, inTab = false }: { detail: TaskDetail; 
   const drafts = visibleDrafts(report);
   if (drafts.length === 0 && !inTab) return null;
   const open = openDrafts(report);
+  // A card whose title you cleared cannot be added; its own Add is off too, so Add all waits.
+  const untitled = open.some((d) => edits[d.id] && !edits[d.id]!.title.trim());
 
   const addAll = async () => {
     setBusy(true);
@@ -330,7 +354,16 @@ export function SuggestedTasks({ detail, inTab = false }: { detail: TaskDetail; 
     let added = 0;
     try {
       for (const d of open) {
-        await act("assistant.addDraft", { draftId: d.id });
+        // Read at each step: the store holds the card's fields as you left them.
+        const typed = useDraftEdits.getState().edits[d.id];
+        try {
+          await act("assistant.addDraft", { draftId: d.id, ...(typed ? { edit: draftEdit(typed) } : {}) });
+        } catch (err) {
+          // That card's own Add, pressed just before, is already proposing it; the rest still go.
+          if (codeOf(err) === "assistant.draft_adding") continue;
+          throw err;
+        }
+        clearEdit(d.id);
         added++;
       }
     } catch (err) {
@@ -343,19 +376,25 @@ export function SuggestedTasks({ detail, inTab = false }: { detail: TaskDetail; 
   };
 
   return (
-    <section className="ins-sec tk-suggested" id={inTab ? undefined : SUGGESTED_ID} aria-labelledby={titleId}>
+    // The block takes focus (not a tab stop) when the report header's count jumps to it.
+    <section className="ins-sec tk-suggested" id={inTab ? undefined : SUGGESTED_ID} tabIndex={inTab ? undefined : -1} aria-labelledby={titleId}>
       <div className="tk-suggested-head">
         <h3 className="tk-suggested-title" id={titleId}>
           {t("report.suggested")}
         </h3>
         {open.length > 0 && <span className="badge badge-info num">{t("report.openCount", { count: open.length })}</span>}
         {open.length > 1 && (
-          <Button size="sm" tone="ok" className="tk-suggested-all" disabled={busy} onClick={() => void addAll()}>
+          <Button size="sm" tone="ok" className="tk-suggested-all" disabled={busy || untitled} onClick={() => void addAll()}>
             {busy ? t("report.addingAll") : t("report.addAll", { count: open.length })}
           </Button>
         )}
       </div>
       <p className="muted tk-small">{open.length > 1 ? t("report.addAllNote") : t("report.suggestedNote")}</p>
+      {open.length > 1 && untitled && (
+        <p className="banner banner-warn tk-small" role="status">
+          {t("report.addAllInvalid")}
+        </p>
+      )}
       {note && (
         <p className="banner banner-ok tk-small" role="status">
           {note}
@@ -369,14 +408,16 @@ export function SuggestedTasks({ detail, inTab = false }: { detail: TaskDetail; 
       {drafts.length === 0 ? (
         <p className="muted ins-empty">{t("report.suggestedEmpty")}</p>
       ) : (
-        <div className="tk-suggested-list">
+        // While Add all runs, the disabled fieldset holds every card still: no edits it would miss,
+        // and no second add of a draft it is about to add.
+        <fieldset className="tk-suggested-list" disabled={busy} aria-busy={busy}>
           {drafts.map((d, i) => (
             // The wrapper is where a finding's `Suggested task` lands; it takes focus, not a tab stop.
             <div key={d.id} id={inTab ? undefined : draftAnchor(d.id)} tabIndex={-1} className="tk-suggested-slot">
-              <DraftCard draft={d} index={i + 1} onChanged={refresh} />
+              <DraftCard draft={withEdits(d, edits[d.id])} index={i + 1} onChanged={refresh} onEdit={(f) => setEdit(d.id, f)} />
             </div>
           ))}
-        </div>
+        </fieldset>
       )}
     </section>
   );

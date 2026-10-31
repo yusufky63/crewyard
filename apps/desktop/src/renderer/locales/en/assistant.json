@@ -124,6 +124,8 @@
     "open": "Open report",
     "findingsCount_one": "{{count}} finding",
     "findingsCount_other": "{{count}} findings",
+    "findingsWorst_one": "{{count}} finding · {{n}} {{worst}}",
+    "findingsWorst_other": "{{count}} findings · {{n}} {{worst}}",
     "suggestedCount_one": "{{count}} suggested task",
     "suggestedCount_other": "{{count}} suggested tasks",
     "source": {
@@ -164,7 +166,8 @@
     "openCount_other": "{{count}} open",
     "addAll": "Add all as drafts ({{count}})",
     "addingAll": "Adding…",
-    "addAllNote": "Add all puts each open suggestion in Tasks as a draft, one by one. Nothing starts until you approve each crew.",
+    "addAllNote": "“Add all as drafts” puts each open card in Tasks as it reads now, your edits included. Nothing starts until you approve each crew.",
+    "addAllInvalid": "A card has no title. Give it one, or discard it, before adding all.",
     "addedAll_one": "{{count}} task added. Its crew waits for your approval in Tasks.",
     "addedAll_other": "{{count}} tasks added. Each crew waits for your approval in Tasks.",
     "suggestedEmpty": "No suggestions left."

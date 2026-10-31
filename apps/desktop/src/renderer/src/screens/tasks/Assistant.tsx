@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useEffectEvent, useId, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
@@ -9,6 +9,7 @@ import { useNav } from "../../nav.ts";
 import { takeAssistantFocus } from "../../shell/activity/panel.ts";
 import { AutopilotStrip } from "./Autopilot.tsx";
 import { act, useWork } from "./data.ts";
+import { sameFields, type DraftFields } from "./draftEdits.ts";
 import "./assistant.css";
 
 // DESIGN.md `TaskAssistant` (docs/adr/0014): a terminal-style conversation with a read-only agent
@@ -420,8 +421,12 @@ function Line({ line }: { line: AssistantLine }) {
   );
 }
 
-/** One editable draft: the assistant's, a preset's, or a finished task's suggestion. `onChanged` re-reads its list. */
-export function DraftCard({ draft, index, onChanged }: { draft: AssistantDraftView; index: number; onChanged?: () => void }) {
+/**
+ * One editable draft: the assistant's, a preset's, or a finished task's suggestion. `onChanged`
+ * re-reads its list. `onEdit` hears each change, for a parent that keeps the fields outside the
+ * card (a task report shows its drafts in two places and adds them all at once).
+ */
+export function DraftCard({ draft, index, onChanged, onEdit }: { draft: AssistantDraftView; index: number; onChanged?: () => void; onEdit?: (fields: DraftFields) => void }) {
   const { t } = useTranslation("assistant");
   const tk = useTranslation("tasks").t;
   const errorText = useAssistantError();
@@ -431,6 +436,16 @@ export function DraftCard({ draft, index, onChanged }: { draft: AssistantDraftVi
   const [kind, setKind] = useState<TaskKind>(draft.kind);
   const [size, setSize] = useState<TaskSize | "">(draft.size ?? "");
   const [criteria, setCriteria] = useState(draft.acceptance.join("\n"));
+  const seen = useRef<DraftFields | null>(null);
+  const reportEdit = useEffectEvent((fields: DraftFields) => {
+    // The first pass is the draft as the card opened with it; every change after that is an edit.
+    const before = seen.current;
+    seen.current = fields;
+    if (before && onEdit && !sameFields(before, fields)) onEdit(fields);
+  });
+  useEffect(() => {
+    reportEdit({ title, description, kind, size, criteria });
+  }, [title, description, kind, size, criteria]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const id = useId();

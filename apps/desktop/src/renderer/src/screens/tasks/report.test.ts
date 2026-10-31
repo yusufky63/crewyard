@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TaskReportFinding } from "@crewyard/core";
-import { badgeClass, findingLocation, findingPath, findingText, severityCounts, verdictTone, worstTone } from "./report.ts";
+import { badgeClass, findingLocation, findingPath, findingText, severityCounts, verdictTone, worstSeverity, worstTone } from "./report.ts";
 
 const f = (severity: TaskReportFinding["severity"], extra: Partial<TaskReportFinding> = {}): TaskReportFinding => ({ title: "T", severity, file: null, line: null, detail: "", ...extra });
 
@@ -20,6 +20,9 @@ describe("report helpers", () => {
     expect(worstTone([f("low")])).toBe("info");
     expect(worstTone([f("info")])).toBe("neutral");
     expect(worstTone([])).toBeNull();
+    // The row badge names the worst level and its count, so colour is never the only signal.
+    expect(worstSeverity([f("low"), f("high"), f("high")])).toEqual({ severity: "high", count: 2 });
+    expect(worstSeverity([])).toBeNull();
     expect(badgeClass("neutral")).toBe("badge");
     expect(badgeClass("bad")).toBe("badge badge-bad");
   });

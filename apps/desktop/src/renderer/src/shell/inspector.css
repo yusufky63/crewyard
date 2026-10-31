@@ -27,12 +27,20 @@
 .ins-state.s-waiting, .ins-state.s-stopped, .ins-state.s-interrupted { color: var(--ink-2); }
 .ins-task { margin-top: 8px; font-size: 12px; color: var(--ink-2); text-align: left; text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
 .ins-task:hover { color: var(--ink); }
-/* Six tabs do not fit 380 px in every language; the row wraps so none is ever cut off. The rule
-   under the row is an inset line, so the selected tab's 2 px mark sits on it on the last row. */
-.ins-tabs { flex: none; display: flex; flex-wrap: wrap; gap: 0 14px; padding: 0 16px; box-shadow: inset 0 -1px 0 var(--line); }
-.ins-tabs button { flex: none; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; height: 38px; font-size: 13px; color: var(--ink-3); border-bottom: 2px solid transparent; }
+/* Six tabs do not fit 380 px in every language. The row stays one line and scrolls sideways
+   rather than wrapping into a second row whose selected mark floats off the rule. Its scrollbar is
+   hidden: under the tabs it would sit between the selected mark and the rule. Instead a chevron at
+   an edge says more tabs lie that way and scrolls to them, and the chosen tab is always scrolled
+   into view (Inspector.tsx). The rule is an inset line, so the selected tab's 2 px mark sits on it. */
+.ins-tabbar { flex: none; position: relative; }
+.ins-tabs { position: relative; display: flex; gap: 12px; padding: 0 16px; box-shadow: inset 0 -1px 0 var(--line); overflow: auto hidden; scrollbar-width: none; }
+.ins-tabs-more { position: absolute; top: 0; bottom: 1px; z-index: 1; width: 28px; display: grid; place-items: center; background: var(--surface); color: var(--ink-3); }
+.ins-tabs-more:hover { color: var(--ink); background: var(--raised); }
+.ins-tabs-more.start { left: 0; border-right: 1px solid var(--line); }
+.ins-tabs-more.end { right: 0; border-left: 1px solid var(--line); }
+.ins-tabs button { flex: none; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; height: 38px; font-size: 13px; color: var(--ink-3); border-bottom: 2px solid transparent; }
 .ins-tabs button:focus-visible { outline-offset: -2px; }
-.ins-tab-count { padding: 2px 5px; }
+.ins-tab-count { padding: 1px 4px; }
 .ins-tabs button[aria-selected="true"] { color: var(--ink); border-color: var(--ink); }
 .ins-sec { padding: 16px; border-bottom: 1px solid var(--line); display: grid; gap: 10px; }
 .ins-sec .tk-banner { margin-top: 0; }

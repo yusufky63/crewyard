@@ -19,6 +19,11 @@ export function severityCounts(findings: readonly Pick<TaskReportFinding, "sever
   return SEVERITIES.map((severity) => ({ severity, count: findings.filter((f) => f.severity === severity).length })).filter((c) => c.count > 0);
 }
 
+/** The most severe level present and how many findings have it, for the row's count badge. */
+export function worstSeverity(findings: readonly Pick<TaskReportFinding, "severity">[]): { severity: ReportSeverity; count: number } | null {
+  return severityCounts(findings)[0] ?? null;
+}
+
 /** The tone of the most severe finding, for a count badge that stands for all of them. */
 export function worstTone(findings: readonly Pick<TaskReportFinding, "severity">[]): ReportTone | null {
   const worst = SEVERITIES.find((s) => findings.some((f) => f.severity === s));

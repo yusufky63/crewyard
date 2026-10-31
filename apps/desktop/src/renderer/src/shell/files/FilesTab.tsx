@@ -66,8 +66,11 @@ function useLiveFiles(taskId: string): void {
   }, [qc, taskId]);
 }
 
-/** `reveal` previews one file, e.g. a report finding's `file:line`; each new object asks once. */
-export function FilesTab({ detail, reveal }: { detail: TaskDetail; reveal?: { path: string } }) {
+/**
+ * `reveal` previews one file, e.g. a report finding's `file:line`; each new object asks once, and
+ * `onRevealed` tells the owner the request is spent so a later visit to the tab does not repeat it.
+ */
+export function FilesTab({ detail, reveal, onRevealed }: { detail: TaskDetail; reveal?: { path: string }; onRevealed?: () => void }) {
   const { t } = useTranslation("files");
   if (!detail.worktree) {
     return (
@@ -76,10 +79,10 @@ export function FilesTab({ detail, reveal }: { detail: TaskDetail; reveal?: { pa
       </div>
     );
   }
-  return <Files key={detail.id} taskId={detail.id} reveal={reveal} />;
+  return <Files key={detail.id} taskId={detail.id} reveal={reveal} onRevealed={onRevealed} />;
 }
 
-function Files({ taskId, reveal }: { taskId: string; reveal?: { path: string } }) {
+function Files({ taskId, reveal, onRevealed }: { taskId: string; reveal?: { path: string }; onRevealed?: () => void }) {
   const { t } = useTranslation("files");
   const [open, setOpen] = useState<Set<string>>(() => new Set(SHOT?.get("files") === "open" ? ["src", "src/auth"] : []));
   const [preview, setPreview] = useState<string | null>(() => SHOT?.get("file") ?? null);
@@ -124,6 +127,9 @@ function Files({ taskId, reveal }: { taskId: string; reveal?: { path: string } }
     setRevealed(reveal);
     show(reveal.path);
   }
+  useEffect(() => {
+    if (reveal) onRevealed?.();
+  }, [reveal, onRevealed]);
 
   return (
     <>
