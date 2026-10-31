@@ -171,5 +171,23 @@
     "assistant_preset_unknown": "That ready-made task does not exist.",
     "assistant_too_many_drafts": "This conversation already has 20 drafts. Add or discard some first.",
     "other": "Something went wrong: {{message}}"
+  },
+  "toolLine": {
+    "refused": "Refused",
+    "list_tasks": "Listed tasks",
+    "read_task": "Read task",
+    "read_report": "Read report",
+    "read_crew": "Read crew",
+    "list_drafts": "Listed drafts",
+    "read_inbox": "Read the Inbox",
+    "read_events": "Read events",
+    "read_usage": "Read spend and limits",
+    "list_profiles": "Listed profiles",
+    "read_project": "Read project settings",
+    "git_overview": "Read git status",
+    "list_problems": "Listed problems",
+    "list_agent_files": "Listed instruction files and skills",
+    "edit_draft": "Edited draft",
+    "discard_draft": "Discarded draft"
   }
 }

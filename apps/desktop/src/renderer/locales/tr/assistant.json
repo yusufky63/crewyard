@@ -171,5 +171,23 @@
     "assistant_preset_unknown": "Böyle bir hazır görev yok.",
     "assistant_too_many_drafts": "Bu sohbette zaten 20 taslak var. Önce bazılarını ekle ya da vazgeç.",
     "other": "Bir şeyler ters gitti: {{message}}"
+  },
+  "toolLine": {
+    "refused": "Reddedildi",
+    "list_tasks": "Görevlere baktı",
+    "read_task": "Görevi okudu",
+    "read_report": "Raporu okudu",
+    "read_crew": "Ekibe baktı",
+    "list_drafts": "Taslaklara baktı",
+    "read_inbox": "Gelen kutusuna baktı",
+    "read_events": "Olaylara baktı",
+    "read_usage": "Harcamaya ve limitlere baktı",
+    "list_profiles": "Profillere baktı",
+    "read_project": "Proje ayarlarını okudu",
+    "git_overview": "Git durumuna baktı",
+    "list_problems": "Sorunlara baktı",
+    "list_agent_files": "Talimat dosyalarına ve becerilere baktı",
+    "edit_draft": "Taslağı düzenledi",
+    "discard_draft": "Taslaktan vazgeçti"
   }
 }

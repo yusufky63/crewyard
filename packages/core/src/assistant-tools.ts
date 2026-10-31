@@ -71,7 +71,7 @@ export const TOOL_LINE_TITLES: Record<AssistantExtraTool, string> = {
   list_drafts: "Listed drafts",
   read_inbox: "Read the Inbox",
   read_events: "Read events",
-  read_usage: "Read usage and limits",
+  read_usage: "Read spend and limits",
   list_profiles: "Listed profiles",
   read_project: "Read project settings",
   git_overview: "Read git status",
