@@ -88,6 +88,11 @@ export interface ServiceDeps {
   watched?: () => string[];
   /** Runs after each refresh, before "github.changed" goes out; task PR facts and feedback hang off it. */
   afterRefresh?: (projectId: string) => Promise<void>;
+  /**
+   * Branches of Orchestra goal tasks (docs/adr/0019): they are merged into their goal branch, and
+   * only the goal branch is offered for push and PR, so the push queue leaves them out.
+   */
+  goalTaskBranches?: (projectId: string) => ReadonlySet<string>;
   now?: () => number;
 }
 
@@ -133,7 +138,9 @@ export class GithubService {
   /** Starts the 60 s refresh for projects with open PRs. The timer never keeps the daemon alive. */
   startBackground(): void {
     if (this.timer) return;
-    this.timer = setInterval(() => void this.backgroundTick(), REFRESH_MS);
+    // A tick that fails (the store closing on exit, a source that throws) waits for the next one;
+    // a rejection here would be unhandled and could end the daemon.
+    this.timer = setInterval(() => void this.backgroundTick().catch(() => undefined), REFRESH_MS);
     this.timer.unref?.();
   }
 
@@ -404,11 +411,16 @@ export class GithubService {
     const repo = await this.repo(projectId);
     if (repo.problem) return { branches: [], problem: repo.problem };
     const open = this.cache(projectId).pulls?.pulls.filter((p) => p.state !== "merged") ?? [];
-    const branches = await git.pool(repo.unpushed, 8, async (b) => {
+    const hidden = this.deps.goalTaskBranches?.(projectId) ?? new Set<string>();
+    const branches = await git.pool(
+      repo.unpushed.filter((b) => !hidden.has(b.branch)),
+      8,
+      async (b) => {
         const pr = open.find((p) => p.head === b.branch);
         const files = await git.workflowFilesAt(repo.path, b.headSha);
-      return { ...b, hasOpenPull: Boolean(pr), workflows: triggeredBy(files, b.branch, pr?.base ?? null) };
-    });
+        return { ...b, hasOpenPull: Boolean(pr), workflows: triggeredBy(files, b.branch, pr?.base ?? null) };
+      },
+    );
     return { branches, problem: null };
   }
 

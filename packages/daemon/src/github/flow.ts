@@ -232,7 +232,12 @@ export class PrFlow {
   }
 
   async views(projectId: string): Promise<TaskPullView[]> {
-    const tasks = this.deps.tasks().list(projectId).filter((t) => t.kind === "code" && (t.status === "review" || t.status === "merged" || this.row(t.id) !== null));
+    // A goal's plan tasks join its goal branch and never get a PR of their own; the goal's
+    // integration task owns the goal branch and its PR (docs/adr/0019).
+    const tasks = this.deps
+      .tasks()
+      .list(projectId)
+      .filter((t) => t.kind === "code" && (!t.goal || t.goal.role === "integration") && (t.status === "review" || t.status === "merged" || this.row(t.id) !== null));
     if (tasks.length === 0) return [];
     const pulls = await this.deps.service.pulls(projectId).catch((): PullsResult | null => null);
     const out: TaskPullView[] = [];

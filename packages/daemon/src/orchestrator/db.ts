@@ -209,7 +209,13 @@ export class OrchestratorDb {
   });
 
   /** Best of N, scheduled tasks and hibernation (set by the orchestrator, which owns those stores). */
-  taskExtras: (t: TaskRow) => Pick<TaskSummary, "scheduled" | "bestOf" | "variantOf"> & { fact: TaskFacts["bestOf"]; groupRuns: RunRow[] } = () => ({ scheduled: null, bestOf: null, variantOf: null, fact: null, groupRuns: [] });
+  taskExtras: (t: TaskRow) => Pick<TaskSummary, "scheduled" | "bestOf" | "variantOf"> & { fact: TaskFacts["bestOf"]; groupRuns: RunRow[]; goal?: TaskSummary["goal"] } = () => ({ scheduled: null, bestOf: null, variantOf: null, fact: null, groupRuns: [] });
+  /**
+   * An Orchestra goal's integration task is done implementing once every accepted writing task of
+   * the goal joined its branch and the last review ran (docs/adr/0019); null for any other task.
+   * Set by the orchestrator, which owns the goal tables' reader.
+   */
+  integrationDone: (taskId: string) => boolean | null = () => null;
   hibernatedAt: (runId: string) => string | null = () => null;
 
   constructor(readonly db: DatabaseSync) {}
@@ -601,7 +607,7 @@ export class OrchestratorDb {
       crewApprovedAt: crew?.approved_at ?? null,
       cancelledAt: task.cancelled_at,
       openHandoffId: openHandoff?.id ?? null,
-      implementationDone: writers.length > 0 && writers.every((m) => completed(m.id)),
+      implementationDone: this.integrationDone(task.id) ?? (writers.length > 0 && writers.every((m) => completed(m.id))),
       // PR facts are written by the GitHub work (table task_pulls); without one a finished code task reads "review".
       pullRequest: this.pullFact(task.id),
       bestOf: extras.fact,
@@ -658,6 +664,7 @@ export class OrchestratorDb {
       scheduled: extras.scheduled,
       bestOf: extras.bestOf,
       variantOf: extras.variantOf,
+      ...(extras.goal ? { goal: extras.goal } : {}),
     };
   }
 

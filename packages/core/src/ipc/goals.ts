@@ -143,6 +143,12 @@ export interface GoalDecisionPayload {
   profileId?: string;
   /** Which part of the stop rule fired. */
   rule?: "same_failure" | "failed_tasks";
+  /**
+   * A narrower set of answers than the kind offers, when some cannot help: a merge Crewyard could not
+   * test (Git too old, uncommitted work, a refused merge) has no conflict for an implementer to fix.
+   * The view offers these, and goals.decide takes only these, when present.
+   */
+  actions?: GoalDecisionAction[];
 }
 
 export interface GoalDecisionView {

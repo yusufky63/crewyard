@@ -368,6 +368,8 @@ export function reviewContext(p: { sha: string; baseSha: string | null; branch: 
 export interface LoopRunnerDeps {
   capFor(taskId: string, runId: string | null, candidate: Candidate | undefined): SpendCap | null;
   launch(spec: LaunchSpec): Promise<string>;
+  /** Whether an Orchestra goal manages the task (TaskFlow.goalManaged): its docs work is merged by commit. */
+  goalManaged(taskId: string): boolean;
 }
 
 export class LoopRunner extends Part {
@@ -448,12 +450,16 @@ export class LoopRunner extends Part {
 
   /**
    * An implementer finished: whatever it left uncommitted is committed, so the commit the reviewer
-   * pins and the verdict names is exactly what was tested.
+   * pins and the verdict names is exactly what was tested. A goal's docs step is committed the same
+   * way: only commits reach the goal branch (docs/adr/0019), and its reviewer then reads exactly the
+   * commit that gets merged. Docs tasks outside a goal keep their work in the worktree, as before.
    */
   async pinHead(runId: string): Promise<void> {
     const run = this.db.run(runId);
     const wt = run.worktree_id ? this.db.worktree(run.task_id) : null;
-    if (!wt || wt.id !== run.worktree_id || this.db.member(run.member_id).writes_code !== 1 || this.db.task(run.task_id).kind !== "code") return;
+    if (!wt || wt.id !== run.worktree_id || this.db.member(run.member_id).writes_code !== 1) return;
+    const kind = this.db.task(run.task_id).kind;
+    if (kind !== "code" && !(kind === "docs" && this.deps.goalManaged(run.task_id))) return;
     try {
       if (await isClean(wt.path, this.opts.gitBin)) return;
       const res = await checkpoint(wt.path, `crewyard: commit what the ${run.role} left uncommitted`, this.opts.gitBin);

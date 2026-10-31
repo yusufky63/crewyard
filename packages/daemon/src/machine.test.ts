@@ -12,6 +12,12 @@ describe("versionGate", () => {
     expect(versionGate("codex", VERSION_GATES.codex!.verified)?.status).toBe("ok");
   });
 
+  it("asks for a Git new enough to test-merge goal branches without a worktree", () => {
+    expect(versionGate("git", "2.56.0.windows.3")?.status).toBe("ok");
+    expect(versionGate("git", "2.38.0")?.status).toBe("ok");
+    expect(versionGate("git", "2.37.1")).toMatchObject({ status: "outdated", verified: "2.38.0", rule: "min", update: "winget upgrade --id Git.Git -e" });
+  });
+
   it("flags an older Claude Code with its update command", () => {
     expect(versionGate("claude", "2.1.0")).toMatchObject({ status: "outdated", verified: claude, rule: "min", update: "claude update" });
   });
@@ -32,9 +38,10 @@ describe("versionGate", () => {
     expect(versionGate("opencode", "99.0.0")?.status).toBe("pending");
   });
 
-  it("says unknown when no version could be read, and has no gate for git or gh", () => {
+  it("says unknown when no version could be read, and has no gate for gh", () => {
     expect(versionGate("codex", null)?.status).toBe("unknown");
-    expect(versionGate("git", "2.47.0")).toBeNull();
+    // Git has one since Orchestra merges goal branches with merge-tree (docs/adr/0019).
+    expect(versionGate("git", null)?.status).toBe("unknown");
     expect(versionGate("gh", null)).toBeNull();
   });
 });

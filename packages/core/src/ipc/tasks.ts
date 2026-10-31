@@ -105,7 +105,8 @@ export type ReasonCode =
   | "goal.conflict" // { paths }: merging it into the goal branch conflicts
   | "goal.not_approved" // the plan revision holding it is not approved
   | "goal.disabled" // goals.preview: Orchestra is turned off in Settings
-  | "goal.no_planner"; // goals.preview: no profile here can plan read-only
+  | "goal.no_planner" // goals.preview: no profile here can plan read-only
+  | "goal.error"; // { code }: the goal's scheduling pass failed; a goal decision says why
 
 export type OrchestratorErrorCode =
   | "project.not_found"

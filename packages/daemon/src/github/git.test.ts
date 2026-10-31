@@ -92,3 +92,36 @@ describe("repo state, push queue and push against a local bare remote", () => {
     svc.stop();
   }, 60_000);
 });
+
+describe("push queue and Orchestra goal tasks (docs/adr/0019)", () => {
+  it("leaves out the branches of goal tasks and keeps the goal branch", async () => {
+    const root = mkdtempSync(join(tmpdir(), "crewyard gh goal "));
+    temps.push(root);
+    const bare = join(root, "remote repo.git");
+    const repo = join(root, "demo repo with spaces");
+    mkdirSync(repo);
+    await g(root, "init", "--bare", "--initial-branch=main", bare);
+    await g(repo, "init", "--initial-branch=main");
+    for (const [k, v] of [["user.name", "Test"], ["user.email", "test@example.com"], ["commit.gpgsign", "false"]]) await g(repo, "config", k!, v!);
+    await g(repo, "remote", "add", "origin", "https://github.com/test-owner/test-repo.git");
+    await g(repo, "config", `url.${bare.replace(/\\/g, "/")}.pushInsteadOf`, "https://github.com/test-owner/test-repo.git");
+    writeFileSync(join(repo, "README.md"), "# demo\n");
+    await g(repo, "add", ".");
+    await g(repo, "commit", "-m", "first");
+    await g(repo, "push", "origin", "main");
+    await g(repo, "fetch", bare, "main:refs/remotes/origin/main");
+    for (const branch of ["crewyard/goal/giris-abc123", "crewyard/sunucu-def456"]) {
+      await g(repo, "checkout", "-q", "-b", branch, "main");
+      writeFileSync(join(repo, `${branch.replace(/\//g, "-")}.txt`), "x");
+      await g(repo, "add", ".");
+      await g(repo, "commit", "-m", branch);
+    }
+    const client = new GithubClient(async () => null);
+    const plain = new GithubService({ projectPath: () => repo, emit: () => undefined, client, tokenState: () => "signed_out", resetToken: () => undefined });
+    expect((await plain.pushQueue("p")).branches.map((b) => b.branch).sort()).toEqual(["crewyard/goal/giris-abc123", "crewyard/sunucu-def456"]);
+    const svc = new GithubService({ projectPath: () => repo, emit: () => undefined, client, tokenState: () => "signed_out", resetToken: () => undefined, goalTaskBranches: () => new Set(["crewyard/sunucu-def456"]) });
+    expect((await svc.pushQueue("p")).branches.map((b) => b.branch)).toEqual(["crewyard/goal/giris-abc123"]);
+    plain.stop();
+    svc.stop();
+  }, 60_000);
+});
