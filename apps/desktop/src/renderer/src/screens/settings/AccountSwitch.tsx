@@ -37,7 +37,7 @@ export function AccountSwitchRows({ settings, save }: { settings: AppSettings; s
           <div className="st-terms-acts">
             <Button
               size="sm"
-              variant="primary"
+              tone="ok"
               onClick={() => {
                 setAsking(false);
                 save({ accountSwitch: { enabled: true, acceptTerms: true } });

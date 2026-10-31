@@ -106,7 +106,7 @@ function Offer({ s }: { s: UpdateState }) {
       {s.phase === "available" && (
         <div className="up-row">
           <p className="up-text">{s.signed ? t("updates.downloadHint") : t("updates.downloadHintUnsigned")}</p>
-          <Button size="sm" onClick={() => void window.crewyard.downloadUpdate()}>
+          <Button size="sm" tone="ok" onClick={() => void window.crewyard.downloadUpdate()}>
             <Download strokeWidth={1.75} />
             {t("updates.download")}
           </Button>
@@ -115,7 +115,7 @@ function Offer({ s }: { s: UpdateState }) {
       {s.phase === "downloading" && (
         <div className="up-row">
           <Progress s={s} />
-          <Button variant="ghost" size="sm" onClick={() => void window.crewyard.cancelUpdate()}>
+          <Button variant="ghost" tone="bad" size="sm" onClick={() => void window.crewyard.cancelUpdate()}>
             <X strokeWidth={1.75} />
             {t("updates.cancel")}
           </Button>

@@ -101,7 +101,7 @@ export function SignInControl({ profile, status, session, compact = false }: { p
                   {t("signIn.deviceCode")}
                 </Button>
               )}
-              <Button size="sm" disabled={busy !== null} onClick={() => void start("browser")}>
+              <Button size="sm" tone="ok" disabled={busy !== null} onClick={() => void start("browser")}>
                 <LogIn size={14} strokeWidth={1.75} />
                 {busy === "browser" ? t("signIn.starting") : t("signIn.start", { provider })}
               </Button>
@@ -159,7 +159,7 @@ export function SignInControl({ profile, status, session, compact = false }: { p
                 {t("signIn.openPage")}
               </Button>
             )}
-            <Button size="sm" variant="ghost" disabled={busy !== null} onClick={() => void act("cancel", () => call("providers.signInCancel", { profileId: profile.id }))}>
+            <Button size="sm" variant="ghost" tone="bad" disabled={busy !== null} onClick={() => void act("cancel", () => call("providers.signInCancel", { profileId: profile.id }))}>
               <X size={14} strokeWidth={1.75} />
               {t("signIn.cancel")}
             </Button>

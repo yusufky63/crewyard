@@ -160,7 +160,7 @@ export function DataSection() {
               <Button variant="ghost" size="sm" onClick={() => window.crewyard.revealPath(b.path)}>
                 {t("data.reveal")}
               </Button>
-              <Button variant="ghost" size="sm" disabled={busy || blocked} onClick={() => setConfirm(b.path)}>
+              <Button variant="ghost" tone="warn" size="sm" disabled={busy || blocked} onClick={() => setConfirm(b.path)}>
                 {t("data.restoreRow")}
               </Button>
             </span>

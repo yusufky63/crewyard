@@ -148,7 +148,7 @@ function Editor({ draft, projectId, onDone }: { draft: Draft; projectId: string 
               placeholder={e.secret && e.stored ? t("mcp.secretStored") : ""}
             />
             <Toggle label={t("mcp.secret")} value={e.secret} onChange={(secret) => setEnv(i, { secret, value: "", stored: false })} />
-            <Button size="sm" variant="ghost" aria-label={t("mcp.envRemove", { name: e.name })} onClick={() => set({ env: d.env.filter((_, j) => j !== i) })}>
+            <Button size="sm" variant="ghost" tone="bad" aria-label={t("mcp.envRemove", { name: e.name })} onClick={() => set({ env: d.env.filter((_, j) => j !== i) })}>
               <X size={14} strokeWidth={1.75} aria-hidden="true" />
             </Button>
           </div>
