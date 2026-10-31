@@ -184,6 +184,9 @@ svg.i, .i { width: 16px; height: 16px; flex: none; }
 .cmenu button.danger, .cmenu button.danger .cmenu-icon { color: var(--bad); }
 .cmenu button.danger:hover, .cmenu button.danger:focus { background: var(--bad-soft); }
 .cmenu button.danger[aria-disabled="true"] { color: var(--ink-3); }
+.cmenu button.cmenu-ok .cmenu-icon { color: var(--ok); }
+.cmenu button.cmenu-warn .cmenu-icon { color: var(--warn); }
+.cmenu button[aria-disabled="true"] .cmenu-icon { color: var(--ink-3); }
 .cmenu-sep { height: 1px; margin: 4px 2px; background: var(--line); }
 
 /* Splitter (DESIGN.md §5): a 9 px hit area over a pane's edge, a hairline that shows on hover and

@@ -8,7 +8,8 @@ export interface ContextMenuItem extends MenuItemSpec {
   icon?: ReactNode;
   /** Shown right-aligned as a hint; the menu does not bind it. */
   shortcut?: string;
-  tone?: "danger";
+  /** danger colours the whole item; ok and warn colour only its icon, so a menu of many states stays calm. */
+  tone?: "danger" | "ok" | "warn";
 }
 
 export type ContextMenuEntry = MenuEntry<ContextMenuItem>;
@@ -153,7 +154,7 @@ export function ContextMenu({
             role="menuitem"
             data-index={i}
             tabIndex={i === active ? 0 : -1}
-            className={entry.tone === "danger" ? "danger" : undefined}
+            className={entry.tone === "danger" ? "danger" : entry.tone ? `cmenu-${entry.tone}` : undefined}
             aria-disabled={why ? true : undefined}
             aria-describedby={whyId}
             onMouseEnter={() => setActive(i)}
