@@ -110,6 +110,15 @@ svg.i, .i { width: 16px; height: 16px; flex: none; }
 .btn-danger::before, .btn-danger::after { color: inherit; opacity: 0.65; }
 .btn-sm { height: 28px; padding: 0 10px; font-size: 11px; }
 .btn-sm.btn-ghost, .btn-sm.btn-danger { padding: 0 4px; }
+/* Tones for a secondary button whose action has a state colour (owner, 2026-10-31: use red, amber and green
+   for Turn on, Turn off, Stop and the like): the state colour on text, border and ticks, its soft fill on hover.
+   The colour only repeats the label; the word still says what the button does. */
+.btn-ok { color: var(--ok); border-color: var(--ok); --tk: var(--ok); }
+.btn-ok:hover { background: var(--ok-soft); --tk: var(--ok); }
+.btn-warn { color: var(--warn); border-color: var(--warn); --tk: var(--warn); }
+.btn-warn:hover { background: var(--warn-soft); --tk: var(--warn); }
+.btn-bad { color: var(--bad); border-color: var(--bad); --tk: var(--bad); }
+.btn-bad:hover { background: var(--bad-soft); --tk: var(--bad); }
 
 .kbd { font: 500 11px / 1 var(--mono); color: var(--ink-2); border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: var(--radius-keycap); padding: 3px 5px; }
 .chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 9px; border: 1px solid var(--line); color: var(--ink-2); font-size: 13px; white-space: nowrap; }
@@ -125,10 +134,17 @@ svg.i, .i { width: 16px; height: 16px; flex: none; }
 .badge-reported { border-color: transparent; background: var(--ok-soft); color: var(--ok); }
 .badge-estimated { border-color: transparent; background: var(--accent-soft); color: var(--accent); }
 .badge-unknown { border-style: dashed; color: var(--ink-3); }
+.badge-ok { border-color: transparent; background: var(--ok-soft); color: var(--ok); }
+.badge-warn { border-color: transparent; background: var(--warn-soft); color: var(--warn); }
+.badge-bad { border-color: transparent; background: var(--bad-soft); color: var(--bad); }
+.badge-info { border-color: transparent; background: var(--accent-soft); color: var(--accent); }
 .st { display: inline-flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 500; white-space: nowrap; }
 .st-run { color: var(--accent); } .st-wait { color: var(--warn); } .st-ok { color: var(--ok); } .st-bad { color: var(--bad); } .st-rev { color: var(--ink); }
 .banner { display: flex; align-items: center; gap: 12px; padding: 10px 12px; font-size: 13px; flex-wrap: wrap; border: 1px solid transparent; }
 .banner-warn { background: var(--warn-soft); color: var(--warn); --tk: var(--warn); }
+.banner-ok { background: var(--ok-soft); color: var(--ok); --tk: var(--ok); }
+.banner-bad { background: var(--bad-soft); color: var(--bad); --tk: var(--bad); }
+.banner-info { background: var(--accent-soft); color: var(--accent); --tk: var(--accent); }
 .spin { width: 13px; height: 13px; border: 1.75px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin 1s linear infinite; flex: none; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spin { animation: none; border-right-color: currentColor; opacity: 0.6; } * { transition: none !important; } }
