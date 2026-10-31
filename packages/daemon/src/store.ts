@@ -828,6 +828,53 @@ export const MIGRATIONS: Migration[] = [
     id: "events-project",
     sql: `create index if not exists events_project on events(project_id, seq);`,
   },
+  // The task assistant (docs/adr/0014): one open conversation per project, its lines and the task
+  // drafts it proposed. `totals` holds the runner's last running usage totals for the session, so a
+  // resumed session counts only what it adds.
+  {
+    id: "assistant",
+    sql: `create table if not exists assistant_conversations (
+     id text primary key,
+     project_id text not null references projects(id),
+     profile_id text,
+     runner text,
+     model text,
+     native_session_id text,
+     totals text,
+     spend_usd real not null default 0,
+     spend_label text not null default 'estimated',
+     tokens_in integer not null default 0,
+     tokens_out integer not null default 0,
+     ended text,
+     detail text,
+     created_at text not null,
+     cleared_at text
+   );
+   create index if not exists assistant_conversations_project on assistant_conversations(project_id, cleared_at);
+   create table if not exists assistant_messages (
+     id text primary key,
+     conversation_id text not null references assistant_conversations(id),
+     role text not null check (role in ('user', 'assistant', 'tool', 'notice')),
+     text text not null,
+     truncated integer not null default 0,
+     at text not null
+   );
+   create index if not exists assistant_messages_conversation on assistant_messages(conversation_id, at);
+   create table if not exists assistant_drafts (
+     id text primary key,
+     conversation_id text not null references assistant_conversations(id),
+     project_id text not null,
+     title text not null,
+     description text not null,
+     kind text not null,
+     acceptance text not null,
+     size text,
+     status text not null default 'open' check (status in ('open', 'added', 'discarded')),
+     task_id text,
+     created_at text not null
+   );
+   create index if not exists assistant_drafts_conversation on assistant_drafts(conversation_id, created_at);`,
+  },
 ];
 
 /** What the positional scheme applied: a database at `user_version` N has the first N of these. */

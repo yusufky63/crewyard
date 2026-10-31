@@ -15,6 +15,17 @@ export interface ToolOutcome {
 
 export type ToolCall = (name: string, args: unknown) => Promise<ToolOutcome>;
 
+/** What one connection lists: crew runs get the report tools, the task assistant its own (docs/adr/0014). */
+export interface ToolSet {
+  tools: ReadonlyArray<{ name: string }>;
+  instructions: string;
+}
+
+export const REPORT_TOOLS: ToolSet = {
+  tools: REPORT_TOOL_DEFS,
+  instructions: "Use report to tell the person supervising you about milestones, questions, blockers and completion. Use propose_followup only for work outside your task; it never starts anything.",
+};
+
 type Id = string | number;
 type Message = { jsonrpc?: unknown; id?: unknown; method?: unknown; params?: unknown };
 
@@ -31,6 +42,7 @@ export class McpSession {
   constructor(
     private readonly call: ToolCall,
     private readonly version: string,
+    private readonly set: ToolSet = REPORT_TOOLS,
   ) {}
 
   /** One line in, at most one line out (notifications get no answer). */
@@ -56,18 +68,18 @@ export class McpSession {
           protocolVersion: PROTOCOL_VERSIONS.includes(asked) ? asked : PROTOCOL_VERSIONS[0],
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: "crewyard", title: "Crewyard", version: this.version },
-          instructions: "Use report to tell the person supervising you about milestones, questions, blockers and completion. Use propose_followup only for work outside your task; it never starts anything.",
+          instructions: this.set.instructions,
         });
       }
       case "ping":
         return this.result(id, {});
       case "tools/list":
         if (!this.initialized) return this.error(id, INVALID_REQUEST, "Not initialized");
-        return this.result(id, { tools: REPORT_TOOL_DEFS });
+        return this.result(id, { tools: this.set.tools });
       case "tools/call": {
         if (!this.initialized) return this.error(id, INVALID_REQUEST, "Not initialized");
         if (typeof params.name !== "string") return this.error(id, INVALID_PARAMS, "Missing tool name");
-        if (!REPORT_TOOL_DEFS.some((t) => t.name === params.name)) return this.error(id, INVALID_PARAMS, `Unknown tool: ${params.name.slice(0, 64)}`);
+        if (!this.set.tools.some((t) => t.name === params.name)) return this.error(id, INVALID_PARAMS, `Unknown tool: ${params.name.slice(0, 64)}`);
         const out = await this.call(params.name, params.arguments ?? {});
         return this.result(id, { content: [{ type: "text", text: out.text }], isError: out.isError });
       }

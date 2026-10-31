@@ -6,6 +6,7 @@ import { effectiveProjectConfig } from "../setup/index.ts";
 import { backupsDir, backupTo, commitStaged, exportTo, listBackups, stageRestore } from "../settings/data.ts";
 import { ACCOUNT_SWITCH_KEY, applyPatch, HIBERNATION_KEY, KEEP_AWAKE_KEY, NOTIFICATIONS_KEY, readAccountSwitch, readHibernation, readKeepAwake, readNotifications, readStalls, STALLS_KEY } from "../settings/values.ts";
 import { appliedMigrationIds, MIGRATIONS } from "../store.ts";
+import { assistantFor } from "./assistant.ts";
 import type { HandlerContext, HandlerMap } from "./types.ts";
 
 // Handlers for the Settings screen and the desktop shell. Owned by the desktop settings work.
@@ -76,6 +77,7 @@ export function createSettingsHandlers(ctx: HandlerContext, opts: SettingsOption
       const safetyBackup = backupTo(db, info.dataDir, "safety");
       commitStaged(staged, info.dataDir);
       // Nothing may start between here and the restart: the scheduler closes with the store's last writes.
+      assistantFor(ctx).shutdown();
       orchestratorFor(ctx).shutdown();
       ctx.emit("settings.restoring", { path });
       restart();
@@ -90,6 +92,7 @@ export function createSettingsHandlers(ctx: HandlerContext, opts: SettingsOption
     "app.shutdown": async () => {
       const stopped = activeRuns();
       const o = orchestratorFor(ctx);
+      assistantFor(ctx).shutdown();
       o.shutdown();
       await o.settle();
       return { stopped };

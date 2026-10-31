@@ -1,4 +1,4 @@
-import type { AgentCapabilities, McpServerSpec, McpTopics, McpServerView, RolePolicy } from "@crewyard/core";
+import { ASSISTANT_TOOL_DEFS, type AgentCapabilities, type McpServerSpec, type McpTopics, type McpServerView, type RolePolicy } from "@crewyard/core";
 import type { Store } from "../store.ts";
 import { checkServer } from "./check.ts";
 import { planServers, recordUsage } from "./inject.ts";
@@ -6,6 +6,7 @@ import { resolveLaunch, type Launch } from "./launch.ts";
 import { ReportPipe } from "./pipe.ts";
 import { reportServerSpec } from "./relay.ts";
 import { ReportService, type ReportHost } from "./reports.ts";
+import { REPORT_TOOLS, type ToolOutcome, type ToolSet } from "./session.ts";
 import type { McpServerStore } from "./servers.ts";
 import { RunTickets } from "./tickets.ts";
 
@@ -27,6 +28,19 @@ export interface McpHook {
   runEnded(runId: string): void;
 }
 
+/**
+ * Tickets of the task assistant (docs/adr/0014) carry this prefix on their key. Run ids are UUIDs,
+ * so a crew run's ticket can never reach the assistant's tool, nor the other way round.
+ */
+export const ASSISTANT_KEY = "assistant:";
+
+const ASSISTANT_TOOLS: ToolSet = {
+  tools: ASSISTANT_TOOL_DEFS,
+  instructions: "Use propose_task once for each task you suggest. It only shows the person a draft; nothing starts unless they add it and approve its crew.",
+};
+
+export type AssistantToolCall = (conversationId: string, tool: string, args: unknown) => Promise<ToolOutcome>;
+
 export interface McpServiceOptions {
   store: Store;
   servers: McpServerStore;
@@ -42,11 +56,45 @@ export class McpService implements McpHook {
   readonly reports: ReportService;
   readonly pipe: ReportPipe;
   private readonly now: () => Date;
+  private assistantCall: AssistantToolCall | null = null;
 
   constructor(private readonly opts: McpServiceOptions) {
     this.now = opts.now ?? (() => new Date());
     this.reports = new ReportService({ store: opts.store, host: opts.host, emit: opts.emit, now: this.now });
-    this.pipe = new ReportPipe({ tickets: this.tickets, call: (runId, tool, args) => this.reports.call(runId, tool, args), version: "1" }, opts.pipePath);
+    this.pipe = new ReportPipe(
+      {
+        tickets: this.tickets,
+        call: (key, tool, args) => {
+          if (!key.startsWith(ASSISTANT_KEY)) return this.reports.call(key, tool, args);
+          const call = this.assistantCall;
+          return call ? call(key.slice(ASSISTANT_KEY.length), tool, args) : Promise.resolve({ text: "Refused: the task assistant is not running.", isError: true });
+        },
+        toolsFor: (key) => (key.startsWith(ASSISTANT_KEY) ? ASSISTANT_TOOLS : REPORT_TOOLS),
+        version: "1",
+      },
+      opts.pipePath,
+    );
+  }
+
+  /** The task assistant takes its tool calls here (handlers/assistant.ts). */
+  setAssistant(call: AssistantToolCall): void {
+    this.assistantCall = call;
+  }
+
+  /**
+   * The report server for one assistant process: the same relay and pipe as runs, a fresh ticket
+   * that lists only propose_task. Undefined when the pipe cannot listen or no relay can run.
+   */
+  async assistantServer(conversationId: string): Promise<McpServerSpec | undefined> {
+    try {
+      return reportServerSpec(await this.pipe.listen(), this.tickets.issue(ASSISTANT_KEY + conversationId));
+    } catch {
+      return undefined;
+    }
+  }
+
+  assistantEnded(conversationId: string): void {
+    this.tickets.revoke(ASSISTANT_KEY + conversationId);
   }
 
   get servers(): McpServerStore {
