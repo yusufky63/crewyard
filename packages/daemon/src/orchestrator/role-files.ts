@@ -16,7 +16,7 @@ import {
   type RoleView,
 } from "@crewyard/core";
 import { CREWYARD_DIR } from "../setup/config.ts";
-import { ROLES, type RoleTemplate } from "./roles.ts";
+import { GOAL_PLANNER, ROLES, type RoleTemplate } from "./roles.ts";
 
 // Role files (PLAN.md §9.1): Markdown with YAML front matter, global in `<data folder>\roles` or per
 // project in `.crewyard\roles`. The file name is the role id; the body is the agent-facing contract.
@@ -228,6 +228,12 @@ export function loadRoleSet(dirs: { globalDir: string; repoDir: string | null })
       const problem = (code: RoleProblemCode, params: Record<string, string | number> = {}) => problems.push({ source, path, role: ROLE_ID.test(id) ? id : null, code, params });
       if (!ROLE_ID.test(id)) {
         problem("bad_name");
+        continue;
+      }
+      // The Orchestra planner's template is fixed in code: a file cannot widen or rewrite what the
+      // planner may do, nor make it show up as a crew role (docs/adr/0019).
+      if (id === GOAL_PLANNER.id) {
+        problem("reserved");
         continue;
       }
       let text: string;

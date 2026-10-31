@@ -1,4 +1,4 @@
-import type { AgentEvent } from "@crewyard/core";
+import { GOAL_PLAN_OUTPUT, type AgentEvent } from "@crewyard/core";
 import { describe, expect, it } from "vitest";
 import { outputSchemaFor, planSteps, readResult } from "./results.ts";
 
@@ -13,6 +13,16 @@ describe("results", () => {
     expect(outputSchemaFor("planner")?.name).toBe("planner_plan");
     expect(outputSchemaFor("researcher")?.name).toBe("research_findings");
     for (const role of ["implementer", "tester", "docs", "security"] as const) expect(outputSchemaFor(role)).toBeUndefined();
+  });
+
+  it("asks the Orchestra planner for a goal plan and hands its raw value on for parseGoalPlan", () => {
+    expect(outputSchemaFor("goal-planner")).toBe(GOAL_PLAN_OUTPUT);
+    // The planner's limits live in parseGoalPlan (GoalPlanner), so even an over-long plan passes through here.
+    const value = { summary: "İki adım", tasks: Array.from({ length: 20 }, (_, i) => ({ key: `t${i}` })) };
+    expect(readResult("goal-planner", ended({ output: { ok: true, value } }))).toEqual({ kind: "goal_plan", value });
+    expect(readResult("goal-planner", ended({ output: { ok: false, error: "no JSON result was returned" } }))).toEqual({ kind: "invalid", error: "no JSON result was returned" });
+    expect(readResult("goal-planner", ended({}))).toEqual({ kind: "invalid", error: "the runner returned no result" });
+    expect(readResult("goal-planner", ended({ reason: "stopped", output: { ok: true, value } }))).toBeNull();
   });
 
   it("reads a researcher's findings, each with a severity, a place and a suggested task or none", () => {

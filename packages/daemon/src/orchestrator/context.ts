@@ -37,7 +37,7 @@ import { HibernationStore, type WakeCause } from "./hibernation.ts";
 import { LimitMonitor } from "./limits.ts";
 import { LoopStore } from "./loops.ts";
 import type { RoleResult } from "./results.ts";
-import { effectivePolicy, type RoleTemplate } from "./roles.ts";
+import { effectivePolicy, GOAL_PLANNER, type RoleTemplate } from "./roles.ts";
 import type { Scheduler } from "./schedules.ts";
 import { StallMonitor } from "./stall.ts";
 import { transcriptPath } from "./transcripts.ts";
@@ -211,6 +211,10 @@ export class OrchestratorContext {
 
   /** The MCP servers for a new process of this run; a fresh report ticket each time (docs/adr/0007). */
   async mcpFor(runId: string, taskId: string, projectId: string, policy: RolePolicy, adapter: AgentAdapter): Promise<Pick<StartRequest, "mcpServers">> {
+    // The Orchestra planner gets no MCP server at all (docs/adr/0019): none of yours, since they do
+    // their own network I/O and "network denied" must hold, and no report server, so it has no
+    // propose_followup or any other tool that could start work. Its only output is its result.
+    if (this.db.run(runId).role === GOAL_PLANNER.id) return {};
     const servers = this.mcp ? await this.mcp.serversFor({ runId, taskId, projectId, policy, capabilities: adapter.capabilities }) : undefined;
     return servers ? { mcpServers: servers } : {};
   }

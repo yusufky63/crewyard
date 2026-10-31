@@ -1,5 +1,6 @@
-import { PLANNER_PLAN_OUTPUT, PlannerPlan, RESEARCH_FINDINGS_OUTPUT, ResearchFindings, REVIEW_VERDICT_OUTPUT, ReviewVerdict, type AgentEvent, type OutputSchema, type RoleId } from "@crewyard/core";
+import { GOAL_PLAN_OUTPUT, PLANNER_PLAN_OUTPUT, PlannerPlan, RESEARCH_FINDINGS_OUTPUT, ResearchFindings, REVIEW_VERDICT_OUTPUT, ReviewVerdict, type AgentEvent, type OutputSchema, type RoleId } from "@crewyard/core";
 import type { OrchestratorDb } from "./db.ts";
+import { GOAL_PLANNER } from "./roles.ts";
 
 // Schema-checked results (feature scan A3): the reviewer's verdict, the planner's plan and the
 // researcher's findings (docs/adr/0014) come back
@@ -9,13 +10,23 @@ import type { OrchestratorDb } from "./db.ts";
 
 /** The JSON shape a role's run must end with; undefined for roles whose output is free-form. */
 export function outputSchemaFor(role: RoleId): OutputSchema | undefined {
+  if (role === GOAL_PLANNER.id) return GOAL_PLAN_OUTPUT;
   if (role === "reviewer") return REVIEW_VERDICT_OUTPUT;
   if (role === "planner") return PLANNER_PLAN_OUTPUT;
   if (role === "researcher") return RESEARCH_FINDINGS_OUTPUT;
   return undefined;
 }
 
-export type RoleResult = { kind: "review"; verdict: ReviewVerdict } | { kind: "plan"; plan: PlannerPlan } | { kind: "findings"; findings: ResearchFindings } | { kind: "invalid"; error: string };
+/**
+ * `goal_plan` carries the Orchestra planner's raw value (docs/adr/0019): only the GoalPlanner part
+ * knows the goal's task limit and the frozen tasks, so parseGoalPlan runs there, never here.
+ */
+export type RoleResult =
+  | { kind: "review"; verdict: ReviewVerdict }
+  | { kind: "plan"; plan: PlannerPlan }
+  | { kind: "findings"; findings: ResearchFindings }
+  | { kind: "goal_plan"; value: unknown }
+  | { kind: "invalid"; error: string };
 
 type Ended = Extract<AgentEvent, { type: "run.ended" }>;
 
@@ -29,6 +40,8 @@ export function readResult(role: RoleId, ev: Ended): RoleResult | null {
   const output = ev.output;
   if (!output) return { kind: "invalid", error: "the runner returned no result" };
   if (!output.ok) return { kind: "invalid", error: output.error };
+  // Without this branch a goal plan would fall through to PlannerPlan and always read invalid.
+  if (role === GOAL_PLANNER.id) return { kind: "goal_plan", value: output.value };
   if (role === "reviewer") {
     const res = ReviewVerdict.safeParse(output.value);
     return res.success ? { kind: "review", verdict: res.data } : { kind: "invalid", error: REVIEW_VERDICT_OUTPUT.check(output.value) ?? "invalid verdict" };
@@ -62,6 +75,10 @@ export function applyResult(db: OrchestratorDb, runId: string, ev: Ended, audit:
     audit("review.verdict", { verdict: result.verdict.verdict, summary: result.verdict.summary, comments: result.verdict.comments });
   } else if (result.kind === "findings") {
     audit("research.findings", { summary: result.findings.summary, findings: result.findings.findings });
+  } else if (result.kind === "goal_plan") {
+    // The checked plan goes to goal_plans (GoalPlanner); the log keeps only that one arrived.
+    const tasks = (result.value as { tasks?: unknown } | null)?.tasks;
+    audit("plan.goal_result", { tasks: Array.isArray(tasks) ? tasks.length : null });
   } else {
     audit("result.invalid", { role: run.role, error: result.error });
   }

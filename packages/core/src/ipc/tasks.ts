@@ -103,7 +103,9 @@ export type ReasonCode =
   | "goal.halted" // the goal's stop rule halted it
   | "goal.parallel_cap" // { running, max }: the goal already runs this many tasks at once
   | "goal.conflict" // { paths }: merging it into the goal branch conflicts
-  | "goal.not_approved"; // the plan revision holding it is not approved
+  | "goal.not_approved" // the plan revision holding it is not approved
+  | "goal.disabled" // goals.preview: Orchestra is turned off in Settings
+  | "goal.no_planner"; // goals.preview: no profile here can plan read-only
 
 export type OrchestratorErrorCode =
   | "project.not_found"

@@ -6,6 +6,7 @@ import type { RunRow, TaskRow, RequestRow } from "./db.ts";
 import { errorCode, redactDetail } from "./errors.ts";
 import { writeFileAtomic } from "./git.ts";
 import { applyResult, type RoleResult } from "./results.ts";
+import { GOAL_PLANNER } from "./roles.ts";
 import { settleReservation } from "./spend.ts";
 import { snapshotTranscript } from "./transcripts.ts";
 
@@ -27,10 +28,18 @@ export interface RunLifecycleDeps {
   reviewLoop(reviewerRunId: string, result: RoleResult): Promise<void>;
   dropCheckout(runId: string): Promise<void>;
   refreshVariantDiff(variantId: string): Promise<void>;
+  /**
+   * Every end of an Orchestra planning run, however it ended (docs/adr/0019), with its result
+   * when it completed (null when the runner sent none). GoalPlanner checks and stores the plan.
+   */
+  planningEnded(runId: string, reason: EndReason, result: RoleResult | null): Promise<void>;
   tick(): Promise<void>;
 }
 
 export class RunLifecycle extends Part {
+  /** A planning run's result, kept from its run.ended event until endRun hands it to the planner. */
+  private readonly planResults = new Map<string, RoleResult>();
+
   constructor(ctx: OrchestratorContext, private readonly deps: RunLifecycleDeps) {
     super(ctx);
   }
@@ -45,6 +54,7 @@ export class RunLifecycle extends Part {
           this.record(runId, ev);
           const result = applyResult(this.db, runId, ev, (kind, payload) => this.audit(this.db.run(runId).task_id, runId, kind, payload));
           if (result) this.keepVerdict(runId, result);
+          if (result && this.db.run(runId).role === GOAL_PLANNER.id) this.planResults.set(runId, result);
           ended = { reason: ev.reason, detail: ev.detail ?? null };
           break;
         }
@@ -158,7 +168,9 @@ export class RunLifecycle extends Part {
       await this.deps.replaceSession(runId, problem as SessionProblem);
       return;
     }
-    if (ended.reason === "failed") await this.deps.onFailure(runId, detail);
+    // A failed planning run is never retried or handed off by itself: the goal shows Retry
+    // planning, since relaunching a planner on its own loops against a metered API (design §4.4).
+    if (ended.reason === "failed" && run.role !== GOAL_PLANNER.id) await this.deps.onFailure(runId, detail);
     if (ended.reason === "completed" && verdict) await this.deps.reviewLoop(runId, verdict);
   }
 
@@ -174,6 +186,8 @@ export class RunLifecycle extends Part {
 
   endRun(runId: string, reason: EndReason, detail: string | null): void {
     const run = this.db.run(runId);
+    const planResult = this.planResults.get(runId) ?? null;
+    this.planResults.delete(runId);
     if (run.ended_at) return;
     this.db.exec("update runs set ended_at = ?, end_reason = ?, end_detail = ? where id = ? and ended_at is null", this.iso(), reason, detail, runId);
     this.clearTimer(runId);
@@ -210,6 +224,8 @@ export class RunLifecycle extends Part {
     for (const q of this.db.openRequestsForRun(runId).filter((q) => q.kind !== "handoff" || reason === "completed")) this.deps.closeRequest(q, "system");
     this.audit(run.task_id, runId, "run.finished", { reason, detail });
     this.emitTask(run.task_id, "run_ended");
+    // Here rather than in the stream's end, so a stop, a cancel or a failed start reach the goal too.
+    if (run.role === GOAL_PLANNER.id) this.track(this.deps.planningEnded(runId, reason, reason === "completed" ? planResult : null));
     void this.deps.tick();
   }
 

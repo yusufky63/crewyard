@@ -5,7 +5,7 @@ import type { Headroom } from "@crewyard/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { proposeCrew, type ScoringContext } from "./crew.ts";
 import { checkCustomRoles, globalRolesDir, loadRoleSet, parseRoleFile, projectRoles, repoRolesDir, ROLE_LIMITS, roleViews } from "./role-files.ts";
-import { customPlanSteps, effectivePolicy, planFor, ROLES, type RoleTemplate } from "./roles.ts";
+import { customPlanSteps, effectivePolicy, GOAL_PLANNER, planFor, ROLES, type RoleTemplate } from "./roles.ts";
 import { CANDIDATES } from "./testing.ts";
 
 // Role files (PLAN.md §9.1): parsing, override rules, fail-closed cases, caps and layering.
@@ -177,6 +177,18 @@ describe("loadRoleSet", () => {
       ["bad_name", null],
     ]);
     expect(set.roles.has("big")).toBe(false);
+  });
+
+  it("refuses a role file named after the Orchestra planner, in either folder, and keeps it out of the set", () => {
+    // A file could otherwise widen what the planner may do or make it a crew role (docs/adr/0019).
+    writeFileSync(join(globalDir, "goal-planner.md"), file("title: My planner\npolicy:\n  network: allowed"));
+    writeFileSync(join(repoRolesDir(repo), "goal-planner.md"), file("title: Repo planner"));
+    const set = loadRoleSet({ globalDir, repoDir: repoRolesDir(repo) });
+    expect(set.roles.has(GOAL_PLANNER.id)).toBe(false);
+    expect(set.problems).toEqual([
+      { source: "global", path: join(globalDir, "goal-planner.md"), role: "goal-planner", code: "reserved", params: {} },
+      { source: "repo", path: join(repoRolesDir(repo), "goal-planner.md"), role: "goal-planner", code: "reserved", params: {} },
+    ]);
   });
 
   it("reads at most the first files of a folder, in name order", () => {

@@ -38,6 +38,7 @@ export type RoleProblemCode =
   | "too_large" // { limit } bytes
   | "too_many" // { limit } files in one folder; the rest are ignored
   | "bad_name" // the file name is not a role id
+  | "reserved" // the file name is a role Crewyard keeps for itself (goal-planner, docs/adr/0019)
   | "front_matter" // no `---` block at the top, or it is not closed
   | "yaml" // { detail }
   | "not_mapping" // the front matter is not a set of keys

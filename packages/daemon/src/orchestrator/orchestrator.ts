@@ -1,4 +1,4 @@
-import type { AgentAdapter, HandoffStop, RequestAnswer, RequestView, RunnerId, RunView, SessionSeen, TaskDetail, TaskKind, TaskSummary, TasksIpc, TasksTopics } from "@crewyard/core";
+import type { AgentAdapter, GoalPreview, GoalTaskDraft, HandoffStop, RequestAnswer, RequestView, RunnerId, RunView, SessionSeen, TaskDetail, TaskKind, TaskSummary, TasksIpc, TasksTopics } from "@crewyard/core";
 import type { McpHook } from "../mcp/service.ts";
 import { Bootstrapper } from "../worktrees/bootstrap.ts";
 import { AccountSwitcher, type AccountSwitches } from "./account-switch.ts";
@@ -11,6 +11,7 @@ import type { OrchestratorDb } from "./db.ts";
 import type { ProfileDirectory } from "./directory.ts";
 import { Dispatcher } from "./dispatch.ts";
 import { Fallback } from "./fallback.ts";
+import { GoalPlanner, type GoalPlanStart } from "./goals/planner.ts";
 import { Handoffs } from "./handoffs.ts";
 import { Hibernator, type HibernationStore } from "./hibernation.ts";
 import { Inbox } from "./inbox.ts";
@@ -76,6 +77,7 @@ export class Orchestrator {
   private readonly hibernator: Hibernator;
   private readonly bestOfRunner: BestOfRunner;
   private readonly recovery: Recovery;
+  private readonly goalPlanner: GoalPlanner;
   private hibernateTimer: NodeJS.Timeout | null = null;
   private stallTimer: NodeJS.Timeout | null = null;
   private interval: NodeJS.Timeout | null = null;
@@ -168,6 +170,7 @@ export class Orchestrator {
       reviewLoop: (reviewerRunId, result) => this.loopRunner.reviewLoop(reviewerRunId, result),
       dropCheckout: (runId) => this.loopRunner.dropCheckout(runId),
       refreshVariantDiff: (variantId) => this.bestOfRunner.refreshVariantDiff(variantId),
+      planningEnded: (runId, reason, result) => this.goalPlanner.planningEnded(runId, reason, result),
       tick: () => this.dispatcher.tick(),
     });
     this.actions = new RunActions(ctx, {
@@ -257,6 +260,13 @@ export class Orchestrator {
       pause: (runId) => this.actions.pause(runId),
       resume: (runId) => this.actions.resume(runId),
       goalManaged: (taskId) => this.taskFlow.goalManaged(taskId),
+    });
+    // Orchestra's planner (docs/adr/0019): planning runs, plan revisions and their proposed tasks.
+    this.goalPlanner = new GoalPlanner(ctx, {
+      propose: (p, hooks) => this.taskFlow.propose(p, hooks),
+      cancel: (taskId) => this.taskFlow.cancel(taskId),
+      followUp: (runId, text) => this.messages.followUp(runId, text),
+      tick: () => this.dispatcher.tick(),
     });
     this.db.taskExtras = (t) => this.bestOfRunner.taskExtras(t);
     this.db.taskLoop = (t) => this.loopRunner.loopView(t);
@@ -454,6 +464,45 @@ export class Orchestrator {
 
   followUp(runId: string, text: string): Promise<RunView> {
     return this.messages.followUp(runId, text);
+  }
+
+  // ---------------------------------------------------------------- goal planning (goals/planner.ts)
+
+  /** What `Plan goal` would cost, and whether it can run; writes nothing. */
+  previewGoal(p: { projectId: string; text: string; plannerProfileId?: string }): Promise<GoalPreview> {
+    return this.goalPlanner.preview(p);
+  }
+
+  /** `Plan goal`: the goal and its one read-only planning run, approved by this click. */
+  createGoal(p: { projectId: string; text: string; plannerProfileId?: string; baseBranch?: string; attachments?: string[]; defaultBudgetUsd?: number }): Promise<GoalPlanStart> {
+    return this.goalPlanner.create(p);
+  }
+
+  reviseGoal(goalId: string, revision: number, note: string): Promise<GoalPlanStart> {
+    return this.goalPlanner.revise(goalId, revision, note);
+  }
+
+  replanGoal(goalId: string, note?: string): Promise<GoalPlanStart> {
+    return this.goalPlanner.replan(goalId, note);
+  }
+
+  addGoalTask(goalId: string, draft: GoalTaskDraft, dependsOn: string[]): Promise<GoalPlanStart> {
+    return this.goalPlanner.addTask(goalId, draft, dependsOn);
+  }
+
+  /** `Run as one task`, before approval. */
+  collapseGoal(goalId: string): Promise<GoalPlanStart> {
+    return this.goalPlanner.collapse(goalId);
+  }
+
+  /** Orchestra's switch (`orchestra.enabled`, or the shipped default). */
+  orchestraEnabled(): boolean {
+    return this.goalPlanner.enabled();
+  }
+
+  /** A goal's derived status. */
+  goalState(goalId: string): ReturnType<GoalPlanner["state"]> {
+    return this.goalPlanner.state(goalId);
   }
 
   // ---------------------------------------------------------------- requests (inbox.ts)
