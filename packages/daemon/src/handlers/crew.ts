@@ -63,7 +63,7 @@ export function createCrewHandlers(ctx: HandlerContext): HandlerMap<CrewIpc> {
       db.prepare("delete from settings where key = ?").run(key(taskId));
       return { taskId, positions: {}, savedAt: null };
     },
-    "crew.candidates": ({ taskId, role }) => orchestratorFor(ctx).crew.candidates(taskId, role),
+    "crew.candidates": ({ taskId, role }) => orchestratorFor(ctx).crew.rankCandidates(taskId, role),
     "crew.edit": ({ taskId, edit }) => orchestratorFor(ctx).crew.edit(taskId, edit),
     "crew.approveSteps": ({ taskId }) => orchestratorFor(ctx).crew.approveSteps(taskId),
     "crew.skip": ({ taskId, memberId }) => orchestratorFor(ctx).crew.skip(taskId, memberId),

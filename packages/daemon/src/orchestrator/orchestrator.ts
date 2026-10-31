@@ -250,21 +250,11 @@ export class Orchestrator {
       offerHandoff: (run, task, mode, info, detail) => this.fallback.offerHandoff(run, task, mode, info, detail),
       dropCheckout: (runId) => this.loopRunner.dropCheckout(runId),
     });
-    this.crew = new CrewManager({
-      db: ctx.db,
-      dataDir: opts.dataDir,
-      candidates: (project) => ctx.candidates(project),
-      scoring: (projectId, size, budgetUsd) => ctx.scoring(projectId, size, budgetUsd),
-      config: (project) => ctx.config(project),
-      template: (m) => ctx.tpl(m),
-      bestOfMember: (taskId) => ctx.bestOf.group(taskId)?.member_id ?? null,
+    this.crew = new CrewManager(ctx, {
       get: (taskId) => this.taskFlow.get(taskId),
-      emitTask: (taskId, cause) => ctx.emitTask(taskId, cause),
-      audit: (taskId, runId, kind, payload) => ctx.audit(taskId, runId, kind, payload),
       tick: () => this.dispatcher.tick(),
       pause: (runId) => this.actions.pause(runId),
       resume: (runId) => this.actions.resume(runId),
-      now: ctx.now,
     });
     this.db.taskExtras = (t) => this.bestOfRunner.taskExtras(t);
     this.db.taskLoop = (t) => this.loopRunner.loopView(t);

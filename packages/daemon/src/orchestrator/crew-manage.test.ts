@@ -81,7 +81,7 @@ describe("proposal edits", () => {
     const { o, project } = await setup();
     const proposed = await o.propose({ projectId: project.id, ...TASK });
     const tester = proposed.crew!.members.find((m) => m.role === "tester")!;
-    const ranked = await o.crew.candidates(proposed.id, "tester");
+    const ranked = await o.crew.rankCandidates(proposed.id, "tester");
     const other = ranked.find((c) => c.profileId !== tester.chosen!.profileId)!;
     const changed = await o.crew.edit(proposed.id, { kind: "set_candidate", memberId: tester.id, profileId: other.profileId });
     const after = changed.crew!.members.find((m) => m.id === tester.id)!;

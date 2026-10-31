@@ -11,16 +11,15 @@ import {
   type CrewMemberView,
   type CrewProposalEdit,
   type EditEnv,
-  type ProjectConfig,
   type RoleId,
-  type TaskChangeCause,
   type TaskDetail,
-  type TaskSize,
 } from "@crewyard/core";
-import { rankForRole, readOnlyConflict, type ScoringContext } from "./crew.ts";
-import { memberView, type MemberRow, type OrchestratorDb, type ProjectRow, type RunRow, type TaskRow } from "./db.ts";
+import { rankForRole, readOnlyConflict } from "./crew.ts";
+import { memberView, type MemberRow, type ProjectRow, type RunRow, type TaskRow } from "./db.ts";
+import type { OrchestratorContext } from "./context.ts";
 import type { Candidate } from "./directory.ts";
 import { OrchestratorError } from "./errors.ts";
+import { Part } from "./part.ts";
 import { projectRoles, type ResolvedRole } from "./role-files.ts";
 import { templateOf, type RoleTemplate } from "./roles.ts";
 
@@ -28,26 +27,15 @@ import { templateOf, type RoleTemplate } from "./roles.ts";
 // for approval, skipping a step, Pause all and Resume all. The rules are @crewyard/core's
 // crew-edit.ts, the same the renderer checks before it calls; this part loads the rows, ranks
 // candidates the way the proposal does, applies one edit and writes the result in one
-// transaction. It reaches the orchestrator only through CrewHost, so it does not depend on how
-// the orchestrator is split into parts.
+// transaction. The scheduler side (pending and skipped steps never start; a skipped dependency
+// counts as done) is in dispatch.ts.
 
-export interface CrewHost {
-  readonly db: OrchestratorDb;
-  readonly dataDir: string;
-  candidates(project: ProjectRow): Promise<Candidate[]>;
-  scoring(projectId: string, size: TaskSize, budgetUsd: number | null): ScoringContext;
-  config(project: ProjectRow): { config: ProjectConfig };
-  /** The role a member works as: its snapshot from a role file, else the built-in. */
-  template(member: MemberRow): RoleTemplate;
-  /** The member a Best of N group runs as, if the task has one. */
-  bestOfMember(taskId: string): string | null;
+/** What CrewManager calls in other parts; wired in orchestrator.ts. */
+export interface CrewManagerDeps {
   get(taskId: string): TaskDetail;
-  emitTask(taskId: string, cause: TaskChangeCause): void;
-  audit(taskId: string, runId: string | null, kind: string, payload: unknown): void;
   tick(): Promise<void>;
   pause(runId: string): Promise<unknown>;
   resume(runId: string): Promise<unknown>;
-  now(): Date;
 }
 
 interface Loaded {
@@ -61,26 +49,27 @@ interface Loaded {
   roles: ReadonlyMap<RoleId, ResolvedRole>;
 }
 
-export class CrewManager {
-  constructor(private readonly host: CrewHost) {}
-
-  private get db() {
-    return this.host.db;
+export class CrewManager extends Part {
+  constructor(
+    ctx: OrchestratorContext,
+    private readonly deps: CrewManagerDeps,
+  ) {
+    super(ctx);
   }
 
   /** Every eligible candidate for `role` in the task's project, best first, independence clashes included. */
-  async candidates(taskId: string, role: RoleId): Promise<CandidateView[]> {
+  async rankCandidates(taskId: string, role: RoleId): Promise<CandidateView[]> {
     const c = this.load(taskId);
     const tpl = this.templateFor(c, role);
-    return this.ranker(c, await this.host.candidates(c.project))(tpl);
+    return this.ranker(c, await this.candidates(c.project))(tpl);
   }
 
   async edit(taskId: string, edit: CrewProposalEdit): Promise<TaskDetail> {
     const c = this.load(taskId);
     if (c.task.cancelled_at) throw new OrchestratorError("task.cancelled");
     const touches = "memberId" in edit ? edit.memberId : null;
-    if (touches && touches === this.host.bestOfMember(c.task.id) && (edit.kind === "remove_step" || edit.kind === "set_role")) throw new CrewEditError("best_of");
-    const rank = this.ranker(c, await this.host.candidates(c.project));
+    if (touches && touches === (this.bestOf.group(c.task.id)?.member_id ?? null) && (edit.kind === "remove_step" || edit.kind === "set_role")) throw new CrewEditError("best_of");
+    const rank = this.ranker(c, await this.candidates(c.project));
     const cache = new Map<RoleId, CandidateView[]>();
     const env: EditEnv = {
       rules: this.rules(c),
@@ -95,9 +84,9 @@ export class CrewManager {
     const lease = crewProblems(next, env.rules).find((p) => p.code === "read_only_lease");
     if (lease) throw new CrewEditError("read_only_lease", lease.params);
     this.write(c, next, edit);
-    this.host.audit(c.task.id, null, "crew.edited", { edit });
-    this.host.emitTask(c.task.id, "crew_edited");
-    return this.host.get(c.task.id);
+    this.audit(c.task.id, null, "crew.edited", { edit });
+    this.emitTask(c.task.id, "crew_edited");
+    return this.deps.get(c.task.id);
   }
 
   /** Approves every follow-up that waits; they start under admission control like any step. */
@@ -105,11 +94,11 @@ export class CrewManager {
     const c = this.load(taskId);
     if (c.task.cancelled_at) throw new OrchestratorError("task.cancelled");
     const pending = c.views.filter((m) => m.pendingApproval);
-    if (pending.length === 0) return this.host.get(c.task.id);
+    if (pending.length === 0) return this.deps.get(c.task.id);
     const steps = new Set(pending.map((m) => m.step));
     const problem = crewProblems(c.views, this.rules(c)).find((p) => steps.has(p.params.step ?? "") || steps.has(p.params.other ?? ""));
     if (problem) throw new CrewEditError(problem.code, problem.params);
-    const candidates = await this.host.candidates(c.project);
+    const candidates = await this.candidates(c.project);
     for (const m of pending) {
       const cand = candidates.find((x) => x.profile.id === m.chosen?.profileId);
       if (!cand) throw new OrchestratorError("crew.unknown_profile", { profileId: m.chosen?.profileId ?? "" });
@@ -118,10 +107,10 @@ export class CrewManager {
     this.db.tx(() => {
       for (const m of pending) this.db.exec("update crew_member_flags set pending_since = null where member_id = ?", m.id);
     });
-    this.host.audit(c.task.id, null, "crew.steps_approved", { members: pending.map((m) => m.id) });
-    this.host.emitTask(c.task.id, "crew_edited");
-    await this.host.tick();
-    return this.host.get(c.task.id);
+    this.audit(c.task.id, null, "crew.steps_approved", { members: pending.map((m) => m.id) });
+    this.emitTask(c.task.id, "crew_edited");
+    await this.deps.tick();
+    return this.deps.get(c.task.id);
   }
 
   /** Skips a step of the approved crew that has not started; whatever waits for it goes on without it. */
@@ -131,29 +120,29 @@ export class CrewManager {
     if (!c.approved) throw new CrewEditError("not_approved");
     const m = c.views.find((x) => x.id === memberId);
     if (!m) throw new CrewEditError("unknown_step", { memberId });
-    if (memberId === this.host.bestOfMember(c.task.id)) throw new CrewEditError("best_of");
+    if (memberId === (this.bestOf.group(c.task.id)?.member_id ?? null)) throw new CrewEditError("best_of");
     const why = skipRefusal(m, new Set(c.runs.map((r) => r.member_id)));
     if (why) throw new CrewEditError(why);
     this.db.exec(
       "insert into crew_member_flags (member_id, skipped_at) values (?, ?) on conflict (member_id) do update set skipped_at = excluded.skipped_at",
       memberId,
-      this.host.now().toISOString(),
+      this.now().toISOString(),
     );
-    this.host.audit(c.task.id, null, "crew.step_skipped", { memberId, step: m.step });
-    this.host.emitTask(c.task.id, "crew_edited");
-    await this.host.tick();
-    return this.host.get(c.task.id);
+    this.audit(c.task.id, null, "crew.step_skipped", { memberId, step: m.step });
+    this.emitTask(c.task.id, "crew_edited");
+    await this.deps.tick();
+    return this.deps.get(c.task.id);
   }
 
   /** Pauses every open run that is not paused yet; one that refuses (handing off, ended meanwhile) is counted, not fatal. */
   async pauseAll(taskId: string): Promise<CrewBulkResult> {
     const task = this.db.task(taskId);
-    return this.bulk(task.id, (r) => r.ended_at === null && r.paused_at === null, (id) => this.host.pause(id));
+    return this.bulk(task.id, (r) => r.ended_at === null && r.paused_at === null, (id) => this.deps.pause(id));
   }
 
   async resumeAll(taskId: string): Promise<CrewBulkResult> {
     const task = this.db.task(taskId);
-    return this.bulk(task.id, (r) => r.ended_at === null && r.paused_at !== null, (id) => this.host.resume(id));
+    return this.bulk(task.id, (r) => r.ended_at === null && r.paused_at !== null, (id) => this.deps.resume(id));
   }
 
   private async bulk(taskId: string, pick: (r: RunRow) => boolean, act: (runId: string) => Promise<unknown>): Promise<CrewBulkResult> {
@@ -178,8 +167,8 @@ export class CrewManager {
     if (!crew) throw new OrchestratorError("task.not_proposed");
     const project = this.db.project(task.project_id);
     const rows = this.db.members(crew.id);
-    const roles = projectRoles(this.host.dataDir, project.path, this.host.config(project).config, null).set.roles;
-    const views = rows.map((r) => memberView(r, null, isBuiltinRole(r.role) ? undefined : this.host.template(r).title));
+    const roles = projectRoles(this.opts.dataDir, project.path, this.config(project).config, null).set.roles;
+    const views = rows.map((r) => memberView(r, null, isBuiltinRole(r.role) ? undefined : this.tpl(r).title));
     return { task, crewId: crew.id, approved: !!crew.approved_at, project, rows, runs: this.db.runs(task.id), views, roles };
   }
 
@@ -195,7 +184,7 @@ export class CrewManager {
    */
   private templateFor(c: Loaded, role: RoleId, memberId?: string): RoleTemplate {
     const row = c.rows.find((r) => r.id === memberId && r.role === role) ?? c.rows.find((r) => r.role === role);
-    if (row) return this.host.template(row);
+    if (row) return this.tpl(row);
     const resolved = c.roles.get(role);
     if (resolved) return resolved.template;
     if (isBuiltinRole(role)) return templateOf(role);
@@ -215,7 +204,7 @@ export class CrewManager {
 
   /** Ranks as the proposal does, without dropping the models a role must stay off: the rules mark those. */
   private ranker(c: Loaded, candidates: Candidate[]): (tpl: RoleTemplate) => CandidateView[] {
-    const ctx = this.host.scoring(c.project.id, c.task.size, c.task.budget_usd);
+    const ctx = this.scoring(c.project.id, c.task.size, c.task.budget_usd);
     return (tpl) => {
       const providers = new Set(c.views.filter((m) => tpl.independentOf.includes(m.role) && m.chosen).map((m) => m.chosen!.providerId));
       return rankForRole(candidates, tpl, ctx, { models: new Set(), providers });
@@ -225,7 +214,7 @@ export class CrewManager {
   private write(c: Loaded, next: CrewMemberView[], edit: CrewProposalEdit): void {
     const before = new Map(c.rows.map((r) => [r.id, r]));
     const keep = new Set(next.map((m) => m.id));
-    const at = this.host.now().toISOString();
+    const at = this.now().toISOString();
     this.db.tx(() => {
       for (const r of c.rows) {
         if (keep.has(r.id)) continue;
