@@ -23,6 +23,7 @@ const GROUPS: Array<{ title: string; items: Item[] }> = [
       { href: SITE.issuesUrl, label: "Issues", external: true },
       { href: SITE.licenseUrl, label: "MIT licence", external: true },
       { href: SITE.docs.notice, label: "Third-party notices", external: true },
+      { href: "/status", label: "Site status" },
     ],
   },
   {

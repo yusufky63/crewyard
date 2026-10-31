@@ -184,6 +184,12 @@ h1, h2, h3 { font-weight: 600; letter-spacing: var(--font-tracking-tight); color
 .tbl tr:first-child td { border-top: 0; }
 .tbl td:first-child { color: var(--ink); font-weight: 500; white-space: nowrap; }
 .tbl .mono { font-size: 13px; }
+/* StatusLabel on the status page: icon and text in the state colour (DESIGN.md "Status labels"). */
+.health-state { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-weight: 500; }
+.health-state svg { width: 16px; height: 16px; flex: none; }
+.health-state.ok { color: var(--ok); }
+.health-state.degraded { color: var(--warn); }
+.health-state.down { color: var(--bad); }
 /* On a phone each row becomes a small stack: the first cell as its title, the rest under it. */
 @media (max-width: 599px) {
   .tbl thead { display: none; }
