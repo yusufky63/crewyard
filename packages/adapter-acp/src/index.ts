@@ -15,7 +15,11 @@ export const capabilities: AgentCapabilities = {
   interrupt: true,
   resume: true,
   setModel: false,
+  // Token counts from PromptResponse.usage (unstable ACP), the context window from usage_update.
   usage: true,
+  // ACP plan updates are mapped (mapper.ts), but Gemini CLI, the one ACP agent so far, sends none;
+  // probe() sets this per agent from AgentSpec.reportsPlan.
+  plan: false,
   reportedLimits: false,
   readOnlyMode: true,
   // session/new mcpServers; ACP cannot limit a server to some of its tools (docs/adr/0007).

@@ -64,6 +64,12 @@ async function play(client, sessionId, text) {
     }
     return "end_turn";
   }
+  if (text.includes("tokens")) {
+    // Gemini CLI 0.66.0: usage_update has the context only; the counts come with the response.
+    await say(client, sessionId, { sessionUpdate: "usage_update", used: 1234, size: 1048576 });
+    await chunk(client, sessionId, "ok");
+    return "end_turn";
+  }
   if (text.includes("basic")) {
     await say(client, sessionId, { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "thinking" } });
     await chunk(client, sessionId, "Hel");
@@ -166,7 +172,10 @@ const app = acp
     const s = sessions.get(params.sessionId);
     s?.history.push(text);
     persist();
-    return { stopReason: await play(client, params.sessionId, text) };
+    const stopReason = await play(client, params.sessionId, text);
+    // PromptResponse.usage as Gemini CLI 0.66.0 sends it: that prompt's counts, not the session's.
+    if (text.includes("tokens")) return { stopReason, usage: { inputTokens: 1200, outputTokens: 34, cachedReadTokens: 200, totalTokens: 1234 } };
+    return { stopReason };
   })
   .onNotification(acp.methods.agent.session.cancel, ({ params }) => {
     log({ kind: "cancel", params });

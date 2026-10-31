@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import type { Profile } from "@crewyard/core";
+import type { AcpUsage, TokenTotals } from "./mapper.ts";
 import { prepareGeminiProfile, type PreparedProfile } from "./profile.ts";
 
 // What differs between ACP agents: how to start ACP mode, how to keep each profile in its own
@@ -29,6 +30,10 @@ export interface AgentSpec {
   authMethod(profile: Profile, env: Record<string, string>): string | null;
   /** The agent's own subscription sign-in through ACP `authenticate`; null when it has none. */
   signIn: SignInSpec | null;
+  /** The agent sends `plan` session updates. False: views say its plan is not reported. */
+  reportsPlan: boolean;
+  /** One prompt's `PromptResponse.usage` in our terms; agents differ in what each field includes. */
+  promptUsage(usage: AcpUsage): TokenTotals;
 }
 
 export interface SignInSpec {
@@ -102,6 +107,19 @@ export const gemini: AgentSpec = {
     urlPattern: /https:\/\/accounts\.google\.com\/[^\s"'<>]+/,
     minVersion: GEMINI_ISOLATION_MIN,
     updateCommand: "npm install -g @google/gemini-cli@latest",
+  },
+  // Gemini CLI sends no `plan` session update: its ACP session (packages/cli/src/acp/acpSession.ts,
+  // v0.66.0 and main on 2026-10-31) emits message, thought, tool call, available commands, user
+  // message and usage_update only. write_todos reaches us as a plain tool call.
+  reportsPlan: false,
+  // Per prompt, summed over its model calls (acpSession.ts v0.66.0, buildPromptResponse): inputTokens
+  // is promptTokenCount, which "includes the number of tokens in the cached content", and thoughts
+  // are counted apart from candidatesTokenCount (ai.google.dev/api/generate-content#UsageMetadata,
+  // 2026-10-31). Ours: tokensIn without cache reads, and thoughts billed as output, as for Codex.
+  promptUsage(u) {
+    const cached = u.cachedReadTokens ?? 0;
+    const thoughts = u.thoughtTokens ?? 0;
+    return { tokensIn: Math.max(0, u.inputTokens - cached), tokensOut: u.outputTokens + thoughts, cacheRead: cached, cacheWrite: u.cachedWriteTokens ?? 0, reasoning: thoughts };
   },
 };
 

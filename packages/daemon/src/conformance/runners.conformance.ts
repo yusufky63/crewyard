@@ -3,7 +3,7 @@ import { appendFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, it } from "vitest";
-import type { AgentAdapter, AgentEvent, NativeSessionRef, RunHandle, StartRequest } from "@crewyard/core";
+import type { AgentAdapter, AgentCapabilities, AgentEvent, NativeSessionRef, RunHandle, StartRequest } from "@crewyard/core";
 import { resolveBin } from "@crewyard/proc";
 import { startFakeModel, USAGE, type Director, type FakeModel, type ModelRequest } from "./fake-model.ts";
 import { children, gone, type ProcRow } from "./procs.ts";
@@ -147,6 +147,8 @@ for (const spec of RUNNERS) {
     let fake: FakeModel | null = null;
     let prep: Prepared | null = null;
     let adapter: AgentAdapter | null = null;
+    /** What probe() said for this CLI version; capabilities that depend on the agent are narrowed there. */
+    let caps: AgentCapabilities | null = null;
     let baseline: ProcRow[] = [];
     let approveRun: Recorder | null = null;
     let approveSession: NativeSessionRef | null = null;
@@ -223,6 +225,7 @@ for (const spec of RUNNERS) {
       adapter = spec.adapter();
       const probe = await adapter.probe(prep.profile);
       version = probe.version;
+      caps = probe.capabilities;
       console.log(`[${spec.runner}] ${bin} ${version ?? "(no version)"}${probe.problems.length ? ` problems: ${probe.problems.join("; ")}` : ""}`);
     });
 
@@ -260,6 +263,12 @@ for (const spec of RUNNERS) {
         const plan = rec.last("plan.update");
         const tool = rec.events.find((e) => e.type === "tool.call");
         if (rec.text().includes("cf-missing-tool")) return fail(`no plan tool offered (tools: ${seen("plan")[0]?.tools.join(",") ?? "?"})`);
+        // A runner that never reports its plan is a known gap, held to that: a plan arriving means
+        // the CLI now sends one and capabilities.plan should change.
+        if (caps?.plan === false) {
+          if (plan) return fail(`capabilities.plan is false, yet a plan.update with ${plan.steps.length} step(s) arrived; the CLI reports plans now`);
+          return { result: "n/a", notes: `known CLI gap, capabilities.plan false: ${spec.gaps?.plan ?? "no source given"}; no plan.update arrived (${rec.summary()})` };
+        }
         if (!plan || plan.steps.length === 0) return fail(`no plan.update with steps (${rec.summary()})`);
         if (ended.reason !== "completed") return fail(`ended ${ended.reason}: ${ended.detail ?? ""}`);
         return pass(`plan.update with ${plan.steps.length} step(s): ${plan.steps.map((s) => `${s.title} [${s.status}]`).join("; ")}; tool.call ${tool?.type === "tool.call" ? tool.title : "none"}${asked ? `; asked for approval ${asked} time(s) first` : ""}`);
