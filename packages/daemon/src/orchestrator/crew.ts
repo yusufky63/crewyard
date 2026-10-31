@@ -1,6 +1,6 @@
-import { estimateCost, peakFactor, type CandidateView, type CostEstimate, type Headroom, type Reason, type RoleId, type RunnerId, type TaskKind, type TaskSize } from "@crewyard/core";
+import { estimateCost, peakFactor, type CandidateView, type CustomRoleStep, type CostEstimate, type Headroom, type Reason, type RoleId, type RunnerId, type TaskKind, type TaskSize } from "@crewyard/core";
 import type { Candidate } from "./directory.ts";
-import { planFor, ROLES, TOKENS_BY_SIZE, TURN_OVERHEAD_TOKENS } from "./roles.ts";
+import { customPlanSteps, planFor, templateOf, TOKENS_BY_SIZE, TURN_OVERHEAD_TOKENS, type RoleRef, type RoleTemplate } from "./roles.ts";
 
 // Crew proposal v1 (PLAN.md §9): rule-based and deterministic. Same inputs, same crew. It learns
 // only from the user's own history (completed runs and crew edits), never from a hidden model call.
@@ -30,6 +30,8 @@ export interface ScoringContext {
 export interface ProposedMember {
   step: string;
   role: RoleId;
+  /** The role as resolved for this project (a role file or the built-in). */
+  template: RoleTemplate;
   dependsOn: string[];
   required: boolean;
   writesCode: boolean;
@@ -42,11 +44,11 @@ export const modelKey = (c: Candidate) => (c.model?.id ?? c.profile.defaultModel
 const viewKey = (v: CandidateView) => (v.model ?? `profile:${v.profileId}`).toLowerCase();
 
 /** A profile you marked read-only never takes a role that writes, however it got there (proposal, edit, handoff). */
-export const readOnlyConflict = (c: Candidate, role: RoleId) => Boolean(c.readOnly) && ROLES[role].policy.writes !== "none";
+export const readOnlyConflict = (c: Candidate, role: RoleRef) => Boolean(c.readOnly) && templateOf(role).policy.writes !== "none";
 
 /** Hard requirements: a candidate that fails one is never offered for the role. */
-export function eligible(c: Candidate, role: RoleId, ctx: Pick<ScoringContext, "hasAdapter" | "exclude">): boolean {
-  const tpl = ROLES[role];
+export function eligible(c: Candidate, role: RoleRef, ctx: Pick<ScoringContext, "hasAdapter" | "exclude">): boolean {
+  const tpl = templateOf(role);
   if (!c.ready || !ctx.hasAdapter(c.profile.runner)) return false;
   if (ctx.exclude?.includes(c.profile.id)) return false;
   if (!c.capabilities.launch || !c.capabilities.stream || !c.capabilities.approveTools) return false;
@@ -55,11 +57,11 @@ export function eligible(c: Candidate, role: RoleId, ctx: Pick<ScoringContext, "
 }
 
 /** `at` is when the run would start: a step proposed in a provider's peak hours is priced at its peak rate. */
-export function estimateFor(c: Candidate, role: RoleId, size: TaskSize, at: Date = new Date()): CostEstimate {
+export function estimateFor(c: Candidate, role: RoleRef, size: TaskSize, at: Date = new Date()): CostEstimate {
   if (c.profile.credential.kind !== "api_key") return { usd: 0, provenance: "estimated" };
   if (!c.model) return { usd: null, provenance: "unknown" };
   const t = TOKENS_BY_SIZE[size];
-  const share = ROLES[role].tokenShare;
+  const share = templateOf(role).tokenShare;
   const turns = Math.max(1, Math.round(t.turns * share));
   const overhead = (TURN_OVERHEAD_TOKENS[c.profile.runner] ?? 0) * turns;
   const usd = estimateCost(c.model, Math.round(t.tokensIn * share) + overhead, Math.round(t.tokensOut * share));
@@ -67,8 +69,8 @@ export function estimateFor(c: Candidate, role: RoleId, size: TaskSize, at: Date
 }
 
 /** Scores one candidate for one role; `avoid` holds the implementer's models and providers. */
-export function scoreCandidate(c: Candidate, role: RoleId, ctx: ScoringContext, avoid: { providers: Set<string> } = { providers: new Set() }): CandidateView {
-  const tpl = ROLES[role];
+export function scoreCandidate(c: Candidate, role: RoleRef, ctx: ScoringContext, avoid: { providers: Set<string> } = { providers: new Set() }): CandidateView {
+  const tpl = templateOf(role);
   const reasons: Reason[] = [];
   const need = TOKENS_BY_SIZE[ctx.size].context;
 
@@ -122,7 +124,7 @@ export function scoreCandidate(c: Candidate, role: RoleId, ctx: ScoringContext, 
     reasons.push({ code: "cost.estimate", params: { usd: estimate.usd } });
   }
 
-  const h = ctx.history(c.profile.runner, role);
+  const h = ctx.history(c.profile.runner, tpl.id);
   let history = 50;
   if (h.total >= 3) {
     history = (100 * h.accepted) / h.total;
@@ -136,7 +138,7 @@ export function scoreCandidate(c: Candidate, role: RoleId, ctx: ScoringContext, 
     score += PROVIDER_BONUS;
     reasons.unshift({ code: "independence.provider" });
   }
-  const pref = ctx.preference(role, c.profile.id);
+  const pref = ctx.preference(tpl.id, c.profile.id);
   if (pref > 0) {
     score += Math.min(3, pref) * PREFERENCE_BONUS;
     reasons.push({ code: "history.preferred" });
@@ -158,8 +160,8 @@ export function scoreCandidate(c: Candidate, role: RoleId, ctx: ScoringContext, 
 const clamp = (n: number) => Math.max(0, Math.min(100, n));
 
 /** Ranks every eligible candidate for a role, best first; ties break on profile id. */
-export function rankForRole(candidates: Candidate[], role: RoleId, ctx: ScoringContext, avoid: { models: Set<string>; providers: Set<string> }): CandidateView[] {
-  const pinned = ctx.pins?.[role];
+export function rankForRole(candidates: Candidate[], role: RoleRef, ctx: ScoringContext, avoid: { models: Set<string>; providers: Set<string> }): CandidateView[] {
+  const pinned = ctx.pins?.[templateOf(role).id];
   return candidates
     .filter((c) => eligible(c, role, ctx) && !avoid.models.has(modelKey(c)))
     .map((c) => {
@@ -170,10 +172,21 @@ export function rankForRole(candidates: Candidate[], role: RoleId, ctx: ScoringC
     .sort((a, b) => Number(b.profileId === pinned) - Number(a.profileId === pinned) || b.score - a.score || a.profileId.localeCompare(b.profileId));
 }
 
-export function proposeCrew(kind: TaskKind, security: boolean, candidates: Candidate[], ctx: ScoringContext): { members: ProposedMember[]; estimate: CostEstimate } {
+/**
+ * The project's roles for a proposal: templates resolved from role files (built-ins when left out)
+ * and the custom steps its project.json adds to the templates.
+ */
+export interface ProjectRoleSet {
+  templates: ReadonlyMap<RoleId, RoleTemplate>;
+  steps: CustomRoleStep[];
+}
+
+export function proposeCrew(kind: TaskKind, security: boolean, candidates: Candidate[], ctx: ScoringContext, roles?: ProjectRoleSet): { members: ProposedMember[]; estimate: CostEstimate } {
   const chosenByRole = new Map<RoleId, CandidateView>();
-  const members = planFor(kind, ctx.size, security).map((step): ProposedMember => {
-    const tpl = ROLES[step.role];
+  const base = planFor(kind, ctx.size, security);
+  const plan = roles ? [...base, ...customPlanSteps(base, roles.steps, kind, ctx.size)] : base;
+  const members = plan.map((step): ProposedMember => {
+    const tpl = roles?.templates.get(step.role) ?? templateOf(step.role);
     const avoid = { models: new Set<string>(), providers: new Set<string>() };
     for (const other of tpl.independentOf) {
       const v = chosenByRole.get(other);
@@ -182,20 +195,20 @@ export function proposeCrew(kind: TaskKind, security: boolean, candidates: Candi
         avoid.providers.add(v.providerId);
       }
     }
-    const ranked = rankForRole(candidates, step.role, ctx, avoid);
+    const ranked = rankForRole(candidates, tpl, ctx, avoid);
     const [chosen, ...rest] = ranked;
     const reasons: Reason[] = [];
-    const dropped = pinDropped(candidates, step.role, ctx, avoid, chosen);
+    const dropped = pinDropped(candidates, tpl, ctx, avoid, chosen);
     if (dropped) reasons.push(dropped);
     if (!chosen) {
-      const anyEligible = candidates.some((c) => eligible(c, step.role, ctx));
+      const anyEligible = candidates.some((c) => eligible(c, tpl, ctx));
       reasons.push({ code: anyEligible && avoid.models.size > 0 ? "no_independent_candidate" : "no_candidate" });
     } else {
       chosenByRole.set(step.role, chosen);
       if (avoid.models.size > 0) chosen.reasons.unshift({ code: "independence.model", params: { model: [...avoid.models][0] ?? "" } });
       if (rest.length === 0) reasons.push({ code: "only_candidate" });
     }
-    return { ...step, writesCode: tpl.writesCode, chosen: chosen ?? null, standby: rest.slice(0, STANDBY), reasons };
+    return { ...step, template: tpl, writesCode: tpl.writesCode, chosen: chosen ?? null, standby: rest.slice(0, STANDBY), reasons };
   });
   return { members, estimate: sumEstimates(members.map((m) => m.chosen?.estimate ?? { usd: null, provenance: "unknown" })) };
 }
@@ -204,8 +217,8 @@ export function proposeCrew(kind: TaskKind, security: boolean, candidates: Candi
  * Why your pin for a role is not the chosen profile, so the proposal can say so instead of
  * silently picking another one (the live run pinned a reviewer on the implementer's model).
  */
-function pinDropped(candidates: Candidate[], role: RoleId, ctx: ScoringContext, avoid: { models: Set<string> }, chosen: CandidateView | undefined): Reason | null {
-  const pin = ctx.pins?.[role];
+function pinDropped(candidates: Candidate[], role: RoleRef, ctx: ScoringContext, avoid: { models: Set<string> }, chosen: CandidateView | undefined): Reason | null {
+  const pin = ctx.pins?.[templateOf(role).id];
   if (!pin || chosen?.profileId === pin) return null;
   const c = candidates.find((x) => x.profile.id === pin);
   const cause = !c ? "unavailable" : readOnlyConflict(c, role) ? "read_only" : !eligible(c, role, ctx) ? "unavailable" : avoid.models.has(modelKey(c)) ? "independence" : null;

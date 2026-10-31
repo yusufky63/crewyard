@@ -1,14 +1,13 @@
-import type { RoleId } from "@crewyard/core";
 import type { RunRow, TaskRow } from "./db.ts";
-import { ROLES } from "./roles.ts";
+import type { RoleTemplate } from "./roles.ts";
 
 // Agent-facing text. It is read by models, not shown as UI copy, so it stays English and is not
-// translated. Task text written by the user is passed through as data inside clear delimiters.
+// translated. Task text written by the user is passed through as data inside clear delimiters. A
+// contract from a role file is capped when the file is read (role-files.ts).
 
 type Plan = Array<{ title: string; status: string }>;
 
-export function rolePrompt(role: RoleId, task: TaskRow, ctx: { plan: Plan | null; branch: string | null }): string {
-  const tpl = ROLES[role];
+export function rolePrompt(tpl: RoleTemplate, task: TaskRow, ctx: { plan: Plan | null; branch: string | null }): string {
   return [
     `Role: ${tpl.title}`,
     "",
@@ -27,6 +26,8 @@ export function rolePrompt(role: RoleId, task: TaskRow, ctx: { plan: Plan | null
 export interface HandoffPackageInput {
   task: TaskRow;
   source: RunRow;
+  /** The role the source ran as. */
+  role: RoleTemplate;
   trigger: string;
   plan: Plan | null;
   diffStat: string | null;
@@ -53,7 +54,7 @@ export function handoffPackage(p: HandoffPackageInput): string {
   const done = p.plan?.filter((s) => s.status === "completed").map((s) => `- ${s.title}`) ?? [];
   const todo = p.plan?.filter((s) => s.status !== "completed").map((s) => `- ${s.title}`) ?? [];
   return [
-    `Role: ${ROLES[p.source.role].title}`,
+    `Role: ${p.role.title}`,
     "",
     "# Handoff package",
     "",
@@ -83,6 +84,6 @@ export function handoffPackage(p: HandoffPackageInput): string {
     "## Transcript",
     p.transcript,
     "",
-    `Your output: ${ROLES[p.source.role].contract}`,
+    `Your output: ${p.role.contract}`,
   ].join("\n");
 }

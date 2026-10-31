@@ -19,7 +19,13 @@ export type TaskSize = "S" | "M" | "L";
  */
 export type FallbackMode = "manual" | "ask" | "auto" | "wait_for_reset";
 
-export type RoleId = "planner" | "implementer" | "reviewer" | "tester" | "researcher" | "docs" | "security";
+export type BuiltinRoleId = "planner" | "implementer" | "reviewer" | "tester" | "researcher" | "docs" | "security";
+
+/**
+ * A built-in role, or a custom one from a role file (`.crewyard/roles/<id>.md`, PLAN.md §9.1):
+ * lowercase letters, digits and dashes. `string & {}` keeps the built-in ids as suggestions.
+ */
+export type RoleId = BuiltinRoleId | (string & {});
 
 /** A translatable explanation: `code` is an i18n key suffix, `params` fill its placeholders. */
 export interface Reason {
@@ -55,6 +61,7 @@ export type ReasonCode =
   | "only_candidate"
   | "no_candidate"
   | "no_independent_candidate"
+  | "role.file" // { path }: the role's contract or policy comes from this role file
   // admission control: why a ready step is still queued
   | "admission.project_slots" // { used, slots }
   | "admission.profile_busy" // { used, limit, profileId }
@@ -183,6 +190,8 @@ export interface CrewMemberView {
   /** DAG node id; equals the role id in the built-in plans. */
   step: string;
   role: RoleId;
+  /** The title from the role file, for a custom role; built-in roles are translated by id. */
+  roleTitle?: string;
   dependsOn: string[];
   required: boolean;
   /** Code-writing steps get the task's git worktree; read-only steps run inside it once it exists. */

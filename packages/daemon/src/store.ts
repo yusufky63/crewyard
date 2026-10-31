@@ -792,6 +792,18 @@ export const MIGRATIONS: Migration[] = [
      check_run_id integer not null
    );`,
   },
+  // The role a crew member was proposed with when it came from a role file (PLAN.md §9.1): the
+  // resolved template as JSON, so what you approved is what runs even if the file changes later.
+  // Plain built-in roles have no row.
+  {
+    id: "role-snapshots",
+    sql: `create table if not exists crew_member_roles (
+     member_id text primary key references crew_members(id),
+     template text not null,
+     source text not null,
+     path text
+   );`,
+  },
 ];
 
 /** What the positional scheme applied: a database at `user_version` N has the first N of these. */

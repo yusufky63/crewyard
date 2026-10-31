@@ -183,6 +183,21 @@ export function keepUnknownKeys(prev: unknown, next: unknown): unknown {
   return out;
 }
 
+/**
+ * The `customRoles` list as written in the file on disk. The wizard has no field for it, so a save
+ * from the wizard keeps the user's list as it was, even one that does not validate.
+ */
+function customRolesOnDisk(projectPath: string): unknown {
+  const file = configFile(projectPath);
+  if (!existsSync(file)) return undefined;
+  try {
+    const raw = JSON.parse(readFileSync(file, "utf8").replace(/^﻿/, "")) as Record<string, unknown> | null;
+    return raw && typeof raw === "object" ? raw.customRoles : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export interface WriteResult {
   config: ProjectConfig;
   file: string;
@@ -206,7 +221,11 @@ export async function writeProjectConfig(projectPath: string, raw: unknown, opts
     await writeFileAtomic(backup, readFileSync(current.status.file));
   }
   const file = join(projectPath, CONFIG_REL);
-  await writeFileAtomic(file, `${JSON.stringify(keepUnknownKeys(current.raw, config), null, 2)}\n`);
+  const given = raw !== null && typeof raw === "object" && "customRoles" in raw;
+  // Read before the write below replaces the file; an invalid file being replaced keeps its list too.
+  const kept = given ? undefined : customRolesOnDisk(projectPath);
+  const known = kept === undefined ? config : { ...config, customRoles: kept };
+  await writeFileAtomic(file, `${JSON.stringify(keepUnknownKeys(current.raw, known), null, 2)}\n`);
   // A legacy file left beside it would be a second copy that drifts; the move shows in git as one rename.
   const legacy = join(projectPath, LEGACY_CONFIG_REL);
   if (existsSync(legacy)) {
@@ -217,5 +236,5 @@ export async function writeProjectConfig(projectPath: string, raw: unknown, opts
       // The folder holds something else of the user's (or the .bak just made); it stays.
     }
   }
-  return { config, file, backup };
+  return { config: kept === undefined ? config : ProjectConfig.parse(known), file, backup };
 }

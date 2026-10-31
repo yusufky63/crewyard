@@ -7,6 +7,7 @@ Status: pre-release. It is built and tested on Windows 11. Linux and macOS are p
 ## What it does
 
 - **Crews per task.** Describe a task and Crewyard proposes who plans, implements, tests and reviews it, with the reason for each pick and a cost estimate. Nothing starts until you approve.
+- **Your own roles.** Markdown files in `.crewyard/roles/` (or global ones in Crewyard's data folder) change a built-in role's contract or add a role of your own. A role file can only narrow permissions, never widen them past the project's rules; a project lists the custom roles its crews may use in `.crewyard/project.json`. Settings → Roles shows each role's source and any file that was not used ([PLAN.md §9.1](PLAN.md#91-roles)).
 - **Four runners, many providers.**
   - Claude Code (Anthropic or Anthropic-compatible API keys only; never a claude.ai sign-in), Codex, OpenCode, and Gemini CLI over ACP.
   - Providers come from a synced catalog (models.dev): DeepSeek, Kimi, GLM, Qwen, MiniMax, OpenRouter and others.

@@ -131,7 +131,8 @@
     "loop_iteration_cap": "All {{max}} fix attempts used",
     "loop_no_change": "No change since the last try",
     "loop_spend_cap": "{{cap}} reached",
-    "loop_no_resume": "{{runner}} cannot resume"
+    "loop_no_resume": "{{runner}} cannot resume",
+    "role_file": "Role file: {{path}}"
   },
   "status": {
     "bestOfRunning": "Running · {{count}} variants",

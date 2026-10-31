@@ -6,7 +6,6 @@ import { commitsSince, restore, restorePlan, snapshot } from "./checkpoints.ts";
 import type { OrchestratorDb, RunRow } from "./db.ts";
 import { errorCode, OrchestratorError } from "./errors.ts";
 import { StepQueue } from "./queue.ts";
-import { ROLES } from "./roles.ts";
 
 // Turns of a run, for "Steer now" and "Undo last turn" (feature scan A10, A13). A turn starts
 // when we hand the runner a prompt (the first one, a resume, or follow-ups at a turn boundary) and
@@ -69,7 +68,7 @@ export class TurnControl {
     const id = randomUUID();
     let snap: { sha: string; head: string | null } | null = null;
     // A read-only role changes no files, so its turns need no checkpoint (and save the git time).
-    if (run.worktree_id && ROLES[run.role].policy.writes !== "none") {
+    if (run.worktree_id && this.host.db.roleTemplate(run.member_id, run.role).policy.writes !== "none") {
       try {
         snap = await snapshot(run.cwd, `refs/crewyard/turns/${id}`, this.host.gitBin);
       } catch (err) {
@@ -124,7 +123,7 @@ export class TurnControl {
     const adapter = this.host.adapter(run.runner);
     if (!adapter?.capabilities.undo || !adapter.rewind) return state(no("undo.unsupported"));
     if (!run.worktree_id) return state(no("undo.no_worktree"));
-    if (ROLES[run.role].policy.writes === "none") return state(no("undo.read_only"));
+    if (db.roleTemplate(run.member_id, run.role).policy.writes === "none") return state(no("undo.read_only"));
     if (db.runs(run.task_id).some((r) => r.resumed_from === run.id)) return state(no("undo.superseded"));
     if (this.host.live(run.id) || this.busy(run.task_id)) return state(no("undo.turn_running"));
     const others = db.runs(run.task_id).filter((r) => r.id !== run.id && !r.ended_at && this.host.live(r.id) && sameDir(r.cwd, run.cwd));

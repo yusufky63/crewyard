@@ -108,3 +108,16 @@
   .settings .st-sections { display: block; columns: 2; column-gap: 16px; }
   .settings .st-section { break-inside: avoid; margin-bottom: 16px; }
 }
+/* Roles (PLAN.md §9.1): read-only list of built-in roles and role files. */
+.settings .rl-list { list-style: none; display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; margin: 8px 0 0; padding: 0; border: 1px solid var(--line); }
+.settings .rl-item { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; gap: 4px; padding: 10px 12px; border-top: 1px solid var(--line); }
+.settings .rl-item:first-child { border-top: 0; }
+.settings .rl-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; min-width: 0; }
+.settings .rl-name { font-weight: 500; font-size: 13px; }
+.settings .rl-id { font-size: var(--font-size-meta); }
+.settings .rl-over { font-size: var(--font-size-meta); color: var(--warn); }
+.settings .rl-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-size-meta); color: var(--ink-2); }
+.settings .rl-facts, .settings .rl-steps { display: flex; flex-wrap: wrap; gap: 2px 14px; font-size: var(--font-size-meta); color: var(--ink-2); }
+.settings .rl-problems { display: grid; gap: 6px; padding: 10px 0 2px; border-top: 1px solid var(--line); }
+.settings .rl-problem { display: grid; gap: 1px; min-width: 0; overflow-wrap: anywhere; }
+.settings .rl-problem-path { color: var(--ink-2); }

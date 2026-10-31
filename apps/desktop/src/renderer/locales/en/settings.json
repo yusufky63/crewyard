@@ -27,7 +27,8 @@
     "about": "About",
     "mcp": "MCP servers",
     "fallback": "Fallback",
-    "updates": "Updates"
+    "updates": "Updates",
+    "roles": "Roles"
   },
   "on": "On",
   "off": "Off",
@@ -348,6 +349,67 @@
       "signature": "Refused: the update did not pass the signature check. Nothing was installed.",
       "disk": "Could not write the download to disk.",
       "unknown": "The update did not work."
+    }
+  },
+  "roles": {
+    "title": "Role files",
+    "hint": "Markdown files with YAML front matter. A file named after a built-in role changes its contract and may only narrow its permissions; any other name adds a role. Edit the files themselves; this list only reads them.",
+    "global": "Global",
+    "project": "This project",
+    "noProject": "Open a project to see its own roles.",
+    "reload": "Reload",
+    "listLabel": "Roles",
+    "source": {
+      "builtin": "Built-in",
+      "global": "Global file",
+      "repo": "Project file"
+    },
+    "overrides": "replaces {{layer}}",
+    "layer": {
+      "builtin": "the built-in",
+      "global": "the global file",
+      "repo": "the project file"
+    },
+    "writes": {
+      "none": "Writes nothing",
+      "docs": "Writes doc paths only",
+      "worktree": "Writes in its worktree"
+    },
+    "network": {
+      "denied": "No network",
+      "ask": "Asks before network use",
+      "allowed": "Network allowed"
+    },
+    "commands": "Runs without asking: {{list}}",
+    "noCommands": "No commands of its own",
+    "readOnlyRunner": "Needs a runner that enforces read-only",
+    "independent": "Never on the model of: {{roles}}",
+    "contract": "Contract: {{count}} characters",
+    "step": "In {{kinds}} crews ({{sizes}})",
+    "stepAfter": "In {{kinds}} crews ({{sizes}}), after {{after}}",
+    "allSizes": "all sizes",
+    "unused": "Not in any crew template. List it under customRoles in .crewyard/project.json to use it.",
+    "problems": "Not used",
+    "projectRules": "A run gets the policy shown here narrowed by the project's rules: a custom role keeps only the commands the project also allows, and never more network than the project allows.",
+    "loadFailed": "Could not read the roles.",
+    "problem": {
+      "read_failed": "Could not be read ({{detail}}).",
+      "too_large": "Larger than {{limit}} bytes, so it was not read.",
+      "too_many": "More than {{limit}} role files; the rest are ignored.",
+      "bad_name": "The file name is not a role id: use lowercase letters, digits and dashes.",
+      "front_matter": "No front matter: the file must start with a --- block.",
+      "yaml": "The front matter is not valid YAML: {{detail}}",
+      "not_mapping": "The front matter must be a set of keys.",
+      "unknown_field": "Unknown field {{field}}.",
+      "invalid_field": "Invalid value for {{field}}.",
+      "no_title": "A new role needs a title.",
+      "contract_empty": "A new role needs a contract in the Markdown body.",
+      "contract_too_long": "The contract is longer than {{limit}} characters.",
+      "needs_read_only": "A role that writes nothing must keep needsReadOnly on.",
+      "widens": "{{field}} would allow more than the role it replaces.",
+      "config_invalid": "project.json could not be used, so its customRoles are not used either. {{detail}}",
+      "step_invalid": "customRoles in project.json is invalid, so none of it is used: {{detail}}",
+      "step_unknown_role": "customRoles lists {{role}}, which has no usable role file."
     }
   }
 }

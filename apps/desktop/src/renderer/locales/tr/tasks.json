@@ -131,7 +131,8 @@
     "loop_iteration_cap": "{{max}} düzeltme denemesinin hepsi kullanıldı",
     "loop_no_change": "Son denemeden beri değişiklik yok",
     "loop_spend_cap": "{{cap}} doldu",
-    "loop_no_resume": "{{runner}} oturumu sürdüremiyor"
+    "loop_no_resume": "{{runner}} oturumu sürdüremiyor",
+    "role_file": "Rol dosyası: {{path}}"
   },
   "status": {
     "bestOfRunning": "Çalışıyor · {{count}} varyant",

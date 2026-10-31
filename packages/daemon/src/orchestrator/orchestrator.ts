@@ -72,7 +72,8 @@ import { runSteps } from "../worktrees/steps.ts";
 import { applyResult, outputSchemaFor, type RoleResult } from "./results.ts";
 import { LimitMonitor } from "./limits.ts";
 import { forkPrompt, handoffPackage, rolePrompt } from "./prompts.ts";
-import { onlyDocPaths, ROLES } from "./roles.ts";
+import { projectRoles } from "./role-files.ts";
+import { effectivePolicy, onlyDocPaths, type RoleTemplate } from "./roles.ts";
 import { capResetsAt, capWindow, credentialCaps, overCap, reachedCaps, recordRunSpend, reservedUsd, reserveSpend, settleReservation, spendCredential } from "./spend.ts";
 import { joinMessages } from "./queue.ts";
 import { answerAfterSleep, canHibernate, HibernationStore, idleSince, type WakeCause } from "./hibernation.ts";
@@ -395,7 +396,12 @@ export class Orchestrator {
     const budgetUsd = p.budgetUsd ?? (fromFile ? config.budget.perTaskUsd : null);
     const candidates = await this.candidates(project);
     const ctx = this.scoring(project.id, cls.size, budgetUsd, p.pins, p.exclude);
-    const crew = proposeCrew(cls.kind, cls.security, candidates, ctx);
+    const roles = projectRoles(this.opts.dataDir, project.path, config, null);
+    const crew = proposeCrew(cls.kind, cls.security, candidates, ctx, { templates: new Map([...roles.set.roles].map(([id, r]) => [id, r.template])), steps: roles.steps });
+    for (const m of crew.members) {
+      const path = roles.set.roles.get(m.role)?.path;
+      if (path) m.reasons.unshift({ code: "role.file", params: { path } });
+    }
     const group = p.bestOf === undefined ? null : this.groupCandidates(crew.members, candidates, ctx, p.bestOf);
     const estimate = group ? sumEstimates(crew.members.flatMap((m, i) => (i === group.index ? group.candidates.map((c) => c.estimate) : [m.chosen?.estimate ?? { usd: null, provenance: "unknown" as const }]))) : crew.estimate;
     const taskId = randomUUID();
@@ -437,6 +443,10 @@ export class Orchestrator {
           JSON.stringify(m.reasons),
         ),
       );
+      crew.members.forEach((m, i) => {
+        const r = roles.set.roles.get(m.role);
+        if (r && r.source !== "builtin") this.db.saveRoleTemplate(memberIds[i]!, r);
+      });
       if (group) this.bestOf.create(taskId, memberIds[group.index]!, group.candidates);
     });
     this.audit(taskId, null, "task.proposed", { kind: cls.kind, size: cls.size, members: crew.members.map((m) => ({ role: m.role, profileId: m.chosen?.profileId ?? null })), bestOf: group?.candidates.map((c) => c.profileId) ?? null });
@@ -461,9 +471,9 @@ export class Orchestrator {
         const m = members.find((x) => x.id === edit.memberId);
         if (!m) throw new OrchestratorError("crew.member_not_found", { memberId: edit.memberId });
         const c = candidates.find((x) => x.profile.id === edit.profileId);
-        if (c && readOnlyConflict(c, m.role)) throw new OrchestratorError("crew.read_only_profile", { profileId: c.profile.id, role: m.role });
-        if (!c || !eligible(c, m.role, ctx)) throw new OrchestratorError("crew.unknown_profile", { profileId: edit.profileId });
-        const v = scoreCandidate(c, m.role, ctx);
+        if (c && readOnlyConflict(c, this.tpl(m))) throw new OrchestratorError("crew.read_only_profile", { profileId: c.profile.id, role: m.role });
+        if (!c || !eligible(c, this.tpl(m), ctx)) throw new OrchestratorError("crew.unknown_profile", { profileId: edit.profileId });
+        const v = scoreCandidate(c, this.tpl(m), ctx);
         if (edit.model) v.model = edit.model;
         views.set(m.id, v);
       }
@@ -478,8 +488,8 @@ export class Orchestrator {
       if (!v) throw new OrchestratorError("crew.missing_profile", { role: m.role });
       // Checked for every member, not only edited ones: the profile may have been marked read-only after the proposal.
       const c = candidates.find((x) => x.profile.id === v.profileId);
-      if (c && readOnlyConflict(c, m.role)) throw new OrchestratorError("crew.read_only_profile", { profileId: c.profile.id, role: m.role });
-      for (const other of ROLES[m.role].independentOf) {
+      if (c && readOnlyConflict(c, this.tpl(m))) throw new OrchestratorError("crew.read_only_profile", { profileId: c.profile.id, role: m.role });
+      for (const other of this.tpl(m).independentOf) {
         const o = members.find((x) => x.role === other);
         const ov = o ? views.get(o.id) : null;
         if (ov && sameModel(v, ov)) throw new OrchestratorError("crew.independence", { role: m.role });
@@ -659,7 +669,7 @@ export class Orchestrator {
     if (!Number.isInteger(n) || n < BEST_OF_MIN || n > BEST_OF_MAX) throw new OrchestratorError("best_of.bad_count", { min: BEST_OF_MIN, max: BEST_OF_MAX });
     const index = members.findIndex((m) => m.role === "implementer" && m.writesCode);
     if (index < 0) throw new OrchestratorError("best_of.not_found");
-    const independent = members.filter((m) => m.chosen && ROLES[m.role].independentOf.includes("implementer")).map((m) => m.chosen!);
+    const independent = members.filter((m) => m.chosen && m.template.independentOf.includes("implementer")).map((m) => m.chosen!);
     const ranked = rankForRole(candidates, "implementer", ctx, { models: new Set(), providers: new Set() }).filter((c) => !independent.some((r) => sameModel(r, c)));
     const picked = pickVariants(members[index]!.chosen, ranked, n);
     if (picked.length < n) throw new OrchestratorError("best_of.too_few", { found: picked.length, needed: n });
@@ -681,9 +691,9 @@ export class Orchestrator {
       const before = out;
       out = ids.map((id) => {
         const c = candidates.find((x) => x.profile.id === id);
-        if (c && readOnlyConflict(c, member.role)) throw new OrchestratorError("crew.read_only_profile", { profileId: id, role: member.role });
-        if (!c || !eligible(c, member.role, ctx)) throw new OrchestratorError("crew.unknown_profile", { profileId: id });
-        return before.find((v) => v.profileId === id) ?? scoreCandidate(c, member.role, ctx);
+        if (c && readOnlyConflict(c, this.tpl(member))) throw new OrchestratorError("crew.read_only_profile", { profileId: id, role: member.role });
+        if (!c || !eligible(c, this.tpl(member), ctx)) throw new OrchestratorError("crew.unknown_profile", { profileId: id });
+        return before.find((v) => v.profileId === id) ?? scoreCandidate(c, this.tpl(member), ctx);
       });
     } else if (p.edits?.some((e) => e.memberId === member.id)) {
       // Changing the implementer in the crew changes the first variant.
@@ -747,13 +757,14 @@ export class Orchestrator {
           m.role,
           JSON.stringify(view),
         );
+        this.db.copyRoleTemplate(m.id, memberId);
         created.set(v.id, taskId);
         specs.push({ runId: randomUUID(), task: this.db.task(taskId), member: this.db.member(memberId), target: view });
       }
       this.bestOf.start(group.id, created);
       for (const spec of specs) {
         const c = candidates.find((x) => x.profile.id === spec.target.profileId);
-        if (c?.profile.credential.kind === "api_key") reserveSpend(this.opts.store.db, { runId: spec.runId!, taskId: task.id, credentialId: spendCredential(c), amountUsd: estimateFor(c, m.role, task.size, this.now()).usd ?? 0 }, this.now());
+        if (c?.profile.credential.kind === "api_key") reserveSpend(this.opts.store.db, { runId: spec.runId!, taskId: task.id, credentialId: spendCredential(c), amountUsd: estimateFor(c, this.tpl(m), task.size, this.now()).usd ?? 0 }, this.now());
       }
     });
     for (const spec of specs) this.insertRun(spec);
@@ -793,7 +804,7 @@ export class Orchestrator {
     for (const v of views) {
       const c = candidates.find((x) => x.profile.id === v.profileId);
       if (c?.profile.credential.kind !== "api_key") continue;
-      const usd = estimateFor(c, m.role, task.size, this.now()).usd ?? 0;
+      const usd = estimateFor(c, this.tpl(m), task.size, this.now()).usd ?? 0;
       total += usd;
       const key = spendCredential(c) ?? `profile:${c.profile.id}`;
       const cur = byCredential.get(key);
@@ -1243,7 +1254,7 @@ export class Orchestrator {
     const native = Boolean(adapter?.capabilities.resume && run.native_session_id);
     const member = this.db.member(run.member_id);
     const wt = this.db.worktree(task.id);
-    const prompt = native ? text : `${rolePrompt(member.role, task, { plan: this.latestPlan(task.id), branch: wt?.branch ?? null })}\n\n${text}`;
+    const prompt = native ? text : `${rolePrompt(this.tpl(member), task, { plan: this.latestPlan(task.id), branch: wt?.branch ?? null })}\n\n${text}`;
     const id = await this.launch({
       task,
       member,
@@ -1711,7 +1722,7 @@ export class Orchestrator {
 
   /** What a paid step holds before it starts: its estimate less what earlier runs of the step already spent. */
   private reservationFor(task: TaskRow, m: MemberRow, candidate: Candidate): number {
-    const usd = estimateFor(candidate, m.role, task.size, this.now()).usd ?? 0;
+    const usd = estimateFor(candidate, this.tpl(m), task.size, this.now()).usd ?? 0;
     const spent = this.db.runs(task.id).filter((r) => r.member_id === m.id).reduce((n, r) => n + (r.cost_usd ?? 0), 0);
     return Math.max(0, usd - spent);
   }
@@ -1796,7 +1807,7 @@ export class Orchestrator {
       const adapter = this.adapters.get(target.runner);
       if (!adapter) throw new OrchestratorError("adapter.failed", { detail: "no_adapter" });
       // A capped task never starts on a model nobody can price without your click (feature scan F4).
-      const unpriced = this.unpricedFor(task, runId, candidate, target.model, estimateFor(candidate, member.role, task.size, this.now()).usd === null);
+      const unpriced = this.unpricedFor(task, runId, candidate, target.model, estimateFor(candidate, this.tpl(member), task.size, this.now()).usd === null);
       if (unpriced) {
         this.held.set(runId, spec);
         await this.onLimitReached(runId, { trigger: "unpriced", window: null, resetsAt: null, unpriced });
@@ -1824,13 +1835,13 @@ export class Orchestrator {
       const resumeRef = forked?.session ?? spec.resumeRef ?? null;
       if (resumeRef) this.resumed.add(runId);
       // Messages typed for the step while it had no process go with the first prompt.
-      let base = forked && spec.fork ? spec.fork.prompt : (spec.prompt ?? rolePrompt(member.role, task, { plan: this.latestPlan(task.id), branch: worktreeId ? (wt?.branch ?? null) : null }));
+      let base = forked && spec.fork ? spec.fork.prompt : (spec.prompt ?? rolePrompt(this.tpl(member), task, { plan: this.latestPlan(task.id), branch: worktreeId ? (wt?.branch ?? null) : null }));
       if (pinned && !spec.prompt) base += reviewContext({ sha: pinned.sha, baseSha: wt?.base_sha ?? null, branch: wt?.branch ?? null, test: this.loops.lastTaskTest(task.id), previous: this.loops.previousVerdict(member.id, null) });
       const queued = this.withQueued(member.id, base, Boolean(resumeRef));
       // Codex reviews with its own review/start against the task's base; the verdict schema still applies.
       const review: ReviewTarget | null = pinned && member.role === "reviewer" && !resumeRef && adapter.capabilities.nativeReview ? { kind: "base_branch", branch: task.base_branch ?? wt!.base_sha } : null;
       if (review) this.nativeReviews.add(runId);
-      const policy = this.policyFor(member.role, config);
+      const policy = this.policyFor(this.tpl(member), config);
       const req: StartRequest = {
         profile: candidate.profile,
         cwd,
@@ -2190,7 +2201,7 @@ export class Orchestrator {
     const project = this.db.project(task.project_id);
     const candidate = (await this.candidates(project)).find((c) => c.profile.id === run.profile_id);
     if (!candidate) throw new OrchestratorError("crew.unknown_profile", { profileId: run.profile_id });
-    const policy = this.policyFor(run.role, this.config(project).config);
+    const policy = this.policyFor(this.tpl(run), this.config(project).config);
     const req: StartRequest = {
       profile: candidate.profile,
       cwd: run.cwd,
@@ -2244,7 +2255,7 @@ export class Orchestrator {
   private async routeApproval(run: RunRow, task: TaskRow, ev: Extract<AgentEvent, { type: "request.approval" }>): Promise<void> {
     const project = this.db.project(task.project_id);
     const { config } = this.config(project);
-    const policy = this.policyFor(run.role, config);
+    const policy = this.policyFor(this.tpl(run), config);
     const allowlist = [...policy.allowCommands, ...this.db.allowRules(project.id)];
     const risk = classifyRisk({ command: ev.command, cwd: ev.cwd, paths: ev.paths, network: ev.network, worktreeRoot: run.cwd, projectRoot: project.path, allowlist });
 
@@ -2651,10 +2662,10 @@ export class Orchestrator {
       !(crashed && modelKey(c) === failedModel) && !(crashed && this.db.failedToStart(c.profile.id)) && !(emptyKey !== null && spendCredential(c) === emptyKey);
     return order
       .map((id) => all.find((c) => c.profile.id === id))
-      .filter((c): c is Candidate => c !== undefined && eligible(c, member.role, ctx) && !avoid.models.has(modelKey(c)) && usable(c))
+      .filter((c): c is Candidate => c !== undefined && eligible(c, this.tpl(member), ctx) && !avoid.models.has(modelKey(c)) && usable(c))
       // Budget left (PLAN.md §8.2 step 2): a key past its daily or task cap is no target.
       .filter((c) => reachedCaps(this.opts.store.db, spendCredential(c), task.id, this.now(), { excludeRunId: run.id }).length === 0)
-      .map((c) => scoreCandidate(c, member.role, ctx, avoid))
+      .map((c) => scoreCandidate(c, this.tpl(member), ctx, avoid))
       .filter((v) => (v.headroom.pct === null || v.headroom.pct > MIN_HEADROOM) && (task.budget_usd === null || v.estimate.usd === 0 || spent < task.budget_usd));
   }
 
@@ -2662,7 +2673,7 @@ export class Orchestrator {
     // The implementer's model is whatever actually ran, including handoff targets.
     const avoid = { models: this.ranModels(member), providers: new Set<string>() };
     const crewMembers = this.db.members(member.crew_id);
-    for (const role of ROLES[member.role].independentOf) {
+    for (const role of this.tpl(member).independentOf) {
       const other = crewMembers.find((m) => m.role === role);
       if (!other) continue;
       const chosen = other.chosen ? (JSON.parse(other.chosen) as CandidateView) : null;
@@ -2672,7 +2683,7 @@ export class Orchestrator {
       }
     }
     // The rule cuts both ways: an implementer's handoff target must not take the approved reviewer's model.
-    for (const other of crewMembers.filter((m) => ROLES[m.role].independentOf.includes(member.role))) {
+    for (const other of crewMembers.filter((m) => this.tpl(m).independentOf.includes(member.role))) {
       const chosen = other.chosen ? (JSON.parse(other.chosen) as CandidateView) : null;
       if (chosen) avoid.models.add((chosen.model ?? `profile:${chosen.profileId}`).toLowerCase());
     }
@@ -2715,19 +2726,19 @@ export class Orchestrator {
     const ctx = this.scoring(project.id, task.size, task.budget_usd);
     const avoid = this.avoidFor(member);
     const chain = (JSON.parse(member.standby) as CandidateView[]).map((s) => s.profileId);
-    const ranked = rankForRole(accounts, member.role, ctx, avoid).map((v) => v.profileId);
+    const ranked = rankForRole(accounts, this.tpl(member), ctx, avoid).map((v) => v.profileId);
     const left = this.switches.leftAccounts(member.id);
     const spent = this.db.spend(this.db.runs(task.id)).usd ?? 0;
     const sourceInfo = sourceOf(trigger, info, this.db.headroom(run.profile_id, this.now()));
     const from = { profileId: source.profile.id, alias: source.profile.alias };
     const skipped: AccountSwitchSkipped[] = [];
     for (const c of switchOrder(accounts, chain, ranked)) {
-      const view = scoreCandidate(c, member.role, ctx, avoid);
+      const view = scoreCandidate(c, this.tpl(member), ctx, avoid);
       const reason = refusalOf({
         sameKind: c.profile.credential.kind === source.profile.credential.kind,
         ready: c.ready && this.adapters.has(c.profile.runner),
         claudeSubscription: isClaudeSubscription(c),
-        roleOk: eligible(c, member.role, ctx),
+        roleOk: eligible(c, this.tpl(member), ctx),
         independent: !avoid.models.has(modelKey(c)),
         leftBefore: left.has(accountOf(c)!),
         overCap: reachedCaps(this.opts.store.db, spendCredential(c), task.id, this.now(), { excludeRunId: run.id }).length > 0,
@@ -2757,7 +2768,7 @@ export class Orchestrator {
   /** Models that actually ran for the roles this member must stay independent of. */
   private ranModels(member: MemberRow): Set<string> {
     const out = new Set<string>();
-    for (const other of this.db.members(member.crew_id).filter((m) => ROLES[member.role].independentOf.includes(m.role))) {
+    for (const other of this.db.members(member.crew_id).filter((m) => this.tpl(member).independentOf.includes(m.role))) {
       const ran = this.db.db.prepare("select profile_id, model from runs where member_id = ?").all(other.id) as Array<{ profile_id: string; model: string | null }>;
       for (const r of ran) out.add((r.model ?? `profile:${r.profile_id}`).toLowerCase());
     }
@@ -2773,7 +2784,7 @@ export class Orchestrator {
     const project = this.db.project(task.project_id);
     const member = this.db.member(run.member_id);
     const ctx = this.scoring(project.id, task.size, task.budget_usd);
-    const ranked = rankForRole(await this.candidates(project), member.role, ctx, this.avoidFor(member));
+    const ranked = rankForRole(await this.candidates(project), this.tpl(member), ctx, this.avoidFor(member));
     return ranked.find((v) => v.profileId === profileId) ?? null;
   }
 
@@ -2805,9 +2816,9 @@ export class Orchestrator {
     const c = (await this.candidates(project)).find((x) => x.profile.id === profileId);
     if (!c) throw new OrchestratorError("crew.unknown_profile", { profileId });
     if (!c.ready || !this.adapters.has(c.profile.runner)) throw new OrchestratorError("handoff.target_not_ready", { profileId });
-    if (readOnlyConflict(c, member.role)) throw new OrchestratorError("crew.read_only_profile", { profileId, role: member.role });
+    if (readOnlyConflict(c, this.tpl(member))) throw new OrchestratorError("crew.read_only_profile", { profileId, role: member.role });
     const ctx = this.scoring(project.id, task.size, task.budget_usd);
-    if (!eligible(c, member.role, ctx)) throw new OrchestratorError("crew.unknown_profile", { profileId });
+    if (!eligible(c, this.tpl(member), ctx)) throw new OrchestratorError("crew.unknown_profile", { profileId });
     const avoid = this.avoidFor(member);
     if (avoid.models.has(modelKey(c))) throw new OrchestratorError("crew.independence", { role: member.role });
     // Your "continue" past the task budget on this step carries over to the AI you move it to.
@@ -2815,7 +2826,7 @@ export class Orchestrator {
     const cap = this.capFor(task.id, null, c, 0, stepApproved);
     if (cap?.kind === "task_budget") throw new OrchestratorError("handoff.over_budget", { spentUsd: cap.spentUsd, capUsd: cap.capUsd });
     if (cap) throw new OrchestratorError("handoff.over_cap", { profileId, cap: cap.kind });
-    return scoreCandidate(c, member.role, ctx, avoid);
+    return scoreCandidate(c, this.tpl(member), ctx, avoid);
   }
 
   /**
@@ -2893,7 +2904,7 @@ export class Orchestrator {
       // provider, so the history means the same to the target. Never for a role that must stay
       // independent of another (the reviewer), whose own reading must not start from anyone's history.
       const sourceProvider = (await this.candidateFor(source))?.profile.providerId ?? null;
-      const forkable = !native && !neverStarted && source.native_session_id !== null && target.runner === source.runner && sourceProvider !== null && sourceProvider === target.providerId && ROLES[source.role].independentOf.length === 0 && Boolean(this.adapters.get(source.runner)?.fork);
+      const forkable = !native && !neverStarted && source.native_session_id !== null && target.runner === source.runner && sourceProvider !== null && sourceProvider === target.providerId && this.tpl(source).independentOf.length === 0 && Boolean(this.adapters.get(source.runner)?.fork);
 
       phase("starting_target");
       const targetRunId = await this.launch({
@@ -2934,6 +2945,7 @@ export class Orchestrator {
     const text = handoffPackage({
       task,
       source,
+      role: this.tpl(source),
       trigger,
       plan: this.latestPlan(task.id, source.id),
       diffStat: stat,
@@ -3117,16 +3129,15 @@ export class Orchestrator {
     };
   }
 
-  private policyFor(role: RoleId, config: ProjectConfig): RolePolicy {
-    const tpl = ROLES[role].policy;
-    const commands = [config.commands.build, config.commands.test].filter((c): c is string => Boolean(c));
-    const runsCommands = role === "implementer" || role === "tester" || role === "reviewer";
-    return {
-      writes: tpl.writes,
-      allowCommands: [...config.rules.allowCommands, ...(runsCommands ? commands : [])],
-      network: tpl.network === "ask" && config.rules.network === "allowed" ? "allowed" : tpl.network,
-    };
+  private policyFor(tpl: RoleTemplate, config: ProjectConfig): RolePolicy {
+    return effectivePolicy(tpl, config);
   }
+
+  /** The role a member or run works as: its snapshot from a role file, else the built-in (role-files.ts). */
+  private tpl(m: MemberRow | RunRow): RoleTemplate {
+    return this.db.roleTemplate("member_id" in m ? m.member_id : m.id, m.role);
+  }
+
 
   /** The newest plan any run of the task reported, or one run's plan. */
   private latestPlan(taskId: string, runId?: string): Array<{ title: string; status: "pending" | "in_progress" | "completed" }> | null {

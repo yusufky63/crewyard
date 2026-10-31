@@ -2,6 +2,7 @@ import type { DatabaseSync } from "node:sqlite";
 import {
   DEFAULT_MAX_ITERATIONS,
   deriveTaskStatus,
+  isBuiltinRole,
   NO_RUN_CONTROLS,
   type CandidateView,
   type CostEstimate,
@@ -35,6 +36,7 @@ import {
 } from "@crewyard/core";
 import { sumEstimates } from "./crew.ts";
 import { OrchestratorError } from "./errors.ts";
+import { readOnlyStub, templateOf, type RoleTemplate } from "./roles.ts";
 
 // Plain SQL over the store's connection. Rows are facts; every view (status, run state,
 // pending request, open handoff) is computed here on read (PLAN.md D5, §13).
@@ -270,6 +272,31 @@ export class OrchestratorDb {
     const m = this.one<MemberRow>("select * from crew_members where id = ?", id);
     if (!m) throw new OrchestratorError("crew.member_not_found", { memberId: id });
     return m;
+  }
+
+  /**
+   * The role a member runs as: the snapshot taken when it was proposed from a role file, else the
+   * built-in. A custom role without a readable snapshot fails closed to a read-only stub.
+   */
+  roleTemplate(memberId: string, role: RoleId): RoleTemplate {
+    const row = this.one<{ template: string }>("select template from crew_member_roles where member_id = ?", memberId);
+    if (!row) return templateOf(role);
+    try {
+      const t = JSON.parse(row.template) as RoleTemplate;
+      if (t.id === role && typeof t.contract === "string" && t.policy && Array.isArray(t.policy.allowCommands) && Array.isArray(t.independentOf)) return t;
+    } catch {
+      // Falls through to the stub below.
+    }
+    return readOnlyStub(role);
+  }
+
+  saveRoleTemplate(memberId: string, r: { template: RoleTemplate; source: string; path: string | null }): void {
+    this.exec("insert or replace into crew_member_roles (member_id, template, source, path) values (?, ?, ?, ?)", memberId, JSON.stringify(r.template), r.source, r.path);
+  }
+
+  /** A Best of N variant runs the same role its parent member was proposed with. */
+  copyRoleTemplate(fromMemberId: string, toMemberId: string): void {
+    this.exec("insert or replace into crew_member_roles (member_id, template, source, path) select ?, template, source, path from crew_member_roles where member_id = ?", toMemberId, fromMemberId);
   }
 
   run(id: string): RunRow {
@@ -656,7 +683,7 @@ export class OrchestratorDb {
       proposedAt: crew.proposed_at,
       approvedAt: crew.approved_at,
       estimate: { usd: crew.estimate_usd, provenance: crew.estimate_provenance },
-      members: this.members(crew.id).map((m) => memberView(m, blocked.get(m.id) ?? null)),
+      members: this.members(crew.id).map((m) => memberView(m, blocked.get(m.id) ?? null, isBuiltinRole(m.role) ? undefined : this.roleTemplate(m.id, m.role).title)),
     };
   }
 
@@ -728,10 +755,11 @@ export class OrchestratorDb {
   }
 }
 
-export const memberView = (m: MemberRow, blockedBy: Reason | null): CrewMemberView => ({
+export const memberView = (m: MemberRow, blockedBy: Reason | null, roleTitle?: string): CrewMemberView => ({
   id: m.id,
   step: m.step,
   role: m.role,
+  ...(roleTitle === undefined ? {} : { roleTitle }),
   dependsOn: JSON.parse(m.depends_on) as string[],
   required: m.required === 1,
   writesCode: m.writes_code === 1,

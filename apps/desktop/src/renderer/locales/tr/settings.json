@@ -27,7 +27,8 @@
     "about": "Hakkında",
     "mcp": "MCP sunucuları",
     "fallback": "Yedeğe geçiş",
-    "updates": "Güncellemeler"
+    "updates": "Güncellemeler",
+    "roles": "Roller"
   },
   "on": "Açık",
   "off": "Kapalı",
@@ -348,6 +349,67 @@
       "signature": "Reddedildi: güncelleme imza denetiminden geçmedi. Hiçbir şey kurulmadı.",
       "disk": "İndirilen dosya diske yazılamadı.",
       "unknown": "Güncelleme yapılamadı."
+    }
+  },
+  "roles": {
+    "title": "Rol dosyaları",
+    "hint": "YAML ön bilgisi olan Markdown dosyaları. Yerleşik bir rolün adını taşıyan dosya o rolün sözleşmesini değiştirir, izinlerini ise yalnızca daraltabilir; başka bir ad yeni bir rol ekler. Değişikliği dosyanın kendisinde yapın; bu liste dosyaları yalnızca okur.",
+    "global": "Genel",
+    "project": "Bu proje",
+    "noProject": "Projeye özel rolleri görmek için bir proje açın.",
+    "reload": "Yeniden oku",
+    "listLabel": "Roller",
+    "source": {
+      "builtin": "Yerleşik",
+      "global": "Genel dosya",
+      "repo": "Proje dosyası"
+    },
+    "overrides": "{{layer}} yerine geçer",
+    "layer": {
+      "builtin": "yerleşik rolün",
+      "global": "genel dosyanın",
+      "repo": "proje dosyasının"
+    },
+    "writes": {
+      "none": "Dosya yazmaz",
+      "docs": "Yalnızca belge yollarına yazar",
+      "worktree": "Kendi çalışma ağacına yazar"
+    },
+    "network": {
+      "denied": "Ağ kapalı",
+      "ask": "Ağa çıkmadan önce sorar",
+      "allowed": "Ağ açık"
+    },
+    "commands": "Sormadan çalıştırır: {{list}}",
+    "noCommands": "Kendine ait komutu yok",
+    "readOnlyRunner": "Salt okunurluğu kendisi uygulayan bir çalıştırıcı gerekir",
+    "independent": "Şu rollerin modelini hiç kullanmaz: {{roles}}",
+    "contract": "Sözleşme: {{count}} karakter",
+    "step": "{{kinds}} görevlerinin ekibinde ({{sizes}})",
+    "stepAfter": "{{kinds}} görevlerinin ekibinde ({{sizes}}), {{after}} adımından sonra",
+    "allSizes": "tüm boyutlar",
+    "unused": "Hiçbir ekip şablonunda yok. Kullanmak için .crewyard/project.json içindeki customRoles listesine ekleyin.",
+    "problems": "Kullanılmayanlar",
+    "projectRules": "Çalıştırma, burada görünen ilkeyi projenin kurallarıyla daraltılmış olarak alır: özel bir rol yalnızca projenin de izin verdiği komutları tutar ve projenin izin verdiğinden fazla ağ erişimi almaz.",
+    "loadFailed": "Roller okunamadı.",
+    "problem": {
+      "read_failed": "Okunamadı ({{detail}}).",
+      "too_large": "{{limit}} bayttan büyük olduğu için okunmadı.",
+      "too_many": "{{limit}} rol dosyasından fazlası var; geri kalanlar yok sayıldı.",
+      "bad_name": "Dosya adı geçerli bir rol kimliği değil: küçük harf, rakam ve tire kullanın.",
+      "front_matter": "Ön bilgi yok: dosya bir --- bloğuyla başlamalı.",
+      "yaml": "Ön bilgi geçerli bir YAML değil: {{detail}}",
+      "not_mapping": "Ön bilgi anahtar ve değerlerden oluşmalı.",
+      "unknown_field": "Bilinmeyen alan: {{field}}.",
+      "invalid_field": "{{field}} için geçersiz değer.",
+      "no_title": "Yeni bir rolün başlığı (title) olmalı.",
+      "contract_empty": "Yeni bir rolün Markdown gövdesinde bir sözleşme olmalı.",
+      "contract_too_long": "Sözleşme {{limit}} karakterden uzun.",
+      "needs_read_only": "Dosya yazmayan bir rolde needsReadOnly açık kalmalı.",
+      "widens": "{{field}}, yerine geçtiği rolün izin verdiğinden fazlasına izin verirdi.",
+      "config_invalid": "project.json kullanılamadı, bu yüzden içindeki customRoles da kullanılmıyor. {{detail}}",
+      "step_invalid": "project.json içindeki customRoles geçersiz olduğu için hiçbiri kullanılmıyor: {{detail}}",
+      "step_unknown_role": "customRoles, kullanılabilir bir rol dosyası olmayan {{role}} rolünü listeliyor."
     }
   }
 }
