@@ -16,7 +16,7 @@ export function hasDependencies(names: readonly string[]): boolean {
 }
 
 export async function projectFacts(path: string, name: string): Promise<ProjectFacts> {
-  let names: string[] = [];
+  let names: string[];
   try {
     names = readdirSync(path);
   } catch {
