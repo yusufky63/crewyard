@@ -19,7 +19,7 @@
     "sidebar": "Collapse or expand the sidebar",
     "drawer": "Expand or collapse the panel (assistant, terminal, events, logs, problems); nothing stops",
     "help": "Show this list",
-    "close": "Close the topmost layer: menu, dialog, collapse the panel while focus is in it (not inside a terminal), inspector, then full screen",
+    "close": "Close the topmost layer: menu, dialog, collapse the panel while focus is in it (not inside a terminal; inside the task assistant Esc stops it, then collapses the panel), inspector, then full screen",
     "submit": "Submit the composer, approve the focused crew, send a message or comment",
     "assistant": "Expand the panel on the task assistant, or collapse it while the assistant keeps running",
     "assistant.send": "Send your message to the task assistant (Shift Enter adds a line)",

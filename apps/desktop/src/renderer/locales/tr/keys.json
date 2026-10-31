@@ -19,7 +19,7 @@
     "sidebar": "Kenar çubuğunu daralt ya da genişlet",
     "drawer": "Paneli (asistan, terminal, olaylar, günlükler, sorunlar) genişlet ya da daralt; hiçbir şey durmaz",
     "help": "Bu listeyi göster",
-    "close": "En üstteki katmanı kapat: menü, iletişim kutusu, odak içindeyken paneli daralt (terminalin içinde değilken), denetçi, sonra tam ekran",
+    "close": "En üstteki katmanı kapat: menü, iletişim kutusu, odak içindeyken paneli daralt (terminalin içinde değilken; görev asistanının içindeyken Esc asistanı durdurur, sonra paneli daraltır), denetçi, sonra tam ekran",
     "submit": "Oluşturucuyu gönder, seçili ekibi onayla, mesajı ya da yorumu gönder",
     "assistant": "Paneli görev asistanında genişlet ya da daralt; asistan çalışmaya devam eder",
     "assistant.send": "Mesajını görev asistanına gönderir (Shift Enter yeni satır ekler)",

@@ -49,7 +49,7 @@
     "question_cancelled": "Ajan bir pencereyle soru sormaya çalıştı; sorusunu yanıtında sorması söylendi.",
     "undelivered": "Bekleyen mesajlar gönderilmedi: oturum önce bitti.",
     "ended": {
-      "closed": "Durdu: paneli kapattın. Bir sonraki mesajın onu sürdürür.",
+      "closed": "Durdu: Durdur ve kapat ya da Esc ile durdurdun. Bir sonraki mesajın onu sürdürür.",
       "ended": "Çalıştırıcı oturumu kendisi bitirdi. Bir sonraki mesajın yeniden başlatır.",
       "idle": "Boşta kaldığı için durdu. Bir sonraki mesajın onu sürdürür.",
       "cleared": "Yeni bir sohbet başladı.",

@@ -38,8 +38,7 @@ export function TasksScreen() {
   const group = useWork("tasks.get", { taskId: selected?.id ?? "" }, { enabled: Boolean(comparing) });
   const inspect = useInspector((s) => s.open);
   // The task assistant (docs/adr/0014) lives in the bottom panel's Assistant tab; this button opens
-  // it there, or collapses the panel while the assistant keeps running, as Ctrl Shift A does on every
-  // project screen; only the assistant's own Stop and close stops it.
+  // it there, or stops it and closes the panel, as Ctrl Shift A does on every project screen.
   const assistant = usePrefs((s) => s.drawerOpen && s.drawerTab === "assistant");
   const all = tasks.data ?? [];
   const shown = all.filter((x) => matchesFilter(x.status, filter));

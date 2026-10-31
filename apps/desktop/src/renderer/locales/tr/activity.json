@@ -11,7 +11,7 @@
   "collapseNote": "Paneli daraltmak hiçbir şeyi durdurmaz.",
   "collapseNoteAssistant": "Daraltınca asistan çalışmaya devam eder; onu Durdur ve kapat ya da içindeyken Esc durdurur.",
   "collapseNoteTerminal": "Daraltınca kabuklar çalışmaya devam eder; bir terminalin sekmesini kapatmak onu sonlandırır.",
-  "collapsedNote": "Daraltıldı, hiçbir şey durmadı. Açmak için bir sekme seçin.",
+  "collapsedNote": "Daraltıldı. Açmak için bir sekme seçin.",
   "resize": "Paneli yeniden boyutlandır",
   "resizeCollapseHint": "Boyutlandırmak için sürükleyin, daraltmak için aşağı çekin. Sıfırlamak için çift tıklayın.",
   "resizeExpandHint": "Genişletmek için yukarı sürükleyin ya da Enter'a basın. Sıfırlamak için çift tıklayın.",

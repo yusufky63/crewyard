@@ -49,7 +49,7 @@
     "question_cancelled": "The agent tried to ask through a dialog; it was told to ask in its reply instead.",
     "undelivered": "Messages still waiting were not sent: the session ended first.",
     "ended": {
-      "closed": "Stopped: you closed the panel. Your next message resumes it.",
+      "closed": "Stopped: you pressed Stop and close or Esc. Your next message resumes it.",
       "ended": "The runner ended the session. Your next message starts it again.",
       "idle": "Stopped after sitting idle. Your next message resumes it.",
       "cleared": "Started a new conversation.",

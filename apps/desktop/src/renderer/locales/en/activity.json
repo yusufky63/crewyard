@@ -11,7 +11,7 @@
   "collapseNote": "Collapsing this panel does not stop anything.",
   "collapseNoteAssistant": "Collapsing keeps the assistant running; Stop and close, or Esc inside it, stops it.",
   "collapseNoteTerminal": "Collapsing keeps shells running; closing a terminal's tab ends it.",
-  "collapsedNote": "Collapsed, nothing stopped. Pick a tab to expand.",
+  "collapsedNote": "Collapsed. Pick a tab to expand.",
   "resize": "Resize the panel",
   "resizeCollapseHint": "Drag to resize, or drag down to collapse. Double-click to reset.",
   "resizeExpandHint": "Drag up or press Enter to expand. Double-click to reset.",

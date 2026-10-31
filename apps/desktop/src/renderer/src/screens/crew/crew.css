@@ -15,8 +15,10 @@
 .crew-picker-row:hover { background: var(--raised); border-color: var(--line); }
 .crew-picker-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
 
-/* Frame: hairline with corner ticks; full screen covers the window and keeps agents running. */
-.crew-frame { position: relative; height: max(420px, calc(100vh - 246px)); border: 1px solid var(--line); background: var(--surface); }
+/* Frame: hairline with corner ticks; full screen covers the window and keeps agents running. It fills
+   the window less the bottom panel (--drawer-space, shell/activity/activity.css), which inside a
+   project is always there, at least as its collapsed strip. */
+.crew-frame { position: relative; height: max(420px, calc(100vh - 246px - var(--drawer-space, 0px))); border: 1px solid var(--line); background: var(--surface); }
 .crew-frame::before { content: ""; position: absolute; inset: -1px; pointer-events: none; z-index: 6; background: var(--ink-3); -webkit-mask: var(--tick-mask); mask: var(--tick-mask); }
 /* Sits under the inspector overlay (z-dialog) so the inspector stays usable in full screen. */
 .crew-frame.full { position: fixed; inset: 0; z-index: var(--z-drawer); height: auto; border: 0; background: var(--canvas); }
@@ -134,7 +136,7 @@
 .crew-panel::before, .crew-panel::after { display: none; }
 .crew-list-wrap { display: grid; gap: 16px; align-items: start; }
 .crew-list-wrap.with-panel { grid-template-columns: minmax(0, 1fr) 380px; }
-.crew-list-wrap .crew-panel { position: relative; max-height: max(420px, calc(100vh - 246px)); border: 1px solid var(--line); }
+.crew-list-wrap .crew-panel { position: relative; max-height: max(420px, calc(100vh - 246px - var(--drawer-space, 0px))); border: 1px solid var(--line); }
 .crew-panel-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
 .crew-panel-head h2 { font-size: 15px; font-weight: 500; }
 .crew-panel-body { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 16px 16px; display: grid; gap: 20px; align-content: start; }

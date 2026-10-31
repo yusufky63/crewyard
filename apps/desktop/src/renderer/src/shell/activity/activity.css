@@ -3,8 +3,15 @@
 .main-col { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .main-col > .main { flex: 1; min-height: 0; }
 
+/* The room the panel takes at the bottom of the window: its clamped height when expanded (never so
+   high that the main view drops under 200 px), the 37 px strip (its 36 px head and top border) when
+   collapsed. Screens that size themselves to the window subtract it (the crew graph), and below
+   1280 px the overlaying inspector stops above it. */
+.body:has(> .main-col > .drawer) { --drawer-space: max(160px, min(var(--drawer-h, 280px), calc(100vh - 40px - 28px - 200px))); }
+.body:has(> .main-col > .drawer[data-collapsed]) { --drawer-space: 37px; }
+
 .drawer {
-  position: relative; flex: none; height: min(var(--drawer-h, 280px), calc(100vh - 40px - 28px - 200px)); min-height: 160px;
+  position: relative; flex: none; height: var(--drawer-space, 280px);
   display: flex; flex-direction: column; border-top: 1px solid var(--line); background: var(--surface);
 }
 .drawer-head { display: flex; align-items: center; gap: 12px; padding: 0 8px 0 16px; border-bottom: 1px solid var(--line); min-height: 36px; }
@@ -19,8 +26,9 @@
 .drawer-x:hover { color: var(--ink); background: var(--raised); }
 /* Collapsed (owner, 2026-10-31: "tam kapanmasın"): only the head stays, a 36 px strip whose tabs,
    counts and toggle work as when expanded; the main view takes the rest. */
-.drawer[data-collapsed] { height: auto; min-height: 0; }
 .drawer[data-collapsed] .drawer-head { border-bottom: 0; }
+/* Collapsed on the Assistant tab its view stays mounted, hidden (ActivityDrawer.tsx). */
+.drawer-body[hidden] { display: none; }
 .drawer[data-collapsed] .drawer-tabs [role="tab"][aria-selected="true"]::after { display: none; }
 .drawer-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .drawer-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
@@ -67,9 +75,19 @@
   .drawer-pager { margin-left: 0; }
 }
 
-/* Tab counts: problems still shown (red while one is a failure), shells running. */
+/* Tab counts: problems still shown (red while one is a failure), shells running; and the assistant's
+   state as a word while its view is out of sight, in the colours of its own state chip. */
 .drawer-count { margin-left: 6px; font: 400 11px / 1 var(--mono); letter-spacing: 0; color: var(--ink-3); }
 .drawer-count-bad { color: var(--bad); }
+.drawer-state { color: var(--ink-2); }
+.drawer-state-working, .drawer-state-starting { color: var(--accent); }
+
+@media (max-width: 1279.98px) {
+  /* Below 1280 px the inspector overlays the main view (shell/inspector.css). It stops above the
+     panel, so the strip, its tabs and its collapse toggle are never under it, expanded or collapsed
+     to its 44 px strip. Crew graph full screen covers the panel and keeps the inspector's own rule. */
+  .app:not(:has(.crew-frame.full)) > .body:has(> .main-col > .drawer) > .ins-col { bottom: calc(28px + var(--drawer-space)); }
+}
 .drawer-path { flex: 1 1 auto; min-width: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Assistant tab: the task assistant (docs/adr/0014) fills the panel; its own frame and fixed log height give way. */
