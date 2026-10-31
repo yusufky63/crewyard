@@ -31,7 +31,8 @@ function RunnerRow({ runner, tool, series }: (typeof RUNNERS)[number]) {
       <span>
         <i className="dot" style={{ "--c": `var(${series})` } as CSSProperties} aria-hidden="true" /> {t(`agents.names.${runner}`)}
       </span>
-      <span className="muted">{detail}</span>
+      {/* Found in ok; a missing agent CLI stays muted, because one is enough (DESIGN.md §5 MachineStrip). */}
+      <span className={found ? "st-ok" : "muted"}>{detail}</span>
       <span className="cl-act" />
     </div>
   );
@@ -198,7 +199,7 @@ export function GithubStep({ det }: { det: FolderDetection | undefined }) {
 
   let signIn;
   if (env.isPending || gh.isPending) signIn = <Row state="run" label={t("github.signedIn")}>{t("checking")}</Row>;
-  else if (!gh.data?.found) signIn = <Row state="wait" label={t("github.signedIn")}>{t("github.ghMissing")}</Row>;
+  else if (!gh.data?.found) signIn = <Row state="bad" label={t("github.signedIn")}>{t("github.ghMissing")}</Row>;
   else if (!user) signIn = <Row state="wait" label={t("github.signedIn")}>{t("github.ghSignedOut")}</Row>;
   else signIn = <Row state="ok" label={t("github.signedIn")}>{t("github.as", { user })}</Row>;
 

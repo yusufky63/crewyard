@@ -37,9 +37,16 @@ describe("toolItem", () => {
     expect(toolItem("claude", ok(tool({ gate: old, others: [npm] })), env()).detail.key).toBe("machine.gateShort.outdated");
   });
 
-  it("treats a missing agent CLI as neutral but missing git as a problem", () => {
+  it("treats a missing agent CLI as neutral but missing git or gh as bad", () => {
     expect(toolItem("codex", ok(tool({ id: "codex", found: false, version: null })), env()).state).toBe("neutral");
-    expect(toolItem("git", ok(tool({ id: "git", found: false, version: null })), env()).state).toBe("warn");
+    expect(toolItem("git", ok(tool({ id: "git", found: false, version: null })), env()).state).toBe("bad");
+    expect(toolItem("gh", ok(tool({ id: "gh", found: false, version: null })), env()).state).toBe("bad");
+  });
+
+  it("counts a missing tool as needing attention and as missing", () => {
+    const missing = toolItem("git", ok(tool({ id: "git", found: false, version: null })), env());
+    const found = toolItem("git", ok(tool({ id: "git", version: "2.50.0" })), env());
+    expect(summarize([missing, found])).toMatchObject({ attention: 1, missing: 1, total: 2 });
   });
 
   it("asks to sign in to gh and waits for the env read before deciding", () => {
@@ -78,7 +85,7 @@ describe("defenderItem", () => {
 describe("summarize", () => {
   it("counts what wants the user and what is still checking", () => {
     const items = [toolItem("git", ok(tool({ id: "git", found: false })), env()), longPathsItem(undefined)!, defenderItem(check("unknown"), false, null)!, longPathsItem(env())!];
-    expect(summarize(items)).toEqual({ attention: 2, pending: 1, total: 4 });
+    expect(summarize(items)).toEqual({ attention: 2, missing: 1, pending: 1, total: 4 });
   });
 });
 
