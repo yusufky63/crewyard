@@ -15,9 +15,10 @@ import { ConfirmButton, ErrorLine, useFormat, Who } from "../tasks/parts.tsx";
 import { ApprovalActions } from "./ApprovalActions.tsx";
 import { InboxSplit } from "./InboxSplit.tsx";
 import { ReportList, useReports } from "./Reports.tsx";
+import { RiskBadge } from "./RiskBadge.tsx";
 import { StallList, useStalls } from "./Stalls.tsx";
 import { SwitchList, useSwitches } from "./Switches.tsx";
-import { defaultTarget, emptyForm, formAnswer, formReady, handoffChoices, infoNotices, orderRequests, riskTone, titleKey, type QuestionForm } from "./model.ts";
+import { defaultTarget, emptyForm, formAnswer, formReady, handoffChoices, infoNotices, orderRequests, titleKey, type QuestionForm } from "./model.ts";
 import "../tasks/tasks.css";
 import "./inbox.css";
 
@@ -27,12 +28,6 @@ function KindIcon({ q }: { q: RequestView }) {
   const p = q.payload;
   const Icon = p.kind === "approval" ? Terminal : p.kind === "question" ? CircleHelp : p.trigger === "budget" ? Wallet : p.trigger === "unpriced" ? CircleDollarSign : p.trigger === "manual" ? ArrowLeftRight : Gauge;
   return <Icon size={16} strokeWidth={1.75} aria-hidden="true" className={q.risk === "high" ? "ib-high" : "ib-icon"} />;
-}
-
-/** Low, Medium or High risk as a tone chip: the colour repeats the word, never replaces it. */
-function RiskBadge({ risk }: { risk: NonNullable<RequestView["risk"]> }) {
-  const { t } = useTranslation("inbox");
-  return <span className={`badge badge-${riskTone(risk)}`}>{t(`risk.${risk}`)}</span>;
 }
 
 function useTitle() {
@@ -226,8 +221,10 @@ function Handoff({ p, answer }: { p: Payload<"handoff">; answer: (a: RequestAnsw
             {picked ? t("action.handOffTo", { target: `${f.runner(picked.runner)} · ${picked.alias}` }) : t("action.pickTarget")}
           </Button>
         )}
-        {choices.waitForReset && p.resetsAt && <Button tone="warn" onClick={() => void answer({ kind: "handoff", decision: "wait_for_reset" })}>{t("action.waitForReset", { time: f.when.at(p.resetsAt) })}</Button>}
-        {choices.continuePastCap && <Button onClick={() => void answer({ kind: "handoff", decision: "continue" })}>{p.trigger === "unpriced" ? t("action.continueUnpriced") : t("action.continuePastCap")}</Button>}
+        {/* Waiting is the safe choice and stays neutral; going on past a spend cap costs money, so it takes warn
+            (DESIGN.md §3 "State colors on actions"). */}
+        {choices.waitForReset && p.resetsAt && <Button onClick={() => void answer({ kind: "handoff", decision: "wait_for_reset" })}>{t("action.waitForReset", { time: f.when.at(p.resetsAt) })}</Button>}
+        {choices.continuePastCap && <Button tone="warn" onClick={() => void answer({ kind: "handoff", decision: "continue" })}>{p.trigger === "unpriced" ? t("action.continueUnpriced") : t("action.continuePastCap")}</Button>}
         <ConfirmButton label={t("action.stop")} confirm={t("action.stopConfirm")} onConfirm={() => answer({ kind: "handoff", decision: "stop" })} size="md" />
       </div>
       {choices.continuePastCap && <p className="ib-note">{p.trigger === "unpriced" ? t("detail.unpricedNote") : t("detail.continueNote")}</p>}

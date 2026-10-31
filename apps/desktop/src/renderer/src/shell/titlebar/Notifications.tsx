@@ -6,6 +6,7 @@ import type { LimitNoticePayload, RequestView } from "@crewyard/core";
 import { useDaemon } from "../../ipc.ts";
 import { useNav } from "../../nav.ts";
 import { titleKey } from "../../screens/inbox/model.ts";
+import { RiskBadge } from "../../screens/inbox/RiskBadge.tsx";
 import { ProvBadge } from "../../screens/providers/shared.tsx";
 import { useWork } from "../../screens/tasks/data.ts";
 import { useActivity } from "../../screens/tasks/live.ts";
@@ -20,7 +21,8 @@ import { badgeCount, openRequests, recentNotices } from "./notices.ts";
 function RequestIcon({ r }: { r: RequestView }) {
   const p = r.payload;
   const Icon = p.kind === "approval" ? Terminal : p.kind === "question" ? CircleHelp : p.trigger === "budget" ? Wallet : p.trigger === "manual" ? ArrowLeftRight : Gauge;
-  // The same tones as the Inbox risk chips: high in bad, medium in warn.
+  // The same tones as the Inbox risk chips: high in bad, medium in warn. The icon is decoration; the item's chip
+  // says the level in words.
   return <Icon size={16} strokeWidth={1.75} aria-hidden="true" className={r.risk === "high" ? "tb-n-bad" : r.risk === "medium" ? "tb-n-high" : "tb-n-icon"} />;
 }
 
@@ -163,7 +165,11 @@ function Popover({ anchor, requests, notices, error, onClose }: { anchor: RefObj
               <RequestIcon r={r} />
               <span className="tb-n-text">
                 <span className={`t${r.payload.kind === "approval" && r.payload.command ? " mono" : ""}`}>{title(r)}</span>
-                <span className="s">{[taskTitle(r.taskId), r.projectId !== current ? projectName(r.projectId) : null].filter(Boolean).join(" · ")}</span>
+                <span className="s">
+                  {/* Medium and high say their level in words, so the icon's colour is never the only sign (DESIGN.md §8). */}
+                  {(r.risk === "medium" || r.risk === "high") && <RiskBadge risk={r.risk} />}
+                  {[taskTitle(r.taskId), r.projectId !== current ? projectName(r.projectId) : null].filter(Boolean).join(" · ")}
+                </span>
               </span>
               <span className="k">{f.when.ago(r.createdAt)}</span>
             </button>
