@@ -8,7 +8,7 @@
   },
   "scripts": {
     "dev": "pnpm --filter @crewyard/desktop dev",
-    "build": "pnpm --filter @crewyard/desktop build",
+    "build": "pnpm --filter @crewyard/desktop build && pnpm --filter @crewyard/web build",
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run",

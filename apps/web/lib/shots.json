@@ -1,0 +1,20 @@
+{
+  "crew": {
+    "width": 1920,
+    "height": 1201,
+    "dark": "/shots/crew-dark.webp",
+    "light": "/shots/crew-light.webp"
+  },
+  "inbox": {
+    "width": 1920,
+    "height": 1201,
+    "dark": "/shots/inbox-dark.webp",
+    "light": "/shots/inbox-light.webp"
+  },
+  "limits": {
+    "width": 1920,
+    "height": 1201,
+    "dark": "/shots/limits-dark.webp",
+    "light": "/shots/limits-light.webp"
+  }
+}
