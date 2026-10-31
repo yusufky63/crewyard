@@ -171,5 +171,57 @@
     "assistant_preset_unknown": "Böyle bir hazır görev yok.",
     "assistant_too_many_drafts": "Bu sohbette zaten 20 taslak var. Önce bazılarını ekle ya da vazgeç.",
     "other": "Bir şeyler ters gitti: {{message}}"
+  },
+  "toolLine": {
+    "withSubject": "{{title}}: {{subject}}",
+    "days_one": "bugün",
+    "days_other": "son {{count}} gün",
+    "done": {
+      "list_tasks": "Görevlere baktı",
+      "read_task": "Görevi okudu",
+      "read_report": "Raporu okudu",
+      "read_crew": "Ekibe baktı",
+      "list_drafts": "Taslaklara baktı",
+      "read_inbox": "Gelen kutusuna baktı",
+      "read_events": "Olaylara baktı",
+      "read_usage": "Harcamaya ve limitlere baktı",
+      "list_profiles": "Profillere baktı",
+      "read_project": "Proje ayarlarını okudu",
+      "git_overview": "Git durumuna baktı",
+      "list_problems": "Sorunlara baktı",
+      "list_agent_files": "Talimat dosyalarına ve skill'lere baktı",
+      "edit_draft": "Taslağı düzenledi",
+      "discard_draft": "Taslaktan vazgeçti"
+    },
+    "refused": {
+      "list_tasks": "Görevler listelenemedi",
+      "read_task": "Görev okunamadı",
+      "read_report": "Rapor okunamadı",
+      "read_crew": "Ekip okunamadı",
+      "list_drafts": "Taslaklar listelenemedi",
+      "read_inbox": "Gelen kutusu okunamadı",
+      "read_events": "Olaylar okunamadı",
+      "read_usage": "Harcama ve limitler okunamadı",
+      "list_profiles": "Profiller listelenemedi",
+      "read_project": "Proje ayarları okunamadı",
+      "git_overview": "Git durumu okunamadı",
+      "list_problems": "Sorunlar listelenemedi",
+      "list_agent_files": "Talimat dosyaları ve skill'ler listelenemedi",
+      "edit_draft": "Taslak düzenlenemedi",
+      "discard_draft": "Taslaktan vazgeçilemedi"
+    },
+    "status": {
+      "proposed": "onay bekleyenler",
+      "queued": "sıradakiler",
+      "running": "çalışanlar",
+      "needs_input": "seni bekleyenler",
+      "limited": "limite takılanlar",
+      "handing_off": "devredilenler",
+      "review": "incelemeye hazır olanlar",
+      "done": "bitenler",
+      "failed": "başarısız olanlar",
+      "merged": "birleştirilenler",
+      "cancelled": "durdurulanlar"
+    }
   }
 }

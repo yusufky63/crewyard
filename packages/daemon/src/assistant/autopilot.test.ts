@@ -74,6 +74,12 @@ async function setup(pick: Pick = () => [running, say("Findings: the Defender sc
   store.db.prepare("insert into assistant_conversations (id, project_id, profile_id, runner, created_at) values (?, ?, 'cheap', 'fake', ?)").run(conversationId, project.id, at);
   store.db.prepare("insert into assistant_messages (id, conversation_id, role, text, at) values (?, ?, 'user', ?, ?)").run(randomUUID(), conversationId, ASK, at);
   const call = async (tool: string, args: Record<string, unknown> = {}) => {
+    // The reads are the assistant's own tools now (docs/adr/0018); Autopilot keeps them ungated.
+    if (tool === "read_task") {
+      const read = ap.taskRead(project.id, String(args.task_id));
+      return { ok: Boolean(read), ...read, isError: !read } as Record<string, unknown> & { isError: boolean };
+    }
+    if (tool === "list_tasks") return { ok: true, ...ap.taskList(project.id), isError: false } as Record<string, unknown> & { isError: boolean };
     const out = await ap.call(project.id, conversationId, tool, args);
     return { ...(JSON.parse(out.text) as Record<string, unknown>), isError: out.isError } as Record<string, unknown> & { isError: boolean };
   };
@@ -283,7 +289,8 @@ describe("autopilot guards", () => {
     const s = await setup();
     s.on();
     const tools = (await assistantTools()).map((t) => t.name);
-    expect(tools).toEqual(["propose_task", "list_tasks", "read_task", "create_task", "edit_task", "approve_crew", "queue_message", "retry_step", "cancel_task", "complete_task"]);
+    expect(tools).toEqual(["propose_task", "create_task", "edit_task", "approve_crew", "queue_message", "retry_step", "cancel_task", "complete_task"]);
+    for (const read of ["list_tasks", "read_task"]) expect(await s.ap.call(s.project.id, s.conversationId, read, { task_id: "x" })).toMatchObject({ isError: true });
     for (const outward of ["push", "create_pr", "merge_pr", "delete_worktree", "delete_branch"]) {
       expect(tools).not.toContain(outward);
       expect(await s.call(outward, { task_id: "x", reason: "r" })).toMatchObject({ refused: "invalid" });
@@ -299,12 +306,14 @@ describe("autopilot guards", () => {
     await s.call("approve_crew", { task_id: t, reason: "fits" });
     await waitFor(() => s.o.get(t).status === "running");
     expect(s.ap.kill(true)).toMatchObject({ killed: true, projects: [{ projectId: s.project.id, name: "demo repo", halted: false }] });
-    for (const tool of ["list_tasks", "read_task", "create_task", "cancel_task"]) expect(await s.call(tool, { task_id: t, reason: "r" })).toMatchObject({ refused: "killed" });
+    for (const tool of ["create_task", "cancel_task", "approve_crew"]) expect(await s.call(tool, { task_id: t, reason: "r" })).toMatchObject({ refused: "killed" });
+    // Reading is not acting: the reads still work, and say Autopilot is stopped.
+    expect(await s.call("list_tasks")).toMatchObject({ ok: true, autopilot: { killed: true, on: false } });
     expect(s.o.get(t).status).toBe("running");
     expect(s.o.get(t).runs[0]!.endedAt).toBeNull();
     expect(s.events("autopilot.killed")).toHaveLength(1);
     s.ap.kill(false);
-    expect(await s.call("list_tasks")).toMatchObject({ ok: true });
+    expect(await s.call("list_tasks")).toMatchObject({ ok: true, autopilot: { killed: false, on: true } });
   });
 });
 

@@ -34,7 +34,8 @@ describe("autopilot tools", () => {
   it("checks task ids, edit fields and message size", () => {
     expect(parseAutopilotCall("approve_crew", { task_id: "../../x", reason: "r" })).toMatchObject({ ok: false });
     expect(parseAutopilotCall("approve_crew", { task_id: "6f1c-ab", reason: "fits" })).toEqual({ ok: true, value: { tool: "approve_crew", taskId: "6f1c-ab", reason: "fits" } });
-    expect(parseAutopilotCall("read_task", { task_id: "t1" })).toEqual({ ok: true, value: { tool: "read_task", taskId: "t1" } });
+    // The reads are the assistant's own tools now (docs/adr/0018), never gated on Autopilot.
+    expect(parseAutopilotCall("read_task", { task_id: "t1" })).toEqual({ ok: false, error: "unknown tool" });
     expect(parseAutopilotCall("edit_task", { task_id: "t1", reason: "r" })).toMatchObject({ ok: false, error: expect.stringContaining("nothing to change") });
     expect(parseAutopilotCall("edit_task", { task_id: "t1", reason: "r", kind: "ops" })).toMatchObject({ ok: false });
     expect(parseAutopilotCall("edit_task", { task_id: "t1", reason: "r", title: "a\nb" })).toMatchObject({ ok: false, error: "title must be one line" });
@@ -43,7 +44,7 @@ describe("autopilot tools", () => {
       value: { tool: "edit_task", taskId: "t1", title: null, kind: null, text: { description: "New text", acceptance: ["It works"] }, reason: "r" },
     });
     expect(parseAutopilotCall("queue_message", { task_id: "t1", reason: "r", text: "x".repeat(4001) })).toMatchObject({ ok: false });
-    expect(parseAutopilotCall("list_tasks", undefined)).toEqual({ ok: true, value: { tool: "list_tasks" } });
+    expect(isAutopilotTool("list_tasks")).toBe(false);
   });
 });
 

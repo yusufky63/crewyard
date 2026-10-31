@@ -171,5 +171,57 @@
     "assistant_preset_unknown": "That ready-made task does not exist.",
     "assistant_too_many_drafts": "This conversation already has 20 drafts. Add or discard some first.",
     "other": "Something went wrong: {{message}}"
+  },
+  "toolLine": {
+    "withSubject": "{{title}}: {{subject}}",
+    "days_one": "today",
+    "days_other": "last {{count}} days",
+    "done": {
+      "list_tasks": "Listed tasks",
+      "read_task": "Read task",
+      "read_report": "Read report",
+      "read_crew": "Read crew",
+      "list_drafts": "Listed drafts",
+      "read_inbox": "Read the Inbox",
+      "read_events": "Read events",
+      "read_usage": "Read spend and limits",
+      "list_profiles": "Listed profiles",
+      "read_project": "Read project settings",
+      "git_overview": "Read git status",
+      "list_problems": "Listed problems",
+      "list_agent_files": "Listed instruction files and skills",
+      "edit_draft": "Edited draft",
+      "discard_draft": "Discarded draft"
+    },
+    "refused": {
+      "list_tasks": "Could not list tasks",
+      "read_task": "Could not read task",
+      "read_report": "Could not read report",
+      "read_crew": "Could not read crew",
+      "list_drafts": "Could not list drafts",
+      "read_inbox": "Could not read the Inbox",
+      "read_events": "Could not read events",
+      "read_usage": "Could not read spend and limits",
+      "list_profiles": "Could not list profiles",
+      "read_project": "Could not read project settings",
+      "git_overview": "Could not read git status",
+      "list_problems": "Could not list problems",
+      "list_agent_files": "Could not list instruction files and skills",
+      "edit_draft": "Could not edit draft",
+      "discard_draft": "Could not discard draft"
+    },
+    "status": {
+      "proposed": "waiting for approval",
+      "queued": "queued",
+      "running": "running",
+      "needs_input": "waiting for you",
+      "limited": "limit reached",
+      "handing_off": "handing off",
+      "review": "ready for review",
+      "done": "done",
+      "failed": "failed",
+      "merged": "merged",
+      "cancelled": "stopped"
+    }
   }
 }

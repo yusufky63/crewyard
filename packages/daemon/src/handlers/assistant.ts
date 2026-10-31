@@ -1,10 +1,15 @@
-import type { AssistantIpc } from "@crewyard/core";
+import type { AssistantIpc, RolesListing } from "@crewyard/core";
 import { projectFacts } from "../assistant/facts.ts";
 import { Autopilot } from "../assistant/autopilot.ts";
 import { AssistantService, type AssistantServiceOptions } from "../assistant/service.ts";
+import { AssistantTools } from "../assistant/tools.ts";
 import { orchestratorFor } from "../orchestrator/index.ts";
 import { HIBERNATION_KEY, readHibernation } from "../settings/values.ts";
+import { effectiveProjectConfig } from "../setup/index.ts";
+import { agentFilesServiceFor } from "./agentfiles.ts";
 import { mcpServiceFor } from "./mcp.ts";
+import { problemSources } from "./problems.ts";
+import { createRolesHandlers } from "./roles.ts";
 import type { HandlerContext, HandlerMap } from "./types.ts";
 
 // Handlers for the task assistant (docs/adr/0014) and its Autopilot (docs/adr/0017). Owned by the
@@ -40,17 +45,54 @@ export function assistantFor(ctx: HandlerContext, overrides: Partial<Omit<Assist
       cancel: (taskId) => o.cancel(taskId),
       enqueue: (runId, text) => void o.enqueue(runId, text),
       retry: (runId) => o.retry(runId),
-      report: (taskId) => service.report(taskId),
+      // read_task is a read the agent may make at any time: it never creates the suggested drafts.
+      report: (taskId) => service.peekReport(taskId),
       candidates: async (projectId) => await o.profileDirectory().candidates(projectId),
       projectName: (projectId) => (db.prepare("select name from projects where id = ?").get(projectId) as { name: string } | undefined)?.name ?? null,
       userMessages: (conversationId) => db.prepare("select id, text from assistant_messages where conversation_id = ? and role = 'user' order by at, rowid").all(conversationId) as Array<{ id: string; text: string }>,
       notify: (projectId, code, text) => service.notify(projectId, code, text),
     },
   });
+  const project = (id: string) => {
+    const row = db.prepare("select id, name, path from projects where id = ?").get(id) as { id: string; name: string; path: string } | undefined;
+    if (!row) throw new Error("project.not_found");
+    return row;
+  };
+  // The read tools (docs/adr/0018) reach every part through its own public read; nothing here can
+  // start, change or stop a task or a run.
+  const tools = new AssistantTools({
+    store: ctx.store,
+    ...(overrides.now ? { now: () => overrides.now!().getTime() } : {}),
+    host: {
+      project,
+      task: (taskId) => {
+        try {
+          return o.get(taskId);
+        } catch {
+          return null;
+        }
+      },
+      taskList: (projectId, status) => autopilot.taskList(projectId, status),
+      taskRead: (projectId, taskId) => autopilot.taskRead(projectId, taskId),
+      reportRead: (projectId, taskId) => autopilot.reportRead(projectId, taskId),
+      requests: (projectId) => o.requests({ projectId }),
+      agentReports: (projectId) => mcp.reports.list({ projectId }),
+      stalls: (projectId) => o.stalls.list({ projectId }),
+      candidates: async (projectId) => await o.profileDirectory().candidates(projectId),
+      problems: (projectId) => problemSources(db, projectId),
+      roles: (projectId) => createRolesHandlers(ctx)["roles.list"]({ projectId }) as RolesListing,
+      agentFiles: (projectId) => {
+        const files = agentFilesServiceFor(ctx);
+        return { scan: files.scan(projectId), shares: files.shares(), bridge: files.bridge(projectId) };
+      },
+      config: (path, name) => effectiveProjectConfig(path, name),
+    },
+  });
   const service = new AssistantService({
     store: ctx.store,
     emit: ctx.emit,
     ...overrides,
+    tools,
     autopilot: {
       call: (projectId, conversationId, tool, args) => autopilot.call(projectId, conversationId, tool, args),
       busy: (projectId) => autopilot.busy(projectId),

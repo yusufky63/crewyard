@@ -7,7 +7,11 @@ import {
   assistantPolicy,
   cleanText,
   draftDescription,
+  isAssistantExtraTool,
   isAutopilotTool,
+  isOwnToolTitle,
+  toolLineCall,
+  toolLineId,
   parseTaskDraft,
   presetById,
   suggestPresets,
@@ -44,7 +48,8 @@ import { recordSpend } from "../providers/ledger.ts";
 import type { Store } from "../store.ts";
 import type { ToolOutcome } from "../mcp/session.ts";
 import { assistantPrompt, type RecapLine } from "./prompt.ts";
-import { readTaskReport } from "./reports.ts";
+import { readTaskReport, type ReadReport } from "./reports.ts";
+import type { ToolAnswer, ToolContext } from "./tools.ts";
 import { addSpend, estimateSuggest, NO_SPEND, priceUsage, ZERO_TOTALS, type Totals } from "./spend.ts";
 
 // The task assistant (docs/adr/0014): one read-only runner session per project that turns a
@@ -84,10 +89,17 @@ export interface AssistantAutopilot {
   completed(taskId: string): TaskReport["completed"];
 }
 
+/** The read and own-draft tools (docs/adr/0018), when the handlers wire them. */
+export interface AssistantToolCaller {
+  call(ctx: ToolContext, tool: string, args: unknown): Promise<ToolAnswer>;
+  forget(conversationId: string): void;
+}
+
 export interface AssistantServiceOptions {
   store: Store;
   host: AssistantHost;
   autopilot?: AssistantAutopilot;
+  tools?: AssistantToolCaller;
   emit(topic: "assistant.changed", payload: { projectId: string }): void;
   now?: () => Date;
   freeMemoryMb?: () => number;
@@ -257,6 +269,7 @@ export class AssistantService {
       at: r.at,
       ...(queued.has(r.id) ? { queued: true } : {}),
       ...(r.truncated ? { truncated: true } : {}),
+      ...(r.role === "tool" ? callOf(r.id, r.text) : {}),
     }));
     if (live?.reply) lines.push({ id: live.reply.id, role: "assistant", text: live.reply.text, at: live.reply.at, ...(live.reply.truncated ? { truncated: true } : {}) });
     base.lines = lines;
@@ -506,6 +519,8 @@ export class AssistantService {
         return;
       }
       case "tool.call": {
+        // Crewyard writes its own readable line for calls to its read and draft tools.
+        if (isOwnToolTitle(ev.title)) return;
         this.flushReply(live);
         const title = cutBytes(cleanText(ev.title).replace(/\s+/g, " "), ASSISTANT_LIMITS.toolLineBytes);
         if (title) this.insertLine(live.conversationId, "tool", title);
@@ -573,8 +588,7 @@ export class AssistantService {
     this.db.prepare("insert into assistant_messages (id, conversation_id, role, text, truncated, at) values (?, ?, 'assistant', ?, ?, ?)").run(r.id, live.conversationId, cleanText(r.text), r.truncated ? 1 : 0, r.at);
   }
 
-  private insertLine(conversationId: string, role: AssistantLine["role"], text: string): string {
-    const id = randomUUID();
+  private insertLine(conversationId: string, role: AssistantLine["role"], text: string, id: string = randomUUID()): string {
     this.db.prepare("insert into assistant_messages (id, conversation_id, role, text, at) values (?, ?, ?, ?, ?)").run(id, conversationId, role, text, this.iso());
     return id;
   }
@@ -585,6 +599,7 @@ export class AssistantService {
     this.flushReply(live);
     this.live.delete(live.projectId);
     this.opts.host.serverEnded(live.conversationId);
+    this.opts.tools?.forget(live.conversationId);
     // Messages that never reached the runner are kept as lines, with a note that they did not go.
     if (live.pending.length > 0) this.insertLine(live.conversationId, "notice", "undelivered");
     live.pending = [];
@@ -664,11 +679,20 @@ export class AssistantService {
   async toolCall(conversationId: string, tool: string, args: unknown): Promise<ToolOutcome> {
     const live = [...this.live.values()].find((l) => l.conversationId === conversationId);
     if (!live || live.stopping) return { text: "Refused: this assistant session is not active.", isError: true };
+    if (isAssistantExtraTool(tool)) {
+      if (!this.opts.tools) return { text: "Refused: the read tools are not available.", isError: true };
+      this.flushReply(live);
+      const a = await this.opts.tools.call({ projectId: live.projectId, conversationId }, tool, args);
+      // A quiet refusal (the rate limit, again) writes no line and wakes no renderer.
+      if (a.line !== null && a.tool) this.insertLine(conversationId, "tool", a.line, toolLineId(a.tool, a.refused ? "refused" : "done", randomUUID()));
+      if ((a.line !== null && a.tool) || a.draftsChanged) this.emitNow(live.projectId);
+      return a.outcome;
+    }
     if (isAutopilotTool(tool)) {
       this.flushReply(live);
       if (!this.opts.autopilot) return { text: JSON.stringify({ ok: false, refused: "off", detail: "Autopilot is not available." }), isError: true };
       const out = await this.opts.autopilot.call(live.projectId, conversationId, tool, args);
-      if (tool !== "list_tasks" && tool !== "read_task") this.insertLine(conversationId, "notice", `autopilot.call.${out.isError ? "refused" : "done"}.${tool}`);
+      this.insertLine(conversationId, "notice", `autopilot.call.${out.isError ? "refused" : "done"}.${tool}`);
       this.emitNow(live.projectId);
       return out;
     }
@@ -679,11 +703,20 @@ export class AssistantService {
     if (n >= ASSISTANT_LIMITS.draftsPerConversation) return { text: `Refused: this conversation already has ${ASSISTANT_LIMITS.draftsPerConversation} drafts.`, isError: true };
     const d = parsed.value;
     this.flushReply(live);
+    const draftId = randomUUID();
     this.db
       .prepare("insert into assistant_drafts (id, conversation_id, project_id, title, description, kind, acceptance, size, created_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(randomUUID(), conversationId, live.projectId, d.title, d.description, d.kind, JSON.stringify(d.acceptance), d.size, this.iso());
+      .run(draftId, conversationId, live.projectId, d.title, d.description, d.kind, JSON.stringify(d.acceptance), d.size, this.iso());
     this.emitNow(live.projectId);
-    return { text: "Drafted. The person sees it as an editable card; nothing starts unless they add it and approve its crew. Propose any other tasks the same way, then reply with a short summary.", isError: false };
+    // The id lets the agent refine its own draft with edit_draft or replace it with discard_draft (docs/adr/0018).
+    return {
+      text: JSON.stringify({
+        ok: true,
+        draft_id: draftId,
+        detail: "Drafted. The person sees it as an editable card; nothing starts unless they add it and approve its crew. Propose any other tasks the same way, then reply with a short summary.",
+      }),
+      isError: false,
+    };
   }
 
   async addDraft(draftId: string, edit?: AssistantDraftEdit): Promise<{ draft: AssistantDraftView; taskId: string }> {
@@ -720,10 +753,30 @@ export class AssistantService {
    * suggested task, an open follow-up). Null while the task is not done or produced nothing.
    */
   report(taskId: string): TaskReport | null {
+    return this.readReport(taskId, true);
+  }
+
+  /**
+   * The same report for a read tool (Autopilot's read_task, docs/adr/0018): it creates no drafts and
+   * writes no event, because a read the agent can make at any time must never change anything.
+   */
+  peekReport(taskId: string): TaskReport | null {
+    return this.readReport(taskId, false);
+  }
+
+  private readReport(taskId: string, createDrafts: boolean): TaskReport | null {
     const task = this.opts.host.task(taskId);
     if (!task || task.kind === "code" || task.status !== "done") return null;
     const read = readTaskReport(this.db, taskId);
     if (!read) return null;
+    if (createDrafts) this.createSuggested(task.projectId, taskId, read);
+    const drafts = (this.db.prepare("select * from assistant_drafts where source_task_id = ? order by created_at, rowid").all(taskId) as unknown as DraftRow[]).map(draftView);
+    const completed = this.opts.autopilot?.completed(taskId) ?? null;
+    return { taskId, ...read.report, drafts, ...(completed ? { completed } : {}) };
+  }
+
+  /** A finished task's suggested drafts, created once each (keyed by source task and key). */
+  private createSuggested(projectId: string, taskId: string, read: ReadReport): void {
     const insert = this.db.prepare(
       `insert or ignore into assistant_drafts (id, conversation_id, project_id, source, source_task_id, source_key, title, description, kind, acceptance, size, created_at)
        values (?, null, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -731,13 +784,10 @@ export class AssistantService {
     let added = false;
     for (const sug of read.suggestions) {
       const d = sug.draft;
-      const res = insert.run(randomUUID(), task.projectId, sug.source, taskId, sug.key, d.title, d.description, d.kind, JSON.stringify(d.acceptance), d.size, this.iso());
+      const res = insert.run(randomUUID(), projectId, sug.source, taskId, sug.key, d.title, d.description, d.kind, JSON.stringify(d.acceptance), d.size, this.iso());
       added ||= Number(res.changes) > 0;
     }
-    if (added) this.opts.store.appendEvent({ kind: "assistant.suggestions", source: "assistant", payload: { count: read.suggestions.length }, projectId: task.projectId, taskId });
-    const drafts = (this.db.prepare("select * from assistant_drafts where source_task_id = ? order by created_at, rowid").all(taskId) as unknown as DraftRow[]).map(draftView);
-    const completed = this.opts.autopilot?.completed(taskId) ?? null;
-    return { taskId, ...read.report, drafts, ...(completed ? { completed } : {}) };
+    if (added) this.opts.store.appendEvent({ kind: "assistant.suggestions", source: "assistant", payload: { count: read.suggestions.length }, projectId, taskId });
   }
 
   async presets(projectId: string): Promise<AssistantPresetsView> {
@@ -806,6 +856,12 @@ function parseList(s: string): string[] {
   } catch {
     return [];
   }
+}
+
+/** The tool, outcome and subject of a line Crewyard wrote for one of its own tools, from the line's id and text. */
+function callOf(id: string, text: string): Pick<AssistantLine, "call"> {
+  const call = toolLineCall(id, text);
+  return call ? { call } : {};
 }
 
 function parseTotals(s: string | null): Totals {
