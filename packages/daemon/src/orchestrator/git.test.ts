@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { checkpoint, defaultWorktreeRoot, ensureWorktree, isValidBranchName, parseWorktreeList, resolveBase, taskSlug, unindexedFiles } from "./git.ts";
+import { checkpoint, defaultWorktreeRoot, ensureWorktree, isValidBranchName, parseWorktreeList, resolveBase, sameDir, taskSlug, unindexedFiles } from "./git.ts";
 import { holdExclusive } from "./locked-file.testkit.ts";
 import { cleanTemps, git, tempDir, tempRepo } from "./testing.ts";
 
@@ -23,6 +23,17 @@ describe("branch names", () => {
 });
 
 // Every case spawns several git processes; under the full parallel suite on Windows that can pass 5 s.
+describe("same folder", () => {
+  // One rule for every caller (handoff package, run worktree, review checkouts, undo): Windows
+  // paths compare without case and after resolving "." and "..".
+  it("compares resolved paths without case", () => {
+    const root = tempDir();
+    expect(sameDir(join(root, "Demo Repo"), join(root, "demo repo"))).toBe(true);
+    expect(sameDir(join(root, "a", "..", "b"), join(root, "b"))).toBe(true);
+    expect(sameDir(join(root, "a"), join(root, "b"))).toBe(false);
+  });
+});
+
 describe("worktree pre-flight", { timeout: 30_000 }, () => {
   it("creates a worktree from a repo and folders that hold '!' and spaces", async () => {
     const repo = await tempRepo(tempDir(), "my !repo");

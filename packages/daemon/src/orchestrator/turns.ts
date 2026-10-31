@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { resolve } from "node:path";
 import { attachControls, type AgentAdapter, type ControlReason, type ControlState, type Profile, type RewindResult, type RunControls, type RunnerId, type UndoPreview } from "@crewyard/core";
 import type { Store } from "../store.ts";
 import { commitsSince, restore, restorePlan, snapshot } from "./checkpoints.ts";
 import type { OrchestratorDb, RunRow } from "./db.ts";
 import { errorCode, OrchestratorError } from "./errors.ts";
+import { sameDir } from "./git.ts";
 import { StepQueue } from "./queue.ts";
 
 // Turns of a run, for "Steer now" and "Undo last turn" (feature scan A10, A13). A turn starts
@@ -47,7 +47,6 @@ export const UNDO_NOTE =
 
 const ok = (): ControlState => ({ ok: true, reason: null });
 const no = (reason: ControlReason): ControlState => ({ ok: false, reason });
-const sameDir = (a: string, b: string) => resolve(a).toLowerCase() === resolve(b).toLowerCase();
 
 export class TurnControl {
   readonly queue: StepQueue;
