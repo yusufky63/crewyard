@@ -47,6 +47,8 @@ function summarize(stderr: string): string {
   return line ? `: ${line.slice(0, 200)}` : "";
 }
 
+const TIMED_OUT = "DPAPI helper timed out";
+
 function runDpapi(method: "Protect" | "Unprotect", input: Buffer, timeoutMs = 20_000): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const child = start(powershellPath(), ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encoded(method)], {
@@ -56,7 +58,7 @@ function runDpapi(method: "Protect" | "Unprotect", input: Buffer, timeoutMs = 20
     let err = "";
     const timer = setTimeout(() => {
       child.kill();
-      reject(new Error("DPAPI helper timed out"));
+      reject(new Error(TIMED_OUT));
     }, timeoutMs);
     child.stdout?.setEncoding("utf8").on("data", (d: string) => (out += d));
     child.stderr?.setEncoding("utf8").on("data", (d: string) => (err += d));
@@ -74,9 +76,45 @@ function runDpapi(method: "Protect" | "Unprotect", input: Buffer, timeoutMs = 20
   });
 }
 
+/**
+ * Runs at most `max` jobs at once, in arrival order. A finished job hands its slot straight to the
+ * next waiter, so a newcomer can never slip in between and push the count over `max`.
+ */
+export function helperQueue(max: number): <T>(job: () => Promise<T>) => Promise<T> {
+  let running = 0;
+  const waiting: Array<() => void> = [];
+  return async (job) => {
+    if (running < max) running++;
+    else await new Promise<void>((resume) => waiting.push(resume));
+    try {
+      return await job();
+    } finally {
+      const next = waiting.shift();
+      if (next) next();
+      else running--;
+    }
+  };
+}
+
+/**
+ * Each helper is a fresh Windows PowerShell, slow to start on a loaded machine. A burst of them
+ * (every run's transcript copy at the end of a crew, while tests ran elsewhere) missed the 20 s
+ * deadline, so at most two start at once, the deadline counts only from the start, and a helper
+ * that timed out is tried once more with a longer one. Protect and unprotect are pure, so a retry
+ * is safe.
+ */
+export function withRetry(queue: ReturnType<typeof helperQueue>, run: (timeoutMs: number) => Promise<Buffer>): Promise<Buffer> {
+  return queue(() => run(20_000)).catch((err: unknown) => {
+    if (err instanceof Error && err.message === TIMED_OUT) return queue(() => run(45_000));
+    throw err;
+  });
+}
+
+const helpers = helperQueue(2);
+
 export const dpapi: Protector = {
-  protect: (plain) => runDpapi("Protect", plain),
-  unprotect: (blob) => runDpapi("Unprotect", blob),
+  protect: (plain) => withRetry(helpers, (ms) => runDpapi("Protect", plain, ms)),
+  unprotect: (blob) => withRetry(helpers, (ms) => runDpapi("Unprotect", blob, ms)),
 };
 
 /**
