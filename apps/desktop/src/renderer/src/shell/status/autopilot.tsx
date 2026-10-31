@@ -11,19 +11,21 @@ function AutopilotStatus() {
   const g = useAutopilotGlobal();
   const v = g.data;
   if (!v || (!v.killed && v.projects.length === 0)) return null;
+  // The action word wears its state colour (owner, 2026-10-31: use red, amber and green): Stop Autopilot in bad,
+  // Lift the stop in ok, and the stopped state in bad like the kill switch in Settings. The words say it too.
   if (v.killed)
     return (
       <button type="button" className="sb" onClick={() => void g.kill(false)} title={t("status.lift")}>
-        <CirclePlay size={13} strokeWidth={1.75} aria-hidden="true" />
-        <b>{t("status.stopped")}</b>
-        <span>{t("status.lift")}</span>
+        <CirclePlay size={13} strokeWidth={1.75} aria-hidden="true" color="var(--ok)" />
+        <b style={{ color: "var(--bad)" }}>{t("status.stopped")}</b>
+        <span style={{ color: "var(--ok)" }}>{t("status.lift")}</span>
       </button>
     );
   return (
     <button type="button" className="sb" onClick={() => void g.kill(true)} title={t("status.stopTitle")}>
-      <CirclePause size={13} strokeWidth={1.75} aria-hidden="true" />
+      <CirclePause size={13} strokeWidth={1.75} aria-hidden="true" color="var(--bad)" />
       <span>{t("status.on", { count: v.projects.length })}</span>
-      <b>{t("status.stop")}</b>
+      <b style={{ color: "var(--bad)" }}>{t("status.stop")}</b>
     </button>
   );
 }
