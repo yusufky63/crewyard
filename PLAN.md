@@ -676,4 +676,4 @@ Each milestone ends with: typecheck, lint with `--max-warnings=0`, tests, build,
 
 **Open**
 1. Before the first release: which code-signing certificate (OV as a PFX, a hardware-bound one in the Windows store, or Azure Trusted Signing) and which HTTPS host serves the update feed (ADR 0011, "What a real release needs").
-2. Before sharing: confirm OpenAI's and Google's terms for ChatGPT and Google sign-in through a third-party app (§6). The owner will check them (2026-10-30).
+2. Before sharing: confirm OpenAI's and Google's terms for ChatGPT and Google sign-in through a third-party app (§6). The owner will check them (2026-10-30). Settled for the public release on 2026-10-31: asked whether to hide these sign-in paths in the public build or keep them, the owner chose "Açık kalsın" (keep them), taking on the check of each provider's terms; if a provider objects, the path is removed.
