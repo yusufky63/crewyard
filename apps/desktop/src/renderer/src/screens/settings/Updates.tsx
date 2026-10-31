@@ -106,7 +106,8 @@ function Offer({ s }: { s: UpdateState }) {
       {s.phase === "available" && (
         <div className="up-row">
           <p className="up-text">{s.signed ? t("updates.downloadHint") : t("updates.downloadHintUnsigned")}</p>
-          <Button size="sm" tone="ok" onClick={() => void window.crewyard.downloadUpdate()}>
+          {/* An unsigned build stays neutral, so color never nudges toward installing it (DESIGN.md §3). */}
+          <Button size="sm" tone={s.signed ? "ok" : undefined} onClick={() => void window.crewyard.downloadUpdate()}>
             <Download strokeWidth={1.75} />
             {t("updates.download")}
           </Button>
@@ -178,7 +179,7 @@ export function UpdatesSection({ index }: { index: number }) {
       {errorWithoutOffer && s.error && <p className="st-note mono as-typed muted st-break">{s.error.detail}</p>}
       <Offer s={s} />
       <Row label={t("updates.auto")} hint={off ? t("updates.autoOff") : t("updates.autoHint")}>
-        <Toggle label={t("updates.auto")} value={s.autoCheck} disabled={off} onChange={(v) => void window.crewyard.setUpdateAutoCheck(v)} />
+        <Toggle label={t("updates.auto")} offTone="warn" value={s.autoCheck} disabled={off} onChange={(v) => void window.crewyard.setUpdateAutoCheck(v)} />
       </Row>
     </Section>
   );

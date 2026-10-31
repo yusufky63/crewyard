@@ -18,9 +18,9 @@
 .settings .st-hint { font-size: var(--font-size-meta); color: var(--ink-3); line-height: 1.45; max-width: var(--layout-measure); }
 .settings .st-ctl { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 /* A chosen On (or a kill switch's On) in its state colour, the same pair as a tone badge. */
-.settings .seg button.seg-ok[aria-pressed="true"] { background: var(--ok-soft); color: var(--ok); box-shadow: inset 0 0 0 1px var(--ok); }
-.settings .seg button.seg-warn[aria-pressed="true"] { background: var(--warn-soft); color: var(--warn); box-shadow: inset 0 0 0 1px var(--warn); }
-.settings .seg button.seg-bad[aria-pressed="true"] { background: var(--bad-soft); color: var(--bad); box-shadow: inset 0 0 0 1px var(--bad); }
+.settings .seg button.seg-ok[aria-pressed="true"]:not(:disabled) { background: var(--ok-soft); color: var(--ok); box-shadow: inset 0 0 0 1px var(--ok); }
+.settings .seg button.seg-warn[aria-pressed="true"]:not(:disabled) { background: var(--warn-soft); color: var(--warn); box-shadow: inset 0 0 0 1px var(--warn); }
+.settings .seg button.seg-bad[aria-pressed="true"]:not(:disabled) { background: var(--bad-soft); color: var(--bad); box-shadow: inset 0 0 0 1px var(--bad); }
 .settings .st-note { font-size: var(--font-size-meta); color: var(--ink-3); padding: 8px 0 0; }
 .settings .st-warn { color: var(--warn); }
 .settings .st-ok { color: var(--ok); }

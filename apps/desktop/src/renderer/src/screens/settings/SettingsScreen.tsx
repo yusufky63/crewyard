@@ -141,7 +141,7 @@ function Notifications({ supported }: { supported: boolean }) {
   return (
     <Section id="notifications" index={3} title={t("sections.notifications")}>
       <Row label={t("notifications.enabled")} hint={t("notifications.enabledHint")}>
-        <Toggle label={t("notifications.enabled")} value={n.enabled} onChange={(v) => save({ notifications: { enabled: v } })} />
+        <Toggle label={t("notifications.enabled")} offTone="warn" value={n.enabled} onChange={(v) => save({ notifications: { enabled: v } })} />
       </Row>
       <Row label={t("notifications.quiet")} hint={q.enabled && q.start === q.end ? <span className="st-warn">{t("notifications.quietEmpty")}</span> : t("notifications.quietHint")}>
         <TimeField key={`s${q.start}`} label={t("notifications.from")} value={q.start} disabled={!q.enabled} onCommit={(v) => save({ notifications: { quietHours: { start: v } } })} />
@@ -149,7 +149,7 @@ function Notifications({ supported }: { supported: boolean }) {
         <Toggle label={t("notifications.quiet")} value={q.enabled} onChange={(v) => save({ notifications: { quietHours: { enabled: v } } })} />
       </Row>
       <Row label={t("notifications.approve")} hint={t("notifications.approveHint")}>
-        <Toggle label={t("notifications.approve")} value={n.approveFromToast} disabled={!n.enabled} onChange={(v) => save({ notifications: { approveFromToast: v } })} />
+        <Toggle label={t("notifications.approve")} onTone={null} value={n.approveFromToast} disabled={!n.enabled} onChange={(v) => save({ notifications: { approveFromToast: v } })} />
       </Row>
       <Row label={t("notifications.limit")} hint={t("notifications.limitHint")}>
         <Toggle label={t("notifications.limit")} value={n.limitActions} disabled={!n.enabled} onChange={(v) => save({ notifications: { limitActions: v } })} />
