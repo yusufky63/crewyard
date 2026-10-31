@@ -4,6 +4,10 @@ A local, Windows-first desktop app that runs and supervises coding agents (Claud
 
 Status: pre-release. It is built and tested on Windows 11. Linux and macOS are prepared for but not shipped. v0.1.0 is an unsigned pre-release under this repository's GitHub releases: Windows SmartScreen warns about an unknown publisher, and that build never checks for updates (PLAN.md §17).
 
+## Website
+
+`apps/web` is the project's website: what Crewyard is, how it works, downloads for Windows, macOS and Linux, the changelog, the FAQ and the security model. It reads releases from this repository's GitHub releases, so each new release appears on the download and changelog pages within the hour with no code change. It is a Next.js app deployed on Vercel with `apps/web` as the root directory; [apps/web/README.md](apps/web/README.md) covers development, the screenshots, the deploy and its environment variables.
+
 ## What it does
 
 - **Crews per task.** Describe a task and Crewyard proposes who plans, implements, tests and reviews it, with the reason for each pick and a cost estimate. Nothing starts until you approve.
@@ -102,6 +106,7 @@ Live tests with real runners and keys cost a few cents and run only when asked. 
 | Where | What |
 |---|---|
 | `apps/desktop` | The Electron app: main process, renderer screens, e2e tests |
+| `apps/web` | The website (Next.js on Vercel): downloads and changelog from GitHub releases, how it works, FAQ, security |
 | `packages/core` | Event model, adapter contract, state rules, catalog and project schemas, IPC contract |
 | `packages/daemon` | The utility-process daemon: SQLite store, orchestrator, providers, GitHub, MCP, setup |
 | `packages/proc` | Windows-safe process helpers |
