@@ -21,3 +21,4 @@ export * from "./timeline.ts";
 export * from "./mcp.ts";
 export * from "./ipc/mcp.ts";
 export * from "./host.ts";
+export * from "./provider-error.ts";

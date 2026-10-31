@@ -111,9 +111,10 @@ export function StatusLabel({ line }: { line: StatusLine }) {
     target: line.params.target ?? "",
     reason: line.params.reason ? f.t(`endDetail.${line.params.reason}`, { defaultValue: line.params.reason }) : (line.params.reasonText ?? ""),
   });
-  // A runner's error text can be a long JSON line: the row cuts it, the tooltip and the inspector keep it whole.
+  // A runner's error is shown as its status and message; the tooltip and the inspector keep the raw
+  // text whole. Both are plain text: React escapes them and nothing in them becomes a link.
   return (
-    <span className={`st ${TONE_CLASS[line.tone]}`} title={line.params.reasonText ? text : undefined}>
+    <span className={`st ${TONE_CLASS[line.tone]}`} title={line.params.reasonRaw}>
       {Icon ? <Icon size={14} strokeWidth={1.75} aria-hidden="true" /> : <span className="spin" aria-hidden="true" />}
       <span className="st-text">{text}</span>
     </span>
