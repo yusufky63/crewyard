@@ -32,6 +32,10 @@ export interface LauncherDeps {
   endRun(runId: string, reason: EndReason, detail: string | null): void;
   writePackage(task: TaskRow, source: RunRow, trigger: string, name: string): Promise<{ text: string; path: string; sha: string | null }>;
   pump(runId: string, live: Live): Promise<void>;
+  /** An Orchestra goal task's worktree base: its goal branch, so it sees the work it waits for (docs/adr/0019). */
+  goalBase(task: TaskRow): string | null;
+  /** What a goal task is told besides its role prompt (design §4.11); empty outside a goal. */
+  goalPrompt(task: TaskRow): Promise<string>;
 }
 
 export class Launcher extends Part {
@@ -131,13 +135,15 @@ export class Launcher extends Part {
       const resumeRef = forked?.session ?? spec.resumeRef ?? null;
       if (resumeRef) this.resumed.add(runId);
       // Messages typed for the step while it had no process go with the first prompt.
-      let base = forked && spec.fork ? spec.fork.prompt : (spec.prompt ?? rolePrompt(this.tpl(member), task, { plan: this.latestPlan(task.id), branch: worktreeId ? (wt?.branch ?? null) : null }));
+      let base = forked && spec.fork ? spec.fork.prompt : (spec.prompt ?? rolePrompt(this.tpl(member), task, { plan: this.latestPlan(task.id), branch: worktreeId ? (wt?.branch ?? null) : null }) + (await this.deps.goalPrompt(task)));
       if (pinned && !spec.prompt) base += reviewContext({ sha: pinned.sha, baseSha: wt?.base_sha ?? null, branch: wt?.branch ?? null, test: this.loops.lastTaskTest(task.id), previous: this.loops.previousVerdict(member.id, null) });
       const queued = this.withQueued(member.id, base, Boolean(resumeRef));
       // A new session has not seen the description's attachments; a resumed or forked one has.
       const first = withAttachments(queued.prompt, [...(resumeRef ? [] : this.attachments.forTask(task.id)), ...queued.attachments], adapter.capabilities);
       // Codex reviews with its own review/start against the task's base; the verdict schema still applies.
-      const review: ReviewTarget | null = pinned && member.role === "reviewer" && !resumeRef && adapter.capabilities.nativeReview ? { kind: "base_branch", branch: task.base_branch ?? wt!.base_sha } : null;
+      // A goal task branched from its goal branch: its own changes are those since that commit.
+      const review: ReviewTarget | null =
+        pinned && wt && member.role === "reviewer" && !resumeRef && adapter.capabilities.nativeReview ? { kind: "base_branch", branch: this.deps.goalBase(task) ? wt.base_sha : (task.base_branch ?? wt.base_sha) } : null;
       if (review) this.nativeReviews.add(runId);
       const policy = this.policyFor(this.tpl(member), config);
       const req: StartRequest = {
@@ -269,7 +275,8 @@ export class Launcher extends Part {
     const existing = this.db.worktree(task.id);
     const slug = taskSlug(task.title, task.id);
     const path = existing?.path ?? join(root, slug);
-    const info = await ensureWorktree(project.path, path, existing?.branch ?? `crewyard/${slug}`, task.base_branch, this.opts.gitBin);
+    // A goal task branches from its goal branch's tip when it starts (docs/adr/0019, design §4.7).
+    const info = await ensureWorktree(project.path, path, existing?.branch ?? `crewyard/${slug}`, this.deps.goalBase(task) ?? task.base_branch, this.opts.gitBin);
     if (!existing) {
       this.db.exec(
         "insert into worktrees (id, task_id, repo_path, path, branch, base_sha, created_at) values (?, ?, ?, ?, ?, ?, ?)",

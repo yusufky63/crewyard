@@ -45,6 +45,11 @@ export function createGithubHandlers(
     reviewed: (projectId, branch, headSha) => flow!.reviewedHead(projectId, branch, headSha),
     watched: () => flow!.watched(),
     afterRefresh: (projectId) => flow!.sync(projectId),
+    // Goal task branches join their goal branch; only the goal branch goes out (docs/adr/0019).
+    goalTaskBranches: (projectId) =>
+      new Set(
+        (ctx.store.db.prepare("select w.branch from worktrees w join goal_tasks gt on gt.task_id = w.task_id join tasks t on t.id = w.task_id where t.project_id = ?").all(projectId) as Array<{ branch: string }>).map((r) => r.branch),
+      ),
   });
   flow = new PrFlow({ store: ctx.store, service: svc, client, tasks, projectPath, emit: ctx.emit });
   const prs = flow;

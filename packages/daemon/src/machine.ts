@@ -5,6 +5,7 @@ import { MIN_CODEX_VERSION } from "@crewyard/adapter-codex";
 import { majorOf, TESTED_V2_VERSION, TESTED_VERSION, v2Pending } from "@crewyard/adapter-opencode";
 import type { DefenderCheck, MachineEnv, MachineReport, ToolCheck, ToolCopy, ToolId, VersionGate, VersionGateStatus } from "@crewyard/core";
 import { parseVersion, ProbeCache, resolveBin, run, whichAll } from "@crewyard/proc";
+import { MIN_GIT_MERGE_TREE } from "./orchestrator/git.ts";
 import { CREWYARD_DIR, LEGACY_WORKTREES_DIR } from "./setup/config.ts";
 
 // The "This machine" check on the Start screen. Read-only: it never installs or changes anything.
@@ -47,6 +48,10 @@ export const VERSION_GATES: Partial<Record<ToolId, GateRule>> = {
   },
   // Older Gemini CLIs ignore GEMINI_CLI_HOME and would run every profile in the user's own ~/.gemini.
   gemini: { verified: GEMINI_ISOLATION_MIN, rule: "min", miss: "isolation", update: "npm install -g @google/gemini-cli@latest" },
+  // Orchestra test-merges each finished task into its goal branch with `merge-tree --write-tree`
+  // (docs/adr/0019); an older Git leaves every such merge to you. Git for Windows is the winget
+  // package Git.Git.
+  git: { verified: MIN_GIT_MERGE_TREE, rule: "min", miss: "outdated", update: "winget upgrade --id Git.Git -e" },
 };
 
 export function versionGate(id: ToolId, version: string | null): VersionGate | null {

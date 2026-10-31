@@ -11,6 +11,7 @@ import type { OrchestratorDb } from "./db.ts";
 import type { ProfileDirectory } from "./directory.ts";
 import { Dispatcher } from "./dispatch.ts";
 import { Fallback } from "./fallback.ts";
+import { GoalRunner, type GoalApproveParams } from "./goals/runner.ts";
 import { Handoffs } from "./handoffs.ts";
 import { Hibernator, type HibernationStore } from "./hibernation.ts";
 import { Inbox } from "./inbox.ts";
@@ -57,6 +58,8 @@ export class Orchestrator {
   readonly loops: LoopStore;
   /** Crew graph management: proposal edits, follow-ups, skip, Pause all (crew-manage.ts). */
   readonly crew: CrewManager;
+  /** Orchestra's goal scheduler: approval, release, merging, the last review, decisions (goals/runner.ts). */
+  readonly goals: GoalRunner;
 
   /** Kept on the facade too: github/flow.test.ts reads `opts.store` through a cast. */
   private readonly opts: OrchestratorOptions;
@@ -140,6 +143,7 @@ export class Orchestrator {
       startGroup: (task, m, group, project, slots, candidates) => this.bestOfRunner.startGroup(task, m, group, project, slots, candidates),
       budgetHold: (task, m, candidate) => this.budget.budgetHold(task, m, candidate),
       launch: (spec) => this.launcher.launch(spec),
+      goalPass: () => this.goals.pass(),
     });
     this.launcher = new Launcher(ctx, {
       reviewCheckout: (runId, task, wt) => this.loopRunner.reviewCheckout(runId, task, wt),
@@ -153,6 +157,8 @@ export class Orchestrator {
       endRun: (runId, reason, detail) => this.lifecycle.endRun(runId, reason, detail),
       writePackage: (task, source, trigger, name) => this.handoffs.writePackage(task, source, trigger, name),
       pump: (runId, live) => this.lifecycle.pump(runId, live),
+      goalBase: (task) => this.goals.goalBase(task),
+      goalPrompt: (task) => this.goals.goalPrompt(task),
     });
     this.lifecycle = new RunLifecycle(ctx, {
       confirmHandoff: (targetRunId) => this.handoffs.confirmHandoff(targetRunId),
@@ -258,7 +264,18 @@ export class Orchestrator {
       resume: (runId) => this.actions.resume(runId),
       goalManaged: (taskId) => this.taskFlow.goalManaged(taskId),
     });
-    this.db.taskExtras = (t) => this.bestOfRunner.taskExtras(t);
+    this.goals = new GoalRunner(ctx, {
+      propose: (p, hooks) => this.taskFlow.propose(p, hooks),
+      preview: (p) => this.taskFlow.preview(p),
+      cancel: (taskId) => this.taskFlow.cancel(taskId),
+      pauseRun: (runId) => this.actions.pause(runId),
+      resumeRun: (runId) => this.actions.resume(runId),
+      retryRun: (runId) => this.actions.retry(runId),
+      followUp: (runId, text) => this.messages.followUp(runId, text),
+      tick: () => this.dispatcher.tick(),
+    });
+    this.db.taskExtras = (t) => ({ ...this.bestOfRunner.taskExtras(t), goal: this.goals.goalRef(t) });
+    this.db.integrationDone = (taskId) => this.goals.integrationDone(taskId);
     this.db.taskLoop = (t) => this.loopRunner.loopView(t);
   }
 
@@ -394,6 +411,13 @@ export class Orchestrator {
 
   keepVariant(taskId: string, variantId: string): Promise<TaskDetail> {
     return this.bestOfRunner.keepVariant(taskId, variantId);
+  }
+
+  // ---------------------------------------------------------------- goals (goals/runner.ts)
+
+  /** `Approve and start`: idempotent per revision (docs/adr/0019). */
+  approveGoal(p: GoalApproveParams): Promise<void> {
+    return this.goals.approve(p);
   }
 
   // ---------------------------------------------------------------- runs (run-actions.ts, handoffs.ts)

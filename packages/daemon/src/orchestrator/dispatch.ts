@@ -16,7 +16,15 @@ export interface DispatcherDeps {
   startGroup(task: TaskRow, m: MemberRow, group: GroupRow, project: ProjectRow, slots: number, candidates: Candidate[]): Promise<void>;
   budgetHold(task: TaskRow, m: MemberRow, candidate: Candidate | undefined): Reason | null;
   launch(spec: LaunchSpec): Promise<string>;
+  /**
+   * The goal scheduler's pass (docs/adr/0019), run first: it releases goal tasks, merges finished
+   * ones into their goal branch, and returns the goal tasks that must not start a new run (a paused
+   * goal) and the finished steps that run again (a goal's last review after new merges).
+   */
+  goalPass(): Promise<{ held: ReadonlySet<string>; rerun: ReadonlySet<string> }>;
 }
+
+const NO_GOAL_PASS = { held: new Set<string>(), rerun: new Set<string>() } as const;
 
 export class Dispatcher extends Part {
   private ticking = false;
@@ -48,7 +56,11 @@ export class Dispatcher extends Part {
 
   private async schedulePass(): Promise<void> {
     for (const [runId, cause] of [...this.pendingWake]) await this.deps.wakeRun(runId, cause);
+    // The goal pass keeps each goal inside its own try/catch; this one only guards against the
+    // pass itself failing, so a goal can never stop every other task from being scheduled.
+    const goals = await this.deps.goalPass().catch(() => NO_GOAL_PASS);
     for (const task of this.db.schedulable()) {
+      if (goals.held.has(task.id)) continue;
       const status = this.db.status(task);
       if (status === "failed" || status === "cancelled") continue;
       const crew = this.db.crew(task.id)!;
@@ -61,7 +73,7 @@ export class Dispatcher extends Part {
         if (m.pending_since || m.skipped_at) continue;
         const runs = this.db.runs(task.id);
         // A step runs once, and again only when a step it depends on finished again (the loops).
-        const again = runs.some((r) => r.member_id === m.id) ? this.rerunOf(m, members, runs) : null;
+        const again = runs.some((r) => r.member_id === m.id) ? (this.rerunOf(m, members, runs) ?? (goals.rerun.has(m.id) ? this.goalRerun(m, runs) : null)) : null;
         if (runs.some((r) => r.member_id === m.id) && !again) {
           this.blocked.delete(m.id);
           continue;
@@ -117,6 +129,12 @@ export class Dispatcher extends Part {
       },
       { ...DEFAULT_LIMITS, ...this.opts.limits, projectSlots },
     );
+  }
+
+  /** The goal pass asked for this finished step to run again: its latest run, if nothing continued it. */
+  private goalRerun(m: MemberRow, runs: RunRow[]): RunRow | null {
+    const latest = runs.filter((r) => r.member_id === m.id).at(-1);
+    return latest && latest.end_reason === "completed" && !this.db.successor(latest, runs) ? latest : null;
   }
 
   /**
