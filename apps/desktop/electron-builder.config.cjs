@@ -66,6 +66,9 @@ module.exports = {
     installerIcon: "build/icon.ico",
     uninstallerIcon: "build/icon.ico",
     artifactName: "Crewyard-Setup-${version}-${arch}.${ext}",
+    // Explorer's "Open in Crewyard" for folders and folder backgrounds, per user under HKCU, removed on
+    // uninstall and kept across updates (PLAN.md §12).
+    include: "build/installer.nsh",
   },
   // Linux and macOS (docs/adr/0010-linux-macos-groundwork.md): prepared, not shipped. Unsigned and
   // never published (publish: null above). Nothing builds them unless `pnpm package:mac` or

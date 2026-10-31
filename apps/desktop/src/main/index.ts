@@ -2,16 +2,18 @@ import { existsSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } 
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { app, BrowserWindow, dialog, ipcMain, Notification, powerMonitor, powerSaveBlocker, safeStorage, shell, type MessageBoxOptions } from "electron";
 import { inQuietHours, type AppSettings, type IpcMethod, type IpcParams, type IpcResult, type NotificationSettings } from "@crewyard/core";
-import type { AppInfo, NavigateTarget, StartupState, TitleBarColors } from "../shared/api.ts";
+import type { AppInfo, NavigateTarget, OpenFolderRequest, StartupState, TitleBarColors } from "../shared/api.ts";
 import { DaemonHost } from "./daemon-host.ts";
 import { refusedDebugSwitches } from "./debug-switches.ts";
 import { e2eMode } from "./e2e.ts";
 import { pickMainLanguage, translator, type MainLanguage } from "./i18n.ts";
 import { batteryPct, KeepAwake } from "./keep-awake.ts";
 import { Toaster } from "./notify/toaster.ts";
+import { checkFolder, folderArg } from "./open-folder.ts";
 import { desktopFeatures } from "./platform.ts";
 import { secretHost } from "./secrets.ts";
 import { HIDDEN_ARG, readStartup, writeStartup } from "./startup.ts";
+import { TaskbarBadge } from "./taskbar.ts";
 import { AppTray } from "./tray.ts";
 import { createUpdater, readRelease } from "./updater/index.ts";
 import { EMPTY_WORK, quitDetail, summarize, type WorkSummary } from "./work.ts";
@@ -75,7 +77,12 @@ app.setAppUserModelId("dev.crewyard.app");
 // A fixed activator CLSID, so a toast pressed in the Action Center after a restart still comes
 // back to this app through Notification.handleActivation.
 if (features.toastActivator) app.setToastActivatorCLSID("{74B586E4-570F-475A-B191-B804BBB49D94}");
-if (!shotFile && !e2e.enabled && !app.requestSingleInstanceLock()) app.quit();
+// `Crewyard.exe <folder>` and the Explorer verb (PLAN.md §12). A second start parses its own argv and
+// hands the folder over as additionalData, since Chromium may reorder or extend the argv the first
+// instance sees. A development run (`electron .`) has the app folder before the user's arguments.
+const ARGV_SKIP = process.defaultApp ? 2 : 1;
+const launchFolder = shotFile || smokeRun ? null : folderArg(process.argv, { cwd: process.cwd(), platform: process.platform, skip: ARGV_SKIP });
+if (!shotFile && !e2e.enabled && !app.requestSingleInstanceLock({ folder: launchFolder })) app.quit();
 
 let win: BrowserWindow | null = null;
 let language: MainLanguage = "en";
@@ -87,6 +94,8 @@ let closeHintShown = false;
 /** The renderer reports its language once it listens; navigation waits for that. */
 let rendererReady = false;
 let pendingNav: NavigateTarget | null = null;
+/** A folder from the command line, a second start or a drop, checked and waiting for the renderer. */
+let pendingOpen: OpenFolderRequest | null = null;
 /** A start from Windows login stays in the tray until something asks for the window. */
 let wantVisible = !startHidden;
 let painted = false;
@@ -115,10 +124,14 @@ const daemon = new DaemonHost(join(here, "daemon.js"), join(app.getPath("userDat
     notifications = (payload as AppSettings).notifications;
     keepAwake.setSettings((payload as AppSettings).keepAwake);
     tray?.render();
+    // Muting a project changes the taskbar count.
+    scheduleWork();
   } else if (topic === "tasks.changed" || topic === "requests.changed") scheduleWork();
 }, hostSecrets);
 
 const callDaemon = <M extends IpcMethod>(method: M, params: IpcParams<M>) => daemon.call(method, params) as Promise<IpcResult<M>>;
+
+const taskbar = new TaskbarBadge({ mode: features.badge, window: () => win, t });
 
 const toaster = new Toaster({
   call: callDaemon,
@@ -144,6 +157,7 @@ async function refreshWork(): Promise<WorkSummary> {
   const [tasks, requests, projects] = await Promise.all([callDaemon("tasks.list", {}), callDaemon("requests.list", {}), callDaemon("projects.list", undefined)]);
   work = summarize(tasks, requests, projects);
   tray?.update(work);
+  taskbar.update(requests, notifications);
   keepAwake.setRuns(work.running);
   return work;
 }
@@ -182,6 +196,9 @@ function createWindow(): BrowserWindow {
     painted = true;
     if (wantVisible) w.show();
   });
+  // Hiding to the tray drops the taskbar button and its overlay; showing puts both back.
+  w.on("show", () => taskbar.render());
+  w.on("focus", () => taskbar.focused());
   // Close is not stop (DESIGN.md §7): with agents running the window hides to the tray.
   w.on("close", (e) => {
     if (quitting || !interactive) return;
@@ -231,9 +248,26 @@ function navigate(target: NavigateTarget): void {
 }
 
 function flushNav(): void {
-  if (!rendererReady || !pendingNav || !win || win.isDestroyed()) return;
-  win.webContents.send("crewyard:event", "app.navigate", pendingNav);
+  if (!rendererReady || !win || win.isDestroyed()) return;
+  if (pendingNav) win.webContents.send("crewyard:event", "app.navigate", pendingNav);
   pendingNav = null;
+  if (pendingOpen) win.webContents.send("crewyard:event", "app.openFolder", pendingOpen);
+  pendingOpen = null;
+}
+
+const statOrNull = (p: string) => {
+  try {
+    return statSync(p);
+  } catch {
+    return null;
+  }
+};
+
+/** Every way in (argv, second start, drop) is checked here; only the renderer decides where it lands. */
+function openFolder(raw: string): void {
+  pendingOpen = checkFolder(raw, process.platform, statOrNull);
+  showWindow();
+  flushNav();
 }
 
 async function onCloseRequested(): Promise<void> {
@@ -361,6 +395,7 @@ ipcMain.on("crewyard:reveal", (_e, path: unknown) => {
 ipcMain.on("crewyard:language", (_e, lng: unknown) => {
   if (lng === "en" || lng === "tr") language = lng;
   tray?.render();
+  taskbar.render();
   rendererReady = true;
   flushNav();
 });
@@ -383,12 +418,22 @@ ipcMain.handle("crewyard:open-licenses", async () => {
   if (!existsSync(file)) return false;
   return (await shell.openPath(file)) === "";
 });
+// A folder dropped on the Start screen or the title bar: checked like one from the command line.
+ipcMain.on("crewyard:open-folder", (_e, path: unknown) => {
+  if (typeof path === "string") openFolder(path);
+});
 ipcMain.on("crewyard:battery", (_e, reading: unknown) => keepAwake.setBatteryPct(batteryPct(reading)));
 ipcMain.on("crewyard:titlebar", (_e, colors: TitleBarColors) => {
   if (features.titleBarOverlay && win && !win.isDestroyed()) win.setTitleBarOverlay({ ...colors, height: 40 });
 });
 
-app.on("second-instance", () => showWindow());
+app.on("second-instance", (_e, argv, workingDirectory, additionalData) => {
+  const handed = (additionalData as { folder?: unknown } | null)?.folder;
+  // An older build hands nothing over; its argv is read the same way, against its own folder.
+  const folder = typeof handed === "string" ? handed : handed === null ? null : folderArg(argv, { cwd: workingDirectory, platform: process.platform, skip: ARGV_SKIP });
+  if (folder) openFolder(folder);
+  else showWindow();
+});
 if (features.dockReopen) app.on("activate", () => showWindow());
 
 void app.whenReady().then(() => {
@@ -418,6 +463,7 @@ void app.whenReady().then(() => {
     updater.schedule();
   }
   win = createWindow();
+  if (launchFolder) openFolder(launchFolder);
   if (smokeRun) void smoke();
 });
 

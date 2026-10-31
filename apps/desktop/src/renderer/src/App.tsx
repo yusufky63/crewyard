@@ -8,6 +8,7 @@ import { useWorkLive } from "./screens/tasks/live.ts";
 import { Inspector } from "./shell/Inspector.tsx";
 import { layoutVars, sanitizeLayout } from "./shell/layout.ts";
 import { Sidebar } from "./shell/Sidebar.tsx";
+import { useOpenFolderEvents } from "./shell/openFolder.ts";
 import { StatusBar } from "./shell/StatusBar.tsx";
 import { TitleBar } from "./shell/TitleBar.tsx";
 
@@ -62,6 +63,8 @@ export function App({ systemLanguage, platform }: { systemLanguage: string; plat
   useDaemonLifecycle();
   // Task, request and limit events keep every screen fresh and raise Windows toasts.
   useWorkLive();
+  // Folders from the command line, Explorer or a drop (PLAN.md §12).
+  useOpenFolderEvents();
   const { screen, projectId } = useNav();
   const current = screens.find((s) => s.id === screen) ?? screens.find((s) => s.id === "start");
   const launch = !projectId || current?.scope === "launch";

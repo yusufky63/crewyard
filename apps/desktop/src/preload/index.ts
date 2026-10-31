@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { CrewyardApi } from "../shared/api.ts";
 
 // The only surface the renderer gets. No Node APIs, no raw ipcRenderer.
@@ -30,6 +30,9 @@ const api: CrewyardApi = {
   installUpdate: () => ipcRenderer.invoke("crewyard:update", "install"),
   setUpdateAutoCheck: (on) => ipcRenderer.invoke("crewyard:update", on ? "auto-on" : "auto-off"),
   openLicenses: () => ipcRenderer.invoke("crewyard:open-licenses"),
+  // File.path is gone since Electron 32; webUtils is the sandbox-safe way to read a drop's path.
+  pathForFile: (file) => webUtils.getPathForFile(file),
+  openFolder: (path) => ipcRenderer.send("crewyard:open-folder", path),
 };
 
 contextBridge.exposeInMainWorld("crewyard", api);

@@ -173,5 +173,18 @@
     "running_other": "{{count}} agents running",
     "questions_one": "{{count}} open question",
     "questions_other": "{{count}} open questions"
+  },
+  "drop": {
+    "title": "Drop a folder to open it",
+    "body": "A project you already have opens. A new folder starts New project, and nothing is written until Create project.",
+    "refusedTitle": "This folder cannot be opened",
+    "problem": {
+      "missing": "{{path}} does not exist.",
+      "notFolder": "{{path}} is a file, not a folder.",
+      "wsl": "{{path}} is inside WSL. Crewyard runs agents on Windows itself, so open a folder on a Windows drive.",
+      "unc": "{{path}} is a network path. Open a folder on a local drive.",
+      "invalid": "{{path}} is not a folder path Crewyard can open."
+    },
+    "dismiss": "Dismiss"
   }
 }

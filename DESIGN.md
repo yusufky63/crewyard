@@ -126,7 +126,7 @@ Icons inside buttons are 14 px.
 
 | Component | Default view | On demand | Notes |
 |---|---|---|---|
-| `TitleBar` | brand, project switcher, command search, notifications | notifications popover | `-webkit-app-region: drag` except on controls |
+| `TitleBar` | brand, project switcher, command search, notifications | notifications popover; takes a dropped folder on every screen | `-webkit-app-region: drag` except on controls, and not at all while files are dragged over the window |
 | `StatusBar` | daemon, slots, need you, near limit, RAM, GitHub sync, Actions, quiet hours, theme, density | each item opens its screen | mono 11 px, items separated by hairlines |
 | `Sidebar` | framed nav block (6 items, Inbox count), collapse toggle with `Ctrl B` at its foot | rail mode, drag the right edge to resize | active item marked by bright corner ticks; the rail keeps the Inbox count as a badge |
 | `Splitter` | invisible 9 px handle over a pane edge (16 px in-flow between two columns); hairline on hover, 3 px accent line on focus and while dragging | drag; `Left`/`Right` move 16 px, `Home`/`End` give the pane its min/max, `Enter` collapses or restores a collapsible pane; double-click resets | `packages/ui`; `role="separator"` with `aria-valuenow`/`min`/`max` in px, `aria-controls` the pane, tooltip says how to reset; never animates |
@@ -175,7 +175,7 @@ A failure's reason is our code in words, or for a provider's error its HTTP stat
 
 | Screen | First view | Second level |
 |---|---|---|
-| **Start** (no project open) | hero line across the full width, `New project` / `Open folder` / `Clone from GitHub` right beside the lead (not at the far edge of a wide window); the last project as one wide tile across the full width; then Recently used (the other projects, newest first, one line each) and Getting started beside `Import from C:\Projeler` (the repo git touched last first); the This machine strip last, across the full width (owner, 2026-10-31: "Bu bilgisayar kısmını alt kısma al") | all projects, install guides, the full machine panel; the sidebar hides, and the 32 px hero is used only here |
+| **Start** (no project open) | while files are dragged over the window, one drop zone covers the view (solid canvas, accent frame with ticks, what a drop does) and the title bar shows "Drop a folder here to open it" in an accent hairline; a folder that cannot be opened leaves a warning banner with the reason and `Dismiss` above the hero; hero line across the full width, `New project` / `Open folder` / `Clone from GitHub` right beside the lead (not at the far edge of a wide window); the last project as one wide tile across the full width; then Recently used (the other projects, newest first, one line each) and Getting started beside `Import from C:\Projeler` (the repo git touched last first); the This machine strip last, across the full width (owner, 2026-10-31: "Bu bilgisayar kısmını alt kısma al") | all projects, install guides, the full machine panel; the sidebar hides, and the 32 px hero is used only here |
 | **New project** | five numbered step tiles (Folder, Agents, Accounts & budget, Rules, GitHub), one step pane, Back / Next | edit detected commands, create a private repo, CI template; nothing is written until `Create project`. An existing `project.json` is the first Folder row: values it replaced (warn), from a newer Crewyard and read-only (warn), or unusable with the reason (bad). Replacing an unusable one asks first, in a row above the footer |
 | **Tasks** (project home) | composer, crew proposal when drafting, filters `All / Running / Needs you / Ready for review / Merged / Done`, task rows | steps, limit banner, diff, PR link, inspector |
 | **Inbox** | items that need an answer first, then limits, automatic account switches (each fact with its provenance badge, `Off for this task`, `Dismiss`) and GitHub notices | detail pane: approve once / allow in project / deny; question options + note |
@@ -187,6 +187,7 @@ A failure's reason is our code in words, or for a provider's error its HTTP stat
 
 ## 7. Interaction rules
 
+- **Taskbar badge:** a 16 px disc in `state.warning` with the count in `inverse.fg` (`9+` above nine), in the taskbar's own light or dark theme, drawn on whole pixels; no other color, no animation. It flashes the button once per new request, never repeatedly.
 - **Close is not stop.** Closing the inspector, the drawer or the window keeps agents running (the tray icon stays). `Stop agent` asks for confirmation and names what it stops.
 - **Approvals:** Windows toasts may offer `Approve once` only for low-risk, read-only or in-worktree commands. Anything else opens the Inbox. `Always allow` is never the default button.
 - **Hand off dialog** shows what transfers (summary, diff, branch, open questions), whether it is a native resume or a new session, the target account's headroom, and the cost estimate. In Auto mode the same record is written and shown afterwards.

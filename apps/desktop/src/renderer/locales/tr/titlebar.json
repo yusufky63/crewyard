@@ -45,5 +45,8 @@
       "ahead_of_pace": "Bu hızla {{who}} yaklaşık {{minutes}} dakikada {{window}} kotasını doldurur",
       "reached": "{{who}}, {{window}} kotasını doldurdu"
     }
+  },
+  "drop": {
+    "hint": "Açmak için klasörü buraya bırakın"
   }
 }
