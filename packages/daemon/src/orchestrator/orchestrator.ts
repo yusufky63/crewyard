@@ -370,6 +370,15 @@ export class Orchestrator {
     void this.tick();
   }
 
+  /** The task assistant (docs/adr/0014) starts its session on the same profiles and adapters as runs. */
+  profileDirectory(): ProfileDirectory {
+    return this.directory;
+  }
+
+  adapterFor(runner: RunnerId): AgentAdapter | null {
+    return this.adapters.get(runner);
+  }
+
   /** Called by the MCP work (handlers/mcp.ts) once its service exists. */
   setMcp(hook: McpHook): void {
     this.mcp = hook;
