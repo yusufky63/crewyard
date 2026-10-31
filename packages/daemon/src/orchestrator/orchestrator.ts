@@ -1,4 +1,4 @@
-import type { AgentAdapter, HandoffStop, RequestAnswer, RequestView, RunnerId, RunView, SessionSeen, TaskDetail, TaskSummary, TasksIpc } from "@crewyard/core";
+import type { AgentAdapter, HandoffStop, RequestAnswer, RequestView, RunnerId, RunView, SessionSeen, TaskDetail, TaskKind, TaskSummary, TasksIpc, TasksTopics } from "@crewyard/core";
 import type { McpHook } from "../mcp/service.ts";
 import { Bootstrapper } from "../worktrees/bootstrap.ts";
 import { AccountSwitcher, type AccountSwitches } from "./account-switch.ts";
@@ -319,6 +319,12 @@ export class Orchestrator {
     return this.ctx.adapters.get(runner);
   }
 
+  /** Hears every task change inside the daemon (Autopilot, docs/adr/0017); returns the unsubscribe. */
+  watchTasks(listener: (p: TasksTopics["tasks.changed"]) => void): () => void {
+    this.ctx.taskWatchers.add(listener);
+    return () => this.ctx.taskWatchers.delete(listener);
+  }
+
   /** Called by the MCP work (handlers/mcp.ts) once its service exists. */
   setMcp(hook: McpHook): void {
     this.ctx.mcp = hook;
@@ -360,6 +366,10 @@ export class Orchestrator {
 
   approve(p: TasksIpc["tasks.approve"]["params"]): Promise<TaskDetail> {
     return this.taskFlow.approve(p);
+  }
+
+  edit(taskId: string, patch: { title?: string; description?: string; kind?: TaskKind; budgetUsd?: number }): Promise<TaskDetail> {
+    return this.taskFlow.edit(taskId, patch);
   }
 
   setAccountSwitch(taskId: string, enabled: boolean): TaskDetail {

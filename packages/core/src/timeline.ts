@@ -59,6 +59,7 @@ export type TimelineEntry =
   | { kind: "hibernation"; at: number; runId: string | null; phase: "hibernated" | "woke"; by: string | null }
   | { kind: "loop"; at: number; runId: string | null; memberId: string | null; decision: LoopDecisionKind; iteration: number; max: number; reason: Reason }
   | { kind: "report"; at: number; runId: string | null; reportId: string; report: CrewReportType; text: string; title: string | null }
+  | { kind: "autopilot"; at: number; runId: null; action: string; outcome: "done" | "refused"; code: string | null; reason: string }
   | {
       kind: "switch";
       at: number;
@@ -232,6 +233,9 @@ export function buildTimeline(runs: TimelineRun[], events: TimelineEvent[], now:
         flush(e.runId);
         entries.push({ kind: "report", at, runId: e.runId, reportId: e.reportId, report: e.report, text: e.text, title: e.title });
         break;
+      case "autopilot":
+        entries.push({ kind: "autopilot", at, runId: null, action: e.action, outcome: e.outcome, code: e.code, reason: e.reason });
+        break;
       case "account_switch":
         flush(e.runId);
         entries.push({ kind: "switch", at, runId: e.runId, phase: e.phase, trigger: e.trigger, from: e.from, to: e.to, source: e.source, headroom: e.headroom, estimate: e.estimate, skipped: e.skipped });
@@ -250,7 +254,7 @@ export function buildTimeline(runs: TimelineRun[], events: TimelineEvent[], now:
   for (const r of sortedRuns) if (r.endedAt) entries.push({ kind: "ended", at: ms(r.endedAt), runId: r.id, reason: r.endReason });
 
   // Stable order: by time, then so a run starts before its steps and ends after them.
-  const RANK: Record<TimelineEntry["kind"], number> = { started: 0, wait: 1, request: 2, handoff: 2, message: 2, retry: 2, report: 2, hibernation: 2, switch: 2, tools: 3, ended: 4, loop: 5 };
+  const RANK: Record<TimelineEntry["kind"], number> = { started: 0, wait: 1, request: 2, handoff: 2, message: 2, retry: 2, report: 2, hibernation: 2, switch: 2, autopilot: 2, tools: 3, ended: 4, loop: 5 };
   entries.sort((a, b) => a.at - b.at || RANK[a.kind] - RANK[b.kind]);
 
   const start = lanes.length ? Math.min(...lanes.map((l) => l.start)) : now;

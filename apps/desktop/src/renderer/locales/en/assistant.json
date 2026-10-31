@@ -117,6 +117,9 @@
     "message": "Suggest tasks for this project. Look through the code and propose three to five tasks that would help it most, each with a kind, acceptance criteria and a size."
   },
   "report": {
+    "completed": "Marked done by Autopilot on {{time}}.",
+    "completedShort": "Done by Autopilot",
+    "completedReason": "Autopilot's reason",
     "label": "Report",
     "open": "Open report",
     "findingsCount_one": "{{count}} finding",

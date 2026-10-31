@@ -33,6 +33,7 @@ export * from "./redact.ts";
 export * from "./agentfiles.ts";
 export * from "./ipc/agentfiles.ts";
 export * from "./assistant.ts";
+export * from "./autopilot.ts";
 export * from "./ipc/assistant.ts";
 export * from "./ipc/problems.ts";
 export * from "./presets.ts";

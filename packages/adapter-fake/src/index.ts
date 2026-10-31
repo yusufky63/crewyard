@@ -8,8 +8,14 @@ export type FakeStep =
   | { emit: DistributiveOmit<AgentEvent, "runId" | "seq" | "at" | "source"> }
   | { wait: number }
   | { awaitAnswer: string }
-  /** Calls a tool of the run's report server through the daemon's pipe, as a runner would (docs/adr/0007). */
-  | { mcp: { tool: string; arguments: unknown } };
+  /**
+   * Calls a tool of the run's report server through the daemon's pipe, as a runner would (docs/adr/0007).
+   * A string argument `{{mcp.N.field}}` is replaced by that field of the N-th mcp result's JSON text,
+   * so a script can use an id the daemon just returned (Autopilot, docs/adr/0017).
+   */
+  | { mcp: { tool: string; arguments: unknown } }
+  /** Ends the turn here and waits for the next input (nextTurn), then goes on with the script; null ends the run. */
+  | { awaitTurn: true };
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 
@@ -77,7 +83,11 @@ export class FakeAdapter implements AgentAdapter {
       }
       else if ("mcp" in step) {
         const spec = state.mcpServers?.find((m) => m.builtin);
-        state.mcpResults.push(spec ? await callMcpTool(spec, step.mcp.tool, step.mcp.arguments) : { isError: true, text: "no report server in this run" });
+        state.mcpResults.push(spec ? await callMcpTool(spec, step.mcp.tool, resolveRefs(step.mcp.arguments, state.mcpResults)) : { isError: true, text: "no report server in this run" });
+      } else if ("awaitTurn" in step) {
+        const next = state.nextTurn ? await state.nextTurn() : null;
+        if (!next) break;
+        state.inputs.push(toUserInput(next));
       } else yield { ...step.emit, runId: run.runId, seq: seq++, at: new Date().toISOString(), source: { adapter: "fake", cliVersion: null } } as AgentEvent;
     }
     // Turn boundary, as the real adapters do: queued follow-ups become further (empty) turns.
@@ -136,4 +146,23 @@ export class FakeAdapter implements AgentAdapter {
     if (!state) throw new Error(`Unknown run ${run.runId}`);
     return state;
   }
+}
+
+const REF = /^\{\{mcp\.(\d+)\.(\w+)\}\}$/;
+
+/** Replaces `{{mcp.N.field}}` strings with fields of earlier mcp results; anything unresolved stays as written. */
+function resolveRefs(v: unknown, results: ReadonlyArray<{ text: string }>): unknown {
+  if (typeof v === "string") {
+    const m = REF.exec(v);
+    if (!m) return v;
+    try {
+      const value = (JSON.parse(results[Number(m[1])]?.text ?? "null") as Record<string, unknown> | null)?.[m[2]!];
+      return value === undefined ? v : value;
+    } catch {
+      return v;
+    }
+  }
+  if (Array.isArray(v)) return v.map((x) => resolveRefs(x, results));
+  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, resolveRefs(x, results)]));
+  return v;
 }

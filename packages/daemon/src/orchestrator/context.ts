@@ -325,7 +325,19 @@ export class OrchestratorContext {
 
   emit<K extends keyof TasksTopics>(topic: K, payload: TasksTopics[K]): void {
     this.opts.emit(topic, payload);
+    if (topic === "tasks.changed") {
+      for (const w of this.taskWatchers) {
+        try {
+          w(payload as TasksTopics["tasks.changed"]);
+        } catch {
+          // A watcher (Autopilot, docs/adr/0017) must never break the change that told it.
+        }
+      }
+    }
   }
+
+  /** Listeners for task changes inside the daemon, beside the window's feed (Orchestrator.watchTasks). */
+  readonly taskWatchers = new Set<(p: TasksTopics["tasks.changed"]) => void>();
 
   emitTask(taskId: string, cause: TaskChangeCause): void {
     const task = this.db.task(taskId);

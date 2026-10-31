@@ -41,6 +41,31 @@ export function requestToast(state: ToastState, ev: TasksTopics["requests.change
 }
 
 // ---------------------------------------------------------------------------------------------
+// Autopilot (docs/adr/0017). Its calls come in bursts (create, approve, queue), so they are batched:
+// the first action in a project opens a window, and one toast at its end counts what happened. A
+// refusal is in the log, not a toast. A halt toasts at once: Autopilot stopped and waits for you.
+
+export const AUTOPILOT_BATCH_MS = 30_000;
+
+export class AutopilotBatches {
+  private readonly open = new Map<string, number>();
+
+  /** Counts an allowed action; true when it opened a new window (the caller schedules the flush). */
+  add(projectId: string): boolean {
+    const n = this.open.get(projectId);
+    this.open.set(projectId, (n ?? 0) + 1);
+    return n === undefined;
+  }
+
+  /** Ends the project's window; the number of actions in it. */
+  flush(projectId: string): number {
+    const n = this.open.get(projectId) ?? 0;
+    this.open.delete(projectId);
+    return n;
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
 // Quiet hours (inQuietHours, in core) and mute. Suppressed toasts are dropped, not queued: the Inbox and the tray count
 // still show everything, and a burst of stale toasts at 08:00 helps nobody.
 

@@ -23,6 +23,11 @@
     "body": "Closing the window does not stop agents. Open Crewyard again from the tray icon."
   },
   "toast": {
+    "autopilotTitle": "Autopilot",
+    "autopilotOne": "Autopilot took 1 action. The log in the task assistant has its reason.",
+    "autopilotMany": "Autopilot took {{count}} actions. The log in the task assistant has their reasons.",
+    "autopilotHaltedTitle": "Autopilot stopped itself",
+    "autopilotHalted": "The same failure happened twice. Look at it, then turn Autopilot on again.",
     "approvalTitle": {
       "low": "Low-risk approval",
       "medium": "Medium-risk approval",

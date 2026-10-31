@@ -7,6 +7,7 @@ import {
   assistantPolicy,
   cleanText,
   draftDescription,
+  isAutopilotTool,
   parseTaskDraft,
   presetById,
   suggestPresets,
@@ -75,9 +76,18 @@ export interface AssistantHost {
   facts(projectId: string): Promise<ProjectFacts>;
 }
 
+/** Autopilot (docs/adr/0017), when the handlers wire it: its tool calls, idle hold, prompt lines and report marks. */
+export interface AssistantAutopilot {
+  call(projectId: string, conversationId: string, tool: string, args: unknown): Promise<ToolOutcome>;
+  busy(projectId: string): boolean;
+  promptNote(projectId: string): string | null;
+  completed(taskId: string): TaskReport["completed"];
+}
+
 export interface AssistantServiceOptions {
   store: Store;
   host: AssistantHost;
+  autopilot?: AssistantAutopilot;
   emit(topic: "assistant.changed", payload: { projectId: string }): void;
   now?: () => Date;
   freeMemoryMb?: () => number;
@@ -384,7 +394,7 @@ export class AssistantService {
       }
       if (!handle) {
         live.seen = { ...ZERO_TOTALS };
-        handle = await adapter.start(request(assistantPrompt(project, first.text, this.recap(conv.id, first.id))));
+        handle = await adapter.start(request(assistantPrompt(project, first.text, this.recap(conv.id, first.id), this.opts.autopilot?.promptNote(conv.project_id) ?? null)));
       }
       live.handle = handle;
       this.db.prepare("update assistant_conversations set native_session_id = ?, totals = ? where id = ?").run(handle.nativeSession?.sessionId ?? null, JSON.stringify(live.seen), conv.id);
@@ -449,7 +459,11 @@ export class AssistantService {
   private armIdle(live: Live): void {
     this.disarmIdle(live);
     const ms = this.opts.idleMs ?? this.opts.host.idleMinutes() * 60_000;
-    live.idleTimer = setTimeout(() => void this.stopLive(live, "idle"), ms);
+    live.idleTimer = setTimeout(() => {
+      // Autopilot with work in flight keeps the session: it will hear when that work changes.
+      if (this.opts.autopilot?.busy(live.projectId)) this.armIdle(live);
+      else void this.stopLive(live, "idle");
+    }, ms);
     live.idleTimer.unref?.();
   }
 
@@ -632,10 +646,32 @@ export class AssistantService {
 
   // ---------------------------------------------------------------- drafts
 
+  /**
+   * Crewyard's own note to the project's live session (Autopilot, docs/adr/0017): shown as a notice
+   * line, handed to the runner at its next turn boundary like a message of yours. No session, no note:
+   * a stopped assistant is never started by this.
+   */
+  notify(projectId: string, code: string, text: string): void {
+    const live = this.live.get(projectId);
+    if (!live || live.stopping || this.closed) return;
+    const id = this.insertLine(live.conversationId, "notice", code);
+    if (live.waiter) this.handOver(live, [{ id, text }]);
+    else live.pending.push({ id, text });
+    this.emitNow(projectId);
+  }
+
   /** The assistant's propose_task call, from the report server pipe (docs/adr/0007). */
   async toolCall(conversationId: string, tool: string, args: unknown): Promise<ToolOutcome> {
     const live = [...this.live.values()].find((l) => l.conversationId === conversationId);
     if (!live || live.stopping) return { text: "Refused: this assistant session is not active.", isError: true };
+    if (isAutopilotTool(tool)) {
+      this.flushReply(live);
+      if (!this.opts.autopilot) return { text: JSON.stringify({ ok: false, refused: "off", detail: "Autopilot is not available." }), isError: true };
+      const out = await this.opts.autopilot.call(live.projectId, conversationId, tool, args);
+      if (tool !== "list_tasks" && tool !== "read_task") this.insertLine(conversationId, "notice", `autopilot.call.${out.isError ? "refused" : "done"}.${tool}`);
+      this.emitNow(live.projectId);
+      return out;
+    }
     if (tool !== ASSISTANT_TOOL) return { text: "Refused: unknown tool.", isError: true };
     const parsed = parseTaskDraft(args);
     if (!parsed.ok) return { text: `Refused: ${parsed.error}.`, isError: true };
@@ -700,7 +736,8 @@ export class AssistantService {
     }
     if (added) this.opts.store.appendEvent({ kind: "assistant.suggestions", source: "assistant", payload: { count: read.suggestions.length }, projectId: task.projectId, taskId });
     const drafts = (this.db.prepare("select * from assistant_drafts where source_task_id = ? order by created_at, rowid").all(taskId) as unknown as DraftRow[]).map(draftView);
-    return { taskId, ...read.report, drafts };
+    const completed = this.opts.autopilot?.completed(taskId) ?? null;
+    return { taskId, ...read.report, drafts, ...(completed ? { completed } : {}) };
   }
 
   async presets(projectId: string): Promise<AssistantPresetsView> {

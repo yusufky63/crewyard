@@ -83,6 +83,11 @@ export type TimelineEvent = {
    * `memberId` is the step the loop works on (the implementer), also for a reviewer's verdict.
    */
   | { kind: "loop"; decision: LoopDecisionKind; memberId: string | null; iteration: number; max: number; reason: Reason }
+  /**
+   * An Autopilot call on this task (docs/adr/0017): `action` is the tool, `outcome` whether it was
+   * allowed, `code` the refusal; `reason` is the agent's own text, untrusted.
+   */
+  | { kind: "autopilot"; action: string; outcome: "done" | "refused"; code: string | null; reason: string }
   /** A report or follow-up proposal the agent sent through the report server (docs/adr/0007); untrusted text. */
   | { kind: "report"; reportId: string; report: CrewReportType; text: string; title: string | null }
   /**

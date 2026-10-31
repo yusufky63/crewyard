@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeftRight, ChevronDown, ChevronRight, CircleAlert, CircleCheck, CircleHelp, Flag, Lightbulb, MessageSquare, Milestone, Moon, Play, RotateCw, ShieldQuestion, Shuffle, Timer, Wrench } from "lucide-react";
+import { ArrowLeftRight, Bot, ChevronDown, ChevronRight, CircleAlert, CircleCheck, CircleHelp, Flag, Lightbulb, MessageSquare, Milestone, Moon, Play, RotateCw, ShieldQuestion, Shuffle, Timer, Wrench } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { buildTimeline, timeIn, visibleSegments, type CrewReportType, type Lane, type LaneState, type McpTopics, type TaskDetail, type TasksTopics, type TimelineEntry, type ToolStep } from "@crewyard/core";
 import { BrandIcon, Button, Label } from "@crewyard/ui";
@@ -186,6 +186,7 @@ const ENTRY_ICON: Record<TimelineEntry["kind"], typeof Play> = {
   retry: RotateCw,
   hibernation: Moon,
   switch: Shuffle,
+  autopilot: Bot,
   // Drawn with the decision's own status icon instead (loopLook).
   loop: RotateCw,
   // Drawn with the report's own icon instead (REPORT_ICON).
@@ -267,6 +268,17 @@ function EntryText({ e, who, roleOf, runnerOf, now, locale, first }: { e: Timeli
         <span className="tl-switch">
           <span>{t(`switch.${e.phase}`, { who: who(e.runId) })}</span>
           <SwitchFacts runner={runnerOf(e.runId)} trigger={e.trigger} from={e.from} to={e.to} source={e.source} headroom={e.headroom} estimate={e.estimate} skipped={e.skipped} />
+        </span>
+      );
+    case "autopilot":
+      return (
+        <span className="tl-report">
+          <span>{t(`autopilot.${e.outcome}`, { action: t(`autopilot.action.${e.action}`, { defaultValue: e.action }), code: e.code ? t(`autopilot:refusal.${e.code}`, { defaultValue: e.code }) : "" })}</span>
+          {e.reason && (
+            <span className="tl-quote" aria-label={t("entry.fromAgent")}>
+              {e.reason}
+            </span>
+          )}
         </span>
       );
     case "ended":

@@ -1,16 +1,24 @@
 import type { AssistantIpc } from "@crewyard/core";
 import { projectFacts } from "../assistant/facts.ts";
+import { Autopilot } from "../assistant/autopilot.ts";
 import { AssistantService, type AssistantServiceOptions } from "../assistant/service.ts";
 import { orchestratorFor } from "../orchestrator/index.ts";
 import { HIBERNATION_KEY, readHibernation } from "../settings/values.ts";
 import { mcpServiceFor } from "./mcp.ts";
 import type { HandlerContext, HandlerMap } from "./types.ts";
 
-// Handlers for the task assistant (docs/adr/0014). Owned by the assistant work. Thin: the rules
-// live in ../assistant. The service reaches the orchestrator only through its public reads and
-// propose(), and the MCP service for its report server ticket.
+// Handlers for the task assistant (docs/adr/0014) and its Autopilot (docs/adr/0017). Owned by the
+// assistant work. Thin: the rules live in ../assistant. Both reach the orchestrator only through
+// its public methods, and the MCP service for the report server ticket.
 
 const services = new WeakMap<object, AssistantService>();
+const autopilots = new WeakMap<object, Autopilot>();
+
+/** The one Autopilot per store, built with the assistant service. */
+export function autopilotFor(ctx: HandlerContext): Autopilot {
+  assistantFor(ctx);
+  return autopilots.get(ctx.store)!;
+}
 
 /** The one assistant service per store, so app.shutdown and tests reach the same instance. */
 export function assistantFor(ctx: HandlerContext, overrides: Partial<Omit<AssistantServiceOptions, "store" | "host" | "emit">> = {}): AssistantService {
@@ -19,10 +27,36 @@ export function assistantFor(ctx: HandlerContext, overrides: Partial<Omit<Assist
   const o = orchestratorFor(ctx);
   const mcp = mcpServiceFor(ctx);
   const db = ctx.store.db;
+  const autopilot: Autopilot = new Autopilot({
+    store: ctx.store,
+    emit: ctx.emit,
+    ...(overrides.now ? { now: overrides.now } : {}),
+    host: {
+      propose: (p) => o.propose(p),
+      get: (taskId) => o.get(taskId),
+      list: (projectId) => o.list(projectId),
+      edit: (taskId, patch) => o.edit(taskId, patch),
+      approve: (taskId) => o.approve({ taskId }),
+      cancel: (taskId) => o.cancel(taskId),
+      enqueue: (runId, text) => void o.enqueue(runId, text),
+      retry: (runId) => o.retry(runId),
+      report: (taskId) => service.report(taskId),
+      candidates: async (projectId) => await o.profileDirectory().candidates(projectId),
+      projectName: (projectId) => (db.prepare("select name from projects where id = ?").get(projectId) as { name: string } | undefined)?.name ?? null,
+      userMessages: (conversationId) => db.prepare("select id, text from assistant_messages where conversation_id = ? and role = 'user' order by at, rowid").all(conversationId) as Array<{ id: string; text: string }>,
+      notify: (projectId, code, text) => service.notify(projectId, code, text),
+    },
+  });
   const service = new AssistantService({
     store: ctx.store,
     emit: ctx.emit,
     ...overrides,
+    autopilot: {
+      call: (projectId, conversationId, tool, args) => autopilot.call(projectId, conversationId, tool, args),
+      busy: (projectId) => autopilot.busy(projectId),
+      promptNote: (projectId) => autopilot.promptNote(projectId),
+      completed: (taskId) => autopilot.completed(taskId),
+    },
     host: {
       project: (id) => {
         const row = db.prepare("select id, name, path from projects where id = ?").get(id) as { id: string; name: string; path: string } | undefined;
@@ -57,12 +91,15 @@ export function assistantFor(ctx: HandlerContext, overrides: Partial<Omit<Assist
     },
   });
   mcp.setAssistant((conversationId, tool, args) => service.toolCall(conversationId, tool, args));
+  o.watchTasks((p) => autopilot.onTaskChanged(p));
   services.set(ctx.store, service);
+  autopilots.set(ctx.store, autopilot);
   return service;
 }
 
 export function createAssistantHandlers(ctx: HandlerContext): HandlerMap<AssistantIpc> {
   const a = assistantFor(ctx);
+  const ap = autopilotFor(ctx);
   return {
     "assistant.profiles": ({ projectId }) => a.profiles(projectId),
     "assistant.get": ({ projectId }) => a.get(projectId),
@@ -74,5 +111,9 @@ export function createAssistantHandlers(ctx: HandlerContext): HandlerMap<Assista
     "assistant.report": ({ taskId }) => a.report(taskId),
     "assistant.presets": ({ projectId }) => a.presets(projectId),
     "assistant.preset": ({ projectId, presetId }) => a.preset(projectId, presetId),
+    "autopilot.get": ({ projectId }) => ap.view(projectId),
+    "autopilot.set": ({ projectId, enabled, consent, limits }) => ap.set(projectId, { ...(enabled !== undefined ? { enabled } : {}), ...(consent !== undefined ? { consent } : {}), ...(limits ? { limits } : {}) }),
+    "autopilot.global": () => ap.global(),
+    "autopilot.kill": ({ killed }) => ap.kill(killed),
   };
 }

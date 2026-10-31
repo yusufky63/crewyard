@@ -503,6 +503,7 @@
     "project_not_found": "This project is no longer known.",
     "task_not_found": "This task no longer exists.",
     "task_not_proposed": "This crew was already approved or cancelled.",
+    "task_best_of_kind": "A Best of N task keeps its kind.",
     "task_cancelled": "The task is cancelled.",
     "crew_member_not_found": "That role is not in this crew.",
     "crew_missing_profile": "A role has no account yet. Pick one before approving.",

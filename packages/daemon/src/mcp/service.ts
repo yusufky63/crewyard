@@ -1,4 +1,4 @@
-import { ASSISTANT_TOOL_DEFS, type AgentCapabilities, type McpServerSpec, type McpTopics, type McpServerView, type RolePolicy } from "@crewyard/core";
+import { ASSISTANT_TOOL_DEFS, AUTOPILOT_TOOL_DEFS, type AgentCapabilities, type McpServerSpec, type McpTopics, type McpServerView, type RolePolicy } from "@crewyard/core";
 import type { Store } from "../store.ts";
 import { checkServer } from "./check.ts";
 import { planServers, recordUsage } from "./inject.ts";
@@ -34,9 +34,14 @@ export interface McpHook {
  */
 export const ASSISTANT_KEY = "assistant:";
 
+/**
+ * The Autopilot tools (docs/adr/0017) are listed on every assistant connection, because a client
+ * reads the list once per session; the daemon refuses each call while Autopilot is off or stopped.
+ */
 const ASSISTANT_TOOLS: ToolSet = {
-  tools: ASSISTANT_TOOL_DEFS,
-  instructions: "Use propose_task once for each task you suggest. It only shows the person a draft; nothing starts unless they add it and approve its crew.",
+  tools: [...ASSISTANT_TOOL_DEFS, ...AUTOPILOT_TOOL_DEFS],
+  instructions:
+    "Use propose_task once for each task you suggest. It only shows the person a draft; nothing starts unless they add it and approve its crew. The other tools work only while the person has Autopilot on for this project; a refusal says why.",
 };
 
 export type AssistantToolCall = (conversationId: string, tool: string, args: unknown) => Promise<ToolOutcome>;

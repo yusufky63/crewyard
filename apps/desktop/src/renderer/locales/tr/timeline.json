@@ -108,5 +108,20 @@
   "switch": {
     "switched": "{{who}}, sağlayıcının başka bir hesabına geçti",
     "refused": "{{who}}: sağlayıcının başka hiçbir hesabı kontrollerden geçmedi; görevin yedek modu karar veriyor"
+  },
+  "autopilot": {
+    "done": "Autopilot: {{action}}",
+    "refused": "Autopilot reddedildi: {{action}} ({{code}})",
+    "action": {
+      "create_task": "bu görevi açtı",
+      "edit_task": "bu görevi düzenledi",
+      "approve_crew": "ekibi bütçe içinde onayladı",
+      "queue_message": "çalışan adımın kuyruğuna mesaj ekledi",
+      "retry_step": "başarısız adımı yeniden denedi",
+      "cancel_task": "bu görevi iptal etti",
+      "complete_task": "bu analizi tamamlandı olarak işaretledi",
+      "read_task": "bu görevi okudu",
+      "list_tasks": "görevleri listeledi"
+    }
   }
 }

@@ -924,6 +924,45 @@ export const MIGRATIONS: Migration[] = [
      skipped_at text
    );`,
   },
+  // Autopilot (docs/adr/0017): per-project consent and limits, the tasks it created with the quote
+  // of your message they rest on, and the steps it retried (once each).
+  {
+    id: "autopilot",
+    sql: `create table if not exists autopilot_projects (
+     project_id text primary key references projects(id),
+     enabled integer not null default 0,
+     consent_at text,
+     limits text,
+     halted_reason text,
+     halted_detail text,
+     halted_at text,
+     updated_at text not null
+   );
+   create table if not exists autopilot_tasks (
+     task_id text primary key references tasks(id),
+     project_id text not null references projects(id),
+     conversation_id text,
+     basis_message_id text,
+     basis text not null,
+     sources text not null,
+     reason text not null,
+     created_at text not null,
+     approved_at text,
+     estimate_usd real,
+     report_read_at text,
+     completed_at text,
+     completed_reason text,
+     notified_status text
+   );
+   create index if not exists autopilot_tasks_project on autopilot_tasks(project_id, created_at);
+   create table if not exists autopilot_retries (
+     member_id text primary key,
+     task_id text not null references tasks(id),
+     from_run_id text not null,
+     run_id text,
+     at text not null
+   );`,
+  },
 ];
 
 /** What the positional scheme applied: a database at `user_version` N has the first N of these. */

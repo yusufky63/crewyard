@@ -1,0 +1,150 @@
+{
+  "label": "Autopilot",
+  "title": "Autopilot",
+  "lead": "Let the assistant open, approve, follow up and close tasks within limits you set. Pushes, pull requests, merges and the Inbox stay with you.",
+  "state": {
+    "off": "Off",
+    "on": "On",
+    "killed": "Stopped",
+    "halted": "Halted"
+  },
+  "on": "Turn on",
+  "onFirst": "Turn on…",
+  "off": "Turn off",
+  "usage": {
+    "today": "Today {{spent}} of {{cap}}",
+    "estimated": "Estimated",
+    "started": "Started {{n}}/{{cap}} this hour",
+    "active": "Active {{n}}/{{cap}}"
+  },
+  "killed": "Stop Autopilot is pressed: every Autopilot action is refused in every project. Running steps go on. Lift it in the status bar or Settings.",
+  "halted": {
+    "text": "Autopilot stopped itself here: two of its steps failed the same way. Look at the failure, then turn it on again.",
+    "again": "Turn on again"
+  },
+  "consent": {
+    "title": "Turn on Autopilot for this project",
+    "lead": "The task assistant will run the task flow for you within the limits below. Every action is checked by Crewyard, logged with its reason and shown in the task's timeline.",
+    "may": "It may",
+    "mayItems": {
+      "create": "create tasks based on what you write in the conversation",
+      "edit": "edit its tasks before they start",
+      "approve": "approve their crews when the Estimated cost fits the limits and every key is under its caps",
+      "message": "queue messages to its running steps",
+      "retry": "retry a failed step once",
+      "cancel": "cancel tasks it created",
+      "complete": "mark a finished analysis done after reading its report"
+    },
+    "yours": "Stays with you, always",
+    "yoursItems": {
+      "push": "pushing, pull requests and merging",
+      "spend": "spend past any cap, and Unknown estimates",
+      "inbox": "Inbox questions and approvals, Medium and High risk included",
+      "delete": "deleting worktrees and branches",
+      "signin": "signing in to accounts",
+      "limits": "these limits and turning Autopilot on or off"
+    },
+    "accept": "Turn on",
+    "cancel": "Cancel",
+    "recorded": "You allowed Autopilot here on {{time}}."
+  },
+  "limits": {
+    "edit": "Limits",
+    "save": "Save limits",
+    "cancel": "Cancel",
+    "perTaskUsd": "Per task (USD)",
+    "perDayUsd": "Per day (USD)",
+    "tasksPerHour": "Tasks per hour",
+    "concurrent": "At once",
+    "invalid": "Check the limits: the day limit cannot be under the task limit."
+  },
+  "log": {
+    "title": "Autopilot log",
+    "refused": "Refused: {{code}}",
+    "reason": "Reason given by the assistant",
+    "action": {
+      "create_task": "Created a task",
+      "edit_task": "Edited a task",
+      "approve_crew": "Approved a crew",
+      "queue_message": "Queued a message",
+      "retry_step": "Retried a step",
+      "cancel_task": "Cancelled a task",
+      "complete_task": "Marked an analysis done",
+      "read_task": "Read a task",
+      "list_tasks": "Listed the tasks",
+      "enabled": "You turned Autopilot on",
+      "disabled": "You turned Autopilot off",
+      "limits": "You changed the limits",
+      "killed": "You pressed Stop Autopilot",
+      "resumed": "You lifted the stop",
+      "halted": "Stopped itself: the same failure twice"
+    }
+  },
+  "refusal": {
+    "off": "Autopilot is off",
+    "killed": "stopped by you",
+    "halted": "stopped after a repeated failure",
+    "invalid": "invalid request",
+    "not_found": "no such task",
+    "not_own": "not its task",
+    "wrong_status": "wrong state",
+    "no_basis": "not based on your words",
+    "estimate_unknown": "estimate Unknown",
+    "over_task_limit": "over the per-task limit",
+    "over_day_limit": "over the per-day limit",
+    "key_cap": "a key's cap",
+    "rate_created": "hourly limit for new tasks",
+    "rate_started": "hourly limit for starts",
+    "concurrent": "too many at once",
+    "no_crew": "crew incomplete",
+    "no_running_step": "no running step",
+    "nothing_to_retry": "nothing failed",
+    "retry_used": "already retried once",
+    "code_task": "code tasks wait for you",
+    "report_not_read": "report not read yet",
+    "not_allowed": "stays with you",
+    "failed": "refused by the scheduler"
+  },
+  "notice": {
+    "call": {
+      "done": "Autopilot: {{action}}.",
+      "refused": "Autopilot was refused: {{action}}."
+    },
+    "status": {
+      "done": "Autopilot told the assistant: one of its tasks finished.",
+      "failed": "Autopilot told the assistant: one of its tasks failed.",
+      "needs_input": "Autopilot told the assistant: one of its tasks waits for you in the Inbox.",
+      "review": "Autopilot told the assistant: one of its tasks is ready for your review.",
+      "merged": "Autopilot told the assistant: you merged one of its tasks.",
+      "limited": "Autopilot told the assistant: one of its tasks paused for a limit or cap.",
+      "cancelled": "Autopilot told the assistant: one of its tasks was cancelled."
+    },
+    "on": "You turned Autopilot on; the assistant was told.",
+    "off": "You turned Autopilot off; the assistant was told.",
+    "killed": "Stop Autopilot was pressed; the assistant was told.",
+    "resumed": "The stop was lifted; the assistant was told.",
+    "halted": "Autopilot stopped itself after the same failure twice."
+  },
+  "status": {
+    "on_one": "Autopilot on in {{count}} project",
+    "on_other": "Autopilot on in {{count}} projects",
+    "stop": "Stop Autopilot",
+    "stopped": "Autopilot stopped",
+    "lift": "Lift the stop",
+    "stopTitle": "Refuses every Autopilot action at once. Running agents go on."
+  },
+  "settings": {
+    "title": "Autopilot",
+    "hint": "Turned on per project in the task assistant. The switch here stops it everywhere at once; running agents go on.",
+    "kill": "Stop Autopilot",
+    "killHint": "While on, every Autopilot action is refused in every project.",
+    "projects": "On in",
+    "none": "No project has Autopilot on.",
+    "halted": "halted"
+  },
+  "errors": {
+    "autopilot_consent": "Accept what Autopilot may do before turning it on.",
+    "autopilot_limits_invalid": "Those limits are out of range.",
+    "other": "Could not change Autopilot: {{message}}"
+  }
+}

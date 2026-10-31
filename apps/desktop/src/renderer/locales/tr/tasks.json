@@ -503,6 +503,7 @@
     "project_not_found": "Bu proje artık tanınmıyor.",
     "task_not_found": "Bu görev artık yok.",
     "task_not_proposed": "Bu ekip zaten onaylandı ya da iptal edildi.",
+    "task_best_of_kind": "Best of N görevinin türü değiştirilemez.",
     "task_cancelled": "Görev iptal edildi.",
     "crew_member_not_found": "Bu rol ekipte yok.",
     "crew_missing_profile": "Bir rolün henüz hesabı yok. Onaylamadan önce bir hesap seçin.",

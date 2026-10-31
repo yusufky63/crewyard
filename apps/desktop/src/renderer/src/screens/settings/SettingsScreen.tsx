@@ -9,6 +9,7 @@ import { useNav } from "../../nav.ts";
 import { usePrefs, type Density, type ThemePref } from "../../prefs.ts";
 import { AccountSwitchRows } from "./AccountSwitch.tsx";
 import { AgentFilesSection } from "./AgentFilesSection.tsx";
+import { AutopilotSection } from "./AutopilotSection.tsx";
 import { ConfigNotices } from "./ConfigNotices.tsx";
 import { AboutSection, DataSection } from "./DataSection.tsx";
 import { HibernationRows } from "./Hibernation.tsx";
@@ -305,8 +306,9 @@ export function SettingsScreen() {
           <Notifications supported={startup.data?.supported ?? false} />
           <Startup />
           <Fallback />
-          <McpSection index={6} />
-          <RolesSection index={7} />
+          <AutopilotSection index={SECTIONS.indexOf("autopilot") + 1} />
+          <McpSection index={SECTIONS.indexOf("mcp") + 1} />
+          <RolesSection index={SECTIONS.indexOf("roles") + 1} />
           <AgentFilesSection index={SECTIONS.indexOf("agentfiles") + 1} />
           <DataSection />
           <UpdatesSection index={SECTIONS.indexOf("updates") + 1} />

@@ -206,6 +206,15 @@ const KINDS = [
   "run.woke",
   "account.switched",
   "account.switch_refused",
+  // Autopilot's calls on a task (docs/adr/0017); reads are not logged as events.
+  "autopilot.create_task",
+  "autopilot.edit_task",
+  "autopilot.approve_crew",
+  "autopilot.queue_message",
+  "autopilot.retry_step",
+  "autopilot.cancel_task",
+  "autopilot.complete_task",
+  "autopilot.refused",
 ];
 
 const TRUNCATED = /\n?\[truncated, (\d+) bytes(?:; full text in (.+))?\]$/;
@@ -348,6 +357,16 @@ function project(kind: string, p: Payload): TimelineEventBody | null {
     case "account.switched":
     case "account.switch_refused":
       return switchOf(p);
+    case "autopilot.refused":
+      return { kind: "autopilot", action: str(p.tool) ?? "", outcome: "refused", code: str(p.code), reason: str(p.reason) ?? "" };
+    case "autopilot.create_task":
+    case "autopilot.edit_task":
+    case "autopilot.approve_crew":
+    case "autopilot.queue_message":
+    case "autopilot.retry_step":
+    case "autopilot.cancel_task":
+    case "autopilot.complete_task":
+      return { kind: "autopilot", action: kind.slice("autopilot.".length), outcome: "done", code: null, reason: str(p.reason) ?? "" };
     case "mcp.report": {
       // Checked and capped when it arrived (core/mcp.ts); a row of another shape is left out.
       const type = str(p.type);

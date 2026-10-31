@@ -90,6 +90,7 @@ export type OrchestratorErrorCode =
   | "project.not_found"
   | "task.not_found"
   | "task.not_proposed" // approve on a task that is already approved or cancelled
+  | "task.best_of_kind" // a Best of N task's kind cannot change: its variants were proposed for it
   | "task.cancelled"
   | "crew.member_not_found"
   | "crew.missing_profile" // { role } still has no profile
@@ -1047,4 +1048,6 @@ export type TaskChangeCause =
   // The task let in or held out same-provider account switching (docs/adr/0009).
   | "account_switch"
   // The crew was edited in the Crew graph: a proposal edit, a follow-up, a skip or its approval.
-  | "crew_edited";
+  | "crew_edited"
+  // The title, description or kind of a task that had not started changed (docs/adr/0017).
+  | "edited";
