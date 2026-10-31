@@ -28,6 +28,24 @@
   },
   "supportShort": { "native": "native", "direct": "direct", "config": "through config", "conversion": "needs a converter" },
   "legend": { "direct": "Works directly", "config": "Through the profile's config", "conversion": "Needs a format converter, not offered yet" },
+  "chip": {
+    "group": "Runners that work with {{provider}}",
+    "label": "{{runner}}: {{state}}",
+    "state": { "native": "works natively", "direct": "works directly", "config": "through the profile's config", "conversion": "needs a converter" },
+    "via": {
+      "native": "The runner already knows {{provider}}; the profile only adds the key.",
+      "direct": "Connects by pointing ANTHROPIC_BASE_URL at {{provider}}'s Anthropic-compatible endpoint.",
+      "config": "Connects through an entry the profile writes in its own runner config.",
+      "config_codex": "Connects through a model_providers entry the profile writes in its own Codex config.",
+      "config_opencode": "Connects through a provider entry the profile writes in its own OpenCode config.",
+      "conversion": "{{provider}} speaks a different API format than this runner. It would need a converter, which Crewyard does not offer yet."
+    },
+    "usable": "You can pick this runner in a {{provider}} profile.",
+    "unusable": "You cannot pick this runner in a {{provider}} profile yet.",
+    "legendLabel": "What the runner icons mean",
+    "legendTitle": "Each icon is a runner. Its frame says how it connects:",
+    "shape": { "filled": "Filled:", "outline": "Outline:", "dashed": "Dashed:" }
+  },
   "sources": "Models, prices and context limits come from models.dev; Anthropic-compatible and balance endpoints come from cc-switch. DeepSeek bills twice the listed price in its weekday peak hours (01:00–04:00 and 06:00–10:00 UTC), and from 16:00 UTC on 31 October 2026 $0.75 per 1,000 web searches and page fetches its server runs for Claude Code and Codex; estimates follow both, from its own pricing page. Relays that resell other providers' subscriptions are not listed.",
   "notConnected": "Not connected",
   "connectAction": "Connect",

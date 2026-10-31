@@ -28,6 +28,24 @@
   },
   "supportShort": { "native": "yerleşik", "direct": "doğrudan", "config": "yapılandırmayla", "conversion": "dönüştürücü gerekir" },
   "legend": { "direct": "Doğrudan çalışır", "config": "Profil yapılandırmasıyla", "conversion": "Biçim dönüştürücüsü gerekir, henüz yok" },
+  "chip": {
+    "group": "{{provider}} ile çalışan ajanlar",
+    "label": "{{runner}}: {{state}}",
+    "state": { "native": "yerleşik olarak çalışır", "direct": "doğrudan çalışır", "config": "profil yapılandırmasıyla çalışır", "conversion": "dönüştürücü gerekir" },
+    "via": {
+      "native": "Ajan {{provider}} sağlayıcısını zaten tanır; profil yalnızca anahtarı ekler.",
+      "direct": "ANTHROPIC_BASE_URL, {{provider}} sağlayıcısının Anthropic uyumlu uç noktasına yönlendirilerek bağlanır.",
+      "config": "Profilin kendi ajan yapılandırmasına yazdığı bir girdiyle bağlanır.",
+      "config_codex": "Profilin kendi Codex yapılandırmasına yazdığı bir model_providers girdisiyle bağlanır.",
+      "config_opencode": "Profilin kendi OpenCode yapılandırmasına yazdığı bir sağlayıcı girdisiyle bağlanır.",
+      "conversion": "{{provider}} bu ajandan farklı bir API biçimi kullanıyor. Bir dönüştürücü gerekir; Crewyard bunu henüz sunmuyor."
+    },
+    "usable": "Bu ajanı bir {{provider}} profilinde seçebilirsiniz.",
+    "unusable": "Bu ajanı bir {{provider}} profilinde henüz seçemezsiniz.",
+    "legendLabel": "Ajan simgelerinin anlamı",
+    "legendTitle": "Her simge bir ajandır. Çerçevesi nasıl bağlandığını gösterir:",
+    "shape": { "filled": "Dolu:", "outline": "Çerçeveli:", "dashed": "Kesikli:" }
+  },
   "sources": "Modeller, fiyatlar ve bağlam sınırları models.dev'den; Anthropic uyumlu ve bakiye uç noktaları cc-switch'ten gelir. DeepSeek hafta içi yoğun saatlerde (UTC 01.00–04.00 ve 06.00–10.00) listedeki fiyatın iki katını alır; 31 Ekim 2026 UTC 16.00'dan itibaren de Claude Code ve Codex için sunucusunda yaptığı web aramalarının ve sayfa çekme isteklerinin her 1.000'i için 0,75 dolar alır. Tahminler ikisini de DeepSeek'in kendi fiyat sayfasına göre hesaba katar. Başka sağlayıcıların aboneliklerini yeniden satan aracılar listede yok.",
   "notConnected": "Bağlı değil",
   "connectAction": "Bağla",

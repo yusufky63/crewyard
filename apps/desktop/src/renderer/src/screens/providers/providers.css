@@ -26,12 +26,25 @@ select.pv-input { padding-right: 6px; }
 .prov-model { font: 400 12px / 1.45 var(--mono); color: var(--ink-2); overflow-wrap: anywhere; }
 tr.dim .prov-name { color: var(--ink-2); }
 .rchips { display: flex; gap: 4px; flex-wrap: wrap; }
-.rchip { font: 500 10.5px / 1 var(--mono); letter-spacing: 0.04em; padding: 4px 6px; border: 1px solid var(--line); color: var(--ink-2); white-space: nowrap; }
-.rchip.on { border-color: transparent; background: var(--ok-soft); color: var(--ok); }
-.rchip.cfg { border-color: transparent; background: var(--accent-soft); color: var(--accent); }
-.rchip.off { border-style: dashed; color: var(--ink-3); }
-.pv-creds { display: grid; gap: 8px; }
-.pv-sub { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; color: var(--ink-3); margin-top: 3px; }
+/* Runner state by frame shape: filled works directly, outline goes through config, dashed needs a
+   converter. The color repeats the shape and never carries the state alone. */
+.rchip { display: inline-flex; align-items: center; justify-content: center; font: 500 10.5px / 1 var(--mono); letter-spacing: 0.04em; padding: 4px 6px; border: 1px solid var(--line); color: var(--ink-2); white-space: nowrap; }
+.rchip.ico { width: 24px; height: 24px; padding: 0; }
+.rchip.on { border-color: var(--ok); background: var(--ok-soft); color: var(--ok); }
+.rchip.cfg { border-color: var(--accent); color: var(--accent); }
+.rchip.off { border-style: dashed; border-color: var(--line-strong); color: var(--ink-3); }
+.rchip[tabindex] { cursor: default; }
+.pv-th-tip { display: inline-flex; align-items: center; gap: 4px; }
+.pv-th-info { display: inline-grid; place-items: center; width: 18px; height: 18px; padding: 0; border: 0; background: none; color: var(--ink-3); cursor: default; }
+.pv-th-info:hover { color: var(--ink); }
+.pv-tip { position: fixed; z-index: var(--z-popover); width: 300px; display: grid; gap: 6px; padding: 10px 12px; background: var(--surface); border: 1px solid var(--line-strong); color: var(--ink-2); font: 400 var(--font-size-meta) / 1.45 var(--font-family-ui); letter-spacing: normal; text-transform: none; text-align: left; white-space: normal; pointer-events: none; }
+.pv-tip[hidden] { display: none; }
+.pv-tip-name { display: flex; align-items: center; gap: 6px; color: var(--ink); font-weight: 600; }
+.pv-tip-name .rchip { margin-left: auto; font-weight: 500; }
+.pv-tip-meta { color: var(--ink-3); }
+.pv-tip-row { display: flex; align-items: center; gap: 8px; }
+.pv-tip-row .rchip { flex: none; width: 16px; height: 16px; }
+.pv-tip-row b { color: var(--ink); font-weight: 600; }
 .note-row { padding: 12px 16px; border-top: 1px solid var(--line); font-size: 12px; color: var(--ink-3); display: grid; gap: 8px; }
 .pv-legend { display: flex; gap: 8px; flex-wrap: wrap; }
 
