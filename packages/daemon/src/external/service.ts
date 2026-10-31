@@ -120,6 +120,11 @@ export class ExternalService {
     if (pipe) await pipe.close();
   }
 
+  /** At process exit: a relay started later then says "not running" instead of trying a dead pipe. */
+  exiting(): void {
+    if (this.pipe) this.removeEndpoint();
+  }
+
   private removeEndpoint(): void {
     rmSync(this.endpointFile, { force: true });
   }

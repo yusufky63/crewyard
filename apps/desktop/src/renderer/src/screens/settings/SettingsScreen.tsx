@@ -11,6 +11,7 @@ import { AccountSwitchRows } from "./AccountSwitch.tsx";
 import { AgentFilesSection } from "./AgentFilesSection.tsx";
 import { AutopilotSection } from "./AutopilotSection.tsx";
 import { ConfigNotices } from "./ConfigNotices.tsx";
+import { ExternalSection } from "./ExternalSection.tsx";
 import { AboutSection, DataSection } from "./DataSection.tsx";
 import { HibernationRows } from "./Hibernation.tsx";
 import { KeepAwakeRows } from "./KeepAwake.tsx";
@@ -308,6 +309,7 @@ export function SettingsScreen() {
           <Fallback />
           <AutopilotSection index={SECTIONS.indexOf("autopilot") + 1} />
           <McpSection index={SECTIONS.indexOf("mcp") + 1} />
+          <ExternalSection index={SECTIONS.indexOf("external") + 1} />
           <RolesSection index={SECTIONS.indexOf("roles") + 1} />
           <AgentFilesSection index={SECTIONS.indexOf("agentfiles") + 1} />
           <DataSection />

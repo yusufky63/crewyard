@@ -82,6 +82,8 @@ export function externalServiceFor(ctx: HandlerContext, opts: ExternalHandlerOpt
 export function createExternalHandlers(ctx: HandlerContext, opts: ExternalHandlerOptions = {}): HandlerMap<ExternalIpc> {
   const svc = externalServiceFor(ctx, opts);
   void svc.start();
+  // Only the daemon's utility process; tests create many stores in one process.
+  if ((process as unknown as { parentPort?: unknown }).parentPort) process.once("exit", () => svc.exiting());
   return {
     "external.get": () => svc.view(),
     "external.setEnabled": ({ enabled }) => svc.setEnabled(enabled === true),

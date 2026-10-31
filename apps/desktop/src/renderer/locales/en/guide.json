@@ -181,6 +181,16 @@
       },
       "go": "Open Instructions and skills"
     },
+    "external": {
+      "title": "Reach Crewyard from another agent",
+      "body": "Turn on External access in Settings and Claude Code, Claude Desktop, Codex or Cursor can read your projects, tasks, reports, Inbox and spend over MCP, add a folder as a project and adjust its settings.",
+      "points": {
+        "a": "Off by default. Each program you connect is a client of its own, which you can see while it is connected and revoke.",
+        "b": "A client can propose a task, but its crew waits for your approval; approvals, Inbox answers, push, merge, deletes and spend past a cap stay with you.",
+        "c": "Settings writes the config for each program. It holds no token: Crewyard keeps it encrypted and the relay reads it itself."
+      },
+      "go": "Open External access"
+    },
     "crew": {
       "title": "Editing the crew",
       "body": "In the Crew graph every change is its own action; moving a node only changes the layout.",
@@ -217,6 +227,10 @@
     "subscriptions": {
       "q": "Does Crewyard read my subscription sign-ins?",
       "a": "No. Each CLI signs in through its own login inside the profile's own folder, and Crewyard never reads its tokens. Claude Code profiles use Anthropic API keys only."
+    },
+    "external": {
+      "q": "Can Claude Code or another agent change my projects?",
+      "a": "Only if you turn on External access in Settings. A connected agent can read, add a folder as a project, tighten a project's settings, save an MCP server with plain values and propose tasks. It cannot approve a crew, start work, answer the Inbox, push, merge, delete, raise a budget or read a key, and every change it makes shows in the activity log with its name."
     },
     "release": {
       "q": "Is this build signed, and does it update itself?",

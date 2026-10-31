@@ -149,3 +149,12 @@
 .settings .af-bridge-files li { display: grid; gap: 2px; padding: 6px 0; border-top: 1px dashed var(--line); min-width: 0; }
 .settings .af-bridge-files li:first-child { border-top: 0; }
 .settings .af-bridge-how { font-size: var(--font-size-meta); color: var(--ink-3); overflow-wrap: anywhere; }
+
+/* External access (docs/adr/0021): a client's config snippets under its row, and the add field. */
+.settings .ext-snippets { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; margin: 0 12px 10px; padding: 10px 12px; }
+.settings .ext-snippet-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.settings .ext-snippet-head > .btn, .settings .ext-snippet-head > button:last-child { margin-left: auto; }
+.settings .ext-code { margin: 0; padding: 8px 10px; border: 1px solid var(--line); background: var(--canvas); font-size: 12px; line-height: 1.5; max-height: 220px; overflow: auto; white-space: pre-wrap; word-break: break-all; }
+.settings .ext-add { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 10px; }
+.settings .ext-add .pv-input { flex: 1; min-width: 180px; max-width: 360px; }
+.settings .ext-add .pv-input[aria-invalid="true"] { border-color: var(--bad); }

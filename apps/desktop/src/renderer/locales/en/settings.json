@@ -26,6 +26,7 @@
     "data": "Data",
     "about": "About",
     "mcp": "MCP servers",
+    "external": "External access",
     "autopilot": "Autopilot",
     "fallback": "Fallback",
     "updates": "Updates",
@@ -538,5 +539,54 @@
       "fallback": "where a folder has no AGENTS.md",
       "none": "cannot take a path"
     }
+  },
+  "external": {
+    "enabled": "External access",
+    "enabledHint": "Lets an agent you run outside Crewyard (Claude Code in a terminal, Claude Desktop, Codex, Cursor) reach it over MCP: read your projects, tasks, reports, Inbox and spend, and propose work. Off by default. Off means Crewyard listens for nothing.",
+    "listening": "On: listening on a private endpoint for this Windows account only.",
+    "starting": "Starting the endpoint…",
+    "listenFailed": "Could not start the endpoint: {{error}}",
+    "can": "What a client can do",
+    "canHint": "Read projects, tasks, reports, crews, the Inbox, events, spend, profiles, project settings and MCP servers. Add an existing folder as a project. Change a project's slots, test and build commands, runners, profiles and loop limit. Lower a budget or tighten a rule. Propose a task. Add or change an MCP server with plain values. Every change shows in the project's activity log with the client's name.",
+    "cannot": "What stays with you",
+    "cannotHint": "Approving a crew, starting or stopping work, answering the Inbox, push, pull requests, merges, deleting anything, raising a budget or loosening a rule, spend past a cap, API keys and secret values, Autopilot and this switch. A task a client proposes waits for your approval on the Tasks screen.",
+    "fileToken": "On this system each client's token is kept as a file only your account can read; Windows keeps it encrypted with DPAPI.",
+    "clients": "Clients",
+    "clientsHint": "One per program you connect, so you can see each one and revoke it. Copy its config into the program once.",
+    "none": "No clients yet.",
+    "connected": "Connected now: {{count}}",
+    "lastSeen": "Last seen {{time}}",
+    "never": "Never connected",
+    "reportedAs": "reports itself as {{name}}",
+    "calls": "Calls: {{count}}",
+    "showConfig": "Show config",
+    "hideConfig": "Hide config",
+    "revoke": "Revoke",
+    "revokeConfirm": "Revoke {{name}}? Its connections close and its config stops working. Its changes stay in the activity log.",
+    "newName": "New client",
+    "namePlaceholder": "Claude Code on this PC",
+    "add": "Add client",
+    "configFor": "Config for {{name}}",
+    "copy": "Copy",
+    "copied": "Copied",
+    "snippet": {
+      "claudeCode": "Claude Code",
+      "json": "Claude Desktop, Cursor",
+      "codex": "Codex"
+    },
+    "snippetHint": {
+      "claudeCode": "Run this once in a terminal. It adds Crewyard for every folder (--scope user).",
+      "json": "Add this entry under mcpServers in claude_desktop_config.json, Cursor's mcp.json or a project's .mcp.json, then restart the program.",
+      "codex": "Add this table to ~/.codex/config.toml."
+    },
+    "error": {
+      "external.name_invalid": "Give the client a name of one line, up to 80 characters.",
+      "external.too_many": "At most 20 clients. Revoke one you no longer use.",
+      "external.not_found": "That client is gone. Refresh the list.",
+      "external.unsupported": "This system cannot keep a client's token."
+    },
+    "status": "External access · connected: {{count}}",
+    "statusFailed": "External access could not start",
+    "statusTitle": "Open Settings > External access"
   }
 }

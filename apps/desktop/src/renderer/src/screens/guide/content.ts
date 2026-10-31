@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { Bot, Eye, FolderOpen, GitBranch, GitPullRequest, Inbox, Keyboard, ListChecks, PanelBottom, Repeat, SquarePen, Gauge, FileText, ShieldCheck, Workflow, Users } from "lucide-react";
+import { Bot, Eye, FolderOpen, GitBranch, GitPullRequest, Inbox, Keyboard, ListChecks, PanelBottom, Repeat, SquarePen, Gauge, FileText, Plug, ShieldCheck, Workflow, Users } from "lucide-react";
 import type { DrawerTab } from "../../prefs.ts";
 import type { SectionId } from "../settings/model.ts";
 
@@ -48,11 +48,12 @@ export const FEATURES: Feature[] = [
   { id: "fallback", icon: Repeat, action: { kind: "settings", section: "fallback" } },
   { id: "limits", icon: Gauge, action: { kind: "screen", screen: "limits" } },
   { id: "agentfiles", icon: FileText, action: { kind: "settings", section: "agentfiles" } },
+  { id: "external", icon: Plug, action: { kind: "settings", section: "external" } },
   { id: "crew", icon: Workflow, action: { kind: "screen", screen: "crew" } },
   { id: "keyboard", icon: Keyboard, action: { kind: "keys" } },
 ];
 
-export const FAQ = ["keys", "nothingStarts", "closePanel", "estimated", "subscriptions", "release"] as const;
+export const FAQ = ["keys", "nothingStarts", "closePanel", "estimated", "subscriptions", "external", "release"] as const;
 
 /** An action that only makes sense inside a project. */
 export const needsProject = (a: GuideAction): boolean => a.kind === "newTask" || a.kind === "panel" || (a.kind === "screen" && a.screen !== "providers");

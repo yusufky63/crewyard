@@ -50,7 +50,7 @@
 
 **D7. Admission control from day one.** A run queue with a global cap, a per-account cap and a memory check. Nothing spawns without a free slot.
 
-**D8. Nothing outward-facing happens without you.** Starting a crew, pushing, opening a PR, merging, deleting a worktree, spending past a budget and Ask-mode fallbacks all need an explicit click. Auto mode is opt-in per task and still writes an audit record. Two opt-ins may start a crew without a click, each audited: a schedule you set up (ADR 0008), and Autopilot (§9.7, [ADR 0017](docs/adr/0017-autopilot.md)), which approves crews of tasks it created only under the budget and rate limits you set per project. Pushing, PRs, merging, deleting, spending past a cap and Inbox approvals stay with you either way.
+**D8. Nothing outward-facing happens without you.** Starting a crew, pushing, opening a PR, merging, deleting a worktree, spending past a budget and Ask-mode fallbacks all need an explicit click. Auto mode is opt-in per task and still writes an audit record. Two opt-ins may start a crew without a click, each audited: a schedule you set up (ADR 0008), and Autopilot (§9.7, [ADR 0017](docs/adr/0017-autopilot.md)), which approves crews of tasks it created only under the budget and rate limits you set per project. Pushing, PRs, merging, deleting, spending past a cap and Inbox approvals stay with you either way. An agent you connect from outside the app (§9.8, [ADR 0021](docs/adr/0021-external-mcp.md)) can only propose: it never approves or starts anything.
 
 **D9. Runner, provider and key are separate.** A *runner* is the agent program (Claude Code, Codex, Gemini CLI, OpenCode). A *provider* is where the model comes from (Anthropic, DeepSeek, Kimi, OpenRouter...). A *credential* is a key or a plan sign-in. A *profile* combines one of each plus a default model and its own config folder. Claude Code can run on DeepSeek, Kimi, GLM, Qwen, MiniMax and others through their Anthropic-compatible endpoints; Codex can run on OpenAI-compatible providers; OpenCode runs on everything in the catalog.
 
@@ -78,11 +78,11 @@
   - On Linux and macOS (unsigned pre-release builds; [ADR 0010](docs/adr/0010-linux-macos-groundwork.md)) every child leads its own process group. Stop sends SIGTERM to the group and to each descendant, then SIGKILL after 2 s.
   - Without a tray (Linux), closing the window goes to the same quit confirm.
 - **Ingress:** besides IPC there is one per-user local endpoint protected by a token, never a TCP port.
-  - On Windows it is the named pipe `\\.\pipe\crewyard-<user-sid>`, restricted to the current user.
+  - On Windows it is a named pipe with a random name per listen, `\\.\pipe\crewyard-ext-<pid>-<24 hex>`, which the daemon writes into the data folder while it listens; a fixed name such as `crewyard-<user-sid>` is one another account could take first ([ADR 0021](docs/adr/0021-external-mcp.md)).
   - On Linux and macOS it is a Unix domain socket, 0600, in a 0700 folder of the user's own: `$XDG_RUNTIME_DIR/crewyard` on Linux, the per-user temp folder otherwise (ADR 0010).
   - It is used by Claude Code hooks (to observe sessions you started outside the app), by a small `mc` CLI, and by the report server every run gets.
   - The report server (ADR 0007) is a byte relay the runner starts, one ticket per run process, a random endpoint name per daemon start: Windows PowerShell 5.1 on Windows, the system Perl (`/usr/bin/perl`) elsewhere.
-  - Only the report server is built so far.
+  - External access (§9.8, ADR 0021) is the second user of it, for agents you run outside the app; Claude Code hooks and the `mc` CLI are not built.
 - **Recovery:** on start the daemon reloads facts, marks runs whose process is gone as `interrupted`, and offers native resume (Claude `resume`, Codex `thread/resume`, OpenCode session, ACP `session/load`) instead of silently restarting anything.
 
 ### 4.1 Repository layout
@@ -462,6 +462,14 @@ A run cannot create other runs. If an agent asks for more work, the request beco
 - **Kill switch:** `Stop Autopilot` in the status bar and Settings refuses every call at once; it never stops running agents. Two failed steps with the same failure within 24 hours halt it in that project until you turn it on again.
 - **Records:** every call, allowed or refused, is an `autopilot.*` event with its reason (timeline, Activity, the panel's Autopilot log); toasts are batched per project.
 
+### 9.8 External access over MCP ([ADR 0021](docs/adr/0021-external-mcp.md))
+
+- **What:** an agent you run outside Crewyard (Claude Code in a terminal, Claude Desktop, Codex, Cursor) reaches Crewyard as a stdio MCP server: it reads projects, tasks, reports, crews, the Inbox, events, spend, profiles, settings and MCP servers, adds an existing folder as a project, changes a project's settings toward stricter values, saves an MCP server with plain values, and proposes tasks.
+- **Off by default.** Settings → External access turns it on, lists each client (connected now, last seen, the program it reported, calls) and revokes one; the status bar shows while it is on. Off: no listener and no endpoint file.
+- **Transport:** the byte relay of ADR 0007 (PowerShell 5.1, Perl elsewhere) on a second endpoint with a random name per listen. Each client's token is a DPAPI blob in the data folder that the relay decrypts itself, so the client's config holds no secret.
+- **Never over MCP:** approving a crew, starting, stopping or resuming work, Inbox answers, push, PR, merge, deletes, raising a budget or loosening a rule, key caps, keys and secret values, Autopilot, and external access itself (D8). A proposed task's crew waits for your approval like any other.
+- **Records:** every write is an `external.*` event with the client's name in the project's activity log.
+
 ## 10. GitHub
 
 - **Auth:** reuse the `gh` CLI login (token read at startup, kept in memory). No new token is stored.
@@ -673,6 +681,8 @@ Each milestone ends with: typecheck, lint with `--max-warnings=0`, tests, build,
   - GitHub Releases is the download host, and the website (Vercel) reads releases from the public GitHub API, so a published release appears there without a deploy;
   - builds stay unsigned for now: Windows without a certificate, macOS ad-hoc signed and not notarized. Every 0.x version is a GitHub pre-release, and none of these builds updates itself (open item 1);
   - `.github/workflows/release.yml` checks the tag against both package.json versions, builds each package on its own OS and CPU, starts it once, and publishes only when all four builds pass. It also writes `SHA256SUMS.txt` and publishes a fixed set of file names that the website matches ([docs/release.md](docs/release.md), [ADR 0010](docs/adr/0010-linux-macos-groundwork.md) update).
+
+- 2026-11-01: external access over MCP (§9.8, [ADR 0021](docs/adr/0021-external-mcp.md)). In the owner's words: "claude ile mcp ile crewyarda erişme veya bir proje import edip orda ayarlamaları yapma" (reach Crewyard from Claude over MCP, or import a project and adjust its settings there). Off by default; a connected agent reads, adds a folder, tightens settings and proposes tasks; everything outward-facing stays a click in the app (D8).
 
 **Open**
 1. Before the first release: which code-signing certificate (OV as a PFX, a hardware-bound one in the Windows store, or Azure Trusted Signing) and which HTTPS host serves the update feed (ADR 0011, "What a real release needs").

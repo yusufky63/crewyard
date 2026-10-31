@@ -491,7 +491,7 @@ const shQuote = (s: string) => (/^[A-Za-z0-9_./:=+-]+$/.test(s) ? s : `'${s.repl
  * The three snippets Settings shows for one client (docs/adr/0021). They carry no secret: the
  * relay decrypts the client's token itself, so they can be copied, pasted and kept in history.
  */
-export function clientSnippets(launch: RelayLaunch, platform: NodeJS.Platform): { claudeCode: string; json: string; codex: string } {
+export function clientSnippets(launch: RelayLaunch, platform: string): { claudeCode: string; json: string; codex: string } {
   const q = platform === "win32" ? psQuote : shQuote;
   const env = Object.entries(launch.env)
     .map(([k, v]) => `-e ${q(`${k}=${v}`)}`)

@@ -139,5 +139,5 @@ No code was copied. Protocol facts (method names, fields, config shapes) are use
 ## Rollback
 
 - Turn external access off: no listener, no endpoint file.
-- Remove `createExternalHandlers` from `server.ts` and the bind in `entry.ts`: nothing listens and the Settings section shows nothing to list.
+- Remove `createExternalHandlers` from `server.ts`: nothing listens, and the Settings section and the status bar item have nothing to show.
 - The `external-mcp` migration only adds a table; leaving it is harmless. The `external` folder in the data folder can be deleted.
