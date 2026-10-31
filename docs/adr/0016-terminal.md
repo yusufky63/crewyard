@@ -56,7 +56,7 @@ The installer ships no `node_modules` (ADR 0004): everything else is bundled by 
 
 - `out/main/pty-host.js` is bundled like the daemon, with `node-pty` left external;
 - `electron-builder.config.cjs` copies `node-pty`'s runtime files to `resources\native\node-pty` with `extraResources`: `package.json`, `LICENSE`, `lib\**\*.js` without tests, and `prebuilds\<platform>-<arch>` without `.pdb` files. This is the same effect as an `asarUnpack` entry (the files sit next to the archive, not in it), without shipping a `node_modules` tree;
-- the pty host loads it from `process.resourcesPath\native\node-pty` when packaged and from `node_modules` otherwise (`apps/desktop/src/main/terminal/load.ts`);
+- the pty host loads it from `process.resourcesPath\native\node-pty` when packaged and from `node_modules` otherwise (`apps/desktop/src/main/terminal/pty-host.ts`);
 - `scripts/third-party-licenses.mjs` adds `node-pty` to `THIRD-PARTY-LICENSES.txt`, since the bundler never sees it.
 
 `pnpm package` is the check: the installed app opens a terminal.
@@ -86,7 +86,7 @@ It adds `TERM=xterm-256color` and `COLORTERM=truecolor`, and on Git Bash `CHERE_
 - **Shells:** Windows PowerShell 5.1 by default (`%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoLogo`), then PowerShell 7 (`pwsh.exe`) and Git Bash (`<Git>\bin\bash.exe --login -i`, from where `git.exe` is installed) when they are found, and Command Prompt. Paths are resolved, never looked up through a shell (`which` in `packages/proc`); `shell: true` is never used.
 - **UTF-8:** ConPTY hands us UTF-8; the console's code page decides how a program's own bytes are read. PowerShell starts with `[Console]::OutputEncoding` and `$OutputEncoding` set to UTF-8 without BOM, Command Prompt with `chcp 65001`, Git Bash with `LANG=C.UTF-8` unless you set `LANG`.
 - **Paths with spaces** work: the shell is a resolved executable path and the folder is the `cwd` option, never part of a command line. Tests use folders with spaces.
-- **Keys inside the terminal:** Ctrl C, Esc and the arrow keys go to the shell. Only the panel's own shortcuts (Ctrl J, Ctrl Shift A, Ctrl \`, Ctrl Shift M) are taken back by the app; Esc inside a terminal never closes the panel.
+- **Keys inside the terminal:** Ctrl C, Esc and the arrow keys go to the shell. Only the panel's own shortcuts (Ctrl J, Ctrl Shift A, Ctrl \` or Ctrl Shift T, Ctrl Shift M) are taken back by the app, and F6 moves focus from the terminal to its tab, since Tab belongs to the shell; Esc inside a terminal never closes the panel.
 
 ### Security notes
 

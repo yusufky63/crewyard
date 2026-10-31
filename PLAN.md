@@ -37,7 +37,7 @@
 
 **D2. Electron + TypeScript end to end.**
 - The Claude Agent SDK exists only for Node and Python; the OpenCode SDK and ACP client are TypeScript; the Codex app-server is JSON-RPC over stdio and is easy to drive from Node. A Rust (Tauri) or Go core would still need a Node sidecar for Claude.
-- Electron gives Windows toasts with buttons (`toastXml`), tray, single-instance lock, auto-update and ConPTY via `node-pty` for the optional terminal view.
+- Electron gives Windows toasts with buttons (`toastXml`), tray, single-instance lock, auto-update and ConPTY via `node-pty` for the bottom panel's Terminal tab (`node-pty` 1.1.0, a Node-API addon with prebuilt binaries, so no rebuild against Electron; it runs in its own utility process and ships beside `app.asar`, [ADR 0016](docs/adr/0016-terminal.md)).
 - Rejected: Tauri 2 + Node sidecar (two runtimes, sidecar bundling), Go daemon like agent-orchestrator (same problem), browser-only app (no tray, no toasts, ports exposed).
 
 **D3. Native protocol per agent, one internal event model shaped like ACP.** Details in §5. A generic ACP driver covers Gemini and future agents.
@@ -100,7 +100,7 @@ mission-control/
 
 ### 4.2 Stack
 
-Electron, React 19, TypeScript, Vite, TanStack Router and Query, Zustand, `@xyflow/react` (graph), TanStack Virtual (long lists), Radix primitives, lucide-react, `better-sqlite3` + drizzle, zod (event and adapter schemas), pino with redaction, `cross-spawn`, `node-pty` (terminal view only), electron-builder (signed NSIS installer), Vitest, Playwright for Electron. Add everything with `pnpm add -E` at setup time; this plan does not pin versions in advance.
+Electron, React 19, TypeScript, Vite, TanStack Router and Query, Zustand, `@xyflow/react` (graph), TanStack Virtual (long lists), Radix primitives, lucide-react, `better-sqlite3` + drizzle, zod (event and adapter schemas), pino with redaction, `cross-spawn`, `node-pty` and `@xterm/xterm` (Terminal tab only, ADR 0016), electron-builder (signed NSIS installer), Vitest, Playwright for Electron. Add everything with `pnpm add -E` at setup time; this plan does not pin versions in advance.
 
 ### 4.3 Data model
 
@@ -441,7 +441,7 @@ A run cannot create other runs. If an agent asks for more work, the request beco
 
 ### 9.6 Task assistant ([ADR 0014](docs/adr/0014-task-assistant.md))
 
-- **What:** a terminal-style chat on the Tasks screen (`Assistant` beside the composer, `Ctrl Shift A`) with a read-only agent that turns what you describe into task drafts. A research request becomes a `research` draft whose questions are its acceptance criteria.
+- **What:** a terminal-style chat in the bottom panel's Assistant tab, on every project screen (`Assistant` beside the composer, `Ctrl Shift A`) with a read-only agent that turns what you describe into task drafts. A research request becomes a `research` draft whose questions are its acceptance criteria.
 - **How:** one runner session per project, started through the profile's own adapter in the project folder, on a profile you pick (ready, read-only enforcement and MCP; the read-only preset, then the cheapest, is the default). It gets Crewyard's report server with one tool, `propose_task`, and none of your MCP servers. Drafts are checked and capped in core (`parseTaskDraft`), stored, and shown as editable cards. No model is called without that profile's configured key or sign-in.
 - **Nothing starts:** `Add as draft` calls `propose()`, so the task gets a crew proposal that waits for your approval like any other (D8). The assistant has no tool that creates a task, a run or a file.
 - **Read-only:** the reviewer's policy with nothing allowed (`writes: none`, no commands, network denied), so each runner's engine is in its read-only mode; our layer denies every approval and cancels every question. Reads that need no approval still work.
@@ -541,7 +541,7 @@ Worktree setup and cleanup commands (the Worktrees step) run without a shell in 
 - Keep the PC awake while runs are active, as an opt-in (Settings → Startup): Electron `powerSaveBlocker("prevent-app-suspension")` from the first active run to the last, released on battery at or below a threshold (default 30%) or with an unknown charge; its state shows in the status bar.
 - Detect and refuse WSL paths for Windows-native runs; WSL support is out of scope for v1.
 - The inspector's Files tab reads a task worktree only through the daemon, confined to its root: a path with `..`, a drive, a UNC prefix, a `:` stream or a device name is refused by its text, and again after `realpath` when a junction or symlink leads outside (compared case-insensitively). Listings stop at 1,000 entries, text at 256 KB, images at 5 MB; it never writes.
-- Known risks to test: antivirus scanning slowing worktrees, Smart App Control blocking unsigned helpers, `node-pty` native build matching Electron.
+- Known risks to test: antivirus scanning slowing worktrees, Smart App Control blocking unsigned helpers, `node-pty` native build matching Electron (1.1.0 is Node-API with prebuilds, so the same binary loads in every Electron; `pnpm package` checks it ships).
 
 ### 12.1 Linux and macOS (prepared, not shipped)
 
@@ -650,6 +650,7 @@ Each milestone ends with: typecheck, lint with `--max-warnings=0`, tests, build,
 - 2026-10-31: a task assistant on the Tasks screen, in the owner's words: "tasks kısmında veya crew kısmında vs ai ile chat ile yönetmek olsa yani görevleri veya araştırılacak şeyleri ai ile de yapılandırabilsek terminal ile" (manage tasks through a chat with an AI on the Tasks or Crew screen, so tasks and things to research can be structured with AI too, in a terminal-style view). It runs as a read-only session of one of your runners rather than a direct provider call, only drafts tasks, and is the one panel that stops what it shows when closed (§9.6, [ADR 0014](docs/adr/0014-task-assistant.md)).
 - 2026-10-31: finished analyses show their result, and findings become tasks. The owner, after "projeyi incele" ended as a review whose verdict nobody could see: "taska kısmında projeyi incele yazdım ve sonuç hiçbir şeyi değiştirmedi, arayüzde sadece done yazdı; bunun yerine task önerisi veya task açma gibi şeyler olmalı, ve hazır olarak projeyi incele ve yorumla, optimizasyon öner, sorunları bul, güvenlik sorunlarını bul gibi hazır tasklar olsa veya projeye göre otomatik oluşturulsa; yeni ekleyeceğimiz şeyde onlar olsun" (I typed "review the project" in Tasks and the result changed nothing, the UI only said done; instead there should be task suggestions or opening tasks, and ready-made tasks like review and comment on the project, suggest optimizations, find problems, find security issues, or ones generated for the project; put them in the new feature). Researchers now end with checked findings, reports show on the row and in the inspector, suggested tasks are draft cards, and six ready-made analyses come as local templates ranked by local facts (§9.6, ADR 0014 addendum).
 - 2026-10-31: the owner asked for a release before the open items below were settled ("tüm projeyi bitir ve merge ve push et ve release yayınla": finish the project, merge, push and publish a release). v0.1.0 is therefore a GitHub pre-release in the private repository: an unsigned NSIS installer built without an update feed, so SmartScreen names an unknown publisher and the app never looks for updates. Open item 1 still decides the certificate and the feed host; the first release that has both is the first signed one, and v0.1.0 installs cannot update to it on their own.
+- 2026-10-31: one bottom panel with tabs. The owner asked: "ai chat, terminal, etkinlik ve hatalar gibi bir panel var mı, toplu şekilde gösterilen tabs'lı" (is there one panel with tabs that shows AI chat, terminal, activity and errors together?). The Activity drawer grew into it, with `Assistant` (the task assistant, now on every project screen, its rules unchanged), `Terminal` (your own shell through ConPTY, never started on its own, never given a key; [ADR 0016](docs/adr/0016-terminal.md)), `Events`, `Logs` and `Problems` (every failure of the project in one list, each with the way to its fix, dismissable until its cause changes or comes back). Closing the panel stops nothing; a terminal's own close ends its shell and asks first.
 
 **Open**
 1. Before the first release: which code-signing certificate (OV as a PFX, a hardware-bound one in the Windows store, or Azure Trusted Signing) and which HTTPS host serves the update feed (ADR 0011, "What a real release needs").
