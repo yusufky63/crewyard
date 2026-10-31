@@ -76,7 +76,7 @@ const planner =
     return (_role: string, _nth: number, req: StartRequest) => (req.outputSchema?.name === "goal_plan" ? outputs[Math.min(n++, outputs.length - 1)] : undefined);
   })();
 
-async function setup(opts: { pick?: Picker; result?: Result; candidates?: Candidate[]; config?: (c: ProjectConfig) => void; mcp?: McpHook; enabled?: boolean } = {}) {
+async function setup(opts: { pick?: Picker; result?: Result; candidates?: Candidate[]; config?: (c: ProjectConfig) => void; mcp?: McpHook; enabled?: boolean; limits?: OrchestratorOptions["limits"]; freeMb?: () => number } = {}) {
   const root = tempDir("crewyard goal planner-");
   const repo = await tempRepo(root, "demo repo with spaces");
   if (opts.config) {
@@ -101,9 +101,10 @@ async function setup(opts: { pick?: Picker; result?: Result; candidates?: Candid
     adapters,
     directory: { candidates: async () => cands, envFor: () => ({}) },
     tickMs: 0,
-    freeMemoryMb: () => 64_000,
+    freeMemoryMb: opts.freeMb ?? (() => 64_000),
     stopTimeoutMs: 2_000,
     ...(opts.mcp ? { mcp: opts.mcp } : {}),
+    ...(opts.limits ? { limits: opts.limits } : {}),
   };
   const o = new Orchestrator(options);
   o.start();
@@ -131,12 +132,34 @@ const refusal = async (p: Promise<unknown>): Promise<string> => {
   return err.code;
 };
 
-/** Marks the latest revision approved, as GoalRunner's approve will (work item 4). */
-function approve(store: Store, goalId: string): void {
+/**
+ * Approves the latest revision with all its tasks accepted, as GoalRunner's goals.approve does
+ * (work item 4): in one transaction, the tasks the revision replaces go first.
+ */
+function approve(o: Orchestrator, store: Store, goalId: string): string[] {
   const latest = plans(store, goalId).at(-1)!;
-  q(store, "update goal_plans set approved_at = 'now' where id = ?", latest.id);
-  q(store, "update goals set approved_revision = ?, approved_at = 'now' where id = ?", latest.revision, goalId);
-  q(store, "update goal_tasks set accepted = 1 where plan_id = ?", latest.id);
+  return o.db.tx(() => {
+    const discarded = o.applyGoalReplacements(goalId, latest.revision);
+    q(store, "update goal_plans set approved_at = 'now' where id = ?", latest.id);
+    q(store, "update goals set approved_revision = ?, approved_at = 'now' where id = ?", latest.revision, goalId);
+    q(store, "update goal_tasks set accepted = 1 where plan_id = ? and discarded_at is null", latest.id);
+    return discarded;
+  });
+}
+
+/** Every live row of the goal, duplicates by key included, as key@revision. */
+const liveKeys = (store: Store, goalId: string) =>
+  rows<{ key: string; revision: number }>(store, "select gt.key, p.revision from goal_tasks gt join goal_plans p on p.id = gt.plan_id where gt.goal_id = ? and gt.discarded_at is null order by p.revision, gt.position", goalId).map((r) => `${r.key}@${r.revision}`);
+
+/** The planner's propose dependency, wrapped so a test can act while a plan's tasks are drafted. */
+function onPropose(o: Orchestrator, before: (n: number) => void): void {
+  const planner = (o as unknown as { goalPlanner: { deps: { propose: (...a: unknown[]) => Promise<unknown> } } }).goalPlanner;
+  const original = planner.deps.propose.bind(planner.deps);
+  let n = 0;
+  planner.deps.propose = (...a: unknown[]) => {
+    before(n++);
+    return original(...a);
+  };
 }
 
 describe("planning a goal", () => {
@@ -165,6 +188,12 @@ describe("planning a goal", () => {
     expect(req.prompt).toContain(`<<<\n${GOAL}\n>>>`);
     expect(req.outputSchema?.name).toBe("goal_plan");
     expect(req.policy).toEqual({ writes: "none", allowCommands: [], network: "denied" });
+    // The brief is set as plain text: its rules are not inside a data fence, and fences never nest.
+    expect(req.prompt).not.toContain("Task:");
+    const fences = req.prompt.split(String.fromCharCode(10)).filter((l) => l === "<<<" || l === ">>>");
+    fences.forEach((f, i) => expect(f).toBe(i % 2 === 0 ? "<<<" : ">>>"));
+    const lines = req.prompt.split(String.fromCharCode(10));
+    expect(lines.findIndex((l) => l.startsWith("Limits: at most"))).toBeLessThan(lines.indexOf("<<<"));
 
     // Four proposed tasks, none approved, each with its goal row and the plan's fields.
     const tasks = byKey(store, start.goalId);
@@ -250,11 +279,14 @@ describe("planning a goal", () => {
     expect(preview.candidates.map((c) => c.profileId)).not.toContain("mystery-key");
     // A plan sign-in costs nothing per call and is a reasoning model: it leads.
     expect(preview.planner).toMatchObject({ profileId: "claude-plan", estimate: { usd: 0, provenance: "estimated" } });
+    // $0 for a sign-in reads as Plan, not as a free API call.
+    expect(preview.billing).toBe("plan");
     // A model without reasoning stays a candidate, ranked after the reasoning ones.
     const ids = preview.candidates.map((c) => c.profileId);
     expect(ids.indexOf("deepseek-key")).toBeGreaterThan(ids.indexOf("openai-key"));
     const picked = await o.previewGoal({ projectId: project.id, text: GOAL, plannerProfileId: "mystery-key" });
     expect(picked.planner).toMatchObject({ profileId: "mystery-key", estimate: { usd: null, provenance: "unknown" } });
+    expect(picked.billing).toBe("api");
     expect(await refusal(o.createGoal({ projectId: project.id, text: GOAL, plannerProfileId: "nobody" }))).toBe("goal.planner_unknown");
     expect(await refusal(o.createGoal({ projectId: project.id, text: "   " }))).toBe("goal.text");
     expect(await refusal(o.createGoal({ projectId: project.id, text: GOAL, defaultBudgetUsd: -1 }))).toBe("goal.bad_budget");
@@ -421,7 +453,7 @@ describe("revising and replanning", () => {
     q(store, "update goals set revisions_used = ? where id = ?", GOAL_LIMITS.revisionsBeforeApproval, start.goalId);
     expect(await refusal(o.reviseGoal(start.goalId, 1, ""))).toBe("goal.revisions_used");
     expect(await refusal(o.replanGoal(start.goalId))).toBe("goal.not_approved");
-    approve(store, start.goalId);
+    approve(o, store, start.goalId);
     expect(await refusal(o.reviseGoal(start.goalId, 1, ""))).toBe("goal.approved");
   });
 
@@ -431,22 +463,136 @@ describe("revising and replanning", () => {
     const { o, store, project, adapter } = env;
     const start = await o.createGoal({ projectId: project.id, text: GOAL });
     await o.settle();
-    approve(store, start.goalId);
+    approve(o, store, start.goalId);
     const api = byKey(store, start.goalId).get("api")!.task_id;
     // Released by the goal scheduler (work item 4): a released task is frozen.
     q(store, "update goal_tasks set released_at = 'now' where task_id = ?", api);
     await o.replanGoal(start.goalId, "Hız sınırı ekle.");
     await o.settle();
     expect(plannerRuns(adapter)[1]!.req.prompt).toContain("- api (released, now proposed): Oturum API'si");
-    const now = byKey(store, start.goalId);
-    expect([...now.keys()]).toEqual(["api", "rate"]);
-    expect(now.get("api")!.task_id).toBe(api);
+    const r1 = plans(store, start.goalId)[0]!;
+    const first = new Map(rows<GoalTask>(store, "select * from goal_tasks where plan_id = ?", r1.id).map((t) => [t.key, t]));
+    // Until you approve the replan, the approved plan keeps running: its tasks stay live and on
+    // revision 1, and only the replan's new task is on revision 2.
+    expect(liveKeys(store, start.goalId)).toEqual(["api@1", "ui@1", "tests@1", "docs@1", "rate@2"]);
+    for (const k of ["ui", "tests", "docs"]) expect(o.get(first.get(k)!.task_id).status).toBe("proposed");
+    expect(row<{ plan_id: string }>(store, "select plan_id from goal_tasks where task_id = ?", api).plan_id).toBe(r1.id);
     const goal = row<{ replans_used: number; revisions_used: number }>(store, "select replans_used, revisions_used from goals where id = ?", start.goalId);
     expect(goal).toEqual({ replans_used: 1, revisions_used: 0 });
     // The approved revision stays approved; the new one waits for your approval.
     expect(o.goalState(start.goalId).reason).toBe("plan_ready");
+    const pending = o.goalReplacements(start.goalId, 2);
+    expect(new Set(pending.discard)).toEqual(new Set(["ui", "tests", "docs"].map((k) => first.get(k)!.task_id)));
+    expect(pending.started).toEqual([]);
+
+    // Your approval replaces what the replan dropped; the released task stays where it was approved.
+    expect(new Set(approve(o, store, start.goalId))).toEqual(new Set(["ui", "tests", "docs"].map((k) => first.get(k)!.task_id)));
+    expect(liveKeys(store, start.goalId)).toEqual(["api@1", "rate@2"]);
+    for (const k of ["ui", "tests", "docs"]) expect(o.get(first.get(k)!.task_id).status).toBe("cancelled");
+    const rate = byKey(store, start.goalId).get("rate")!.task_id;
+    expect(rows(store, "select depends_on, source from goal_task_deps where task_id = ?", rate)).toEqual([{ depends_on: api, source: "plan" }]);
+    expect(o.get(rate).description).toMatch(/\[Goal: waits for 01\]$/);
     q(store, "update goals set replans_used = ? where id = ?", GOAL_LIMITS.replans, start.goalId);
     expect(await refusal(o.replanGoal(start.goalId))).toBe("goal.replans_used");
+  });
+
+  it("refuses to approve a replan once a task it replaces has started, and changes nothing", async () => {
+    const replanned = { summary: "", tasks: [PLAN.tasks[0]!, task({ key: "rate", title: "Hız sınırı", dependsOn: ["api"], paths: ["src/auth/rate.ts"] })] };
+    const env = await setup({ result: planner(ok(PLAN), ok(replanned)) });
+    const { o, store, project } = env;
+    const start = await o.createGoal({ projectId: project.id, text: GOAL });
+    await o.settle();
+    approve(o, store, start.goalId);
+    await o.replanGoal(start.goalId);
+    await o.settle();
+    // The approved plan went on meanwhile: the scheduler released the tests task.
+    const tests = rows<GoalTask>(store, "select * from goal_tasks where goal_id = ? and key = 'tests'", start.goalId)[0]!.task_id;
+    q(store, "update goal_tasks set released_at = 'now' where task_id = ?", tests);
+    expect(o.goalReplacements(start.goalId, 2).started).toEqual([{ key: "tests", taskId: tests, because: "released" }]);
+    expect(() => approve(o, store, start.goalId)).toThrow("goal.plan_moved");
+    // The transaction rolled back: nothing was discarded and revision 2 is not approved.
+    expect(liveKeys(store, start.goalId)).toEqual(["api@1", "ui@1", "tests@1", "docs@1", "api@2", "rate@2"]);
+    expect(plans(store, start.goalId)[1]!.superseded_at).toBeNull();
+    expect(row<{ approved_revision: number }>(store, "select approved_revision from goals where id = ?", start.goalId).approved_revision).toBe(1);
+  });
+
+  it("refuses a revision that drops a task you edited, through the corrective turn", async () => {
+    const dropped = { ...PLAN, tasks: PLAN.tasks.filter((t) => t.key !== "docs") };
+    const env = await setup({ result: planner(ok(PLAN), ok(dropped), ok(PLAN)) });
+    const { o, store, project, adapter } = env;
+    const start = await o.createGoal({ projectId: project.id, text: GOAL });
+    await o.settle();
+    const docs = byKey(store, start.goalId).get("docs")!.task_id;
+    q(store, "update goal_tasks set edited = 1 where task_id = ?", docs);
+    await o.reviseGoal(start.goalId, 1, "");
+    await o.settle();
+    expect(plannerRuns(adapter)[2]!.req.prompt).toBe('Your plan was refused: task "docs" is frozen (edited) and cannot be removed. Return the corrected plan.');
+    expect(byKey(store, start.goalId).get("docs")!.task_id).toBe(docs);
+    expect(o.get(docs).status).toBe("proposed");
+  });
+
+  it("rewrites a kept task's waits-for line when its number and prerequisite change", async () => {
+    // The UI task you edited stays; the API task before it changes, and a new task goes first.
+    const revised = { summary: "", tasks: [task({ key: "setup", title: "Kurulum", paths: ["package.json"] }), { ...PLAN.tasks[0]!, title: "Oturum API'si v2" }, PLAN.tasks[1]!] };
+    const env = await setup({ result: planner(ok(PLAN), ok(revised)) });
+    const { o, store, project } = env;
+    const start = await o.createGoal({ projectId: project.id, text: GOAL });
+    await o.settle();
+    const ui = byKey(store, start.goalId).get("ui")!.task_id;
+    expect(o.get(ui).description).toMatch(/\[Goal: waits for 01\]$/);
+    q(store, "update goal_tasks set edited = 1 where task_id = ?", ui);
+    await o.reviseGoal(start.goalId, 1, "");
+    await o.settle();
+    const now = byKey(store, start.goalId);
+    expect(now.get("ui")).toMatchObject({ task_id: ui, position: 2 });
+    expect(rows(store, "select depends_on from goal_task_deps where task_id = ?", ui)).toEqual([{ depends_on: now.get("api")!.task_id }]);
+    const description = o.get(ui).description;
+    expect(description).toMatch(/\[Goal: waits for 02\]$/);
+    expect(description.match(/\[Goal:/g)).toHaveLength(1);
+  });
+});
+
+describe("a plan arriving while the goal changes", () => {
+  it("drafts again when a task is edited while the revision's tasks are proposed, and never discards it", async () => {
+    // The revision drops docs; you edit docs while its tasks are being drafted.
+    const dropped = { ...PLAN, tasks: PLAN.tasks.filter((t) => t.key !== "docs") };
+    const env = await setup({ result: planner(ok(PLAN), ok(dropped), ok(PLAN)) });
+    const { o, store, project, adapter } = env;
+    const start = await o.createGoal({ projectId: project.id, text: GOAL });
+    await o.settle();
+    const docs = byKey(store, start.goalId).get("docs")!.task_id;
+    onPropose(o, (n) => {
+      if (n === 0) q(store, "update goal_tasks set edited = 1 where task_id = ?", docs);
+    });
+    await o.reviseGoal(start.goalId, 1, "");
+    await o.settle();
+    // The first drafts were dropped; the plan, checked again, removes a frozen task and gets the corrective turn.
+    expect(plannerRuns(adapter)[2]!.req.prompt).toContain('task "docs" is frozen (edited) and cannot be removed');
+    expect(row<{ discarded_at: string | null }>(store, "select discarded_at from goal_tasks where task_id = ?", docs).discarded_at).toBeNull();
+    expect(o.get(docs).status).toBe("proposed");
+    expect(liveKeys(store, start.goalId)).toEqual(["api@2", "ui@2", "tests@2", "docs@2"]);
+    expect(byKey(store, start.goalId).get("docs")!.task_id).toBe(docs);
+  });
+
+  it("never cancels a task the scheduler releases while a replan's tasks are proposed", async () => {
+    const replanned = { summary: "", tasks: [PLAN.tasks[0]!, PLAN.tasks[1]!, task({ key: "rate", title: "Hız sınırı", paths: ["src/auth/rate.ts"] })] };
+    const env = await setup({ result: planner(ok(PLAN), ok(replanned), ok({ ...replanned, tasks: [...replanned.tasks, PLAN.tasks[2]!] })) });
+    const { o, store, project, adapter } = env;
+    const start = await o.createGoal({ projectId: project.id, text: GOAL });
+    await o.settle();
+    approve(o, store, start.goalId);
+    const tests = byKey(store, start.goalId).get("tests")!.task_id;
+    onPropose(o, (n) => {
+      if (n === 0) q(store, "update goal_tasks set released_at = 'now' where task_id = ?", tests);
+    });
+    await o.replanGoal(start.goalId);
+    await o.settle();
+    expect(plannerRuns(adapter)[2]!.req.prompt).toContain('task "tests" is frozen (released) and cannot be removed');
+    expect(row<{ discarded_at: string | null }>(store, "select discarded_at from goal_tasks where task_id = ?", tests).discarded_at).toBeNull();
+    expect(row<{ cancelled_at: string | null }>(store, "select cancelled_at from tasks where id = ?", tests).cancelled_at).toBeNull();
+    // The corrected plan keeps tests where it was approved; nothing of revision 1 is discarded before approval.
+    expect(liveKeys(store, start.goalId)).toEqual(["api@1", "ui@1", "tests@1", "docs@1", "api@2", "ui@2", "rate@2"]);
+    expect(o.goalReplacements(start.goalId, 2).discard).toHaveLength(3);
   });
 });
 
@@ -458,7 +604,7 @@ describe("overlap ordering in a replan", () => {
     const { o, store, project } = env;
     const start = await o.createGoal({ projectId: project.id, text: GOAL });
     await o.settle();
-    approve(store, start.goalId);
+    approve(o, store, start.goalId);
     const api = byKey(store, start.goalId).get("api")!.task_id;
     q(store, "update goal_tasks set released_at = 'now' where task_id = ?", api);
     await o.replanGoal(start.goalId);
@@ -477,7 +623,7 @@ describe("adding a task", () => {
     await o.settle();
     const api = byKey(store, start.goalId).get("api")!.task_id;
     expect(await refusal(o.addGoalTask(start.goalId, { title: "Kayıt", kind: "code", mode: "crew" }, []))).toBe("goal.not_approved");
-    approve(store, start.goalId);
+    approve(o, store, start.goalId);
     const added = await o.addGoalTask(start.goalId, { title: "Oturum kayıtları", kind: "code", mode: "solo", paths: ["src/auth/session log.ts"] }, [api]);
     expect(plannerRuns(adapter)).toHaveLength(1);
     const rev = plans(store, start.goalId).at(-1)!;
@@ -506,7 +652,7 @@ describe("adding a task", () => {
     const { o, store, project } = env;
     const start = await o.createGoal({ projectId: project.id, text: GOAL });
     await o.settle();
-    approve(store, start.goalId);
+    approve(o, store, start.goalId);
     expect(await refusal(o.addGoalTask(start.goalId, { title: "Kötü yol", kind: "code", mode: "crew", paths: ["C:/Windows/system32"] }, []))).toBe("goal.invalid_task");
     expect(await refusal(o.addGoalTask(start.goalId, { title: "Yabancı", kind: "code", mode: "crew" }, ["not-a-goal-task"]))).toBe("goal.task_not_found");
     q(store, "update goals set max_tasks = 4 where id = ?", start.goalId);
@@ -555,8 +701,152 @@ describe("Run as one task", () => {
     const { o, store, project } = env;
     const start = await o.createGoal({ projectId: project.id, text: GOAL });
     await o.settle();
-    approve(store, start.goalId);
+    approve(o, store, start.goalId);
     expect(await refusal(o.collapseGoal(start.goalId))).toBe("goal.collapse_after_approval");
+  });
+});
+
+describe("corrective turns", () => {
+  const BAD = { summary: "", tasks: [task({ key: "a" }), task({ key: "b", dependsOn: ["c"] }), task({ key: "c" })] };
+
+  it("gives the corrective turn no MCP server either", async () => {
+    const spec: McpServerSpec = { name: "crewyard", command: "relay.exe", args: [], env: {}, tools: null, builtin: true };
+    const serversFor = vi.fn(async () => [spec]);
+    const env = await setup({ result: planner(ok(BAD)), mcp: { serversFor, runEnded: () => undefined } });
+    const { o, project, adapter } = env;
+    await o.createGoal({ projectId: project.id, text: GOAL });
+    await o.settle();
+    expect(plannerRuns(adapter)).toHaveLength(2);
+    for (const r of plannerRuns(adapter)) expect(r.req.mcpServers).toBeUndefined();
+    expect(serversFor).not.toHaveBeenCalled();
+  });
+
+  it("never relaunches the planner in a fresh session when the corrective turn's session is gone", async () => {
+    const gone: FakeStep = { emit: { type: "run.ended", reason: "failed", detail: "session.gone: no conversation found" } };
+    const env = await setup({ result: planner(ok(BAD)), pick: (_role, req, resumed) => (resumed && req.outputSchema?.name === "goal_plan" ? [running, gone] : [running]) });
+    const { o, store, project, adapter } = env;
+    const start = await o.createGoal({ projectId: project.id, text: GOAL });
+    await o.settle();
+    await o.tick();
+    await o.settle();
+    expect(plannerRuns(adapter)).toHaveLength(2);
+    expect(rows(store, "select 1 from runs where task_id = ?", start.planTaskId!)).toHaveLength(2);
+    expect(goalEvents(store, "goal.plan_failed")).toEqual([expect.objectContaining({ revision: 1, reason: "failed" })]);
+    expect(o.goalState(start.goalId).reason).toBe("plan_failed");
+  });
+
+  it("starts the corrective turn only when admission lets it, reading planning until then", async () => {
+    let free = 64_000;
+    const env = await setup({ result: planner(ok(BAD)), freeMb: () => free, pick: (role, _req, resumed) => (role === "goal" && !resumed ? [running, { wait: 100 }] : [running]) });
+    const { o, store, project, adapter } = env;
+    const start = await o.createGoal({ projectId: project.id, text: GOAL });
+    await waitFor(() => plannerRuns(adapter).length === 1);
+    // Memory runs low while the planner works: admission (D7) holds every new run, the corrective turn too.
+    free = 100;
+    await waitFor(() => plans(store, start.goalId)[0]!.error !== null);
+    await o.tick();
+    await o.settle();
+    expect(plannerRuns(adapter)).toHaveLength(1);
+    expect(o.goalState(start.goalId).status).toBe("planning");
+    free = 64_000;
+    await o.tick();
+    await o.settle();
+    expect(plannerRuns(adapter)).toHaveLength(2);
+    expect(plannerRuns(adapter)[1]!.resumed).toBe(true);
+    expect(o.goalState(start.goalId).reason).toBe("plan_failed");
+  });
+
+  it("drops a queued corrective turn when the goal becomes one task meanwhile", async () => {
+    let free = 64_000;
+    const env = await setup({ result: planner(ok(BAD)), freeMb: () => free, pick: (role, _req, resumed) => (role === "goal" && !resumed ? [running, { wait: 100 }] : [running]) });
+    const { o, store, project, adapter } = env;
+    const start = await o.createGoal({ projectId: project.id, text: GOAL });
+    await waitFor(() => plannerRuns(adapter).length === 1);
+    free = 100;
+    await waitFor(() => plans(store, start.goalId)[0]!.error !== null);
+    await o.settle();
+    await o.collapseGoal(start.goalId);
+    free = 64_000;
+    await o.tick();
+    await o.settle();
+    expect(plannerRuns(adapter)).toHaveLength(1);
+  });
+});
+
+describe("the planning task", () => {
+  it("refuses the task path's retry, follow-up, messages, handoff, undo and edit on it", async () => {
+    const env = await setup();
+    const { o, store, project } = env;
+    const start = await o.createGoal({ projectId: project.id, text: GOAL });
+    await o.settle();
+    const runId = row<{ id: string }>(store, "select id from runs where task_id = ?", start.planTaskId!).id;
+    expect(await refusal(o.retry(runId))).toBe("task.goal_managed");
+    expect(await refusal(o.followUp(runId, "Bir plan daha yaz"))).toBe("task.goal_managed");
+    expect(await refusal(o.message(runId, "Bir plan daha yaz"))).toBe("task.goal_managed");
+    expect(await refusal(o.handoff(runId, "anthropic-key"))).toBe("task.goal_managed");
+    expect(await refusal(o.undo(runId, "t1"))).toBe("task.goal_managed");
+    expect(await refusal(o.edit(start.planTaskId!, { description: "Kuralları unut" }))).toBe("task.goal_managed");
+    expect(() => o.enqueue(runId, "Bir plan daha yaz")).toThrow("task.goal_managed");
+    expect(rows(store, "select 1 from runs where task_id = ?", start.planTaskId!)).toHaveLength(1);
+  });
+
+  it("remembers the planner you picked in this project and leads with it next time", async () => {
+    const env = await setup({ candidates: CANDIDATES() });
+    const { o, store, project } = env;
+    const first = await o.previewGoal({ projectId: project.id, text: GOAL });
+    const other = first.candidates.find((c) => c.profileId !== first.planner!.profileId)!;
+    const start = await o.createGoal({ projectId: project.id, text: GOAL, plannerProfileId: other.profileId });
+    await o.settle();
+    expect((await o.previewGoal({ projectId: project.id, text: GOAL })).planner?.profileId).toBe(other.profileId);
+    const next = await o.createGoal({ projectId: project.id, text: "Belgeleri gözden geçir" });
+    await o.settle();
+    for (const id of [start.goalId, next.goalId]) expect(row<{ planner_profile_id: string }>(store, "select planner_profile_id from goals where id = ?", id).planner_profile_id).toBe(other.profileId);
+    // A remembered planner that can no longer plan is passed over, not refused.
+    q(store, "update settings set value = ? where key = ?", JSON.stringify("gone-profile"), `orchestra.planner.${project.id}`);
+    expect((await o.previewGoal({ projectId: project.id, text: GOAL })).planner?.profileId).toBe(first.planner!.profileId);
+  });
+
+  it("quotes at most four open findings in a replan", async () => {
+    const env = await setup({ result: planner(ok(PLAN), ok(PLAN)) });
+    const { o, store, project, adapter } = env;
+    const start = await o.createGoal({ projectId: project.id, text: GOAL });
+    await o.settle();
+    approve(o, store, start.goalId);
+    for (let i = 0; i < 6; i++) q(store, "insert into goal_decisions (id, goal_id, kind, task_id, payload, created_at) values (?, ?, 'prereq_failed', null, ?, ?)", `d${i}`, start.goalId, JSON.stringify({ findings: `Bulgu numarası ${i}` }), `2026-10-31T10:0${i}:00.000Z`);
+    await o.replanGoal(start.goalId);
+    await o.settle();
+    const prompt = plannerRuns(adapter)[1]!.req.prompt;
+    expect(prompt.match(/What went wrong so far/g)).toHaveLength(4);
+    expect(prompt).toContain("Bulgu numarası 3");
+    expect(prompt).not.toContain("Bulgu numarası 4");
+  });
+});
+
+describe("approving a plan of one task", () => {
+  it("makes it an ordinary task and approves its crew in the same click", async () => {
+    const one = { summary: "Tek görev yeter.", tasks: [PLAN.tasks[0]!] };
+    const env = await setup({ result: planner(ok(one)), candidates: CANDIDATES() });
+    const { o, store, project } = env;
+    const start = await o.createGoal({ projectId: project.id, text: GOAL });
+    await o.settle();
+    const only = goalTasks(store, start.goalId)[0]!.task_id;
+    expect(await refusal(o.approveOneTaskGoal(start.goalId, 2))).toBe("goal.stale_revision");
+    const detail = await o.approveOneTaskGoal(start.goalId, 1);
+    expect(detail.id).toBe(only);
+    expect(detail.crew?.approvedAt).not.toBeNull();
+    expect(rows(store, "select 1 from goal_tasks where task_id = ?", only)).toEqual([]);
+    expect(row<{ collapsed_task_id: string }>(store, "select collapsed_task_id from goals where id = ?", start.goalId).collapsed_task_id).toBe(only);
+    expect(o.goalState(start.goalId)).toMatchObject({ status: "finished", outcome: "collapsed" });
+    // The same click again changes nothing.
+    expect((await o.approveOneTaskGoal(start.goalId, 1)).id).toBe(only);
+  });
+
+  it("is refused for a plan of several tasks", async () => {
+    const env = await setup();
+    const { o, project } = env;
+    const start = await o.createGoal({ projectId: project.id, text: GOAL });
+    await o.settle();
+    expect(await refusal(o.approveOneTaskGoal(start.goalId, 1))).toBe("goal.not_one_task");
   });
 });
 

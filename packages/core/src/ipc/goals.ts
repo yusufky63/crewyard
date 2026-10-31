@@ -59,7 +59,9 @@ export type GoalErrorCode =
   | "goal.paused" // the goal is paused; resume it first
   | "goal.not_paused"
   | "goal.no_integration" // the goal has no branch (no writing task)
-  | "goal.collapse_after_approval"; // Run as one task is only before approval
+  | "goal.collapse_after_approval" // Run as one task is only before approval
+  | "goal.not_one_task" // the revision does not hold exactly one task, so it cannot become an ordinary task
+  | "goal.plan_moved"; // { keys }: tasks this revision replaces started after it was planned; replan again
 
 /** One plan task as the goal shows it: the plan's fields, its task, its share and why it waits. */
 export interface GoalTaskView {
@@ -224,8 +226,13 @@ export interface GoalPreview {
   planner: CandidateView | null;
   /** Every scored planner candidate, best first, for the planner chip. */
   candidates: CandidateView[];
-  /** The planning run's estimate: `plan` for a sign-in, Unknown without a price. */
+  /**
+   * The planning run's estimate: $0 Estimated for a plan sign-in or a local model (see `billing`),
+   * Unknown for a paid model without a price.
+   */
   estimate: CostEstimate;
+  /** How the planner is billed, so the composer can show `Plan` for a sign-in; null with no planner. */
+  billing: "api" | "plan" | "local" | null;
   /** The planning run's own budget, the ceiling the composer states. */
   ceilingUsd: number | null;
   /** The classifier found a small-change keyword: the composer offers `Use Crew`. */

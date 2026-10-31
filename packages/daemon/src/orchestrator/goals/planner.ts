@@ -35,6 +35,7 @@ import {
   type GoalState,
   type GoalTaskDraft,
   type GoalTaskFacts,
+  type PlanDiff,
   type PlanRevisionFacts,
   type PlanState,
   type Reason,
@@ -42,12 +43,13 @@ import {
   type TaskDetail,
   type TaskMode,
   type TaskStatus,
+  type TasksIpc,
 } from "@crewyard/core";
 import { detectProjectType } from "../../setup/detect.ts";
 import type { OrchestratorContext, ProposeParams } from "../context.ts";
 import { classifyTask } from "../classify.ts";
 import { rankForRole } from "../crew.ts";
-import type { ProjectRow, RunRow } from "../db.ts";
+import type { MemberRow, ProjectRow, RunRow, TaskRow } from "../db.ts";
 import type { Candidate } from "../directory.ts";
 import { errorCode, OrchestratorError } from "../errors.ts";
 import { resolveBase } from "../git.ts";
@@ -61,12 +63,15 @@ import { correctiveTurn, goalTaskDescription, goalTaskNumber, planningPrompt, wa
 // hidden planning task: kind research, one step of the read-only goal-planner role, its own budget
 // (the ceiling the composer states), approved by the click that showed its cost and then run like
 // any other run (admission, spend caps, transcripts, recovery). Its result is checked here with
-// parseGoalPlan; a refusal gets one corrective turn through Messages.followUp, a second one fails
-// the plan with the parser's words. A plan that passes becomes proposed tasks through
-// TaskFlow.propose, each with its goal_tasks row written in the same transaction, so a goal task
-// is never visible or approvable without it. Nothing here approves a goal task or starts one: the
-// goal scheduler releases them after you approve the plan (GoalRunner). Statuses are derived
-// (D5): a revision reads planning, failed or ready from its planning task's runs and its facts.
+// parseGoalPlan; a refusal gets one corrective turn through Messages.followUp, started by the
+// dispatcher under admission, and a second one fails the plan with the parser's words. A plan
+// that passes becomes proposed tasks through TaskFlow.propose, each with its goal_tasks row
+// written in the same transaction, so a goal task is never visible or approvable without it.
+// Nothing here approves a goal task or starts one: the goal scheduler releases them after you
+// approve the plan (GoalRunner); a plan of one task is approved only once it is an ordinary task
+// (approveOneTask). After approval, a new revision changes nothing of the running plan until you
+// approve it too (applyReplacements). Statuses are derived (D5): a revision reads planning,
+// failed or ready from its planning task's runs and its facts.
 
 export interface GoalPlannerDeps {
   /** TaskFlow.propose: classify, draft a crew, no process; `inTx` runs in the task's own transaction. */
@@ -75,7 +80,20 @@ export interface GoalPlannerDeps {
   cancel(taskId: string): Promise<TaskDetail>;
   /** Messages.followUp: the corrective turn, a new run of the same member, natively resumed. */
   followUp(runId: string, text: string): Promise<RunView>;
+  /** TaskFlow.approve: a one-task plan's approval, once it is an ordinary task (design §1.2). */
+  approve(p: TasksIpc["tasks.approve"]["params"]): Promise<TaskDetail>;
+  /** TaskFlow.get. */
+  get(taskId: string): TaskDetail;
   tick(): Promise<void>;
+}
+
+/** The dispatcher's admission check (D7 slots, memory, spend held by other runs) for one step. */
+export type AdmitStep = (task: TaskRow, member: MemberRow, profileId: string) => Promise<Reason | null>;
+
+/** What approving a revision replaces (design §4.10): never-started tasks it discards, and started ones that block it. */
+export interface GoalReplacements {
+  discard: string[];
+  started: Array<{ key: string; taskId: string; because: FrozenBecause }>;
 }
 
 /** What a planning click returns; the goal view is built from the store (handlers/goals.ts). */
@@ -156,9 +174,27 @@ interface BaseTask {
   frozen: FrozenBecause | null;
 }
 
+/**
+ * The plan a revision is checked against: one live task per key. A key can be held twice after
+ * approval, by an approved task and by the newer, unapproved revision's replacement for it; the
+ * base then takes the frozen one, else the newer one. The other is `shadowed`.
+ */
+interface RevisionBase {
+  base: BaseTask[];
+  shadowed: GoalTaskRow[];
+}
+
 const STEP = GOAL_PLANNER.id;
+/** How often a plan's tasks are drafted again when the goal's tasks change underneath the drafting. */
+const MATERIALISE_ATTEMPTS = 3;
 
 export class GoalPlanner extends Part {
+  /**
+   * Corrective turns waiting for an admission slot, by planning task. Kept in memory only: after a
+   * restart the revision reads failed with the stored refusal, and Retry planning is your click.
+   */
+  private readonly corrective = new Map<string, { runId: string; error: string }>();
+
   constructor(
     ctx: OrchestratorContext,
     private readonly deps: GoalPlannerDeps,
@@ -181,8 +217,10 @@ export class GoalPlanner extends Part {
   async preview(p: { projectId: string; text: string; plannerProfileId?: string }): Promise<GoalPreview> {
     const project = this.db.project(p.projectId);
     const enabled = this.enabled();
-    const { views } = await this.plannerChoice(project, p.plannerProfileId ?? null);
-    const planner = views.find((v) => v.profileId === p.plannerProfileId) ?? views[0] ?? null;
+    const pin = p.plannerProfileId ?? this.rememberedPlanner(project.id);
+    const { views, all } = await this.plannerChoice(project, pin);
+    const planner = views.find((v) => v.profileId === pin) ?? views[0] ?? null;
+    const billed = planner ? all.find((c) => c.profile.id === planner.profileId) : undefined;
     const estimate: CostEstimate = planner?.estimate ?? { usd: null, provenance: "unknown" };
     const reason: Reason | null = !enabled ? { code: "goal.disabled" } : !planner ? { code: "goal.no_planner" } : null;
     const budget = this.setting(GOAL_SETTINGS.goalBudget(project.id));
@@ -192,6 +230,7 @@ export class GoalPlanner extends Part {
       planner,
       candidates: views,
       estimate,
+      billing: billed ? billingOf(billed) : null,
       ceilingUsd: planner ? this.planningCeiling(project, estimate) : null,
       smallHint: smallChange(p.text),
       introDue: this.setting(GOAL_SETTINGS.introduced(project.id)) === null,
@@ -214,7 +253,8 @@ export class GoalPlanner extends Part {
     if (!limits.ok) throw new OrchestratorError("goal.bad_budget", { field: "defaultBudgetUsd" });
     const attachmentIds = [...(p.attachments ?? [])];
     this.attachments.check(attachmentIds);
-    const choice = await this.pickPlanner(project, p.plannerProfileId ?? null, true);
+    // Your pick on the chip is checked strictly; the one remembered from an earlier pick only leads while it can still plan.
+    const choice = await this.pickPlanner(project, p.plannerProfileId ?? this.rememberedPlanner(project.id), Boolean(p.plannerProfileId));
     const baseBranch = p.baseBranch?.trim() ? p.baseBranch.trim() : null;
     const baseSha = await this.baseShaOf(project, baseBranch);
     const goalId = randomUUID();
@@ -268,8 +308,8 @@ export class GoalPlanner extends Part {
     // The first-goal card's click is this one: its budget becomes the project default, and the card is done.
     if (limits.value.budgetUsd !== undefined) this.writeSetting(GOAL_SETTINGS.goalBudget(project.id), limits.value.budgetUsd);
     this.writeSetting(GOAL_SETTINGS.introduced(project.id), true);
-    // You picked this planner on the chip: remembered per project the way crew edits are.
-    if (p.plannerProfileId) this.db.bumpPreference(project.id, STEP, p.plannerProfileId, 1);
+    // You picked this planner on the chip: remembered per project (design §4.4), and pinned from now on.
+    if (p.plannerProfileId) this.writeSetting(GOAL_SETTINGS.planner(project.id), p.plannerProfileId);
     this.goalEvent(goal, "goal.created", { title: goal.title, baseBranch, baseSha, plannerProfileId: choice.chosen.profileId });
     this.planningStarted(goal, 1, "initial", planTaskId, choice.chosen);
     this.emitGoal(goal.id, "created");
@@ -356,7 +396,7 @@ export class GoalPlanner extends Part {
           // Only the new task is ordered after others: a task already running never gains a prerequisite.
           const edges = overlapPairs(this.overlapInput(goalId)).filter((e) => e.taskId === taskId);
           for (const e of edges) this.db.exec("insert or ignore into goal_task_deps (goal_id, task_id, depends_on, source) values (?, ?, ?, 'overlap')", goalId, e.taskId, e.dependsOn);
-          this.appendWaitsFor(taskId);
+          this.setWaitsFor(taskId);
         },
       },
     );
@@ -409,6 +449,31 @@ export class GoalPlanner extends Part {
     return { goalId, revision: latest.revision, planTaskId: null, taskId: detail.id };
   }
 
+  /**
+   * `Approve and start` on a plan of one task (design §1.2, §3.2): one click makes it an ordinary
+   * task (no goal_tasks row, no goal branch, the per-task PR flow) and approves its crew through
+   * TaskFlow.approve, the crew the review showed. GoalRunner's goals.approve calls this when the
+   * revision it approves holds exactly one task. A repeated click returns the task unchanged.
+   */
+  async approveOneTask(goalId: string, revision: number, params: Omit<TasksIpc["tasks.approve"]["params"], "taskId"> = {}): Promise<TaskDetail> {
+    const goal = this.goal(goalId);
+    if (goal.collapsed_task_id) {
+      const crew = this.db.crew(goal.collapsed_task_id);
+      if (crew?.approved_at) return this.deps.get(goal.collapsed_task_id);
+    } else {
+      this.assertOpen(goal);
+      if (goal.approved_revision !== null) throw new OrchestratorError("goal.approved");
+      const latest = this.latestRevision(goalId);
+      if (latest.revision !== revision) throw new OrchestratorError("goal.stale_revision", { revision, latest: latest.revision });
+      if (this.planState(latest) !== "ready") throw new OrchestratorError("goal.not_ready", { revision });
+      const live = this.liveRows(goalId);
+      if (live.length !== 1 || live[0]!.plan_id !== latest.id) throw new OrchestratorError("goal.not_one_task", { tasks: live.length });
+    }
+    // Collapse first: TaskFlow.approve refuses a task that still has its goal row.
+    const res = await this.collapse(goalId);
+    return this.deps.approve({ ...params, taskId: res.taskId! });
+  }
+
   // ---------------------------------------------------------------- the planning run's end
 
   /**
@@ -440,16 +505,7 @@ export class GoalPlanner extends Part {
       await this.refuse(goal, planRow, run, parsed.error);
       return;
     }
-    const base = this.baseTasks(goal.id);
-    const checked = applyPlanRevision(
-      base.map((b) => ({ task: b.task, frozen: b.frozen })),
-      parsed.value,
-    );
-    if (!checked.ok) {
-      await this.refuse(goal, planRow, run, checked.error);
-      return;
-    }
-    await this.materialise(goal, planRow, parsed.value, base, checked.diff);
+    await this.materialise(goal, planRow, run, parsed.value);
   }
 
   private async refuse(goal: GoalRow, planRow: PlanRow, run: RunRow, error: string): Promise<void> {
@@ -458,13 +514,12 @@ export class GoalPlanner extends Part {
     const results = this.db.runs(planRow.plan_task_id!).filter((r) => r.end_reason === "completed").length;
     if (results <= GOAL_LIMITS.correctiveTurns) {
       this.goalEvent(goal, "goal.plan_refused", { revision: planRow.revision, error, corrective: true });
-      try {
-        await this.deps.followUp(run.id, correctiveTurn(error));
-        this.emitGoal(goal.id, "planning");
-      } catch (err) {
-        this.goalEvent(goal, "goal.plan_failed", { revision: planRow.revision, error, code: errorCode(err) });
-        this.emitGoal(goal.id, "plan_failed");
-      }
+      // Queued, not launched from here: the dispatcher starts it at its next pass under admission
+      // (D7 slots, memory, spend held), so the slot this run just freed is not handed out twice.
+      // Until then the revision reads planning (planFacts).
+      this.corrective.set(planRow.plan_task_id!, { runId: run.id, error });
+      this.emitGoal(goal.id, "planning");
+      await this.deps.tick();
       return;
     }
     this.goalEvent(goal, "goal.plan_failed", { revision: planRow.revision, error });
@@ -472,13 +527,71 @@ export class GoalPlanner extends Part {
   }
 
   /**
-   * A checked plan becomes proposed tasks. Frozen tasks are kept as they are and move into the new
-   * revision; every other live task of the goal is discarded (its crew was never approved, so
-   * nothing stops). The plan JSON is written last, in one transaction with the discards, the
-   * dependencies and the automatic overlap ordering, so a revision reads ready only once whole.
+   * The dispatcher's hook at the start of each pass: queued corrective turns start once admission
+   * lets them, as a native resume of the refused run's session. A turn whose revision no longer
+   * matters (stopped, collapsed, cancelled, superseded) is dropped.
    */
-  private async materialise(goal: GoalRow, planRow: PlanRow, plan: GoalPlan, base: BaseTask[], diff: { added: string[]; changed: string[]; removed: string[]; kept: string[] }): Promise<void> {
-    const frozen = new Map(base.filter((b) => b.frozen).map((b) => [b.task.key, b]));
+  async correctiveTurns(admit: AdmitStep): Promise<void> {
+    for (const [taskId, turn] of [...this.corrective]) {
+      const planRow = this.planOfTask(taskId);
+      const goal = planRow ? this.goal(planRow.goal_id) : null;
+      if (!planRow || !goal || !this.current(goal, planRow) || this.db.task(taskId).cancelled_at) {
+        this.corrective.delete(taskId);
+        continue;
+      }
+      const run = this.db.run(turn.runId);
+      if (await admit(this.db.task(taskId), this.db.member(run.member_id), run.profile_id)) continue;
+      this.corrective.delete(taskId);
+      try {
+        await this.deps.followUp(run.id, correctiveTurn(turn.error));
+      } catch (err) {
+        this.goalEvent(goal, "goal.plan_failed", { revision: planRow.revision, error: turn.error, code: errorCode(err) });
+        this.emitGoal(goal.id, "plan_failed");
+      }
+    }
+  }
+
+  /**
+   * A checked plan becomes proposed tasks, drafted against the goal's tasks as they are now. If
+   * those change while the drafting awaits (a task released, edited or started), the drafts are
+   * dropped and the plan is drafted again against the new state, a few times at most; a plan that
+   * now changes or removes a frozen task is refused like any other.
+   */
+  private async materialise(goal: GoalRow, planRow: PlanRow, run: RunRow, plan: GoalPlan): Promise<void> {
+    for (let attempt = 0; attempt < MATERIALISE_ATTEMPTS; attempt++) {
+      const state = this.revisionBase(goal.id);
+      const checked = applyPlanRevision(
+        state.base.map((b) => ({ task: b.task, frozen: b.frozen })),
+        plan,
+      );
+      if (!checked.ok) {
+        await this.refuse(goal, planRow, run, checked.error);
+        return;
+      }
+      const outcome = await this.draftAndApply(goal, planRow, plan, state, checked.diff);
+      if (outcome !== "moved") return;
+    }
+    const error = "the goal's tasks kept changing while the plan's tasks were created";
+    this.db.exec("update goal_plans set error = ? where id = ?", error, planRow.id);
+    this.goalEvent(goal, "goal.plan_failed", { revision: planRow.revision, error });
+    this.emitGoal(goal.id, "plan_failed");
+  }
+
+  /**
+   * One drafting pass. Frozen tasks are kept as they are; every other planned task becomes a new
+   * proposal. The plan JSON is written last, in one transaction with the discards, the
+   * dependencies and the automatic overlap ordering, so a revision reads ready only once whole.
+   * That transaction first checks that the goal's tasks are still what the drafts were made from.
+   *
+   * What is discarded at arrival is only what was never approved, so cancelling it stops nothing.
+   * After approval, the approved plan keeps running until you approve the new revision: its
+   * tasks stay live and on their own revision, and approving the new one discards the tasks it
+   * replaces (applyReplacements, from goals.approve). Before approval, a frozen (edited) task moves
+   * into the new revision, since goals.approve accepts only the tasks of the revision it approves.
+   */
+  private async draftAndApply(goal: GoalRow, planRow: PlanRow, plan: GoalPlan, state: RevisionBase, diff: PlanDiff): Promise<"applied" | "superseded" | "moved" | "failed"> {
+    const signature = this.baseSignature(goal.id, state);
+    const frozen = new Map(state.base.filter((b) => b.frozen).map((b) => [b.task.key, b]));
     const created: Array<{ key: string; taskId: string }> = [];
     try {
       for (const [i, t] of plan.tasks.entries()) {
@@ -495,30 +608,39 @@ export class GoalPlanner extends Part {
       this.db.exec("update goal_plans set error = ? where id = ?", error, planRow.id);
       this.goalEvent(goal, "goal.plan_failed", { revision: planRow.revision, error });
       this.emitGoal(goal.id, "plan_failed");
-      return;
+      return "failed";
     }
     const at = this.iso();
     const ids = new Map<string, string>([...created.map((c) => [c.key, c.taskId] as const), ...[...frozen.values()].map((b) => [b.task.key, b.row.task_id] as const)]);
-    const discarded = base.filter((b) => !b.frozen).map((b) => b.row.task_id);
-    let applied = false;
-    this.db.tx(() => {
-      // Read again: a stop, a collapse or a newer revision while the tasks were drafted wins.
-      if (!this.current(this.goal(goal.id), this.planRowById(planRow.id))) return;
-      this.db.exec("update goal_plans set plan = ?, error = null where id = ?", JSON.stringify(plan), planRow.id);
-      this.db.exec("update goal_plans set superseded_at = ? where goal_id = ? and revision < ? and superseded_at is null and approved_at is null", at, goal.id, planRow.revision);
-      this.discard(discarded);
-      for (const [i, t] of plan.tasks.entries()) {
-        const kept = frozen.get(t.key);
-        if (kept) this.db.exec("update goal_tasks set plan_id = ?, position = ? where task_id = ?", planRow.id, i, kept.row.task_id);
-      }
-      this.writeDeps(goal.id, plan, ids, frozen);
-      for (const c of created) this.appendWaitsFor(c.taskId);
-      applied = true;
-    });
-    if (!applied) {
+    // Never approved: nothing ran, so discarding stops nothing. An approved task waits for the new revision's approval.
+    const discarded = [...state.base.filter((b) => !b.frozen).map((b) => b.row), ...state.shadowed].filter((r) => r.accepted !== 1).map((r) => r.task_id);
+    const moved = [...frozen.values()].filter((b) => b.row.accepted !== 1);
+    const stayed = new Set([...frozen.values()].map((b) => b.row.task_id));
+    const rebuilt = new Set([...created.map((c) => c.taskId), ...moved.map((b) => b.row.task_id)]);
+    let outcome: "applied" | "superseded" | "moved";
+    try {
+      outcome = this.db.tx(() => {
+        // Read again: a stop, a collapse or a newer revision while the tasks were drafted wins,
+        // and so does any change to the tasks the drafts were made against.
+        if (!this.current(this.goal(goal.id), this.planRowById(planRow.id))) return "superseded" as const;
+        // The drafts themselves are rows of this revision by now; they are not what they were drafted against.
+        if (this.baseSignature(goal.id, this.revisionBase(goal.id, planRow.id)) !== signature) return "moved" as const;
+        this.db.exec("update goal_plans set plan = ?, error = null where id = ?", JSON.stringify(plan), planRow.id);
+        this.db.exec("update goal_plans set superseded_at = ? where goal_id = ? and revision < ? and superseded_at is null and approved_at is null", at, goal.id, planRow.revision);
+        this.discard(discarded);
+        for (const b of moved) this.db.exec("update goal_tasks set plan_id = ?, position = ? where task_id = ?", planRow.id, plan.tasks.findIndex((t) => t.key === b.task.key), b.row.task_id);
+        this.writeDeps(goal.id, plan, ids, rebuilt, stayed);
+        for (const id of rebuilt) this.setWaitsFor(id);
+        return "applied" as const;
+      });
+    } catch {
+      // discard() refused a task that started after all: the same as a change underneath.
+      outcome = "moved";
+    }
+    if (outcome !== "applied") {
       this.dropCreated(created.map((c) => c.taskId));
-      this.goalEvent(goal, "goal.plan_ignored", { revision: planRow.revision, reason: "superseded" });
-      return;
+      if (outcome === "superseded") this.goalEvent(goal, "goal.plan_ignored", { revision: planRow.revision, reason: "superseded" });
+      return outcome;
     }
     for (const id of discarded) {
       this.audit(id, null, "task.cancelled", { by: "goal", goalId: goal.id, revision: planRow.revision });
@@ -527,48 +649,127 @@ export class GoalPlanner extends Part {
     const overlaps = Number((this.opts.store.db.prepare("select count(*) as n from goal_task_deps where goal_id = ? and source = 'overlap'").get(goal.id) as { n: number }).n);
     this.goalEvent(goal, "goal.planned", { revision: planRow.revision, cause: planRow.cause, tasks: plan.tasks.length, ...diff, overlaps });
     this.emitGoal(goal.id, "planned");
+    return "applied";
+  }
+
+  /** What the drafts depend on: which tasks are live, their revision, approval and whether they are frozen. */
+  private baseSignature(goalId: string, state: RevisionBase): string {
+    const goal = this.goal(goalId);
+    const parts = state.base.map((b) => `${b.row.task_id}:${b.row.plan_id}:${b.row.accepted ?? "-"}:${b.frozen ?? "-"}`);
+    parts.push(...state.shadowed.map((r) => `${r.task_id}:${r.plan_id}:${r.accepted ?? "-"}:shadowed`));
+    return `${goal.approved_revision ?? "-"}|${parts.sort().join(",")}`;
   }
 
   /**
-   * The revision's dependencies, rebuilt by key: the plan's edges, your own edges on tasks that
-   * stayed (remapped to the task that now holds their key, dropped if they would close a loop),
-   * and the overlap ordering over the result (design §4.8).
+   * The revision's dependencies for the tasks it (re)built, by key: the plan's edges, your own
+   * edges on tasks that moved in (remapped to the task that now holds their key, dropped if they
+   * would close a loop), and the overlap ordering (design §4.8). A task the revision keeps on an
+   * approved revision is left as it is; its edges change only when the revision is approved.
    */
-  private writeDeps(goalId: string, plan: GoalPlan, ids: ReadonlyMap<string, string>, frozen: ReadonlyMap<string, BaseTask>): void {
+  private writeDeps(goalId: string, plan: GoalPlan, ids: ReadonlyMap<string, string>, rebuilt: ReadonlySet<string>, stayed: ReadonlySet<string>): void {
     const members = new Set(ids.values());
     const keyOf = new Map(this.goalRows(goalId).map((r) => [r.task_id, r.key]));
     const userEdges: Array<{ task: string; on: string }> = [];
-    for (const b of frozen.values()) {
-      for (const d of this.depsOf(b.row.task_id)) {
+    for (const id of rebuilt) {
+      if (!stayed.has(id)) continue;
+      for (const d of this.depsOf(id)) {
         if (d.source !== "user") continue;
         const target = members.has(d.on) ? d.on : ids.get(keyOf.get(d.on) ?? "");
-        if (target && target !== b.row.task_id) userEdges.push({ task: b.row.task_id, on: target });
+        if (target && target !== id) userEdges.push({ task: id, on: target });
       }
     }
-    const list = [...members];
+    const list = [...rebuilt];
     if (list.length > 0) {
       const marks = list.map(() => "?").join(", ");
       this.opts.store.db.prepare(`delete from goal_task_deps where task_id in (${marks})`).run(...list);
     }
-    const graph = new Map<string, string[]>([...members].map((id) => [id, []]));
+    // Kept approved tasks bring their current edges, so a loop through them is seen too.
+    const graph = new Map<string, string[]>([...members].map((id) => [id, rebuilt.has(id) ? [] : this.depsOf(id).map((d) => d.on)]));
     const add = (task: string, on: string, source: GoalDepSource) => {
       this.db.exec("insert or ignore into goal_task_deps (goal_id, task_id, depends_on, source) values (?, ?, ?, ?)", goalId, task, on, source);
       graph.get(task)!.push(on);
     };
-    for (const t of plan.tasks) for (const d of t.dependsOn) add(ids.get(t.key)!, ids.get(d)!, "plan");
-    for (const e of userEdges) {
-      if (graph.get(e.task)!.includes(e.on)) continue;
-      const nodes = [...graph].map(([id, dependsOn]) => ({ id, dependsOn }));
-      if (!wouldCycle(nodes, e.task, e.on)) add(e.task, e.on, "user");
+    const loops = (task: string, on: string) => wouldCycle([...graph].map(([id, dependsOn]) => ({ id, dependsOn })), task, on) !== null;
+    for (const t of plan.tasks) {
+      const id = ids.get(t.key)!;
+      if (!rebuilt.has(id)) continue;
+      for (const d of t.dependsOn) add(id, ids.get(d)!, "plan");
     }
+    for (const e of userEdges) if (!graph.get(e.task)!.includes(e.on) && !loops(e.task, e.on)) add(e.task, e.on, "user");
     // Tasks that stayed count as earlier, so what is new waits for them, never the other way round;
-    // and a task already released or done never gains a prerequisite (it is past the release step).
-    const started = new Set([...frozen.values()].filter((b) => b.frozen !== "edited").map((b) => b.row.task_id));
-    const stayed = new Set([...frozen.values()].map((b) => b.row.task_id));
+    // and only a task this revision built gains an ordering (a kept one is past drafting).
     const input = this.overlapInput(goalId)
       .filter((t) => members.has(t.id))
       .map((t) => (stayed.has(t.id) ? { ...t, position: t.position - GOAL_LIMITS.maxTasksHard } : t));
-    for (const e of overlapPairs(input)) if (!started.has(e.taskId)) add(e.taskId, e.dependsOn, "overlap");
+    for (const e of overlapPairs(input)) {
+      if (!rebuilt.has(e.taskId) || graph.get(e.taskId)!.includes(e.dependsOn) || loops(e.taskId, e.dependsOn)) continue;
+      add(e.taskId, e.dependsOn, "overlap");
+    }
+  }
+
+  // ---------------------------------------------------------------- approving a revision (for GoalRunner)
+
+  /**
+   * What approving `revision` replaces (design §4.10): the live tasks of earlier revisions whose
+   * key the revision drops, or holds a new task for. The tasks it returned unchanged (frozen ones)
+   * stay. A replaced task that started since the revision was planned is in `started`: approval is
+   * refused rather than cancelling work in flight. An `Add task` revision replaces nothing.
+   */
+  replacements(goalId: string, revision: number): GoalReplacements {
+    const out: GoalReplacements = { discard: [], started: [] };
+    const target = this.planByRevision(goalId, revision);
+    if (!target?.plan || target.cause === "add") return out;
+    const planned = new Set((JSON.parse(target.plan) as GoalPlan).tasks.map((t) => t.key));
+    const live = this.liveRows(goalId);
+    const own = new Set(live.filter((r) => r.plan_id === target.id).map((r) => r.key));
+    for (const r of live) {
+      if (r.plan_id === target.id || r.accepted === 0) continue;
+      if (planned.has(r.key) && !own.has(r.key)) continue;
+      const because = this.startedFacts(r);
+      if (because) out.started.push({ key: r.key, taskId: r.task_id, because });
+      else out.discard.push(r.task_id);
+    }
+    return out;
+  }
+
+  /**
+   * Inside goals.approve's transaction, before it accepts the revision's tasks: discards what the
+   * revision replaces, points the kept tasks' edges at the tasks that now hold those keys, and
+   * numbers the kept tasks as the revision does. Refuses with `goal.plan_moved` when a replaced
+   * task has started meanwhile. Returns the discarded task ids, for the caller's notices.
+   */
+  applyReplacements(goalId: string, revision: number): string[] {
+    const r = this.replacements(goalId, revision);
+    if (r.started.length > 0) throw new OrchestratorError("goal.plan_moved", { keys: r.started.map((s) => s.key).join(", ") });
+    const target = this.planByRevision(goalId, revision);
+    if (!target?.plan || target.cause === "add") return [];
+    const plan = JSON.parse(target.plan) as GoalPlan;
+    const replaced = new Set(r.discard);
+    const live = this.liveRows(goalId);
+    const own = new Map(live.filter((x) => x.plan_id === target.id).map((x) => [x.key, x.task_id]));
+    const keyOf = new Map(live.map((x) => [x.task_id, x.key]));
+    const kept = live.filter((x) => x.plan_id !== target.id && x.accepted !== 0 && !replaced.has(x.task_id));
+    const after = [...kept.map((x) => x.task_id), ...own.values()];
+    const loops = (task: string, on: string) => wouldCycle(after.map((id) => ({ id, dependsOn: this.depsOf(id).map((d) => d.on).filter((x) => !replaced.has(x)) })), task, on) !== null;
+    for (const k of kept) {
+      for (const d of this.depsOf(k.task_id)) {
+        if (!replaced.has(d.on)) continue;
+        this.db.exec("delete from goal_task_deps where task_id = ? and depends_on = ?", k.task_id, d.on);
+        const to = own.get(keyOf.get(d.on) ?? "");
+        if (!to) continue;
+        // A plan or user edge outranks an automatic ordering that would now run the other way.
+        if (loops(k.task_id, to)) this.db.exec("delete from goal_task_deps where task_id = ? and depends_on = ? and source = 'overlap'", to, k.task_id);
+        if (!loops(k.task_id, to)) this.db.exec("insert or ignore into goal_task_deps (goal_id, task_id, depends_on, source) values (?, ?, ?, ?)", goalId, k.task_id, to, d.source);
+      }
+    }
+    this.discard(r.discard);
+    for (const k of kept) {
+      const i = plan.tasks.findIndex((t) => t.key === k.key);
+      if (i >= 0) this.db.exec("update goal_tasks set position = ? where task_id = ?", i, k.task_id);
+    }
+    for (const id of after) this.setWaitsFor(id);
+    for (const id of r.discard) this.audit(id, null, "task.cancelled", { by: "goal", goalId, revision });
+    return r.discard;
   }
 
   // ---------------------------------------------------------------- status
@@ -606,7 +807,8 @@ export class GoalPlanner extends Part {
       error: p.error,
       supersededAt: p.superseded_at,
       approvedAt: p.approved_at,
-      runs: task ? this.db.runs(task.id).map((r) => ({ endedAt: r.ended_at })) : null,
+      // A corrective turn waiting for its admission slot counts as a run still to finish.
+      runs: task ? [...this.db.runs(task.id).map((r) => ({ endedAt: r.ended_at })), ...(this.corrective.has(task.id) ? [{ endedAt: null }] : [])] : null,
       taskCancelled: Boolean(task?.cancelled_at),
     };
   }
@@ -797,8 +999,8 @@ export class GoalPlanner extends Part {
   }
 
   private frozenFacts(goalId: string): FrozenTaskFacts[] {
-    return this.baseTasks(goalId)
-      .filter((b) => b.frozen)
+    return this.revisionBase(goalId)
+      .base.filter((b) => b.frozen)
       .map((b) => {
         const runs = this.db.runs(b.row.task_id);
         const last = runs.at(-1);
@@ -866,44 +1068,90 @@ export class GoalPlanner extends Part {
     );
   }
 
-  /** Ends the description with "[Goal: waits for 01, 02]" while the task waits for others. */
-  private appendWaitsFor(taskId: string): void {
+  /**
+   * Ends the description with "[Goal: waits for 01, 02]" while the task waits for others, replacing
+   * the line an earlier revision wrote, so the order an older build shows stays current.
+   */
+  private setWaitsFor(taskId: string): void {
     const positions = new Map(this.goalRows(this.goalTaskRow(taskId).goal_id).map((r) => [r.task_id, r.position]));
-    const line = waitsForLine(this.depsOf(taskId).map((d) => positions.get(d.on)!).filter((n) => n !== undefined));
-    if (!line) return;
+    const line = waitsForLine(this.depsOf(taskId).map((d) => positions.get(d.on)).filter((n) => n !== undefined));
     const task = this.db.task(taskId);
-    this.db.exec("update tasks set description = ? where id = ?", task.description ? `${task.description}\n\n${line}` : line, taskId);
+    const body = stripWaitsFor(task.description);
+    const next = line ? (body ? `${body}\n\n${line}` : line) : body;
+    if (next !== task.description) this.db.exec("update tasks set description = ? where id = ?", next, taskId);
   }
 
-  /** Discards goal tasks that never ran: their crews were never approved, so cancelling stops nothing. */
+  /**
+   * Discards goal tasks that never started: nothing ran, so cancelling stops nothing. A task that
+   * was released, joined or has run is refused (goal.frozen), which aborts the caller's transaction.
+   */
   private discard(taskIds: readonly string[]): void {
     const at = this.iso();
     for (const id of taskIds) {
-      this.db.exec("update goal_tasks set discarded_at = ? where task_id = ? and discarded_at is null", at, id);
+      const row = this.goalTaskRowOrNull(id);
+      if (row && row.discarded_at === null) {
+        const because = this.startedFacts(row);
+        if (because) throw new OrchestratorError("goal.frozen", { key: row.key, because });
+      }
+      this.db.exec("update goal_tasks set discarded_at = ? where task_id = ? and discarded_at is null and released_at is null and joined_sha is null", at, id);
       this.db.exec("update tasks set cancelled_at = ? where id = ? and cancelled_at is null", at, id);
     }
+  }
+
+  /** Why a goal task may no longer be discarded or replaced: it was released, joined or has run. Edits do not count here. */
+  private startedFacts(row: GoalTaskRow): FrozenBecause | null {
+    const because = frozenBecause({ status: this.db.status(this.db.task(row.task_id)), released: row.released_at !== null, joined: row.joined_sha !== null, edited: false });
+    if (because) return because;
+    return this.db.runs(row.task_id).length > 0 ? "running" : null;
   }
 
   /** Tasks proposed for a revision that did not land (a failure, or a newer revision won). */
   private dropCreated(taskIds: readonly string[]): void {
     if (taskIds.length === 0) return;
-    this.db.tx(() => this.discard(taskIds));
+    this.db.tx(() => {
+      this.discard(taskIds);
+      // Frees the key within its revision (unique per plan and key), so drafting again can use it.
+      // The row stays, discarded, so the cancelled proposal still reads as the goal's and stays hidden.
+      for (const id of taskIds) this.db.exec("update goal_tasks set key = key || '~' || substr(task_id, 1, 8) where task_id = ?", id);
+      this.db.exec(`delete from goal_task_deps where task_id in (${taskIds.map(() => "?").join(", ")})`, ...taskIds);
+    });
     for (const id of taskIds) this.emitTask(id, "cancelled");
   }
 
-  /** The goal's live tasks with their plan entries and whether a revision may change them. */
-  private baseTasks(goalId: string): BaseTask[] {
+  /**
+   * The goal's live tasks as a revision is checked against them (RevisionBase); skipped tasks are
+   * not part of it, nor the drafts of the revision `draftsOf` itself.
+   */
+  private revisionBase(goalId: string, draftsOf?: string): RevisionBase {
+    const revisions = new Map((this.opts.store.db.prepare("select id, revision, plan from goal_plans where goal_id = ?").all(goalId) as Array<{ id: string; revision: number; plan: string | null }>).map((p) => [p.id, p]));
     const plans = new Map<string, GoalPlan | null>();
     const planOf = (id: string) => {
-      if (!plans.has(id)) plans.set(id, this.planJson(id));
+      if (!plans.has(id)) {
+        const raw = revisions.get(id)?.plan;
+        plans.set(id, raw ? (JSON.parse(raw) as GoalPlan) : null);
+      }
       return plans.get(id) ?? null;
     };
-    return this.liveRows(goalId).map((row) => {
-      const task = this.db.task(row.task_id);
-      const status = this.db.status(task);
-      const entry = planOf(row.plan_id)?.tasks.find((t) => t.key === row.key) ?? fallbackEntry(row, task.title, task.kind, task.size);
-      return { row, task: entry, status, frozen: frozenBecause({ status, released: row.released_at !== null, joined: row.joined_sha !== null, edited: row.edited === 1 }) };
-    });
+    const all = this.liveRows(goalId)
+      .filter((row) => row.accepted !== 0 && row.plan_id !== draftsOf)
+      .map((row) => {
+        const task = this.db.task(row.task_id);
+        const status = this.db.status(task);
+        const entry = planOf(row.plan_id)?.tasks.find((t) => t.key === row.key) ?? fallbackEntry(row, task.title, task.kind, task.size);
+        const frozen = frozenBecause({ status, released: row.released_at !== null, joined: row.joined_sha !== null, edited: row.edited === 1 });
+        return { row, task: entry, status, frozen, revision: revisions.get(row.plan_id)?.revision ?? 0 };
+      });
+    const byKey = new Map<string, (typeof all)[number]>();
+    for (const b of all) {
+      const held = byKey.get(b.row.key);
+      const wins = !held || (b.frozen !== null && held.frozen === null) || ((b.frozen === null) === (held.frozen === null) && b.revision > held.revision);
+      if (wins) byKey.set(b.row.key, b);
+    }
+    const chosen = new Set([...byKey.values()].map((b) => b.row.task_id));
+    return {
+      base: all.filter((b) => chosen.has(b.row.task_id)).map(({ row, task, status, frozen }) => ({ row, task, status, frozen })),
+      shadowed: all.filter((b) => !chosen.has(b.row.task_id)).map((b) => b.row),
+    };
   }
 
   private overlapInput(goalId: string) {
@@ -943,11 +1191,6 @@ export class GoalPlanner extends Part {
     return (this.opts.store.db.prepare("select * from goal_plans where plan_task_id = ?").get(taskId) as unknown as PlanRow | undefined) ?? null;
   }
 
-  private planJson(planId: string): GoalPlan | null {
-    const row = this.opts.store.db.prepare("select plan from goal_plans where id = ?").get(planId) as { plan: string | null } | undefined;
-    return row?.plan ? (JSON.parse(row.plan) as GoalPlan) : null;
-  }
-
   private planTaskIds(): string[] {
     return (this.opts.store.db.prepare("select plan_task_id from goal_plans where plan_task_id is not null").all() as Array<{ plan_task_id: string }>).map((r) => r.plan_task_id);
   }
@@ -962,6 +1205,25 @@ export class GoalPlanner extends Part {
 
   private goalTaskRow(taskId: string): GoalTaskRow {
     return this.opts.store.db.prepare("select * from goal_tasks where task_id = ?").get(taskId) as unknown as GoalTaskRow;
+  }
+
+  private goalTaskRowOrNull(taskId: string): GoalTaskRow | null {
+    return (this.opts.store.db.prepare("select * from goal_tasks where task_id = ?").get(taskId) as unknown as GoalTaskRow | undefined) ?? null;
+  }
+
+  private planByRevision(goalId: string, revision: number): PlanRow | null {
+    return (this.opts.store.db.prepare("select * from goal_plans where goal_id = ? and revision = ?").get(goalId, revision) as unknown as PlanRow | undefined) ?? null;
+  }
+
+  /** True for a hidden planning task: it runs only through the goal's planning clicks (Revise, Replan, Retry planning). */
+  isPlanningTask(taskId: string): boolean {
+    return this.planOfTask(taskId) !== null;
+  }
+
+  /** The planner you picked on the chip in this project, if any. */
+  private rememberedPlanner(projectId: string): string | null {
+    const v = this.setting(GOAL_SETTINGS.planner(projectId));
+    return typeof v === "string" && v ? v : null;
   }
 
   private depsOf(taskId: string): Array<{ on: string; source: GoalDepSource }> {
@@ -1051,6 +1313,14 @@ interface PlannerChoice {
  * small-change keyword ("typo", "küçük", ...). Only a hint; nothing switches mode by itself.
  */
 export const smallChange = (text: string): boolean => classifyTask(text, "").reasons.some((r) => r.code === "classify.keyword" && r.params?.size === "S");
+
+/** How a planner candidate is billed: per token on a key, under a plan sign-in, or locally. */
+const billingOf = (c: Candidate): "api" | "plan" | "local" => (c.profile.credential.kind === "api_key" ? "api" : c.profile.credential.kind === "plan_signin" ? "plan" : "local");
+
+const WAITS_FOR = /(?:\n\n)?\[Goal: waits for [0-9, ]+\]$/;
+
+/** A description without the "[Goal: waits for ...]" line a revision wrote at its end. */
+export const stripWaitsFor = (description: string): string => description.replace(WAITS_FOR, "");
 
 /** A plan entry for a task whose revision JSON is missing (never written by this code; a guard for old rows). */
 function fallbackEntry(row: GoalTaskRow, title: string, kind: GoalPlanTask["kind"], size: GoalPlanTask["size"]): GoalPlanTask {

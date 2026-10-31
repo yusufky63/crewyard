@@ -1,6 +1,6 @@
 import type { Attachment } from "@crewyard/core";
 import type { RunRow, TaskRow } from "./db.ts";
-import type { RoleTemplate } from "./roles.ts";
+import { GOAL_PLANNER, type RoleTemplate } from "./roles.ts";
 
 // Agent-facing text. It is read by models, not shown as UI copy, so it stays English and is not
 // translated. Task text written by the user is passed through as data inside clear delimiters. A
@@ -9,6 +9,13 @@ import type { RoleTemplate } from "./roles.ts";
 type Plan = Array<{ title: string; status: string }>;
 
 export function rolePrompt(tpl: RoleTemplate, task: TaskRow, ctx: { plan: Plan | null; branch: string | null }): string {
+  // The Orchestra planner's task description is Crewyard's own planning brief (goals/prompt.ts):
+  // its limits and rules are instructions, and only the outside text inside it is quoted. Fencing
+  // the whole brief would label those rules as data and nest the fences, so it is set as plain
+  // text. The task title is left out: it is derived from the goal, which the brief quotes.
+  if (tpl.id === GOAL_PLANNER.id) {
+    return [`Role: ${tpl.title}`, "", `You are the ${tpl.title}. Your output: ${tpl.contract}`, "You work in the project folder and must not change files.", "", task.description].join("\n");
+  }
   return [
     `Role: ${tpl.title}`,
     "",

@@ -164,13 +164,15 @@ export class RunLifecycle extends Part {
     const problem = ended.reason === "failed" && this.resumed.has(runId) && !run.handoff_id ? /^session\.(gone|locked):/.exec(detail ?? "")?.[1] : undefined;
     if (ended.reason === "completed") await this.deps.pinHead(runId);
     this.endRun(runId, ended.reason, detail);
-    if (problem && !this.confirming.has(runId)) {
+    // A failed planning run is never relaunched by itself, not even in a fresh session when its
+    // resumed one (the corrective turn) is gone: the goal shows Retry planning, since relaunching a
+    // planner on its own loops against a metered API (design §4.4, §5.3). Nor retried or handed off.
+    const planning = run.role === GOAL_PLANNER.id;
+    if (problem && !this.confirming.has(runId) && !planning) {
       await this.deps.replaceSession(runId, problem as SessionProblem);
       return;
     }
-    // A failed planning run is never retried or handed off by itself: the goal shows Retry
-    // planning, since relaunching a planner on its own loops against a metered API (design §4.4).
-    if (ended.reason === "failed" && run.role !== GOAL_PLANNER.id) await this.deps.onFailure(runId, detail);
+    if (ended.reason === "failed" && !planning) await this.deps.onFailure(runId, detail);
     if (ended.reason === "completed" && verdict) await this.deps.reviewLoop(runId, verdict);
   }
 

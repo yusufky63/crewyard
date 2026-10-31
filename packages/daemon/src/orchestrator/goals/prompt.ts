@@ -1,10 +1,12 @@
 import { capText, cleanText, GOAL_LIMITS, utf8Length, type FrozenBecause, type GoalPlan, type GoalPlanCause, type TaskStatus } from "@crewyard/core";
 
 // What the Orchestra planner reads (docs/adr/0019, design §4.4). It becomes the hidden planning
-// task's description, which rolePrompt wraps in the task's own <<< >>> block under the
-// goal-planner contract (roles.ts), where the planning rules live. Everything here that came from
-// outside Crewyard (your goal and note, task titles, the previous plan, reports, failures) is
-// labelled as data, quoted, cleaned and capped: it is never an instruction to the planner.
+// task's description, which rolePrompt sets as plain text under the goal-planner contract
+// (roles.ts) rather than inside the task's usual <<< >>> block: the limits, the frozen-task rule
+// and the revision framing here are Crewyard's instructions. Everything that came from outside
+// Crewyard (your goal and note, task titles, role titles, the previous plan, reports, failures,
+// paths) is cleaned, capped and, where it is free text, quoted in one level of <<< >>>, with any
+// delimiter inside it neutralised: it is never an instruction to the planner.
 
 /** Caps that keep the prompt bounded however large the project's history is. */
 export const PROMPT_LIMITS = {
@@ -85,14 +87,15 @@ export function planningPrompt(p: PlanningPromptInput): string {
   }
   lines.push("");
   lines.push("The project (detected locally):");
-  lines.push(`- type: ${p.project.type ? oneLine(p.project.type, 60) : "unknown"}`);
+  lines.push(`- type: ${p.project.type ? unfence(oneLine(p.project.type, 60)) : "unknown"}`);
   lines.push(`- build command: ${p.project.build ? unfence(oneLine(p.project.build, 200)) : "none"}`);
   lines.push(`- test command: ${p.project.test ? unfence(oneLine(p.project.test, 200)) : "none"}`);
   const roles = p.roles.slice(0, PROMPT_LIMITS.roles);
   if (roles.length > 0) {
     lines.push("");
     lines.push("Roles a task's crew can use (the scheduler picks the crew from each task's kind and mode):");
-    for (const r of roles) lines.push(`- ${r.id}: ${oneLine(r.title, 60)}`);
+    // Titles come from role files, including a cloned repository's own .crewyard/roles.
+    for (const r of roles) lines.push(`- ${unfence(oneLine(r.id, 40))}: ${unfence(oneLine(r.title, 60))}`);
   }
   const open = p.openTasks.slice(0, PROMPT_LIMITS.openTasks);
   if (open.length > 0) {
@@ -152,7 +155,7 @@ function previousJson(plan: GoalPlan): string {
 
 /** The corrective turn after our own check refused a plan (design §4.3), with the parser's words. */
 export function correctiveTurn(error: string): string {
-  return `Your plan was refused: ${oneLine(error, PROMPT_LIMITS.failureBytes)}. Return the corrected plan.`;
+  return `Your plan was refused: ${unfence(oneLine(error, PROMPT_LIMITS.failureBytes))}. Return the corrected plan.`;
 }
 
 /**
