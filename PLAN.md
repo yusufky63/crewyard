@@ -506,6 +506,7 @@ A run cannot create other runs. If an agent asks for more work, the request beco
   - Windows long paths enabled;
   - a Defender exclusion for the worktree folder, with steps shown and never applied silently.
 - **Getting started** checklist until the first task finishes: agents detected, a plan account signed in, GitHub connected, a Claude Code API key added, a first task run with a suggested crew.
+- **Guide** (owner, 2026-10-31: "bunlardan bağımsız öğretici veya docs ve how it works", a tutorial or docs and how it works, independent of the other screens): a screen of its own, linked from Start as `New here? How it works`, last in the sidebar and on `G W`, that also opens without a project. It explains the flow of §9–§10 as numbered tiles that each open their screen, keeps its own Getting started list that stays after the first task (machine check, a ready profile, a project open, a first task, a first approved crew, GitHub), each fact read from existing IPC and `Unknown` when a read fails, and covers the assistant, Autopilot, the bottom panel, fallback, limits and provenance, agent files, Crew graph editing and the keyboard, with a short FAQ. It describes only what exists (DESIGN.md §6).
 
 **New project wizard.** Five steps; nothing is written until `Create project`.
 
