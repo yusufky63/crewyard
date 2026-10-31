@@ -38,6 +38,8 @@ export type CrewEditRefusal =
   | "standby_duplicate"
   | "standby_too_long" // { max }
   | "skipped" // the step is already skipped
+  | "not_approved" // skipping is for a step of the approved crew; a proposal or a follow-up is removed instead
+  | "best_of" // the step runs as a Best of N group, which keeps its place
   | "no_candidate"; // { step }: a step has no profile yet
 
 export class CrewEditError extends Error {
@@ -335,6 +337,7 @@ export function applyCrewEdit(members: readonly CrewMemberView[], edit: CrewProp
 
 /** Why a not-started step of a running crew cannot be skipped, or null. */
 export function skipRefusal(member: CrewMemberView, started: ReadonlySet<string>): CrewEditRefusal | null {
+  if (member.pendingApproval) return "not_approved";
   if (member.skippedAt) return "skipped";
   if (started.has(member.id)) return "started";
   return null;

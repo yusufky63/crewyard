@@ -57,6 +57,8 @@ export class Dispatcher extends Part {
       const { config } = this.config(project);
       let candidates: Candidate[] | null = null;
       for (const m of members) {
+        // A follow-up waits for its own approval; a skipped step never runs (Crew graph).
+        if (m.pending_since || m.skipped_at) continue;
         const runs = this.db.runs(task.id);
         // A step runs once, and again only when a step it depends on finished again (the loops).
         const again = runs.some((r) => r.member_id === m.id) ? this.rerunOf(m, members, runs) : null;
@@ -67,7 +69,8 @@ export class Dispatcher extends Part {
         const deps = JSON.parse(m.depends_on) as string[];
         const done = (step: string) => {
           const dep = members.find((x) => x.step === step);
-          return dep !== undefined && runs.some((r) => r.member_id === dep.id && r.end_reason === "completed");
+          // A skipped step lets what waits for it go on without its result.
+          return dep !== undefined && (!!dep.skipped_at || runs.some((r) => r.member_id === dep.id && r.end_reason === "completed"));
         };
         if (!deps.every(done)) continue;
         // A Best of N step runs as its variants' tasks until you keep one; then the kept run is its run.

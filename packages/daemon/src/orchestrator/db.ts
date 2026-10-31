@@ -85,6 +85,10 @@ export interface MemberRow {
   standby: string;
   reasons: string;
   edited: number;
+  /** A follow-up added to an approved crew, waiting for its own approval (Crew graph). */
+  pending_since?: string | null;
+  /** Skipped by you before it started (Crew graph); it never runs. */
+  skipped_at?: string | null;
 }
 
 export interface RunRow {
@@ -587,7 +591,8 @@ export class OrchestratorDb {
     const firstOpen = (runId: string) => (open.has(runId) ? (this.openRequestsForRun(runId)[0]?.id ?? null) : null);
     const openHandoff = this.one<{ id: string }>("select id from handoffs where task_id = ? and closed_at is null order by opened_at limit 1", task.id);
     const completed = (memberId: string) => runs.some((r) => r.member_id === memberId && r.end_reason === "completed");
-    const writers = members.filter((m) => m.writes_code);
+    // A follow-up still waiting for approval has not joined the work yet; a skipped writer never will.
+    const writers = members.filter((m) => m.writes_code && !m.pending_since && !m.skipped_at);
     const abandoned = this.abandonedTargets(task.id);
     const continued = (r: RunRow) => runs.some((o) => o.resumed_from === r.id && !abandoned.has(o.id));
     return {
@@ -768,6 +773,8 @@ export const memberView = (m: MemberRow, blockedBy: Reason | null, roleTitle?: s
   reasons: JSON.parse(m.reasons) as Reason[],
   edited: m.edited === 1,
   blockedBy,
+  ...(m.pending_since ? { pendingApproval: true } : {}),
+  ...(m.skipped_at ? { skippedAt: m.skipped_at } : {}),
 });
 
 export const worktreeView = (w: WorktreeRow): WorktreeView => ({

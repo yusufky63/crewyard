@@ -1045,4 +1045,6 @@ export type TaskChangeCause =
   // A run's process was stopped while idle, or woke again.
   | "hibernation"
   // The task let in or held out same-provider account switching (docs/adr/0009).
-  | "account_switch";
+  | "account_switch"
+  // The crew was edited in the Crew graph: a proposal edit, a follow-up, a skip or its approval.
+  | "crew_edited";

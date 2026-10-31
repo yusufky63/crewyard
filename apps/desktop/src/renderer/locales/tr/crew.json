@@ -279,7 +279,9 @@
       "no_candidate": "Bir adımın henüz hesabı yok",
       "missing_profile": "Bir adımın henüz hesabı yok",
       "unknown_profile": "Bu hesap kullanılamıyor",
-      "member_not_found": "Bu adım artık yok"
+      "member_not_found": "Bu adım artık yok",
+      "not_approved": "Atlama onaylanmış ekibin adımları içindir; bunu kaldır",
+      "best_of": "Bu adım Best of N grubu olarak çalışıyor ve yerinde kalır"
     },
     "handoff": {
       "same_profile": "Adım zaten bu hesapla çalışıyor",

@@ -279,7 +279,9 @@
       "no_candidate": "A step has no account yet",
       "missing_profile": "A step has no account yet",
       "unknown_profile": "That account is not available",
-      "member_not_found": "That step no longer exists"
+      "member_not_found": "That step no longer exists",
+      "not_approved": "Skipping is for a step of the approved crew; remove this one instead",
+      "best_of": "This step runs as a Best of N group and keeps its place"
     },
     "handoff": {
       "same_profile": "The step already runs on that account",

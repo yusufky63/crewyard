@@ -914,6 +914,13 @@ export const MIGRATIONS: Migration[] = [
    create index if not exists assistant_drafts_conversation on assistant_drafts(conversation_id, created_at);
    create unique index if not exists assistant_drafts_source on assistant_drafts(source_task_id, source_key);`,
   },
+  // Managing the crew from the Crew graph: a step added to an approved crew waits for its own
+  // approval (pending_since), and a step you skipped before it started never runs (skipped_at).
+  {
+    id: "crew-step-flags",
+    sql: `alter table crew_members add column pending_since text;
+   alter table crew_members add column skipped_at text;`,
+  },
 ];
 
 /** What the positional scheme applied: a database at `user_version` N has the first N of these. */
