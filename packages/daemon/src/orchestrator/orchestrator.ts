@@ -16,7 +16,6 @@ import {
   type Reason,
   type ReviewTarget,
   type RequestAnswer,
-  type RequestPayload,
   type RequestView,
   type RoleId,
   type RunHandle,
@@ -39,6 +38,7 @@ import { admit, admitGroup, DEFAULT_LIMITS } from "./admission.ts";
 import { BEST_OF_MAX, BEST_OF_MIN, groupFact, groupPhase, pickVariants, worktreeDiff, type DiffStat, type GroupRow } from "./best-of.ts";
 import { OrchestratorContext, type Ended, type LaunchSpec, type Live, type OrchestratorOptions, type ProposeParams } from "./context.ts";
 import { Part } from "./part.ts";
+import { Hibernator } from "./hibernation.ts";
 import { LoopRunner } from "./loops.ts";
 import { AccountSwitcher } from "./account-switch.ts";
 import { Fallback } from "./fallback.ts";
@@ -58,7 +58,6 @@ import { rolePrompt } from "./prompts.ts";
 import { projectRoles } from "./role-files.ts";
 import { capResetsAt, capWindow, overCap, reachedCaps, reservedUsd, reserveSpend, settleReservation, spendCredential } from "./spend.ts";
 import { joinMessages } from "./queue.ts";
-import { canHibernate, idleSince, type WakeCause } from "./hibernation.ts";
 import { Scheduler } from "./schedules.ts";
 import { snapshotTranscript } from "./transcripts.ts";
 
@@ -101,7 +100,7 @@ export class Orchestrator extends Part {
     scheduleResume: (runId, resetsAt) => this.fallback.scheduleResume(runId, resetsAt),
     stopRun: (runId, detail, reason) => this.stopRun(runId, detail, reason),
     continuePastCap: (runId) => this.fallback.continuePastCap(runId),
-    wakeRun: (runId, cause) => this.wakeRun(runId, cause),
+    wakeRun: (runId, cause) => this.hibernator.wakeRun(runId, cause),
     proceed: (runId, text) => this.proceed(runId, text),
     endRun: (runId, reason, detail) => this.endRun(runId, reason, detail),
     tick: () => this.tick(),
@@ -136,6 +135,12 @@ export class Orchestrator extends Part {
   private readonly loopRunner: LoopRunner = new LoopRunner(this.ctx, {
     capFor: (taskId, runId, candidate) => this.budget.capFor(taskId, runId, candidate),
     launch: (spec) => this.launch(spec),
+  });
+  private readonly hibernator: Hibernator = new Hibernator(this.ctx, {
+    continueRun: (runId, text) => this.continueRun(runId, text),
+    endRun: (runId, reason, detail) => this.endRun(runId, reason, detail),
+    onFailure: (runId, detail) => this.fallback.onFailure(runId, detail),
+    tick: () => this.tick(),
   });
 
   override get db() {
@@ -220,7 +225,7 @@ export class Orchestrator extends Part {
     const stallMs = this.opts.stallCheckMs ?? 30_000;
     if (stallMs > 0) this.stallTimer = setInterval(() => this.checkStalls(), stallMs).unref();
     const hibernateMs = this.opts.hibernateCheckMs ?? 30_000;
-    if (hibernateMs > 0) this.hibernateTimer = setInterval(() => void this.checkHibernation(), hibernateMs).unref();
+    if (hibernateMs > 0) this.hibernateTimer = setInterval(() => void this.hibernator.checkHibernation(), hibernateMs).unref();
     const scheduleMs = this.opts.scheduleCheckMs ?? 30_000;
     this.schedules.start(scheduleMs);
     // Slots missed while the app was closed are caught up now (at most MAX_CATCH_UP of them).
@@ -458,102 +463,8 @@ export class Orchestrator extends Part {
 
   // ---------------------------------------------------------------- hibernation
 
-  /**
-   * One pass: every live run idle past the window, on a runner that resumes sessions, has its
-   * process stopped. A failure (the store closing on exit) waits for the next pass.
-   */
-  async checkHibernation(): Promise<void> {
-    if (this.closed) return;
-    try {
-      const s = this.hibernation.settings();
-      if (!s.enabled) return;
-      const now = this.now();
-      for (const [runId, live] of [...this.live]) {
-        const run = this.db.run(runId);
-        if (run.ended_at) continue;
-        const open = this.db.openRequestsForRun(runId)[0] ?? null;
-        const payload = open ? (JSON.parse(open.payload) as RequestPayload) : null;
-        const since = idleSince(
-          {
-            inTurn: live.inTurn,
-            busy: Boolean(live.testing) || this.draining.has(runId) || this.drainRelease.has(runId) || this.stopping.has(runId) || this.hibernating.has(runId) || this.confirming.has(runId) || this.db.openHandoffs().some((h) => h.from_run_id === runId),
-            paused: run.paused_at !== null,
-            limited: run.limit_reached === 1,
-            // Only runners whose resume by session id is proven, or an ACP agent that reported loadSession.
-            resumable: Boolean(run.native_session_id) && canHibernate(run.runner, live.adapter.capabilities.resume, live.candidate.capabilities.resume),
-            lastActivityAt: run.last_activity_at,
-            startedAt: run.started_at,
-            request: open && payload ? { id: open.id, createdAt: open.created_at, hibernatable: (payload.kind === "question" || (payload.kind === "approval" && !payload.bootstrap)) && open.native_id !== null } : null,
-          },
-          now,
-          s.idleMinutes,
-        );
-        if (since) await this.hibernate(runId, live, since, open?.id ?? null);
-      }
-    } catch {
-      // Same as a failed scheduling pass: the next timer tick tries again.
-    }
-  }
-
-  private async hibernate(runId: string, live: Live, since: string, requestId: string | null): Promise<void> {
-    const run = this.db.run(runId);
-    this.hibernation.sleep(runId, since, requestId);
-    this.hibernating.add(runId);
-    await this.safe(() => live.adapter.stop(live.handle));
-    if (!(await this.within(live.done, this.opts.stopTimeoutMs ?? 30_000)) && this.live.get(runId) === live) {
-      // The process tree was killed; the stream may never close, so the run lets go of it here.
-      this.live.delete(runId);
-      this.hibernating.delete(runId);
-    }
-    this.turns.end(runId);
-    this.db.exec("update runs set pid = null where id = ?", runId);
-    this.audit(run.task_id, runId, "run.hibernated", { idleSince: since, requestId });
-    this.emitTask(run.task_id, "hibernation");
-    void this.tick();
-  }
-
-  /**
-   * Wakes a hibernated run by its session id, with what is queued for its step (your message, or
-   * the answer to its request). It takes an admission slot again; without one it waits, and the
-   * scheduler wakes it once a slot is free.
-   */
-  private async wakeRun(runId: string, cause: WakeCause): Promise<void> {
-    const run = this.db.run(runId);
-    if (run.ended_at || this.live.has(runId) || run.paused_at || !this.hibernation.asleep(runId)) {
-      this.pendingWake.delete(runId);
-      return;
-    }
-    const task = this.db.task(run.task_id);
-    const config = this.config(this.db.project(task.project_id)).config;
-    const counts = this.db.activeCounts();
-    const blocked = admit(
-      {
-        projectActive: counts.byProject.get(task.project_id) ?? 0,
-        profileActive: counts.byProfile.get(run.profile_id) ?? 0,
-        globalActive: counts.total,
-        freeMb: this.freeMb(),
-        worktreeBusy: false,
-        profileId: run.profile_id,
-      },
-      { ...DEFAULT_LIMITS, ...this.opts.limits, projectSlots: config.rules.slots },
-    );
-    if (blocked) {
-      this.pendingWake.set(runId, cause);
-      this.blocked.set(run.member_id, blocked);
-      return;
-    }
-    this.pendingWake.set(runId, cause);
-    this.blocked.delete(run.member_id);
-    try {
-      await this.continueRun(runId, this.turns.queue.pending(run.member_id).length > 0 ? "" : "Continue the task where you stopped.");
-      this.emitTask(task.id, "hibernation");
-    } catch (err) {
-      this.pendingWake.delete(runId);
-      // The runner could not resume the session: the run failed, and the usual handoff or retry follows.
-      const detail = errorDetail(err, await this.secretsFor(run.profile_id));
-      this.endRun(runId, "failed", detail);
-      await this.fallback.onFailure(runId, detail);
-    }
+  checkHibernation(): Promise<void> {
+    return this.hibernator.checkHibernation();
   }
 
   // ---------------------------------------------------------------- Best of N (feature scan A8)
@@ -1033,7 +944,7 @@ export class Orchestrator extends Part {
     const live = this.live.get(runId);
     this.audit(run.task_id, runId, "run.message", { chars: text.length, queued: !live || Boolean(run.paused_at) || live.inTurn, ...(attachmentIds.length > 0 ? { attachments: attachmentIds } : {}) });
     // A hibernated run wakes for your message; the queue goes with its resume.
-    if (!live && !run.paused_at && this.hibernation.asleep(runId)) await this.wakeRun(runId, "message");
+    if (!live && !run.paused_at && this.hibernation.asleep(runId)) await this.hibernator.wakeRun(runId, "message");
     await this.flushOutbox(run.task_id, run.member_id);
     this.emitTask(run.task_id, "queue");
     return this.db.runView(this.db.run(runId));
@@ -1299,7 +1210,7 @@ export class Orchestrator extends Part {
   }
 
   private async schedulePass(): Promise<void> {
-    for (const [runId, cause] of [...this.pendingWake]) await this.wakeRun(runId, cause);
+    for (const [runId, cause] of [...this.pendingWake]) await this.hibernator.wakeRun(runId, cause);
     for (const task of this.db.schedulable()) {
       const status = this.db.status(task);
       if (status === "failed" || status === "cancelled") continue;

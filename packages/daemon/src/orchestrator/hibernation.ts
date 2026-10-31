@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
-import type { HibernationSettings, RequestAnswer, RequestPayload } from "@crewyard/core";
+import type { HibernationSettings, RequestAnswer, RequestPayload, EndReason } from "@crewyard/core";
 import { HIBERNATION_KEY, readHibernation } from "../settings/values.ts";
+import { admit, DEFAULT_LIMITS } from "./admission.ts";
+import type { OrchestratorContext, Live } from "./context.ts";
+import { Part } from "./part.ts";
+import { errorDetail } from "./errors.ts";
 
 // Hibernation (orca agents/hibernation.mdx gave the idea; the rules are ours). A run keeps a live
 // process only while it works or waits on you: at a turn boundary with nothing queued the runner
@@ -169,5 +173,119 @@ export class HibernationStore {
   /** The resumed turn ended (or the run did): an unused grant goes with it. */
   dropGrant(runId: string): void {
     this.db.prepare("update run_hibernation set approved_call = null, approved_until = null where run_id = ? and approved_call is not null").run(runId);
+  }
+}
+
+// Hibernation as an orchestrator part: the idle pass that stops processes, and the wake-up that
+// resumes a session by id once an admission slot is free.
+
+export interface HibernatorDeps {
+  continueRun(runId: string, text: string): Promise<void>;
+  endRun(runId: string, reason: EndReason, detail: string | null): void;
+  onFailure(runId: string, detail: string | null): Promise<void>;
+  tick(): Promise<void>;
+}
+
+export class Hibernator extends Part {
+  constructor(ctx: OrchestratorContext, private readonly deps: HibernatorDeps) {
+    super(ctx);
+  }
+
+  /**
+   * One pass: every live run idle past the window, on a runner that resumes sessions, has its
+   * process stopped. A failure (the store closing on exit) waits for the next pass.
+   */
+  async checkHibernation(): Promise<void> {
+    if (this.closed) return;
+    try {
+      const s = this.hibernation.settings();
+      if (!s.enabled) return;
+      const now = this.now();
+      for (const [runId, live] of [...this.live]) {
+        const run = this.db.run(runId);
+        if (run.ended_at) continue;
+        const open = this.db.openRequestsForRun(runId)[0] ?? null;
+        const payload = open ? (JSON.parse(open.payload) as RequestPayload) : null;
+        const since = idleSince(
+          {
+            inTurn: live.inTurn,
+            busy: Boolean(live.testing) || this.draining.has(runId) || this.drainRelease.has(runId) || this.stopping.has(runId) || this.hibernating.has(runId) || this.confirming.has(runId) || this.db.openHandoffs().some((h) => h.from_run_id === runId),
+            paused: run.paused_at !== null,
+            limited: run.limit_reached === 1,
+            // Only runners whose resume by session id is proven, or an ACP agent that reported loadSession.
+            resumable: Boolean(run.native_session_id) && canHibernate(run.runner, live.adapter.capabilities.resume, live.candidate.capabilities.resume),
+            lastActivityAt: run.last_activity_at,
+            startedAt: run.started_at,
+            request: open && payload ? { id: open.id, createdAt: open.created_at, hibernatable: (payload.kind === "question" || (payload.kind === "approval" && !payload.bootstrap)) && open.native_id !== null } : null,
+          },
+          now,
+          s.idleMinutes,
+        );
+        if (since) await this.hibernate(runId, live, since, open?.id ?? null);
+      }
+    } catch {
+      // Same as a failed scheduling pass: the next timer tick tries again.
+    }
+  }
+
+  private async hibernate(runId: string, live: Live, since: string, requestId: string | null): Promise<void> {
+    const run = this.db.run(runId);
+    this.hibernation.sleep(runId, since, requestId);
+    this.hibernating.add(runId);
+    await this.safe(() => live.adapter.stop(live.handle));
+    if (!(await this.within(live.done, this.opts.stopTimeoutMs ?? 30_000)) && this.live.get(runId) === live) {
+      // The process tree was killed; the stream may never close, so the run lets go of it here.
+      this.live.delete(runId);
+      this.hibernating.delete(runId);
+    }
+    this.turns.end(runId);
+    this.db.exec("update runs set pid = null where id = ?", runId);
+    this.audit(run.task_id, runId, "run.hibernated", { idleSince: since, requestId });
+    this.emitTask(run.task_id, "hibernation");
+    void this.deps.tick();
+  }
+
+  /**
+   * Wakes a hibernated run by its session id, with what is queued for its step (your message, or
+   * the answer to its request). It takes an admission slot again; without one it waits, and the
+   * scheduler wakes it once a slot is free.
+   */
+  async wakeRun(runId: string, cause: WakeCause): Promise<void> {
+    const run = this.db.run(runId);
+    if (run.ended_at || this.live.has(runId) || run.paused_at || !this.hibernation.asleep(runId)) {
+      this.pendingWake.delete(runId);
+      return;
+    }
+    const task = this.db.task(run.task_id);
+    const config = this.config(this.db.project(task.project_id)).config;
+    const counts = this.db.activeCounts();
+    const blocked = admit(
+      {
+        projectActive: counts.byProject.get(task.project_id) ?? 0,
+        profileActive: counts.byProfile.get(run.profile_id) ?? 0,
+        globalActive: counts.total,
+        freeMb: this.freeMb(),
+        worktreeBusy: false,
+        profileId: run.profile_id,
+      },
+      { ...DEFAULT_LIMITS, ...this.opts.limits, projectSlots: config.rules.slots },
+    );
+    if (blocked) {
+      this.pendingWake.set(runId, cause);
+      this.blocked.set(run.member_id, blocked);
+      return;
+    }
+    this.pendingWake.set(runId, cause);
+    this.blocked.delete(run.member_id);
+    try {
+      await this.deps.continueRun(runId, this.turns.queue.pending(run.member_id).length > 0 ? "" : "Continue the task where you stopped.");
+      this.emitTask(task.id, "hibernation");
+    } catch (err) {
+      this.pendingWake.delete(runId);
+      // The runner could not resume the session: the run failed, and the usual handoff or retry follows.
+      const detail = errorDetail(err, await this.secretsFor(run.profile_id));
+      this.deps.endRun(runId, "failed", detail);
+      await this.deps.onFailure(runId, detail);
+    }
   }
 }
