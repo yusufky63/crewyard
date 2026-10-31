@@ -144,6 +144,9 @@ export async function ensureWorktree(repoPath: string, path: string, branch: str
   return { path, branch, baseSha };
 }
 
+/** Same folder on Windows: case-insensitive, after resolving. */
+export const sameDir = (a: string, b: string) => resolve(a).toLowerCase() === resolve(b).toLowerCase();
+
 export const headSha = async (cwd: string, bin = "git") => (await git(cwd, ["rev-parse", "HEAD"], bin)).trim();
 
 /** Files `git add --ignore-errors` could not read, from its "unable to index file" lines. */
