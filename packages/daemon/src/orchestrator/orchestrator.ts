@@ -1,4 +1,4 @@
-import type { HandoffStop, RequestAnswer, RequestView, RunView, SessionSeen, TaskDetail, TaskSummary, TasksIpc } from "@crewyard/core";
+import type { AgentAdapter, HandoffStop, RequestAnswer, RequestView, RunnerId, RunView, SessionSeen, TaskDetail, TaskSummary, TasksIpc } from "@crewyard/core";
 import type { McpHook } from "../mcp/service.ts";
 import { Bootstrapper } from "../worktrees/bootstrap.ts";
 import { AccountSwitcher, type AccountSwitches } from "./account-switch.ts";
@@ -299,6 +299,15 @@ export class Orchestrator {
   setDirectory(directory: ProfileDirectory): void {
     this.ctx.directory = directory;
     void this.tick();
+  }
+
+  /** The task assistant (docs/adr/0014) starts its session on the same profiles and adapters as runs. */
+  profileDirectory(): ProfileDirectory {
+    return this.ctx.directory;
+  }
+
+  adapterFor(runner: RunnerId): AgentAdapter | null {
+    return this.ctx.adapters.get(runner);
   }
 
   /** Called by the MCP work (handlers/mcp.ts) once its service exists. */

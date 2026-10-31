@@ -1,0 +1,172 @@
+{
+  "label": "Görev asistanı",
+  "title": "Görev asistanı",
+  "runningOn": "Bu sohbetin çalıştığı profil, çalıştırıcı ve model",
+  "profile": "Profil",
+  "noProfiles": "Henüz profil yok: Sağlayıcılar'dan ekle",
+  "unavailable": {
+    "not_ready": "oturum açılmamış ya da anahtar yok",
+    "no_read_only": "salt okunur çalışamıyor",
+    "no_mcp": "Crewyard araçlarını alamıyor",
+    "no_adapter": "çalıştırıcı desteklenmiyor"
+  },
+  "new": "Yeni sohbet",
+  "close": "Durdur ve kapat",
+  "closeTitle": "Kapatınca asistan durur. Sohbet ve taslaklar kalır; bir sonraki mesajın onu kaldığı yerden sürdürür.",
+  "conversation": "Görev asistanıyla sohbet",
+  "empty": {
+    "lead": "Ne yapılmasını ya da neyin araştırılmasını istediğini anlat. Asistan projeyi okur, belirsiz bir şey olursa sorar ve düzenleyebileceğin görev taslakları hazırlar.",
+    "example": "Örneğin: \"Windows derlemesi yavaşladı, CI her seferinde her şeyi yeniden kuruyor. Nedenini bul ve bir düzeltme planla.\""
+  },
+  "failed": "Hata",
+  "placeholder": "İşi ya da araştırılacak bir soruyu anlat",
+  "input": "Görev asistanına mesaj",
+  "send": "Gönder",
+  "keys": "Enter gönderir · Shift Enter satır ekler · Esc durdurup kapatır",
+  "note": "Salt okunur: dosyalara dokunmaz, çalıştırma başlatmaz. Harcama profilin anahtarından düşer. {{minutes}} dk boşta kalınca durur.",
+  "you": "Sen",
+  "agent": "Ajan",
+  "truncated": "[32 KB'ta kesildi]",
+  "queued": "Yanıtı bekliyor",
+  "state": {
+    "idle": "Durdu",
+    "starting": "Başlıyor",
+    "working": "Çalışıyor",
+    "waiting": "Sıra sende"
+  },
+  "spend": {
+    "title": "Bu sohbetin profilin anahtarında harcadığı tutar; anahtarın günlük sınırına sayılır",
+    "planTitle": "Plan oturumu ya da yerel model: jetonlar dolar olarak değil, planın kotasından sayılır",
+    "tokens": "{{tokens}} jeton",
+    "plan": "Plan",
+    "noPrice": "fiyat yok",
+    "estimated": "Tahmini",
+    "reported": "Bildirilen",
+    "unknown": "Bilinmiyor"
+  },
+  "notice": {
+    "denied": "Yazma, komut çalıştırma ya da ağ isteği reddedildi: asistan salt okunur.",
+    "question_cancelled": "Ajan bir pencereyle soru sormaya çalıştı; sorusunu yanıtında sorması söylendi.",
+    "undelivered": "Bekleyen mesajlar gönderilmedi: oturum önce bitti.",
+    "ended": {
+      "closed": "Durdu: paneli kapattın. Bir sonraki mesajın onu sürdürür.",
+      "ended": "Çalıştırıcı oturumu kendisi bitirdi. Bir sonraki mesajın yeniden başlatır.",
+      "idle": "Boşta kaldığı için durdu. Bir sonraki mesajın onu sürdürür.",
+      "cleared": "Yeni bir sohbet başladı.",
+      "daily_cap": "Durdu: anahtar günlük sınırına ulaştı.",
+      "failed": "Oturum başarısız oldu.",
+      "no_profile": "Durdu: profil artık yok.",
+      "not_eligible": "Durdu: profil artık asistanı çalıştıramıyor.",
+      "admission": "Başlatılamadı: boş yer yok.",
+      "shutdown": "Durdu: Crewyard kapandı."
+    }
+  },
+  "announce": {
+    "replied_one": "Asistan yanıt verdi. Seni bekleyen {{count}} taslak var.",
+    "replied_other": "Asistan yanıt verdi. Seni bekleyen {{count}} taslak var."
+  },
+  "drafts": {
+    "label": "Görev taslakları",
+    "title": "Taslaklar",
+    "empty": "Asistanın önerdiği taslaklar burada görünür. Birini ekleyip ekibini onaylamadan hiçbir şey başlamaz.",
+    "cardLabel": "Taslak {{n}}: {{title}}",
+    "fieldTitle": "Başlık",
+    "fieldKind": "Tür",
+    "fieldSize": "Boyut",
+    "sizeNone": "Algıla",
+    "fieldDescription": "Açıklama",
+    "fieldCriteria": "Kabul ölçütleri, her satıra bir tane",
+    "fieldQuestions": "Yanıtlanacak sorular, her satıra bir tane",
+    "criteriaHint": "Her satıra bir tane",
+    "add": "Taslak olarak ekle",
+    "adding": "Ekleniyor…",
+    "discard": "Vazgeç",
+    "added": "Görevler'e eklendi. Ekibi onayını bekliyor.",
+    "open": "Görevi aç",
+    "from": {
+      "assistant": "Asistanın önerisi",
+      "preset": "Hazır görev",
+      "finding": "Bir bulgudan",
+      "followup": "Ajanın takip önerisi"
+    }
+  },
+  "presets": {
+    "title": "Hazır görevler",
+    "forProject": "Bu proje için",
+    "reason": {
+      "no_test_command": "test komutu tanımlı değil",
+      "recent_activity_one": "son 14 günde {{count}} commit",
+      "recent_activity_other": "son 14 günde {{count}} commit",
+      "dependencies": "bağımlılıkları var",
+      "remote": "uzak deposu var",
+      "general": "her projede işe yarar"
+    },
+    "items": {
+      "review": "Projeyi incele ve yorumla",
+      "optimize": "Optimizasyon öner",
+      "bugs": "Hataları ve sorunları bul",
+      "security": "Güvenlik sorunlarını bul",
+      "deps": "Bağımlılıkları ve lisansları denetle",
+      "tests": "Test kapsamındaki boşlukları bul"
+    }
+  },
+  "suggest": {
+    "button": "Bu proje için görev öner",
+    "title": "Asistana yukarıdaki profille bir kez sorar; yanındaki tutar, düğmeye basmadan önceki tahminimizdir",
+    "about": "yaklaşık ${{usd}}",
+    "message": "Bu proje için görev öner. Koda göz at ve projeye en çok yarayacak üç ila beş görev öner; her birinin türü, kabul ölçütleri ve boyutu olsun."
+  },
+  "report": {
+    "label": "Rapor",
+    "open": "Raporu aç",
+    "findingsCount_one": "{{count}} bulgu",
+    "findingsCount_other": "{{count}} bulgu",
+    "suggestedCount_one": "{{count}} önerilen görev",
+    "suggestedCount_other": "{{count}} önerilen görev",
+    "source": {
+      "findings": "Bulgular",
+      "verdict": "İnceleme kararı",
+      "plan": "Plan",
+      "text": "Son mesaj"
+    },
+    "verdict": {
+      "pass": "Geçti",
+      "changes": "Değişiklik istendi"
+    },
+    "truncated": "Raporun bir kısmı sığması için kesildi.",
+    "findings": "Bulgular",
+    "severity": {
+      "critical": "Kritik",
+      "high": "Yüksek",
+      "medium": "Orta",
+      "low": "Düşük",
+      "info": "Bilgi"
+    },
+    "suggested": "Önerilen görevler",
+    "suggestedNote": "Bulgulardan ve ajanın takip önerilerinden. Birini ekleyip ekibini onaylamadan hiçbir şey başlamaz."
+  },
+  "errors": {
+    "assistant_closed": "Crewyard kapanıyor.",
+    "assistant_message_empty": "Önce bir mesaj yaz.",
+    "assistant_message_too_long": "Mesaj 8 KB'tan uzun. Kısalt ya da böl.",
+    "assistant_profile_in_use": "Asistan başka bir profilde çalışıyor. Profil değiştirmek için önce durdur.",
+    "assistant_stopping": "Asistan duruyor. Birazdan yeniden gönder.",
+    "assistant_no_profile": "Bu profil artık yok.",
+    "assistant_unavailable_not_ready": "Bu profilde oturum açılmamış ya da anahtar yok.",
+    "assistant_unavailable_no_read_only": "Bu profilin çalıştırıcısı salt okunur çalışamıyor.",
+    "assistant_unavailable_no_mcp": "Bu profilin çalıştırıcısı Crewyard araçlarını alamıyor, bu yüzden taslak öneremez.",
+    "assistant_unavailable_no_adapter": "Crewyard bu profilin çalıştırıcısını çalıştıramıyor.",
+    "assistant_daily_cap": "Anahtar günlük sınırına ulaştı. Sağlayıcılar'dan sınırı yükselt ya da başka bir profil seç.",
+    "admission_global_slots": "Bütün ajan yerleri dolu. Bir çalıştırma bitince yeniden dene.",
+    "admission_profile_busy": "Bu profil izin verilen sayıda ajanı zaten çalıştırıyor.",
+    "admission_memory": "Yeni bir ajan başlatmaya yetecek boş bellek yok.",
+    "assistant_draft_discarded": "Bu taslaktan vazgeçildi.",
+    "assistant_draft_added": "Bu taslak zaten bir görev.",
+    "assistant_draft_invalid": "Taslağı kontrol et: en fazla 120 baytlık tek satırlık bir başlık, en fazla 12 kısa ölçüt.",
+    "assistant_draft_not_found": "Bu taslak artık yok.",
+    "project_not_found": "Proje artık yok.",
+    "assistant_preset_unknown": "Böyle bir hazır görev yok.",
+    "assistant_too_many_drafts": "Bu sohbette zaten 20 taslak var. Önce bazılarını ekle ya da vazgeç.",
+    "other": "Bir şeyler ters gitti: {{message}}"
+  }
+}

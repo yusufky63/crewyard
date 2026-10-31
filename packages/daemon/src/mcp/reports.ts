@@ -165,6 +165,17 @@ export class ReportService {
     return { report: this.get(id), taskId: detail.id };
   }
 
+  /**
+   * A follow-up you added from a finished task's suggestions (docs/adr/0014) instead of the Inbox:
+   * the item closes as accepted and points at the task, as if you had accepted it there.
+   */
+  linkAccepted(id: string, taskId: string): void {
+    const r = this.row(id);
+    if (r.type !== "followup" || r.task_created) return;
+    this.db.prepare("update crew_reports set task_created = ? where id = ?").run(taskId, id);
+    this.close(this.row(id), "accepted");
+  }
+
   /** The run ended: its open questions and blockers have nobody left to answer them. Follow-ups stay. */
   runEnded(runId: string): void {
     const open = this.db.prepare("select * from crew_reports where run_id = ? and closed_at is null and type in ('needs_input', 'stuck')").all(runId) as unknown as ReportRow[];

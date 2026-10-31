@@ -31,3 +31,6 @@ export * from "./ipc/activity.ts";
 export * from "./redact.ts";
 export * from "./agentfiles.ts";
 export * from "./ipc/agentfiles.ts";
+export * from "./assistant.ts";
+export * from "./ipc/assistant.ts";
+export * from "./presets.ts";

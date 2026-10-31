@@ -20,6 +20,8 @@
     "help": "Bu listeyi göster",
     "close": "En üstteki katmanı kapat: menü, iletişim kutusu, odak içindeyken Etkinlik çekmecesi, denetçi, sonra tam ekran",
     "submit": "Oluşturucuyu gönder, seçili ekibi onayla, mesajı ya da yorumu gönder",
+    "assistant": "Görevler ekranında görev asistanını açar veya kapatır (kapatmak onu durdurur)",
+    "assistant.send": "Mesajını görev asistanına gönderir (Shift Enter yeni satır ekler)",
     "list.next": "Listede sonraki öğe",
     "list.prev": "Listede önceki öğe",
     "graph.full": "Tam ekranı aç ya da kapat",

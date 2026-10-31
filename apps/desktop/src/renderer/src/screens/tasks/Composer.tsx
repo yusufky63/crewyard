@@ -1,7 +1,7 @@
 import { useId, useState, type FormEvent, type KeyboardEvent } from "react";
-import { Folder, GitBranch } from "lucide-react";
+import { Folder, GitBranch, SquareTerminal } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import type { FallbackMode, IssueDetail, TaskKind } from "@crewyard/core";
+import { TASK_PRESETS, type FallbackMode, type IssueDetail, type TaskKind } from "@crewyard/core";
 import { Button, Label, Panel } from "@crewyard/ui";
 import { useNav } from "../../nav.ts";
 import { AttachButton, DraftAttachments, useAttachmentDraft, useDiscardOnUnmount } from "./Attachments.tsx";
@@ -10,7 +10,7 @@ import { issueDraft } from "./issue.ts";
 import { ImportButton, IssueChip, IssuePicker } from "./IssuePicker.tsx";
 import { splitTaskText } from "./model.ts";
 import { ErrorLine } from "./parts.tsx";
-import { matches } from "../../keys.ts";
+import { ariaKeys, keyText, matches } from "../../keys.ts";
 
 const KINDS: Array<TaskKind | "auto"> = ["auto", "code", "research", "review", "docs"];
 const FALLBACKS: Array<FallbackMode | "default"> = ["default", "manual", "ask", "auto", "wait_for_reset"];
@@ -21,7 +21,7 @@ const BEST_OF = [0, 2, 3, 4];
  * DESIGN.md `Composer`: one text, the repo, base branch, task kind, on-limit mode and an optional
  * budget. Submitting (Ctrl Enter) only proposes a crew; nothing starts until it is approved.
  */
-export function Composer({ projectId, projectName }: { projectId: string; projectName: string }) {
+export function Composer({ projectId, projectName, assistantOpen, onAssistant }: { projectId: string; projectName: string; assistantOpen: boolean; onAssistant(): void }) {
   const { t } = useTranslation("tasks");
   const errorText = useErrorText();
   const selectTask = useNav((s) => s.selectTask);
@@ -38,7 +38,8 @@ export function Composer({ projectId, projectName }: { projectId: string; projec
   const [issue, setIssue] = useState<{ number: number; url: string; title: string } | null>(null);
   const attach = useAttachmentDraft();
   useDiscardOnUnmount(attach);
-  const ids = { text: useId(), branch: useId(), kind: useId(), fallback: useId(), budget: useId(), bestOf: useId() };
+  const ids = { text: useId(), branch: useId(), kind: useId(), fallback: useId(), budget: useId(), bestOf: useId(), preset: useId() };
+  const ta = useTranslation("assistant").t;
 
   const { title, description } = splitTaskText(text);
   const budgetUsd = budget.trim() === "" ? undefined : Number(budget);
@@ -111,6 +112,28 @@ export function Composer({ projectId, projectName }: { projectId: string; projec
             <span className="sr">{t("composer.branch")}</span>
             <input id={ids.branch} value={branch} onChange={(e) => setBranch(e.target.value)} placeholder={repo.data?.currentBranch ?? t("composer.branchCurrent")} spellCheck={false} />
           </label>
+          <label className="chip tk-field" htmlFor={ids.preset} title={t("composer.presetTitle")}>
+            {t("composer.preset")}
+            <select
+              id={ids.preset}
+              className="tk-preset"
+              value=""
+              onChange={(e) => {
+                const p = TASK_PRESETS.find((x) => x.id === e.target.value);
+                if (!p) return;
+                // A ready-made analysis: a research task whose contract asks for findings (docs/adr/0014).
+                setText(`${ta(`presets.items.${p.id}`)}\n${p.description}`);
+                setKind(p.kind);
+              }}
+            >
+              <option value="">{t("composer.presetNone")}</option>
+              {TASK_PRESETS.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {ta(`presets.items.${p.id}`)}
+                </option>
+              ))}
+            </select>
+          </label>
           <label className="chip tk-field" htmlFor={ids.kind}>
             {t("composer.kind")}
             <select id={ids.kind} value={kind} onChange={(e) => setKind(e.target.value as TaskKind | "auto")}>
@@ -147,6 +170,10 @@ export function Composer({ projectId, projectName }: { projectId: string; projec
           </label>
           <AttachButton draft={attach} />
           {issue ? <IssueChip issue={issue} onRemove={() => setIssue(null)} /> : repo.data?.remote && <ImportButton onClick={() => setPicking(true)} />}
+          <Button id="tk-assistant-toggle" size="sm" aria-expanded={assistantOpen} aria-keyshortcuts={ariaKeys("assistant")} onClick={onAssistant} title={t("composer.assistantTitle", { keys: keyText("assistant") })}>
+            <SquareTerminal aria-hidden="true" />
+            {assistantOpen ? t("composer.assistantClose") : t("composer.assistant")}
+          </Button>
           <div className="end">
             <span className="kbd">Ctrl</span>
             <span className="kbd">Enter</span>

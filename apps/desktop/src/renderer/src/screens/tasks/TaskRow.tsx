@@ -7,6 +7,7 @@ import { useNav } from "../../nav.ts";
 import { TaskPullChip } from "../github/TaskPull.tsx";
 import { act, useErrorText, useWork } from "./data.ts";
 import { useActivity } from "./live.ts";
+import { ReportLine } from "./TaskReport.tsx";
 import { currentRun, diffTotals, elapsedMs, formatDuration, latestRunOf, limitBanner, profileNames, runDuration, runnersOf, statusLine, stepState } from "./model.ts";
 import { ConfirmButton, ErrorLine, LimitBanner, StatusLabel, useFormat, useNow } from "./parts.tsx";
 
@@ -174,6 +175,7 @@ export function TaskRow({ summary, requests }: { summary: TaskSummary; requests:
           )}
         </div>
       </div>
+      <ReportLine detail={detail} />
       {showBanner && banner && (
         <LimitBanner
           info={banner}

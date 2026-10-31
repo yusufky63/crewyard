@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { createServer, type Server, type Socket } from "node:net";
 import { REPORT_LIMITS } from "@crewyard/core";
 import { endpointPath, ensurePrivateDir, restrictSocket } from "../local-socket.ts";
-import { McpSession, type ToolOutcome } from "./session.ts";
+import { McpSession, type ToolOutcome, type ToolSet } from "./session.ts";
 import type { RunTickets } from "./tickets.ts";
 
 // The daemon end of the report server (docs/adr/0007): a named pipe, never a TCP port (AGENTS.md).
@@ -17,6 +17,8 @@ export interface PipeHost {
   /** Runs one tool call for the run; refusals come back as an error result, never a throw. */
   call(runId: string, tool: string, args: unknown): Promise<ToolOutcome>;
   version: string;
+  /** The tools a ticket's connection lists; absent: the report tools. */
+  toolsFor?(runId: string): ToolSet;
 }
 
 /** How long a connection may take to send its ticket. */
@@ -125,7 +127,7 @@ export class ReportPipe {
           // The ticket is checked again on every call: a run that ended or restarted refuses it.
           if (!this.host.tickets.current(runId!, ticket)) return { text: "Refused: this run's report ticket is no longer valid (the run ended or was restarted).", isError: true };
           return this.host.call(runId!, name, args);
-        }, this.host.version);
+        }, this.host.version, this.host.toolsFor?.(id));
         return;
       }
       const out = await session.handle(line);

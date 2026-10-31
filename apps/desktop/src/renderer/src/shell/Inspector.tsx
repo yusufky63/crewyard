@@ -17,6 +17,7 @@ import { useActivity } from "../screens/tasks/live.ts";
 import { canChooseHandoffStop, formatDuration, handoffsOf, latestRunOf, limitBanner, profileNames, resolveTarget, runDuration, stepState } from "../screens/tasks/model.ts";
 import { ConfirmButton, ErrorLine, HandoffStopChoice, LimitBanner, useFormat, useNow } from "../screens/tasks/parts.tsx";
 import { DiffStat } from "../screens/tasks/TaskRow.tsx";
+import { ReportSection } from "../screens/tasks/TaskReport.tsx";
 import { DiffReview } from "../screens/tasks/DiffReview.tsx";
 import { BestOfCompare } from "../screens/tasks/BestOfCompare.tsx";
 import { TaskTimeline } from "./timeline/TaskTimeline.tsx";
@@ -262,6 +263,7 @@ function Body({ detail, target }: { detail: TaskDetail; target: InspectorTarget 
       {tab === "details" && (
         <>
           {detail.kind === "code" && (detail.status === "review" || detail.status === "merged") && <TaskPullSection taskId={detail.id} className="ins-sec" />}
+          <ReportSection detail={detail} />
           {run?.hibernatedAt && !run.endedAt && (
             <div className="ins-sec">
               <Label>{f.t("hibernation.title")}</Label>

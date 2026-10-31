@@ -27,6 +27,8 @@
 /* The field itself has no ring (outline 0 above); keyboard focus gets the same 2 px ring as everything else. */
 .tk-field:has(:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
 .tk-field input[aria-invalid] { color: var(--bad); }
+/* The preset names are long; the chip keeps a field's width and the full name shows when open. */
+.tk-field select.tk-preset { width: 16ch; text-overflow: ellipsis; }
 
 /* Attachments: composer, message form, proposal and queue (DESIGN.md Composer). */
 .tk-attach { margin-top: 8px; display: grid; gap: 6px; }
