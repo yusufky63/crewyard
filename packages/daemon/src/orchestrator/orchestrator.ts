@@ -155,6 +155,7 @@ export class Orchestrator {
       onLimitReached: (runId, info) => this.fallback.onLimitReached(runId, info),
       nextTurn: (runId) => this.messages.nextTurn(runId),
       endRun: (runId, reason, detail) => this.lifecycle.endRun(runId, reason, detail),
+      stopRun: (runId, detail, reason) => this.lifecycle.stopRun(runId, detail, reason),
       writePackage: (task, source, trigger, name) => this.handoffs.writePackage(task, source, trigger, name),
       pump: (runId, live) => this.lifecycle.pump(runId, live),
       goalBase: (task) => this.goals.goalBase(task),
@@ -236,6 +237,7 @@ export class Orchestrator {
     this.loopRunner = new LoopRunner(ctx, {
       capFor: (taskId, runId, candidate) => this.budget.capFor(taskId, runId, candidate),
       launch: (spec) => this.launcher.launch(spec),
+      goalManaged: (taskId) => this.taskFlow.goalManaged(taskId),
     });
     this.hibernator = new Hibernator(ctx, {
       continueRun: (runId, text) => this.launcher.continueRun(runId, text),

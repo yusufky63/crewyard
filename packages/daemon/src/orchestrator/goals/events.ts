@@ -30,6 +30,8 @@ export type GoalEventKind =
   | "goal.join_conflict"
   | "goal.decision"
   | "goal.decided"
+  | "goal.decision_closed"
+  | "goal.halt_lifted"
   | "goal.paused"
   | "goal.resumed"
   | "goal.paused_all"

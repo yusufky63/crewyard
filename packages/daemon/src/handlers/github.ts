@@ -1,3 +1,4 @@
+import type { DatabaseSync } from "node:sqlite";
 import type { GithubIpc } from "@crewyard/core";
 import { GithubClient } from "../github/client.ts";
 import { PrFlow, type TaskSource } from "../github/flow.ts";
@@ -19,6 +20,15 @@ let pendingSource: OpenQuestionsSource | undefined;
 export function setOpenQuestionsSource(source: OpenQuestionsSource): void {
   if (service) service.openQuestions = source;
   pendingSource = source;
+}
+
+/**
+ * The branches of a project's Orchestra goal tasks (docs/adr/0019). The goal branch itself belongs
+ * to the goal's integration task, which has no goal_tasks row, so it stays in the push queue.
+ */
+export function goalTaskBranches(db: DatabaseSync, projectId: string): ReadonlySet<string> {
+  const rows = db.prepare("select w.branch from worktrees w join goal_tasks gt on gt.task_id = w.task_id join tasks t on t.id = w.task_id where t.project_id = ?").all(projectId) as Array<{ branch: string }>;
+  return new Set(rows.map((r) => r.branch));
 }
 
 export function createGithubHandlers(
@@ -46,10 +56,7 @@ export function createGithubHandlers(
     watched: () => flow!.watched(),
     afterRefresh: (projectId) => flow!.sync(projectId),
     // Goal task branches join their goal branch; only the goal branch goes out (docs/adr/0019).
-    goalTaskBranches: (projectId) =>
-      new Set(
-        (ctx.store.db.prepare("select w.branch from worktrees w join goal_tasks gt on gt.task_id = w.task_id join tasks t on t.id = w.task_id where t.project_id = ?").all(projectId) as Array<{ branch: string }>).map((r) => r.branch),
-      ),
+    goalTaskBranches: (projectId) => goalTaskBranches(ctx.store.db, projectId),
   });
   flow = new PrFlow({ store: ctx.store, service: svc, client, tasks, projectPath, emit: ctx.emit });
   const prs = flow;

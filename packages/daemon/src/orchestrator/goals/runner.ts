@@ -19,6 +19,8 @@ import {
   skippedDependency,
   splitBudget,
   awaitingJoin,
+  capText,
+  cleanText,
   unmetPrerequisites,
   type BudgetItem,
   type CandidateView,
@@ -46,7 +48,7 @@ import {
 import type { OrchestratorContext, ProposeParams } from "../context.ts";
 import { sumEstimates, validateCrew } from "../crew.ts";
 import type { TaskRow } from "../db.ts";
-import { commitsBetween, resolveBase } from "../git.ts";
+import { commitsBetween, isAncestor, resolveBase } from "../git.ts";
 import { errorCode } from "../errors.ts";
 import { Part } from "../part.ts";
 import { GoalError, GoalEvents } from "./events.ts";
@@ -174,6 +176,17 @@ export class GoalRows {
   /** Goals the scheduler looks at: approved at least once, not stopped, not collapsed into one task. */
   activeGoals(): GoalRow[] {
     return this.all<GoalRow>("select * from goals where approved_revision is not null and stopped_at is null and collapsed_task_id is null order by created_at, id");
+  }
+
+  /**
+   * Tasks of stopped goals that are not cancelled yet, and their last reviews: Stop goal cancels them
+   * one by one, and none of them may start a run in between (design §5.2).
+   */
+  stoppedGoalTasks(): string[] {
+    return this.all<{ id: string }>(
+      `select gt.task_id as id from goal_tasks gt join goals g on g.id = gt.goal_id join tasks t on t.id = gt.task_id where g.stopped_at is not null and t.cancelled_at is null
+       union select g.integration_task_id as id from goals g join tasks t on t.id = g.integration_task_id where g.stopped_at is not null and t.cancelled_at is null`,
+    ).map((r) => r.id);
   }
 
   plans(goalId: string): GoalPlanRow[] {
@@ -319,6 +332,13 @@ export class GoalRunner extends Part {
    * pass skips them until a new revision is approved, so old goals cost nothing on every tick.
    */
   private readonly settled = new Map<string, string | null>();
+  /** The error code each goal's pass last failed with, so goal.error is written once per error. */
+  private readonly failing = new Map<string, string>();
+  /**
+   * Last review runs whose pinned head descends from the goal branch's recorded tip: a commit made in
+   * the goal worktree outside our merges, which the review read. Their verdict counts for that tip.
+   */
+  private readonly reviewCovers = new Set<string>();
   /** One approval per goal at a time; a second click waits and then reads the approved revision. */
   private readonly approving = new Map<string, Promise<void>>();
 
@@ -358,7 +378,12 @@ export class GoalRunner extends Part {
     if (!goal.integration_task_id) return null;
     const task = this.db.task(goal.integration_task_id);
     const head = this.join.recordedHead(goal);
-    const verdict = head ? this.loops.verdictFor(task.id, head) : null;
+    let verdict = head ? this.loops.verdictFor(task.id, head) : null;
+    if (!verdict) {
+      // The latest review read a commit past the recorded tip (made in the goal worktree by hand).
+      const last = this.db.runs(task.id).filter((r) => r.role === "reviewer" && r.end_reason === "completed").at(-1);
+      if (last && this.reviewCovers.has(last.id)) verdict = this.loops.verdict(last.id);
+    }
     return { status: this.db.status(task), reviewPassed: verdict?.verdict === "pass" };
   }
 
@@ -492,13 +517,16 @@ export class GoalRunner extends Part {
       const t = this.db.task(p.id);
       if (p.writes) {
         const join = this.rows.one<{ before_sha: string; after_sha: string | null }>("select before_sha, after_sha from goal_joins where task_id = ? and outcome = 'joined' order by at desc, rowid desc limit 1", p.id);
-        const commits = join?.after_sha && join.after_sha !== join.before_sha ? await commitsBetween(project.path, join.before_sha, join.after_sha, 30, this.opts.gitBin) : [];
-        built.push(`Task ${p.label} (${t.title}) is merged into the goal branch with these commits:`, "<<<", ...(commits.length ? commits : ["(no new commits)"]), ">>>");
+        // Commit subjects are agent-written: cleaned, capped and listed one per line behind "- ", so
+        // none of them can read as the closing delimiter.
+        const commits = (join?.after_sha && join.after_sha !== join.before_sha ? await commitsBetween(project.path, join.before_sha, join.after_sha, 30, this.opts.gitBin) : []).map(commitLine).filter(Boolean);
+        built.push(`Task ${p.label} (${t.title}) is merged into the goal branch with these commits:`, "<<<", ...(commits.length ? commits.map((c) => `- ${c}`) : ["(no new commits)"]), ">>>");
         continue;
       }
-      // Untrusted text from a task that writes nothing reaches a writing agent only after you read it.
+      // Untrusted text from a task that writes nothing reaches a writing agent only after you read it,
+      // and only the report you read: a later run's report waits for its own acceptance.
       if (me?.writes && !p.reportAccepted) continue;
-      const summary = this.reportSummary(p.id);
+      const summary = me?.writes ? this.acceptedSummary(goal.id, p.id) : this.reportSummary(p.id);
       if (summary) built.push(`Task ${p.label} (${t.title}) reported, as data:`, "<<<", goalReportExcerpt(summary), ">>>");
     }
     if (built.length) lines.push("Results it builds on:", ...built);
@@ -512,11 +540,25 @@ export class GoalRunner extends Part {
     return lines.join("\n");
   }
 
-  /** A finished task's report: its researcher's findings or its reviewer's verdict summary. */
+  /** A finished task's latest report event: its researcher's findings or its reviewer's verdict. */
+  private latestReport(taskId: string): { seq: number; payload: string } | null {
+    return this.rows.one<{ seq: number; payload: string }>("select seq, payload from events where task_id = ? and kind in ('research.findings', 'review.verdict') order by seq desc limit 1", taskId) ?? null;
+  }
+
+  /** A finished task's report summary: the latest one. */
   private reportSummary(taskId: string): string | null {
-    const row = this.rows.one<{ payload: string }>("select payload from events where task_id = ? and kind in ('research.findings', 'review.verdict') order by seq desc limit 1", taskId);
-    const summary = json<{ summary?: unknown } | null>(row?.payload ?? null, null)?.summary;
-    return typeof summary === "string" && summary.trim() ? summary : null;
+    return summaryOf(this.latestReport(taskId)?.payload ?? null);
+  }
+
+  /** The report you accepted for a task, by the event it was read from; null when none was pinned. */
+  private acceptedSummary(goalId: string, taskId: string): string | null {
+    const seq = this.events
+      .read(goalId, "goal.report_accepted")
+      .filter((e) => e.payload.taskId === taskId)
+      .at(-1)?.payload.reportSeq;
+    if (typeof seq !== "number") return null;
+    const row = this.rows.one<{ payload: string }>("select payload from events where seq = ? and task_id = ? and kind in ('research.findings', 'review.verdict')", seq, taskId);
+    return summaryOf(row?.payload ?? null);
   }
 
   // ---------------------------------------------------------------- the pass
@@ -530,6 +572,7 @@ export class GoalRunner extends Part {
     const held = new Set<string>();
     const rerun = new Set<string>();
     if (this.closed) return { held, rerun };
+    for (const id of this.rows.stoppedGoalTasks()) held.add(id);
     const pausedAll = this.pausedAll();
     for (const goal of this.rows.activeGoals()) {
       if (this.settled.has(goal.id) && this.settled.get(goal.id) === goal.approved_at) continue;
@@ -556,7 +599,9 @@ export class GoalRunner extends Part {
         if (t.accepted === 1 && t.released_at === null && t.discarded_at === null) this.hold(goal, t.task_id, { code: "goal.error", params: { code } });
       }
       if (paused && goal.integration_task_id) held.add(goal.integration_task_id);
-      this.events.append(goal.project_id, goal.id, "goal.error", { code, detail: err instanceof Error ? err.message.slice(0, 300) : null });
+      // Written once per error, not on every tick while the goal stays broken.
+      if (this.failing.get(goal.id) !== code) this.events.append(goal.project_id, goal.id, "goal.error", { code, detail: err instanceof Error ? cleanText(err.message).slice(0, 300) : null });
+      this.failing.set(goal.id, code);
       this.rows.raiseDecision(goal, "stuck", null, { detail: code });
       this.announce(goal.id, "decision");
     } catch {
@@ -590,9 +635,27 @@ export class GoalRunner extends Part {
       facts = this.facts(goal.id);
     }
     await this.integrationStep(goal, facts, rerun);
+    this.clearError(goal);
     this.stuckCheck(goal);
     this.finishedCheck(goal);
     this.announce(goal.id, "released");
+  }
+
+  /**
+   * The goal's pass went through again: a stuck decision raised for a pass error (a detail and no
+   * waiting tasks) no longer describes the goal, so it closes with no answer, and goal.error may be
+   * written again if the error comes back.
+   */
+  private clearError(goal: GoalRow): void {
+    this.failing.delete(goal.id);
+    for (const d of this.rows.decisions(goal.id, true).filter((x) => x.kind === "stuck")) {
+      const p = json<GoalDecisionPayload>(d.payload, {});
+      if (p.waiting !== undefined || p.detail === undefined) continue;
+      if (this.rows.run("update goal_decisions set answered_at = ? where id = ? and answered_at is null", this.iso(), d.id) === 1) {
+        this.events.append(goal.project_id, goal.id, "goal.decision_closed", { decisionId: d.id, kind: d.kind, why: "error_cleared" });
+        this.announce(goal.id, "decided", true);
+      }
+    }
   }
 
   /** A goal task that failed is written down once per failed run, so the stop rule counts it after a restart too. */
@@ -610,15 +673,12 @@ export class GoalRunner extends Part {
 
   /**
    * The stop rule (design §4.7): two goal tasks failing with the same failure key, or three failed
-   * goal tasks, halt the goal. Only failures after your last `Resume` of a halt count, or the same
-   * failures would halt it again at once.
+   * goal tasks, halt the goal. Only failures after the halt was last lifted count (your `Resume`, or
+   * your approval of a revision while it was halted), or the same failures would halt it again at once.
    */
   private stopRule(goal: GoalRow): GoalRow {
     if (goal.halted_at) return goal;
-    const resumed = this.events
-      .read(goal.id, "goal.decided")
-      .filter((e) => e.payload.kind === "stop_rule" && e.payload.action === "resume")
-      .at(-1)?.seq;
+    const resumed = this.events.read(goal.id, "goal.halt_lifted").at(-1)?.seq;
     const failures = this.events
       .read(goal.id, "goal.task_failed")
       .filter((e) => resumed === undefined || e.seq > resumed)
@@ -770,8 +830,15 @@ export class GoalRunner extends Part {
     const head = this.join.recordedHead(goal);
     const verdict = this.loops.verdict(last.id);
     if (verdict && head && verdict.headSha !== null && verdict.headSha !== head) {
-      rerun.add(reviewer.id);
-      return;
+      // Run again only when our merges moved the branch past what the review read. A review that read
+      // a later commit made outside our merges already covers the recorded tip: no rerun, or every
+      // review would ask for the next one with no click (design §1.3).
+      const project = this.db.project(goal.project_id);
+      if (await isAncestor(project.path, head, verdict.headSha, this.opts.gitBin)) this.reviewCovers.add(last.id);
+      else {
+        rerun.add(reviewer.id);
+        return;
+      }
     }
     if (verdict?.verdict === "changes") {
       const fresh = this.rows.decisions(goal.id).some((d) => d.kind === "changes" && d.created_at >= (last.ended_at ?? ""));
@@ -919,6 +986,7 @@ export class GoalRunner extends Part {
     const at = this.iso();
     const accepted = mine.filter((t) => accept.has(t.key));
     const skippedRows = mine.filter((t) => !accept.has(t.key));
+    let liftedHalt = false;
     const done = this.db.tx(() => {
       const now = this.rows.one<GoalPlanRow>("select * from goal_plans where id = ?", target.id);
       const newest = this.rows.latestPlan(goal.id);
@@ -935,6 +1003,7 @@ export class GoalRunner extends Part {
       if (goal.integration_task_id && split.shares.review !== undefined && !(integrationShare && integrationShare > 0)) this.rows.run("update tasks set budget_usd = ? where id = ?", split.shares.review, goal.integration_task_id);
       this.addOverlapOrder(goal.id, [...kept, ...mine], acceptedIds);
       // Your approval of a revision is also your answer to a halt: the new plan starts from here.
+      liftedHalt = this.rows.goal(goal.id).halted_at !== null;
       this.rows.run("update goals set approved_revision = ?, approved_at = ?, budget_usd = ?, max_parallel = ?, halted_reason = null, halted_at = null where id = ?", target.revision, at, budgetUsd, maxParallel, goal.id);
       this.rows.run("update goal_plans set approved_at = ? where id = ?", at, target.id);
       return true;
@@ -944,6 +1013,8 @@ export class GoalRunner extends Part {
       if (again?.approved_at) return;
       throw new GoalError("goal.stale_revision", { revision: p.revision, latest: this.rows.latestPlan(goal.id)?.revision ?? 0 });
     }
+    // The failures that halted the goal stay behind: only new ones count toward the stop rule again.
+    if (liftedHalt) this.events.append(goal.project_id, goal.id, "goal.halt_lifted", { by: "approval", revision: target.revision });
     const shares = Object.fromEntries(Object.entries(split.shares).map(([id, usd]) => [id === "review" ? "review" : this.keyOf(live, id), usd]));
     this.events.append(goal.project_id, goal.id, "goal.approved", {
       revision: target.revision,
@@ -1036,7 +1107,8 @@ export class GoalRunner extends Part {
     if (status !== "done" && status !== "review") throw new GoalError("goal.report_not_done");
     if (!gt.report_accepted_at) {
       this.rows.run("update goal_tasks set report_accepted_at = ? where task_id = ? and report_accepted_at is null", this.iso(), taskId);
-      this.events.append(goal.project_id, goal.id, "goal.report_accepted", { taskId });
+      // The report you read is pinned by its event, so a later run's report is never passed on as accepted.
+      this.events.append(goal.project_id, goal.id, "goal.report_accepted", { taskId, reportSeq: this.latestReport(taskId)?.seq ?? null });
     }
     for (const d of this.rows.decisions(goal.id, true).filter((x) => x.kind === "report" && x.task_id === taskId)) this.rows.answerDecision(d, "accept_report");
     this.emitTask(taskId, "goal");
@@ -1169,8 +1241,10 @@ export class GoalRunner extends Part {
     const d = this.rows.decision(decisionId);
     if (!d || d.goal_id !== goal.id) throw new GoalError("goal.decision_not_found");
     if (d.answered_at) throw new GoalError("goal.decision_answered");
-    if (!GOAL_DECISION_ACTIONS[d.kind].includes(action)) throw new GoalError("goal.action", { action, kind: d.kind });
     const payload = json<GoalDecisionPayload>(d.payload, {});
+    // A decision may offer fewer answers than its kind (a merge with no conflicted file to resolve).
+    const offered = payload.actions?.filter((a) => GOAL_DECISION_ACTIONS[d.kind].includes(a)) ?? GOAL_DECISION_ACTIONS[d.kind];
+    if (!offered.includes(action)) throw new GoalError("goal.action", { action, kind: d.kind });
     let close = true;
     switch (action) {
       case "send_to_implementer":
@@ -1196,6 +1270,7 @@ export class GoalRunner extends Part {
         break;
       case "resume":
         this.rows.run("update goals set halted_reason = null, halted_at = null where id = ?", goal.id);
+        this.events.append(goal.project_id, goal.id, "goal.halt_lifted", { by: "resume" });
         break;
       case "retry":
         await this.retryFailed(goal);
@@ -1291,7 +1366,20 @@ export class GoalRunner extends Part {
 }
 
 /** The last review's findings as plain text for the `changes` decision (shown, never executed). */
-function verdictText(v: { summary: string; comments: Array<{ file?: string | null; line?: number | null; body: string }> }): string {
-  return [v.summary, ...v.comments.map((c) => `- ${c.file ?? ""}${c.line ? `:${c.line}` : ""} ${c.body}`.trim())].join("\n").slice(0, 4_000);
+export function verdictText(v: { summary: string; comments: Array<{ file?: string | null; line?: number | null; body: string }> }): string {
+  return capText(cleanText([v.summary, ...v.comments.map((c) => `- ${c.file ?? ""}${c.line ? `:${c.line}` : ""} ${c.body}`.trim())].join("\n")), VERDICT_TEXT_BYTES).text;
+}
+
+/** One agent-written commit subject for a prompt: cleaned, on one line, capped; empty when nothing is left. */
+export function commitLine(line: string): string {
+  return capText(cleanText(line).replace(/\s+/g, " "), COMMIT_LINE_BYTES).text;
+}
+
+const VERDICT_TEXT_BYTES = 4_000;
+const COMMIT_LINE_BYTES = 200;
+
+function summaryOf(payload: string | null): string | null {
+  const summary = json<{ summary?: unknown } | null>(payload, null)?.summary;
+  return typeof summary === "string" && summary.trim() ? summary : null;
 }
 

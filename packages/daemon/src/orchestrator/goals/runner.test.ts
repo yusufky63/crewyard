@@ -15,7 +15,9 @@ import { Orchestrator, type OrchestratorOptions } from "../orchestrator.ts";
 import type { TaskFlow } from "../tasks.ts";
 import { CANDIDATES, candidate, cleanTemps, git, ScriptedAdapter, tempDir, tempRepo, waitFor } from "../testing.ts";
 import { GoalError } from "./events.ts";
+import { goalTaskBranches } from "../../handlers/github.ts";
 import { GoalJoin } from "./join.ts";
+import { commitLine, verdictText } from "./runner.ts";
 
 // The goal scheduler end to end (docs/adr/0019, design §4.5 to §4.9 and §5): a real store, a repo
 // whose path has spaces, real git merges into the goal branch, and scripted runners. Goals and
@@ -51,6 +53,8 @@ interface Setup {
   memory?: () => number;
   /** Throws from the directory for this project when it returns true. */
   failCandidates?: (projectId: string) => boolean;
+  /** Awaited at the start of every directory read, so a test can hold a launch between its awaits. */
+  beforeCandidates?: () => Promise<void> | undefined;
 }
 
 async function setup(opts: Setup = {}) {
@@ -78,6 +82,7 @@ async function setup(opts: Setup = {}) {
     adapters,
     directory: {
       candidates: async (projectId) => {
+        await opts.beforeCandidates?.();
         if (opts.failCandidates?.(projectId)) throw new Error("directory unavailable");
         return cands;
       },
@@ -170,6 +175,8 @@ const joinedSha = (store: Store, taskId: string) => row<{ s: string | null }>(st
 const decisions = (store: Store, goalId: string) => rows<{ id: string; kind: string; task_id: string | null; payload: string; answered_at: string | null; answer: string | null }>(store, "select * from goal_decisions where goal_id = ? order by created_at, rowid", goalId);
 const goalRow = (store: Store, goalId: string) => row<{ integration_task_id: string | null; halted_at: string | null; paused_at: string | null; stopped_at: string | null; base_sha: string | null; title: string; id: string }>(store, "select * from goals where id = ?", goalId);
 const goalBranch = (store: Store, goalId: string) => GoalJoin.branchFor(goalRow(store, goalId));
+/** A GitHub service with no repository reachable: PR views still build, from local facts only. */
+const offlineService = { repoRef: () => null, pulls: () => Promise.reject(new Error("offline")) } as unknown as GithubService;
 const startedTitles = (adapter: ScriptedAdapter, role: string) => adapter.started.filter((s) => s.role === role).map((s) => titleOf(s.req));
 
 /** An implementer that writes `file` in its worktree; pinHead commits it when the run completes. */
@@ -618,7 +625,7 @@ describe("the goal branch and its last review", () => {
 
     // The existing PR gate for the goal branch includes the pinned review, and passes it for this head.
     const tasks = o as unknown as TaskSource;
-    const flow = new PrFlow({ store, service: { repoRef: () => null } as unknown as GithubService, client: {} as GithubClient, tasks: () => tasks, projectPath: () => repo, emit: () => undefined });
+    const flow = new PrFlow({ store, service: offlineService, client: {} as GithubClient, tasks: () => tasks, projectPath: () => repo, emit: () => undefined });
     expect(flow.reviewedHead(project.id, branch, head)).toBe("pass");
     const draft = await flow.draft(o.get(integration));
     expect(draft.head).toBe(branch);
@@ -632,8 +639,10 @@ describe("the goal branch and its last review", () => {
     await git(gwt, "commit", "-q", "-m", "elle");
     expect(flow.reviewedHead(project.id, branch, (await git(repo, "rev-parse", branch)).trim())).toBe("stale");
     expect((await flow.draft(o.get(integration))).gate.items.find((i) => i.id === "reviewed")).toEqual({ id: "reviewed", status: "fail" });
-    // Goal task branches stay out of the PR list; the integration task owns the goal branch.
-    expect((await flow.views(project.id).catch(() => [])).map((v) => v.taskId)).not.toContain(ids.d);
+    // The integration task owns the goal branch and its PR row.
+    const shown = (await flow.views(project.id)).map((v) => v.taskId);
+    expect(shown).toContain(integration);
+    expect(shown).not.toContain(ids.d);
   });
 
   it("raises a conflict decision, and the follow-up re-runs Test and Review before the merge", async () => {
@@ -722,23 +731,26 @@ describe("the goal branch and its last review", () => {
 });
 
 /** A revision of cause `add` with one task you wrote, as `goals.addTask` (work item 3) stores it. */
-async function addRevision(o: Orchestrator, store: Store, projectId: string, goalId: string, spec: Spec, position: number): Promise<string> {
+async function addRevision(o: Orchestrator, store: Store, projectId: string, goalId: string, spec: Spec, position: number, cause: "add" | "replan" = "add"): Promise<string> {
   const planId = randomUUID();
-  q(store, "insert into goal_plans (id, goal_id, revision, cause, plan, created_at) values (?, ?, 2, 'add', ?, ?)", planId, goalId, JSON.stringify({ summary: "", tasks: [] }), new Date().toISOString());
+  q(store, "insert into goal_plans (id, goal_id, revision, cause, plan, created_at) values (?, ?, 2, ?, ?, ?)", planId, goalId, cause, JSON.stringify({ summary: "", tasks: [] }), new Date().toISOString());
   const t = await flowOf(o).propose(
     { projectId, title: spec.title, kind: spec.kind, size: "S", mode: "solo", fallback: "manual" },
     {
-      inTx: (taskId) =>
+      inTx: (taskId) => {
+        const writes = row<{ w: number | null }>(store, "select max(m.writes_code) as w from crew_members m join crews c on c.id = m.crew_id where c.task_id = ?", taskId).w ?? 0;
         q(
           store,
-          "insert into goal_tasks (task_id, goal_id, plan_id, key, position, mode, priority, basis, basis_matched, reason, paths, writes) values (?, ?, ?, ?, ?, 'solo', 'medium', '', 0, '', ?, 1)",
+          "insert into goal_tasks (task_id, goal_id, plan_id, key, position, mode, priority, basis, basis_matched, reason, paths, writes) values (?, ?, ?, ?, ?, 'solo', 'medium', '', 0, '', ?, ?)",
           taskId,
           goalId,
           planId,
           spec.key,
           position,
           JSON.stringify(spec.paths ?? []),
-        ),
+          writes,
+        );
+      },
     },
   );
   for (const d of spec.deps ?? []) q(store, "insert into goal_task_deps (goal_id, task_id, depends_on, source) values (?, ?, ?, 'user')", goalId, t.id, d);
@@ -830,5 +842,284 @@ describe("stop", () => {
     expect(existsSync(o.get(ids.a!).worktree!.path)).toBe(true);
     expect(await goalRefusal(approve(o, goalId, ["a", "b"]))).toMatchObject({ code: "goal.stopped" });
     expect(await goalRefusal(o.goals.pause(goalId))).toMatchObject({ code: "goal.stopped" });
+  });
+});
+
+describe("stop never leaves a run behind", () => {
+  it("starts no further goal task while Stop goal cancels them one by one", async () => {
+    const pick: Picker = (role) => [running, { awaitAnswer: "never" }, say(role)];
+    const { o, store, project, adapter } = await setup({ pick, config: (c) => (c.rules.slots = 1) });
+    const { goalId, ids } = await seedGoal(o, store, project.id, [
+      { key: "a", title: "[A] Uzun araştırma", kind: "research", priority: "high" },
+      { key: "b", title: "[B] Sıradaki araştırma", kind: "research", priority: "low" },
+    ]);
+    await approve(o, goalId, ["a", "b"], { maxParallel: 2 });
+    // Both are released; the project's single slot holds B behind A.
+    await waitFor(() => o.get(ids.a!).runs[0]);
+    expect([released(store, ids.a!), released(store, ids.b!)]).toEqual([true, true]);
+    await o.goals.stop(goalId);
+    await o.tick();
+    await o.settle();
+    expect(startedTitles(adapter, "researcher")).toEqual(["[A] Uzun araştırma"]);
+    expect([o.get(ids.a!).status, o.get(ids.b!).status]).toEqual(["cancelled", "cancelled"]);
+    expect(rows(store, "select 1 from runs where task_id in (?, ?) and ended_at is null", ids.a!, ids.b!)).toEqual([]);
+  });
+
+  it("gives no process to a run whose task was cancelled while it was being prepared", async () => {
+    let gate: Promise<void> | null = null;
+    let open!: () => void;
+    let taskId = "";
+    const { o, store, project, adapter } = await setup({
+      // Holds the launch's own directory read once its run row exists: the window a cancel can fall into.
+      // Only the first read after the run row exists is held (the launch's own); later reads go through.
+      beforeCandidates: () => {
+        if (!gate || !taskId || rows(store, "select 1 from runs where task_id = ?", taskId).length === 0) return undefined;
+        const held = gate;
+        gate = null;
+        return held;
+      },
+    });
+    const t = await o.propose({ projectId: project.id, title: "Yarıda iptal edilen araştırma", kind: "research", size: "S", mode: "solo" });
+    taskId = t.id;
+    gate = new Promise<void>((r) => (open = r));
+    void o.approve({ taskId: t.id });
+    await waitFor(() => rows(store, "select 1 from runs where task_id = ?", t.id).length > 0);
+    await o.cancel(t.id);
+    open();
+    await o.settle();
+    expect(adapter.started.filter((s) => titleOf(s.req) === "Yarıda iptal edilen araştırma")).toEqual([]);
+    expect(row<{ end_reason: string; end_detail: string }>(store, "select end_reason, end_detail from runs where task_id = ?", t.id)).toEqual({ end_reason: "stopped", end_detail: "task_cancelled" });
+  });
+});
+
+describe("the stop rule and a replan", () => {
+  it("releases the tasks of a replan approved after a halt, and halts again only on new failures", async () => {
+    const pick: Picker = (role, req) => (/\[A\]|\[B\]/.test(titleOf(req)) ? [running, fail("HTTP 400: invalid tool schema")] : [running, say(`${role} bitti`)]);
+    const { o, store, project } = await setup({ pick });
+    const { goalId } = await seedGoal(o, store, project.id, [
+      { key: "a", title: "[A] Araştır", kind: "research" },
+      { key: "b", title: "[B] Araştır", kind: "research" },
+    ]);
+    await approve(o, goalId, ["a", "b"]);
+    await waitFor(() => goalRow(store, goalId).halted_at, 20_000);
+    const halt = decisions(store, goalId).find((x) => x.kind === "stop_rule")!;
+    await o.goals.decide(goalId, halt.id, "replan");
+    // Replan is only recorded: the goal stays halted until you approve the new revision.
+    expect(goalRow(store, goalId).halted_at).not.toBeNull();
+    const d = await addRevision(o, store, project.id, goalId, { key: "d", title: "[D] Yeni yoldan araştır", kind: "research" }, 2, "replan");
+    await approve(o, goalId, ["d"], { revision: 2, budgetUsd: 100 });
+    expect(goalRow(store, goalId).halted_at).toBeNull();
+    expect(released(store, d)).toBe(true);
+    await waitFor(() => o.get(d).status === "done", 20_000);
+    await o.tick();
+    expect(goalRow(store, goalId).halted_at).toBeNull();
+    expect(decisions(store, goalId).filter((x) => x.kind === "stop_rule")).toHaveLength(1);
+    expect(rows(store, "select 1 from events where kind = 'goal.halt_lifted'")).toHaveLength(1);
+  });
+});
+
+describe("docs tasks run as a Crew", () => {
+  it("merges a docs step's work into the goal branch when a reviewer passed it", async () => {
+    const { o, store, project, repo } = await setup({ pick: writer({ "[D]": { file: "docs/kılavuz.md", text: "# Kılavuz\n\nİki adım.\n" } }) });
+    const { goalId, ids } = await seedGoal(o, store, project.id, [{ key: "d", title: "[D] Kılavuzu yaz", kind: "docs", mode: "crew", size: "M", paths: ["docs/kılavuz.md"] }]);
+    expect(o.get(ids.d!).crew!.members.map((m) => m.role)).toEqual(["docs", "reviewer"]);
+    await approve(o, goalId, ["d"]);
+    await waitFor(() => joinedSha(store, ids.d!), 40_000);
+    const branch = goalBranch(store, goalId);
+    // The docs step's leftovers were committed when it completed, before its reviewer read them.
+    expect((await git(repo, "show", `${branch}:docs/kılavuz.md`)).replace(/\r\n/g, "\n")).toBe("# Kılavuz\n\nİki adım.\n");
+    expect(joinedSha(store, ids.d!)).not.toBe(goalRow(store, goalId).base_sha);
+  });
+
+  it("asks you instead of joining a task that added no commit but left changes in its worktree", async () => {
+    // The docs step writes nothing; its reviewer (which reads the live worktree of a docs task)
+    // leaves a file behind, so the worktree is dirty while the branch has no new commit.
+    const pick: Picker = (role, req) => {
+      if (role === "reviewer" && titleOf(req).includes("[D]")) writeFileSync(join(req.cwd, "unutulan not.md"), "kaydedilmedi\n");
+      return [running, say(`${role} bitti`)];
+    };
+    const { o, store, project } = await setup({ pick });
+    const { goalId, ids } = await seedGoal(o, store, project.id, [{ key: "d", title: "[D] Kılavuzu yaz", kind: "docs", mode: "crew", size: "M" }]);
+    await approve(o, goalId, ["d"]);
+    const conflict = await waitFor(() => decisions(store, goalId).find((x) => x.kind === "conflict"), 40_000);
+    expect(JSON.parse(conflict.payload)).toEqual({ paths: [], detail: "git.uncommitted", actions: ["merge_myself", "check_again", "leave_out"] });
+    expect(joinedSha(store, ids.d!)).toBeNull();
+    // No conflicted file means nothing an implementer could resolve.
+    expect(await goalRefusal(o.goals.decide(goalId, conflict.id, "send_to_implementer"))).toEqual({ code: "goal.action", params: { action: "send_to_implementer", kind: "conflict" } });
+  });
+});
+
+describe("merges Crewyard cannot test", () => {
+  it("turns a merge into a decision you take when the installed Git is older than 2.38", async () => {
+    const { o, store, project } = await setup({ pick: writer({ "[A]": { file: "a.txt", text: "A\n" } }) });
+    (o.goals.join as unknown as { version: Promise<string | null> }).version = Promise.resolve("2.30.1.windows.1");
+    const { goalId, ids } = await seedGoal(o, store, project.id, [{ key: "a", title: "[A] Sunucu", kind: "code" }]);
+    await approve(o, goalId, ["a"]);
+    const conflict = await waitFor(() => decisions(store, goalId).find((x) => x.kind === "conflict"), 40_000);
+    expect(JSON.parse(conflict.payload)).toEqual({ paths: [], detail: "git.too_old", actions: ["merge_myself", "check_again", "leave_out"] });
+    expect(joinedSha(store, ids.a!)).toBeNull();
+    expect(await goalRefusal(o.goals.decide(goalId, conflict.id, "send_to_implementer"))).toMatchObject({ code: "goal.action" });
+    await o.goals.decide(goalId, conflict.id, "merge_myself");
+    expect(decisions(store, goalId).find((x) => x.id === conflict.id)!.answered_at).toBeNull();
+  });
+
+  it("gives the tasks that wait for a task you left out the prerequisite decision", async () => {
+    const { o, store, project } = await setup({ pick: writer({ "[X]": { file: "README.md", text: "X\n" }, "[Y]": { file: "README.md", text: "Y\n", extra: [{ wait: 300 }] } }) });
+    const { goalId, ids } = await seedGoal(o, store, project.id, [
+      { key: "x", title: "[X] Sunucu", kind: "code", paths: ["src/x.ts"] },
+      { key: "y", title: "[Y] Arayüz", kind: "code", paths: ["src/y.ts"] },
+      { key: "z", title: "[Z] Arayüzü incele", kind: "research", deps: ["y"] },
+    ]);
+    await approve(o, goalId, ["x", "y", "z"]);
+    const conflict = await waitFor(() => decisions(store, goalId).find((d) => d.kind === "conflict"), 40_000);
+    expect(conflict.task_id).toBe(ids.y);
+    await o.goals.decide(goalId, conflict.id, "leave_out");
+    const d = await waitFor(() => decisions(store, goalId).find((x) => x.kind === "prerequisite"), 20_000);
+    expect([d.task_id, JSON.parse(d.payload)]).toEqual([ids.y, { waiting: [ids.z] }]);
+    expect(released(store, ids.z!)).toBe(false);
+  });
+});
+
+describe("the last review after the goal branch moved by hand", () => {
+  it("runs the review once when a commit outside the merges came before it, and reads Ready for review", async () => {
+    let mem = 64_000;
+    const files = writer({ "[D]": { file: "docs/kılavuz.md", text: "# Kılavuz\n" } });
+    const pick: Picker = (role, req, resumed) => {
+      // Admission holds the last review once the docs step has run.
+      if (role === "docs") mem = 10;
+      return files(role, req, resumed);
+    };
+    const { o, store, project, adapter } = await setup({ pick, memory: () => mem });
+    const { goalId, ids } = await seedGoal(o, store, project.id, [{ key: "d", title: "[D] Kılavuzu güncelle", kind: "docs" }]);
+    await approve(o, goalId, ["d"]);
+    await waitFor(() => joinedSha(store, ids.d!), 30_000);
+    const integration = goalRow(store, goalId).integration_task_id!;
+    await waitFor(() => o.get(integration).crew!.approvedAt !== null, 20_000);
+    const gwt = o.get(integration).worktree!.path;
+    writeFileSync(join(gwt, "elle eklenen.txt"), "x\n");
+    await git(gwt, "add", "-A");
+    await git(gwt, "commit", "-q", "-m", "elle eklenen");
+    expect(adapter.started.filter((s) => s.role === "reviewer")).toHaveLength(0);
+    mem = 64_000;
+    await o.tick();
+    await waitFor(() => o.goals.state(goalId).status === "ready_for_review", 30_000);
+    for (let i = 0; i < 4; i++) {
+      await o.tick();
+      await o.settle();
+    }
+    expect(adapter.started.filter((s) => s.role === "reviewer")).toHaveLength(1);
+    expect(o.get(integration).loop.verdicts.map((v) => v.headSha)).toEqual([(await git(gwt, "rev-parse", "HEAD")).trim()]);
+  });
+});
+
+describe("what a goal task is told", () => {
+  it("names the paths of writing tasks running beside it and asks it to leave them alone", async () => {
+    const pick: Picker = writer({ "[A]": { file: "a yolu.ts", text: "A\n", extra: [{ wait: 400 }] }, "[B]": { file: "b yolu.ts", text: "B\n", extra: [{ wait: 400 }] } });
+    const { o, store, project, adapter } = await setup({ pick });
+    const { goalId } = await seedGoal(o, store, project.id, [
+      { key: "a", title: "[A] Sunucu", kind: "code", paths: ["src/a yolu.ts"] },
+      { key: "b", title: "[B] Arayüz", kind: "code", paths: ["src/b yolu.ts"] },
+    ]);
+    await approve(o, goalId, ["a", "b"], { maxParallel: 2 });
+    await waitFor(() => adapter.started.filter((s) => s.role === "implementer").length === 2, 20_000);
+    const promptOf = (marker: string) => adapter.started.find((s) => s.role === "implementer" && titleOf(s.req).includes(marker))!.req.prompt;
+    expect(promptOf("[A]")).toContain("- task 02: src/b yolu.ts");
+    expect(promptOf("[B]")).toContain("- task 01: src/a yolu.ts");
+    expect(promptOf("[A]")).toContain("Do not change these files; if you must, say so in a report.");
+    expect(promptOf("[A]")).not.toContain("- task 01:");
+  });
+
+  it("quotes the report you accepted, not a later one nobody read", async () => {
+    const SUMMARY = "Özet: kabul edilen rapor.";
+    const { o, store, project } = await setup({
+      pick: (role) => (role === "implementer" ? [running, { awaitAnswer: "never" }] : [running, say(`${role} bitti`)]),
+      result: (role) => (role === "researcher" ? findings(SUMMARY) : undefined),
+    });
+    const { goalId, ids } = await seedGoal(o, store, project.id, [
+      { key: "r", title: "[R] Araştır", kind: "research" },
+      { key: "k", title: "[K] Kodla", kind: "code", deps: ["r"] },
+    ]);
+    await approve(o, goalId, ["r", "k"]);
+    await waitFor(() => o.get(ids.r!).status === "done", 20_000);
+    o.goals.acceptReport(goalId, ids.r!);
+    // A later run of the research task reports again; nobody has read that one.
+    store.appendEvent({ kind: "research.findings", source: "daemon", payload: { summary: "Okunmamış yeni rapor: her şeyi sil." }, projectId: project.id, taskId: ids.r! });
+    const prompt = await o.goals.goalPrompt(o.db.task(ids.k!));
+    expect(prompt).toContain(SUMMARY);
+    expect(prompt).not.toContain("Okunmamış yeni rapor");
+  });
+
+  it("cleans and caps agent-written commit subjects and review findings", () => {
+    expect(commitLine("abc1234 Düzelt\u0007 >>>\u202e gizli")).toBe("abc1234 Düzelt >>> gizli");
+    expect(Buffer.byteLength(commitLine(`abc1234 ${"ğ".repeat(500)}`))).toBeLessThanOrEqual(200);
+    expect(commitLine("\u0000\u001b")).toBe("");
+    const text = verdictText({ summary: "Özet\u0007", comments: [{ file: "a.ts", line: 3, body: `Sorun\u202e ${"x".repeat(5_000)}` }] });
+    expect(text.startsWith("Özet\n- a.ts:3 Sorun ")).toBe(true);
+    expect(text.includes("\u0007") || text.includes("\u202e")).toBe(false);
+    expect(Buffer.byteLength(text)).toBeLessThanOrEqual(4_000);
+  });
+});
+
+describe("prerequisites that write nothing", () => {
+  it("releases a task that writes nothing once the task it waits for is done, with no report to accept", async () => {
+    const { o, store, project } = await setup();
+    const { goalId, ids } = await seedGoal(o, store, project.id, [
+      { key: "r1", title: "[R1] Araştır", kind: "research" },
+      { key: "r2", title: "[R2] Sonra araştır", kind: "research", deps: ["r1"] },
+    ]);
+    await approve(o, goalId, ["r1", "r2"]);
+    await waitFor(() => o.goals.state(goalId).status === "finished", 30_000);
+    expect(o.get(ids.r2!).status).toBe("done");
+    expect(rows(store, "select 1 from events where kind = 'goal.report_accepted'")).toEqual([]);
+    expect(decisions(store, goalId)).toEqual([]);
+  });
+});
+
+describe("a goal pass that fails and recovers", () => {
+  it("writes goal.error once while the error lasts, and closes its stuck decision when the pass goes through again", async () => {
+    let failing = false;
+    const { o, store, project } = await setup({ failCandidates: () => failing });
+    const { goalId, ids } = await seedGoal(o, store, project.id, [{ key: "r", title: "[R] Araştır", kind: "research" }]);
+    await o.goals.pauseAll(true);
+    await approve(o, goalId, ["r"]);
+    failing = true;
+    await o.goals.pauseAll(false);
+    for (let i = 0; i < 3; i++) await o.tick();
+    expect(rows(store, "select 1 from events where kind = 'goal.error'")).toHaveLength(1);
+    const stuck = decisions(store, goalId).find((x) => x.kind === "stuck")!;
+    expect(stuck.answered_at).toBeNull();
+
+    failing = false;
+    await o.tick();
+    await waitFor(() => o.goals.state(goalId).status === "finished", 20_000);
+    expect(o.get(ids.r!).status).toBe("done");
+    expect(decisions(store, goalId).find((x) => x.id === stuck.id)).toMatchObject({ answer: null, answered_at: expect.any(String) });
+    expect(rows(store, "select 1 from events where kind = 'goal.decision_closed'")).toHaveLength(1);
+  });
+});
+
+describe("goal task branches stay out of your PR list and push queue", () => {
+  it("leaves a joined code goal task out of the PR views and the push queue, and keeps the goal branch and ordinary tasks", async () => {
+    const { o, store, project, repo } = await setup({ pick: writer({ "[A]": { file: "a.txt", text: "A\n" }, "Sıradan": { file: "s.txt", text: "S\n" } }) });
+    const plain = await o.propose({ projectId: project.id, title: "Sıradan kod işi", kind: "code", size: "S", mode: "solo" });
+    await o.approve({ taskId: plain.id });
+    const { goalId, ids } = await seedGoal(o, store, project.id, [{ key: "a", title: "[A] Sunucu", kind: "code" }]);
+    await approve(o, goalId, ["a"]);
+    await waitFor(() => o.goals.state(goalId).status === "ready_for_review" && o.get(plain.id).status === "review", 40_000);
+    const integration = goalRow(store, goalId).integration_task_id!;
+    expect(o.get(ids.a!).status).toBe("review");
+
+    const tasks = o as unknown as TaskSource;
+    const flow = new PrFlow({ store, service: offlineService, client: {} as GithubClient, tasks: () => tasks, projectPath: () => repo, emit: () => undefined });
+    const shown = (await flow.views(project.id)).map((v) => v.taskId);
+    expect(shown).toContain(integration);
+    expect(shown).toContain(plain.id);
+    expect(shown).not.toContain(ids.a);
+
+    // The push queue's filter: the goal task's branch, never the goal branch or an ordinary task's.
+    const hidden = goalTaskBranches(store.db, project.id);
+    expect([...hidden]).toEqual([o.get(ids.a!).worktree!.branch]);
+    expect(hidden.has(goalBranch(store, goalId))).toBe(false);
+    expect(hidden.has(o.get(plain.id).worktree!.branch)).toBe(false);
   });
 });

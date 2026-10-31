@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { RoleId } from "@crewyard/core";
+import { cleanText, type GoalDecisionAction, type RoleId } from "@crewyard/core";
 import type { OrchestratorContext } from "../context.ts";
 import type { MemberRow, RunRow, TaskRow, WorktreeRow } from "../db.ts";
 import { branchSha, checkpoint, ensureWorktree, gitAtLeast, gitVersion, isAncestor, isClean, mergeNoFf, mergeTreeCheck, taskSlug } from "../git.ts";
@@ -22,6 +22,9 @@ export interface GoalJoinDeps {
 }
 
 export type JoinOutcome = { outcome: "joined"; sha: string } | { outcome: "conflict"; paths: string[]; detail: string | null };
+
+/** The answers to a failed merge that named no conflicted file. */
+const NO_FILE_CONFLICT_ACTIONS: readonly GoalDecisionAction[] = ["merge_myself", "check_again", "leave_out"];
 
 /** Steps that write a task's commits: the implementer of a code crew, the docs step of a docs crew. */
 const WRITER_ROLES: readonly RoleId[] = ["implementer", "docs"];
@@ -146,7 +149,12 @@ export class GoalJoin extends Part {
     const tip = await branchSha(twt.repo_path, twt.branch, bin);
     if (!before || !tip) return this.recordConflict(goal, task, before ?? "", [], "git.branch_missing");
     // A merge that landed before a restart, or a task that added no commit: already in the branch.
-    if (await isAncestor(gwt.repo_path, tip, before, bin)) return this.recordJoin(goal, task, gwt, before, before);
+    // A task that added no commit but left changes in its worktree would join with its work silently
+    // dropped; that asks you instead.
+    if (await isAncestor(gwt.repo_path, tip, before, bin)) {
+      if (tip === twt.base_sha && existsSync(twt.path) && !(await isClean(twt.path, bin))) return this.recordConflict(goal, task, before, [], "git.uncommitted");
+      return this.recordJoin(goal, task, gwt, before, before);
+    }
     if (!gitAtLeast(await (this.version ??= gitVersion(bin)))) return this.recordConflict(goal, task, before, [], "git.too_old");
     const check = await mergeTreeCheck(gwt.repo_path, gwt.branch, twt.branch, bin);
     if (!check.clean) return this.recordConflict(goal, task, before, check.paths, null);
@@ -157,10 +165,10 @@ export class GoalJoin extends Part {
   }
 
   /**
-   * A docs step commits its own work, but what it left uncommitted would never reach the goal
-   * branch. It is committed in the task's own worktree, as pinHead does for code. A crew with a
-   * reviewer is left alone: its pass is pinned to the commit it read, and a new commit would merge
-   * work nobody reviewed.
+   * What a writing step left uncommitted would never reach the goal branch. pinHead commits it when
+   * the step completes (code, and a goal's docs step); this is the fallback for a commit that did
+   * not happen then. A crew with a reviewer is left alone: its pass is for the commit it read, and a
+   * new commit would merge work nobody reviewed (an empty join of a dirty worktree asks you instead).
    */
   private async commitLeftovers(task: TaskRow, wt: WorktreeRow): Promise<void> {
     const crew = this.db.crew(task.id);
@@ -195,7 +203,9 @@ export class GoalJoin extends Part {
       this.iso(),
     );
     this.events.append(goal.project_id, goal.id, "goal.join_conflict", { taskId: task.id, paths, detail });
-    this.rows.raiseDecision(goal, "conflict", task.id, { paths, ...(detail ? { detail } : {}) });
+    // With no conflicted file (Git too old to test the merge, uncommitted work, a refused merge)
+    // there is nothing for the implementer to resolve: you merge it yourself, check again, or leave it out.
+    this.rows.raiseDecision(goal, "conflict", task.id, { paths, ...(detail ? { detail } : {}), ...(paths.length === 0 ? { actions: [...NO_FILE_CONFLICT_ACTIONS] } : {}) });
     this.emitTask(task.id, "goal");
     return { outcome: "conflict", paths, detail };
   }
@@ -224,6 +234,6 @@ export function conflictMessage(goalBranch: string, paths: readonly string[]): s
   return [
     `Your branch conflicts with the goal branch ${goalBranch}, which holds the work of the other tasks of this goal.`,
     `Merge ${goalBranch} into this worktree (git merge ${goalBranch}), resolve the conflicts, run the tests, and commit the merge locally. Never push.`,
-    ...(paths.length > 0 ? ["Files git reported as conflicting:", "<<<", ...paths.map((p) => `- ${p}`), ">>>"] : []),
+    ...(paths.length > 0 ? ["Files git reported as conflicting:", "<<<", ...paths.map((p) => `- ${cleanText(p).replace(/\s+/g, " ")}`), ">>>"] : []),
   ].join("\n");
 }
