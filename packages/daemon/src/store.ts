@@ -918,8 +918,11 @@ export const MIGRATIONS: Migration[] = [
   // approval (pending_since), and a step you skipped before it started never runs (skipped_at).
   {
     id: "crew-step-flags",
-    sql: `alter table crew_members add column pending_since text;
-   alter table crew_members add column skipped_at text;`,
+    sql: `create table if not exists crew_member_flags (
+     member_id text primary key references crew_members(id),
+     pending_since text,
+     skipped_at text
+   );`,
   },
 ];
 

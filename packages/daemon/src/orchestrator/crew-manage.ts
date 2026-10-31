@@ -116,7 +116,7 @@ export class CrewManager {
       if (readOnlyConflict(cand, this.templateFor(c, m.role, m.id))) throw new OrchestratorError("crew.read_only_profile", { profileId: cand.profile.id, role: m.role });
     }
     this.db.tx(() => {
-      for (const m of pending) this.db.exec("update crew_members set pending_since = null where id = ?", m.id);
+      for (const m of pending) this.db.exec("update crew_member_flags set pending_since = null where member_id = ?", m.id);
     });
     this.host.audit(c.task.id, null, "crew.steps_approved", { members: pending.map((m) => m.id) });
     this.host.emitTask(c.task.id, "crew_edited");
@@ -134,7 +134,11 @@ export class CrewManager {
     if (memberId === this.host.bestOfMember(c.task.id)) throw new CrewEditError("best_of");
     const why = skipRefusal(m, new Set(c.runs.map((r) => r.member_id)));
     if (why) throw new CrewEditError(why);
-    this.db.exec("update crew_members set skipped_at = ? where id = ?", this.host.now().toISOString(), memberId);
+    this.db.exec(
+      "insert into crew_member_flags (member_id, skipped_at) values (?, ?) on conflict (member_id) do update set skipped_at = excluded.skipped_at",
+      memberId,
+      this.host.now().toISOString(),
+    );
     this.host.audit(c.task.id, null, "crew.step_skipped", { memberId, step: m.step });
     this.host.emitTask(c.task.id, "crew_edited");
     await this.host.tick();
@@ -226,6 +230,7 @@ export class CrewManager {
       for (const r of c.rows) {
         if (keep.has(r.id)) continue;
         this.db.exec("delete from crew_member_roles where member_id = ?", r.id);
+        this.db.exec("delete from crew_member_flags where member_id = ?", r.id);
         this.db.exec("delete from crew_members where id = ?", r.id);
       }
       next.forEach((m, i) => {
@@ -233,13 +238,13 @@ export class CrewManager {
         const cols = [i, m.step, m.role, JSON.stringify(m.dependsOn), m.writesCode ? 1 : 0, m.chosen ? JSON.stringify(m.chosen) : null, JSON.stringify(m.standby), JSON.stringify(m.reasons), m.edited ? 1 : 0] as const;
         if (!r) {
           this.db.exec(
-            `insert into crew_members (id, crew_id, position, step, role, depends_on, required, writes_code, chosen, standby, reasons, edited, pending_since)
-             values (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)`,
+            `insert into crew_members (id, crew_id, position, step, role, depends_on, required, writes_code, chosen, standby, reasons, edited)
+             values (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)`,
             m.id,
             c.crewId,
             ...cols,
-            m.pendingApproval ? at : null,
           );
+          if (m.pendingApproval) this.db.exec("insert into crew_member_flags (member_id, pending_since) values (?, ?)", m.id, at);
         } else {
           this.db.exec("update crew_members set position = ?, step = ?, role = ?, depends_on = ?, writes_code = ?, chosen = ?, standby = ?, reasons = ?, edited = ? where id = ?", ...cols, m.id);
         }

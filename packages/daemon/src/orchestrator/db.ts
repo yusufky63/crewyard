@@ -268,12 +268,13 @@ export class OrchestratorDb {
     return this.one<CrewRow>("select * from crews where task_id = ?", taskId) ?? null;
   }
 
+  // The Crew graph's flags (follow-up waiting for approval, skipped) live in crew_member_flags.
   members(crewId: string): MemberRow[] {
-    return this.all<MemberRow>("select * from crew_members where crew_id = ? order by position", crewId);
+    return this.all<MemberRow>("select m.*, f.pending_since, f.skipped_at from crew_members m left join crew_member_flags f on f.member_id = m.id where m.crew_id = ? order by m.position", crewId);
   }
 
   member(id: string): MemberRow {
-    const m = this.one<MemberRow>("select * from crew_members where id = ?", id);
+    const m = this.one<MemberRow>("select m.*, f.pending_since, f.skipped_at from crew_members m left join crew_member_flags f on f.member_id = m.id where m.id = ?", id);
     if (!m) throw new OrchestratorError("crew.member_not_found", { memberId: id });
     return m;
   }
