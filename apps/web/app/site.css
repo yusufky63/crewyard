@@ -121,7 +121,9 @@ h1, h2, h3 { font-weight: 600; letter-spacing: var(--font-tracking-tight); color
 .spec h3 { font-size: 15px; font-weight: 500; margin-top: 10px; }
 .spec p { margin-top: 6px; font-size: 14px; color: var(--ink-2); }
 .spec .art { margin-top: 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.tiles { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); }
+.tiles { display: grid; gap: 12px; grid-template-columns: 1fr; }
+@media (min-width: 640px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 1024px) { .tiles { grid-template-columns: repeat(3, 1fr); } }
 .kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0 16px; }
 .kv dt, .kv dd { padding: 10px 0; border-top: 1px solid var(--line); }
 .kv dt:first-of-type, .kv dd:first-of-type { border-top: 0; }
