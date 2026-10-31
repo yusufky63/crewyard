@@ -323,7 +323,37 @@
       "feedback_no_owner": "No step of this task owns the branch.",
       "merge_dirty": "GitHub reports conflicts with the base branch. Resolve them on the branch first.",
       "merge_behind": "The branch is behind its base and the branch rules require it up to date. Update it first.",
-      "merge_gate": "The merge gate is not passed yet. The chips above say which item holds it."
+      "merge_gate": "The merge gate is not passed yet. The chips above say which item holds it.",
+      "checks_busy": "Failing checks are already being collected for this task.",
+      "checks_no_pull": "There is no open pull request.",
+      "checks_no_owner": "No run of this task owns the branch.",
+      "checks_moved": "The pull request has a new commit since you looked. Check it again.",
+      "checks_none_failing": "No check is failing on the latest commit any more.",
+      "checks_all_sent": "Every failing check on the latest commit already went to the agent.",
+      "checks_not_finished": "The step is still running; it takes the queue at its next turn.",
+      "checks_nothing_queued": "Nothing is queued for this step."
+    },
+    "checks": {
+      "send": "Send failing checks to the agent",
+      "sendTitle": "Reads the failed steps of each failing check and puts them in the agent's queue. Nothing reaches the agent before you have seen it.",
+      "note": "The last lines of each failed step go into the queue of the step that wrote this branch, quoted as CI output. Read, edit or delete them there first.",
+      "reason": {
+        "no_pull": "There is no open pull request.",
+        "not_read": "The checks of this pull request have not been read yet.",
+        "no_owner": "No run of this task owns the branch.",
+        "none_failing": "No check is failing on the latest commit.",
+        "all_sent": "Every failing check on the latest commit already went to the agent."
+      },
+      "queuedLive_one": "Queued 1 failing check. The agent takes it when its current turn ends; until then you can edit or delete it in the inspector.",
+      "queuedLive_other": "Queued {{count}} failing checks. The agent takes them when its current turn ends; until then you can edit or delete them in the inspector.",
+      "queuedFinished_one": "Queued 1 failing check. The step has finished, so it waits in the inspector until you continue the step.",
+      "queuedFinished_other": "Queued {{count}} failing checks. The step has finished, so they wait in the inspector until you continue the step.",
+      "skipped_one": "1 already sent was left out.",
+      "skipped_other": "{{count}} already sent were left out.",
+      "continue_one": "Continue with the queued message",
+      "continue_other": "Continue with {{count}} queued messages",
+      "continueNote": "The step that wrote this branch has finished. Continuing starts it again on the same profile with what is queued.",
+      "continued": "The step continues with the queued messages."
     }
   }
 }

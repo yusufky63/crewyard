@@ -119,6 +119,8 @@ export interface FeedbackDraft {
   url: string | null;
   path: string | null;
   line: number | null;
+  /** The check run a check item came from; absent for commit statuses and reviews. */
+  checkRunId?: number;
 }
 
 /** Keys that identify the same feedback across refreshes. A check is per commit, so a new push that fails again is new. */

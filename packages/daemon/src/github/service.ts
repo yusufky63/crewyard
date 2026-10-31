@@ -26,6 +26,8 @@ import { checkWorkflows, triggeredBy, type WorkflowFile } from "./workflows.ts";
 // is no separate loop on CI. Writes (push, merge) run only from an explicit IPC call.
 
 export const REFRESH_MS = 60_000;
+/** A window that regains focus refreshes PR state at most this often (PLAN.md §10). */
+export const FOCUS_MS = 30_000;
 const MERGED_DAYS = 14;
 const MERGED_SHOWN = 5;
 
@@ -86,6 +88,12 @@ export interface ServiceDeps {
   watched?: () => string[];
   /** Runs after each refresh, before "github.changed" goes out; task PR facts and feedback hang off it. */
   afterRefresh?: (projectId: string) => Promise<void>;
+  now?: () => number;
+}
+
+/** Whether a focus refresh may run: never before FOCUS_MS has passed since the last one. */
+export function focusDue(last: number | null, now: number, minMs = FOCUS_MS): boolean {
+  return last === null || now - last >= minMs || now < last;
 }
 
 /** What the task PR flow needs from the last refresh, without starting another one. */
@@ -102,6 +110,7 @@ export class GithubService {
   private merging = new Set<string>();
   private timer: ReturnType<typeof setInterval> | null = null;
   private login: string | null = null;
+  private focusAt: number | null = null;
   openQuestions: OpenQuestionsSource;
   readonly reviewed: ReviewedSource;
   private readonly deps: ServiceDeps;
@@ -143,6 +152,27 @@ export class GithubService {
       const open = c.pulls?.pulls.some((p) => p.state !== "merged");
       if (open && !c.refreshing) await this.refresh(projectId).catch(() => undefined);
     }
+  }
+
+  /**
+   * The app window regained focus: the projects the 60 s observer watches, plus the one on
+   * screen when it has an open PR, are read once, at most every FOCUS_MS. Not a loop; one read
+   * per focus, and none while the rate limit is low. Returns the projects it refreshed.
+   */
+  async focused(projectId: string | null): Promise<string[]> {
+    const now = (this.deps.now ?? Date.now)();
+    if (!focusDue(this.focusAt, now)) return [];
+    this.focusAt = now;
+    if (this.deps.client.remaining("core") < BACKGROUND_FLOOR) return [];
+    const ids = new Set(this.deps.watched?.() ?? []);
+    if (projectId && this.projects.get(projectId)?.pulls?.pulls.some((p) => p.state !== "merged")) ids.add(projectId);
+    const done: string[] = [];
+    for (const id of ids) {
+      if (this.cache(id).refreshing) continue;
+      await this.refresh(id).catch(() => undefined);
+      done.push(id);
+    }
+    return done;
   }
 
   async auth(): Promise<GithubAuth> {

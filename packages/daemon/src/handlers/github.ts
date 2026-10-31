@@ -66,6 +66,7 @@ export function createGithubHandlers(
       await svc.refresh(projectId);
       return svc.sync(projectId);
     },
+    "github.focus": async ({ projectId }) => ({ refreshed: await svc.focused(projectId) }),
     "github.push": ({ projectId, branch, headSha }) => svc.push(projectId, branch, headSha),
     "github.merge": async ({ projectId, number, headSha }) => {
       const res = await svc.merge(projectId, number, headSha);
@@ -79,6 +80,8 @@ export function createGithubHandlers(
     "github.routing": ({ projectId }) => ({ enabled: prs.routing(projectId) }),
     "github.setRouting": ({ projectId, enabled }) => ({ enabled: prs.setRouting(projectId, enabled) }),
     "github.sendFeedback": async ({ taskId }) => ({ sent: await prs.sendHeld(taskId) }),
+    "github.sendChecks": ({ taskId, headSha }) => prs.sendChecks(taskId, headSha),
+    "github.continueQueued": ({ taskId }) => prs.continueQueued(taskId),
     "github.issues": ({ projectId }) => review.issues(projectId),
     "github.issue": ({ projectId, number }) => review.issue(projectId, number),
     "github.linkIssue": ({ taskId, number, url, title }) => review.link(taskId, number, url, title),

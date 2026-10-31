@@ -125,7 +125,7 @@ describe("diff review", () => {
     expect(drafts).toHaveLength(2);
 
     // Delivery fails: the drafts stay.
-    const failing: TaskSource = { list: (p) => o.list(p), get: (id) => o.get(id), message: () => Promise.reject(new Error("run.ended")), followUp: () => Promise.reject(new Error("offline")) };
+    const failing: TaskSource = { list: (p) => o.list(p), get: (id) => o.get(id), message: () => Promise.reject(new Error("run.ended")), followUp: () => Promise.reject(new Error("offline")), enqueue: () => { throw new Error("offline"); } };
     await expect(makeDesk(() => failing).send(task.id)).rejects.toThrow("offline");
     expect(desk.drafts(task.id)).toHaveLength(2);
 

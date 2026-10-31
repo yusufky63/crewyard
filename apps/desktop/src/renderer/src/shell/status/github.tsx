@@ -1,6 +1,7 @@
+import { useEffect } from "react";
 import { GitPullRequest } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { useDaemon } from "../../ipc.ts";
+import { call, useDaemon } from "../../ipc.ts";
 import { useNav } from "../../nav.ts";
 import type { StatusItemDef } from "../../registry.ts";
 import { useGithubLive, useMinuteTick, useNumber, useRelative } from "../../screens/github/live.ts";
@@ -8,10 +9,23 @@ import "../../screens/github/github.css";
 
 // Last GitHub sync and Actions minutes, right side of the status bar (DESIGN.md §4). Both open the GitHub screen.
 
+/**
+ * The window regained focus: PR state is read again, on top of the 60 s observer. The daemon
+ * throttles it to once every 30 s; github.changed then refreshes every view.
+ */
+function useFocusRefresh(projectId: string | null): void {
+  useEffect(() => {
+    const onFocus = () => void call("github.focus", { projectId }).catch(() => undefined);
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, [projectId]);
+}
+
 function GithubStatus() {
   const { t } = useTranslation("github");
   const { projectId, go } = useNav();
   useGithubLive();
+  useFocusRefresh(projectId ?? null);
   const now = useMinuteTick();
   const rel = useRelative();
   const fmt = useNumber();

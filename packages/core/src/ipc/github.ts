@@ -1,4 +1,5 @@
 import type { TaskStatus } from "../state.ts";
+import type { RoleId } from "./tasks.ts";
 
 // IPC methods for PRs, checks, merge gates, push queue, Actions minutes and workflow checks. Owned by the GitHub work; other work only reads it.
 // Add entries as "github.<verb>": { params: ...; result: ... }. Implement them in
@@ -65,6 +66,8 @@ export interface ChecksSummary {
   pending: number;
   /** Names of failed check runs and status contexts, so the user sees which job broke without opening GitHub. */
   failingNames: string[];
+  /** Failed check runs of the head commit by id, so a manual send can tell a re-run from one already sent. */
+  failingRuns: Array<{ id: number; name: string }>;
 }
 
 export type GateItemId = "checks" | "up_to_date" | "merge_state" | "questions" | "reviewed" | "approval";
@@ -310,7 +313,41 @@ export interface TaskPullView {
   feedback: FeedbackItem[];
   /** Feedback routing is on for the project. */
   routing: boolean;
+  /** "Send failing checks to the agent": off with the reason when it has nothing to do. */
+  sendChecks: SendChecksState;
+  /** The run that owns the branch, and what waits in its step's queue; null when no run owns it. */
+  owner: PullOwner | null;
   problem: GithubProblem | null;
+}
+
+/**
+ * Why "Send failing checks to the agent" is off. `no_pull`: no open PR. `not_read`: the PR's
+ * checks were not read yet. `no_owner`: no run owns the branch. `none_failing`: nothing failed on
+ * the head. `all_sent`: every failure on the head already went to the agent (automatic or manual).
+ */
+export type SendChecksBlock = "no_pull" | "not_read" | "no_owner" | "none_failing" | "all_sent";
+
+export interface SendChecksState {
+  ok: boolean;
+  reason: SendChecksBlock | null;
+}
+
+export interface PullOwner {
+  runId: string;
+  role: RoleId;
+  /** The run completed: what is queued goes only when you continue the step. */
+  finished: boolean;
+  queued: number;
+}
+
+export interface SendChecksResult {
+  /** Failures written into the queued message: Actions jobs with their log, other checks with a link. */
+  checks: number;
+  /** Failures left out because they already went to the agent for this head. */
+  skipped: number;
+  /** The run whose step queue holds the message, and the queued message itself. */
+  runId: string;
+  messageId: string;
 }
 
 // ---- Issue import (A4): an open issue fills the composer. Its text is untrusted data.
@@ -430,6 +467,11 @@ export interface GithubIpc {
   /** Manual refresh; emits "github.changed" { projectId } when done. */
   "github.refresh": { params: { projectId: string }; result: GithubSync };
   /**
+   * The app window regained focus: refreshes PR state for projects with a task in review and for
+   * `projectId` when it has an open PR, at most once every 30 s. Returns the projects it read.
+   */
+  "github.focus": { params: { projectId: string | null }; result: { refreshed: string[] } };
+  /**
    * Pushes one branch once. Never forces. headSha must still be the branch tip, so a branch that
    * moved after the user looked at it is not pushed blind.
    */
@@ -458,6 +500,15 @@ export interface GithubIpc {
   "github.setRouting": { params: { projectId: string; enabled: boolean }; result: { enabled: boolean } };
   /** Sends held feedback to the step that owns the branch; a finished step continues on its profile. */
   "github.sendFeedback": { params: { taskId: string }; result: { sent: number } };
+  /**
+   * Reads the failed steps of every failing check on the PR head and puts one message into the
+   * queue of the step that owns the branch: queued only, editable and deletable until a turn
+   * boundary or a continue takes it. Never starts a turn. `headSha` must still be the PR head;
+   * failures already sent for that head (by check run id) are left out.
+   */
+  "github.sendChecks": { params: { taskId: string; headSha: string }; result: SendChecksResult };
+  /** Continues a finished owning step with what waits in its queue, on its profile. Your click only. */
+  "github.continueQueued": { params: { taskId: string }; result: { runId: string } };
   /** Open issues of the project's repo (pull requests left out), most recently updated first. */
   "github.issues": { params: { projectId: string }; result: IssuesResult };
   "github.issue": { params: { projectId: string; number: number }; result: IssueDetail };

@@ -1152,6 +1152,20 @@ export class Orchestrator {
     return this.db.runView(this.db.run(runId));
   }
 
+  /**
+   * Puts a message Crewyard wrote for you (failing checks) into the step's queue and leaves it
+   * there: unlike `message`, it never hands it to an idle run or wakes a hibernated one, so you
+   * read, edit or delete it before a turn boundary, a resume or a continue takes it.
+   */
+  enqueue(runId: string, text: string): { run: RunView; messageId: string } {
+    const run = this.db.run(runId);
+    if (this.db.task(run.task_id).cancelled_at) throw new OrchestratorError("run.ended");
+    const messageId = this.turns.queue.add(run.task_id, run.member_id, text);
+    this.audit(run.task_id, runId, "run.message", { chars: text.length, queued: true, source: "github.checks" });
+    this.emitTask(run.task_id, "queue");
+    return { run: this.db.runView(this.db.run(runId)), messageId };
+  }
+
   // ---------------------------------------------------------------- follow-up queue and undo
 
   queueEdit(runId: string, messageId: string, text: string): RunView {

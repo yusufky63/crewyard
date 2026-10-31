@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Check, CircleHelp, Clock, ExternalLink, GitMerge, GitPullRequest, MessageSquare, ShieldAlert, ShieldCheck, Upload, X } from "lucide-react";
+import { AlertTriangle, Check, CircleHelp, Clock, ExternalLink, GitMerge, GitPullRequest, ListPlus, MessageSquare, Play, ShieldAlert, ShieldCheck, Upload, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button, Label, Panel } from "@crewyard/ui";
 import type { ChecksSummary, FeedbackItem, GateStatus, IpcMethod, IpcParams, IpcResult, TaskPullView } from "@crewyard/core";
@@ -174,6 +174,7 @@ function FeedbackList({ v, onError }: { v: TaskPullView; onError: (err: unknown)
   return (
     <div className="tp-sec">
       <Label>{t("taskPull.feedback.label")}</Label>
+      <SendChecks v={v} headSha={v.live?.headSha ?? null} onError={onError} />
       <label className="tp-toggle">
         <input type="checkbox" checked={v.routing} onChange={(e) => void toggle(e.target.checked)} />
         <span>{t("taskPull.feedback.routing")}</span>
@@ -207,6 +208,76 @@ function FeedbackList({ v, onError }: { v: TaskPullView; onError: (err: unknown)
           </Button>
           <p className="muted tp-small">{t("taskPull.feedback.sendNote")}</p>
         </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * "Send failing checks to the agent" (omux's "Send Failing Checks to Session"): the failed steps'
+ * log tails go into the owning step's queue, never straight to the agent. Off with its reason when
+ * there is nothing to send. A finished step takes its queue only when you continue it.
+ */
+function SendChecks({ v, headSha, onError }: { v: TaskPullView; headSha: string | null; onError: (err: unknown) => void }) {
+  const { t } = useTranslation("github");
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState<string | null>(null);
+  const s = v.sendChecks;
+  const owner = v.owner;
+  const held = v.feedback.some((f) => f.state === "held");
+  const send = async () => {
+    if (!headSha) return;
+    setBusy(true);
+    setDone(null);
+    try {
+      const res = await (FIXTURE ? Promise.resolve({ checks: 2, skipped: 0 }) : call("github.sendChecks", { taskId: v.taskId, headSha }));
+      const queued = t(owner?.finished ? "taskPull.checks.queuedFinished" : "taskPull.checks.queuedLive", { count: res.checks });
+      setDone(res.skipped ? `${queued} ${t("taskPull.checks.skipped", { count: res.skipped })}` : queued);
+    } catch (err) {
+      onError(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const go = async () => {
+    setBusy(true);
+    setDone(null);
+    try {
+      await write("github.continueQueued", { taskId: v.taskId });
+      setDone(t("taskPull.checks.continued"));
+    } catch (err) {
+      onError(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const why = `tp-checks-why-${v.taskId}`;
+  return (
+    <div className="tp-sec">
+      <div className="tp-actions">
+        <Button size="sm" variant="secondary" disabled={!s.ok || busy || !headSha} title={s.ok ? t("taskPull.checks.sendTitle") : undefined} aria-describedby={s.ok ? undefined : why} onClick={() => void send()}>
+          <ListPlus {...ICON} />
+          {t("taskPull.checks.send")}
+        </Button>
+        {owner?.finished && owner.queued > 0 && !held && (
+          <Button size="sm" variant="primary" disabled={busy} onClick={() => void go()}>
+            <Play {...ICON} />
+            {t("taskPull.checks.continue", { count: owner.queued })}
+          </Button>
+        )}
+      </div>
+      {s.ok ? (
+        <p className="muted tp-small">{t("taskPull.checks.note")}</p>
+      ) : (
+        <p className="muted tp-small" id={why}>
+          {t(`taskPull.checks.reason.${s.reason}`)}
+        </p>
+      )}
+      {owner?.finished && owner.queued > 0 && !held && <p className="muted tp-small">{t("taskPull.checks.continueNote")}</p>}
+      {done && (
+        <p className="st-ok tp-small" role="status">
+          {done}
+        </p>
       )}
     </div>
   );

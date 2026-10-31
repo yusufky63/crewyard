@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ChecksSummary } from "@crewyard/core";
 import { evaluateGate, mergeBlock, mergeStateStatus, summarizeChecks, toMergeState } from "./gate.ts";
 
-const passed: ChecksSummary = { state: "passed", total: 3, passed: 3, failing: 0, pending: 0, failingNames: [] };
+const passed: ChecksSummary = { state: "passed", total: 3, passed: 3, failing: 0, pending: 0, failingNames: [], failingRuns: [] };
 const base = { checks: passed, behindBy: 0, mergeState: "clean" as const, draft: false, ciConfigured: true, openQuestions: 0, ownerApproved: false };
 const statusOf = (g: ReturnType<typeof evaluateGate>) => Object.fromEntries(g.items.map((i) => [i.id, i.status]));
 
@@ -104,7 +104,7 @@ describe("checks summary", () => {
     const s = summarizeChecks(
       [
         { name: "check", status: "completed", conclusion: "success" },
-        { name: "e2e", status: "completed", conclusion: "failure" },
+        { id: 12, name: "e2e", status: "completed", conclusion: "failure" },
         { name: "docs", status: "completed", conclusion: "skipped" },
         { name: "lint", status: "in_progress", conclusion: null },
       ],
@@ -113,7 +113,18 @@ describe("checks summary", () => {
         { context: "vercel", state: "success" },
       ],
     );
-    expect(s).toEqual({ state: "failing", total: 5, passed: 2, failing: 2, pending: 1, failingNames: ["e2e", "vercel"] });
+    expect(s).toEqual({ state: "failing", total: 5, passed: 2, failing: 2, pending: 1, failingNames: ["e2e", "vercel"], failingRuns: [{ id: 12, name: "e2e" }] });
+  });
+
+  it("keeps the id of the latest run per name, so a re-run reads as a new failure", () => {
+    const s = summarizeChecks(
+      [
+        { id: 1, name: "test", status: "completed", conclusion: "failure" },
+        { id: 2, name: "test", status: "completed", conclusion: "failure" },
+      ],
+      [],
+    );
+    expect(s.failingRuns).toEqual([{ id: 2, name: "test" }]);
   });
 
   it("reports none without any check", () => {

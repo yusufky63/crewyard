@@ -1,4 +1,4 @@
-import type { ChecksSummary, FeedbackItem, PullGate, PullSummary, TaskPull, TaskPullView } from "@crewyard/core";
+import type { ChecksSummary, FeedbackItem, PullGate, PullSummary, SendChecksBlock, SendChecksState, TaskPull, TaskPullView } from "@crewyard/core";
 
 // Screenshot data for task PRs. Used only when the page URL has `fixture`, which the main process
 // sets only in screenshot mode (CREWYARD_SHOT_QUERY); a normal run never reads this file.
@@ -6,7 +6,16 @@ import type { ChecksSummary, FeedbackItem, PullGate, PullSummary, TaskPull, Task
 const T0 = Date.now();
 const ago = (min: number) => new Date(T0 - min * 60_000).toISOString();
 
-const passed: ChecksSummary = { state: "passed", total: 6, passed: 6, failing: 0, pending: 0, failingNames: [] };
+const passed: ChecksSummary = { state: "passed", total: 6, passed: 6, failing: 0, pending: 0, failingNames: [], failingRuns: [] };
+const failing: ChecksSummary = { state: "failing", total: 6, passed: 4, failing: 2, pending: 0, failingNames: ["test (ubuntu-latest)", "codecov/patch"], failingRuns: [{ id: 3101, name: "test (ubuntu-latest)" }] };
+
+// `sendChecks=<reason>` in CREWYARD_SHOT_QUERY shows the control off with that reason;
+// `ownerQueued=<n>` shows a finished owning step with n queued messages.
+const query = () => new URLSearchParams(typeof location === "undefined" ? "" : location.search);
+const sendState = (): SendChecksState => {
+  const reason = query().get("sendChecks");
+  return reason && reason !== "ok" ? { ok: false, reason: reason as SendChecksBlock } : { ok: true, reason: null };
+};
 const gate = (pushed: "pass" | "wait"): PullGate => ({
   items: [
     { id: "review", status: "pass" },
@@ -35,7 +44,7 @@ const pull = (taskId: string, number: number, head: string, state: TaskPull["sta
   worktreeRemovedAt: null,
 });
 
-const live = (p: TaskPull, title: string): PullSummary => ({
+const live = (p: TaskPull, title: string, checks: ChecksSummary = passed): PullSummary => ({
   number: p.number,
   title,
   url: p.url,
@@ -50,13 +59,13 @@ const live = (p: TaskPull, title: string): PullSummary => ({
   mergeState: p.state === "merged" ? null : "dirty",
   mergedAt: p.mergedAt,
   mergedBy: null,
-  checks: passed,
+  checks,
   gate:
     p.state === "merged"
       ? null
       : {
           items: [
-            { id: "checks", status: "pass" },
+            { id: "checks", status: checks.state === "failing" ? "fail" : "pass" },
             { id: "up_to_date", status: "pass" },
             { id: "merge_state", status: "fail" },
             { id: "questions", status: "pass" },
@@ -108,12 +117,14 @@ function build(projectId: string): TaskPullView[] {
       title: "Refactor the session store",
       status: "review",
       pull: review,
-      live: live(review, "Refactor the session store"),
+      live: live(review, "Refactor the session store", sendState().reason === "none_failing" ? passed : failing),
       mergeMethod: "squash",
       draft: null,
       cleanup: null,
       feedback,
       routing: true,
+      sendChecks: sendState(),
+      owner: { runId: "r-m11", role: "implementer", finished: query().has("ownerQueued"), queued: Number(query().get("ownerQueued") ?? 0) },
       problem: null,
     },
     {
@@ -137,6 +148,8 @@ function build(projectId: string): TaskPullView[] {
       cleanup: null,
       feedback: [],
       routing: true,
+      sendChecks: { ok: false, reason: "no_pull" },
+      owner: null,
       problem: null,
     },
     {
@@ -151,6 +164,8 @@ function build(projectId: string): TaskPullView[] {
       cleanup: { path: "C:\\Projeler\\.crewyard\\worktrees\\crewyard\\catalog-snapshot", branch: "crewyard/catalog-snapshot", ok: true, blocks: [] },
       feedback: [],
       routing: true,
+      sendChecks: { ok: false, reason: "no_pull" },
+      owner: null,
       problem: null,
     },
   ];
