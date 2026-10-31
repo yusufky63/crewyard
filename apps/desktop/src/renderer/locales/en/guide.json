@@ -7,6 +7,10 @@
   "startLink": "New here? How it works",
   "needsProject": "Open a project first",
   "index": "On this page",
+  "noProject": {
+    "text": "Most buttons here open a project screen, so they wait until you add a project.",
+    "go": "New project"
+  },
   "sections": {
     "flow": "The flow",
     "checklist": "Getting started",

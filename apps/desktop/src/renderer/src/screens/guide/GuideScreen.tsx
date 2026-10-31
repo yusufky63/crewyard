@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, ArrowLeft, ArrowRight, Check, ChevronRight, CircleHelp, Minus } from "lucide-react";
@@ -45,7 +45,8 @@ const asRead = <T,>(q: { data: T | undefined; isPending: boolean; error: unknown
 function useGuideActions() {
   const qc = useQueryClient();
   const { projectId, go, closeProject } = useNav();
-  const projects = useDaemon("projects.list", undefined).data ?? [];
+  const projectsQ = useDaemon("projects.list", undefined);
+  const projects = projectsQ.data ?? [];
   // The open project, else the most recently opened one, as the title bar search does.
   const target = projectId ?? projects[0]?.id ?? null;
   const [keysOpen, setKeysOpen] = useState(false);
@@ -74,7 +75,7 @@ function useGuideActions() {
     }
   };
   const available = (a: GuideAction) => !needsProject(a) || target !== null;
-  return { run, available, target, projects, projectId, keysOpen, closeKeys: () => setKeysOpen(false) };
+  return { run, available, target, projects, projectsRead: projectsQ.isSuccess, projectId, keysOpen, closeKeys: () => setKeysOpen(false) };
 }
 
 type Actions = ReturnType<typeof useGuideActions>;
@@ -83,7 +84,7 @@ function GoButton({ action, label, actions }: { action: GuideAction; label: stri
   const { t } = useTranslation("guide");
   if (!actions.available(action)) {
     return (
-      <span className="gd-go">
+      <span className="gd-go off">
         <Button size="sm" variant="ghost" disabled>
           {label}
         </Button>
@@ -337,12 +338,14 @@ function Features({ actions }: { actions: Actions }) {
 
 function Faq() {
   const { t } = useTranslation("guide");
+  // ?faq= comes only from screenshot runs, to capture an answer open.
+  const shotOpen = new URLSearchParams(window.location.search).get("faq");
   return (
     <section id={sectionId("faq")} className="gd-section" aria-labelledby={`${sectionId("faq")}-title`}>
       <SectionHead id="faq" index={4} />
       <div className="gd-faq">
         {FAQ.map((id) => (
-          <details key={id} className="frame gd-faq-item">
+          <details key={id} className="frame gd-faq-item" open={shotOpen === id ? true : undefined}>
             <summary>
               <ChevronRight className="gd-chev" size={14} strokeWidth={1.75} aria-hidden="true" />
               {t(`faq.${id}.q`)}
@@ -364,6 +367,13 @@ export function GuideScreen() {
     head?.scrollIntoView({ block: "start" });
     head?.focus({ preventScroll: true });
   };
+  useEffect(() => {
+    // ?section= comes only from screenshot runs (CREWYARD_SHOT_QUERY), to capture lower sections.
+    const wanted = new URLSearchParams(window.location.search).get("section");
+    if (!wanted || !(SECTIONS as readonly string[]).includes(wanted)) return;
+    const later = setTimeout(() => document.getElementById(`${sectionId(wanted)}-title`)?.scrollIntoView({ block: "start" }), 600);
+    return () => clearTimeout(later);
+  }, []);
   return (
     <div className="screen guide">
       <div className="page-head">
@@ -389,6 +399,14 @@ export function GuideScreen() {
           </button>
         ))}
       </nav>
+      {actions.target === null && actions.projectsRead && (
+        <div className="banner banner-info gd-noproject" role="note">
+          <span>{t("noProject.text")}</span>
+          <Button size="sm" onClick={() => void actions.run({ kind: "setup" })}>
+            {t("noProject.go")}
+          </Button>
+        </div>
+      )}
       <Flow actions={actions} />
       <Checklist actions={actions} />
       <Features actions={actions} />

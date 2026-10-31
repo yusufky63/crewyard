@@ -7,6 +7,10 @@
   "startLink": "Yeni misin? Nasıl çalıştığına bak",
   "needsProject": "Önce bir proje aç",
   "index": "Bu sayfada",
+  "noProject": {
+    "text": "Buradaki düğmelerin çoğu bir proje ekranı açar; bu yüzden bir proje ekleyene kadar beklerler.",
+    "go": "Yeni proje"
+  },
   "sections": {
     "flow": "Akış",
     "checklist": "Başlarken",
