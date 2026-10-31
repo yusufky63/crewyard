@@ -202,6 +202,24 @@ describe("task assistant", () => {
     expect(rows).toEqual([{ task_id: null, run_id: null, credential_id: "cred-k", cost_usd: 2.25, source: "estimated" }]);
   });
 
+  it("puts a preset into the drafts without a model call, suggests presets from local facts, and estimates Suggest first", async () => {
+    const s = await setup(TWO_DRAFTS);
+    const view = s.a.preset(s.project.id, "security");
+    expect(view.state).toBe("idle");
+    expect(view.drafts).toEqual([expect.objectContaining({ source: "preset", title: "Find security issues", kind: "research", size: "M", status: "open" })]);
+    expect(() => s.a.preset(s.project.id, "deploy" as never)).toThrow("assistant.preset_unknown");
+    const presets = await s.a.presets(s.project.id);
+    // The temp repo has one fresh commit, no remote, no manifest and no test command.
+    expect(presets.facts).toMatchObject({ testCommand: null, hasDependencies: false, hasRemote: false, recentCommits: 1 });
+    expect(presets.suggested[0]).toEqual({ id: "tests", reason: "no_test_command" });
+    const [cheap] = await s.a.profiles(s.project.id);
+    // 60k in and 4k out at 0.27 / 1.10 per million.
+    expect(cheap!.suggestEstimate).toEqual({ usd: 0.0206, label: "estimated" });
+    const added = await s.a.addDraft(view.drafts[0]!.id);
+    expect(s.o.get(added.taskId)).toMatchObject({ kind: "research", status: "proposed" });
+    expect(s.o.get(added.taskId).description).toContain("severity");
+  });
+
   it("refuses bad drafts and more than the cap per conversation", async () => {
     const many = Array.from({ length: 21 }, (_, i) => propose({ title: `Task ${i}`, kind: "docs" }));
     const s = await setup([propose({ title: "", kind: "code" }), propose({ title: "x", kind: "deploy" }), ...many]);

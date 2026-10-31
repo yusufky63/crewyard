@@ -1,4 +1,5 @@
 import type { AssistantIpc } from "@crewyard/core";
+import { projectFacts } from "../assistant/facts.ts";
 import { AssistantService, type AssistantServiceOptions } from "../assistant/service.ts";
 import { orchestratorFor } from "../orchestrator/index.ts";
 import { HIBERNATION_KEY, readHibernation } from "../settings/values.ts";
@@ -38,6 +39,20 @@ export function assistantFor(ctx: HandlerContext, overrides: Partial<Omit<Assist
         const counts = o.db.activeCounts();
         return { total: counts.total, byProfile: counts.byProfile };
       },
+      task: (taskId) => {
+        try {
+          const t = o.get(taskId);
+          return { projectId: t.projectId, status: t.status, kind: t.kind };
+        } catch {
+          return null;
+        }
+      },
+      followupAccepted: (reportId, taskId) => mcp.reports.linkAccepted(reportId, taskId),
+      facts: async (projectId) => {
+        const row = db.prepare("select name, path from projects where id = ?").get(projectId) as { name: string; path: string } | undefined;
+        if (!row) throw new Error("project.not_found");
+        return projectFacts(row.path, row.name);
+      },
       idleMinutes: () => readHibernation((db.prepare("select value from settings where key = ?").get(HIBERNATION_KEY) as { value: string } | undefined)?.value).idleMinutes,
     },
   });
@@ -56,5 +71,8 @@ export function createAssistantHandlers(ctx: HandlerContext): HandlerMap<Assista
     "assistant.clear": ({ projectId }) => a.clear(projectId),
     "assistant.addDraft": ({ draftId, edit }) => a.addDraft(draftId, edit),
     "assistant.discardDraft": ({ draftId }) => a.discardDraft(draftId),
+    "assistant.report": ({ taskId }) => a.report(taskId),
+    "assistant.presets": ({ projectId }) => a.presets(projectId),
+    "assistant.preset": ({ projectId, presetId }) => a.preset(projectId, presetId),
   };
 }

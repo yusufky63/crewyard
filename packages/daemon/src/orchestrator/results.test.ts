@@ -8,10 +8,23 @@ const verdict = { verdict: "pass", summary: "Good.", comments: [] };
 const plan = { summary: "Rate limit logins.", steps: [{ title: "Add a token bucket", detail: "5 per minute per account" }, { title: "Tests", detail: "" }], acceptanceCriteria: ["429 after five tries"], risks: ["clock skew"] };
 
 describe("results", () => {
-  it("asks only the planner and the reviewer for a result", () => {
+  it("asks only the planner, the reviewer and the researcher for a result", () => {
     expect(outputSchemaFor("reviewer")?.name).toBe("review_verdict");
     expect(outputSchemaFor("planner")?.name).toBe("planner_plan");
-    for (const role of ["implementer", "tester", "researcher", "docs", "security"] as const) expect(outputSchemaFor(role)).toBeUndefined();
+    expect(outputSchemaFor("researcher")?.name).toBe("research_findings");
+    for (const role of ["implementer", "tester", "docs", "security"] as const) expect(outputSchemaFor(role)).toBeUndefined();
+  });
+
+  it("reads a researcher's findings, each with a severity, a place and a suggested task or none", () => {
+    const findings = {
+      summary: "Two problems.",
+      findings: [
+        { title: "Token in a log line", severity: "high", file: "src/log.ts", line: 12, detail: "The header is logged.", suggestedTask: { title: "Redact the header", description: "", kind: "code", acceptanceCriteria: ["No token in logs"] } },
+        { title: "Old lockfile", severity: "info", file: null, line: null, detail: "Fine for now.", suggestedTask: null },
+      ],
+    };
+    expect(readResult("researcher", ended({ output: { ok: true, value: findings } }))).toEqual({ kind: "findings", findings });
+    expect(readResult("researcher", ended({ output: { ok: true, value: { summary: "x", findings: [{ title: "t", severity: "urgent" }] } } }))).toMatchObject({ kind: "invalid" });
   });
 
   it("reads a verdict and a plan, and re-checks stored values", () => {

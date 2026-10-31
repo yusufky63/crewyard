@@ -8,9 +8,13 @@ import {
   cleanText,
   draftDescription,
   parseTaskDraft,
+  presetById,
+  suggestPresets,
   utf8Length,
   type AgentAdapter,
   type AgentEvent,
+  type AssistantDraftSource,
+  type AssistantPresetsView,
   type AssistantDraftEdit,
   type AssistantDraftView,
   type AssistantEnd,
@@ -21,6 +25,9 @@ import {
   type AssistantState,
   type AssistantView,
   type McpServerSpec,
+  type ProjectFacts,
+  type TaskPresetId,
+  type TaskReport,
   type RunHandle,
   type RunnerId,
   type StartRequest,
@@ -36,7 +43,8 @@ import { recordSpend } from "../providers/ledger.ts";
 import type { Store } from "../store.ts";
 import type { ToolOutcome } from "../mcp/session.ts";
 import { assistantPrompt, type RecapLine } from "./prompt.ts";
-import { addSpend, NO_SPEND, priceUsage, ZERO_TOTALS, type Totals } from "./spend.ts";
+import { readTaskReport } from "./reports.ts";
+import { addSpend, estimateSuggest, NO_SPEND, priceUsage, ZERO_TOTALS, type Totals } from "./spend.ts";
 
 // The task assistant (docs/adr/0014): one read-only runner session per project that turns a
 // conversation into task drafts. It is not a crew run: it has no task, step or worktree, so it
@@ -59,6 +67,12 @@ export interface AssistantHost {
   activeRuns(): { total: number; byProfile: Map<string, number> };
   /** The hibernation setting's idle minutes. */
   idleMinutes(): number;
+  /** A task's derived status and kind, through the orchestrator's public get(); null when it is gone. */
+  task(taskId: string): { projectId: string; status: string; kind: TaskKind } | null;
+  /** Closes the agent's follow-up in the Inbox as accepted, pointing at the task made from it. */
+  followupAccepted(reportId: string, taskId: string): void;
+  /** What is known about the project locally: no model call, no network. */
+  facts(projectId: string): Promise<ProjectFacts>;
 }
 
 export interface AssistantServiceOptions {
@@ -101,8 +115,11 @@ interface MessageRow {
 
 interface DraftRow {
   id: string;
-  conversation_id: string;
+  conversation_id: string | null;
   project_id: string;
+  source: AssistantDraftSource;
+  source_task_id: string | null;
+  source_key: string | null;
   title: string;
   description: string;
   kind: TaskKind;
@@ -193,6 +210,7 @@ export class AssistantService {
       model: c.profile.defaultModel ?? c.model?.id ?? null,
       unavailable,
       paid: c.profile.credential.kind === "api_key",
+      suggestEstimate: estimateSuggest(c, this.now()),
     };
   }
 
@@ -286,6 +304,14 @@ export class AssistantService {
     const id = this.insertLine(conv.id, "user", text);
     await this.start(conv, candidate, { id, text });
     return this.get(projectId);
+  }
+
+  /** The open conversation, or a new one with no profile yet (a preset picked before any message). */
+  private conversationOrNew(projectId: string): ConversationRow {
+    const conv = this.open(projectId);
+    if (conv) return conv;
+    this.db.prepare("insert into assistant_conversations (id, project_id, created_at) values (?, ?, ?)").run(randomUUID(), projectId, this.iso());
+    return this.open(projectId)!;
   }
 
   /** The open conversation, moved to this profile if it was on another (a native session cannot follow). */
@@ -637,7 +663,8 @@ export class AssistantService {
     this.db
       .prepare("update assistant_drafts set title = ?, description = ?, kind = ?, acceptance = ?, size = ?, status = 'added', task_id = ? where id = ?")
       .run(d.title, d.description, d.kind, JSON.stringify(d.acceptance), d.size, task.id, draftId);
-    this.opts.store.appendEvent({ kind: "assistant.draft_added", source: "assistant", payload: { draftId, edited: Boolean(edit) }, projectId: row.project_id, taskId: task.id });
+    if (row.source === "followup" && row.source_key?.startsWith("followup:")) this.opts.host.followupAccepted(row.source_key.slice("followup:".length), task.id);
+    this.opts.store.appendEvent({ kind: "assistant.draft_added", source: "assistant", payload: { draftId, edited: Boolean(edit), from: row.source, sourceTaskId: row.source_task_id }, projectId: row.project_id, taskId: task.id });
     this.emitNow(row.project_id);
     return { draft: draftView(this.draftRow(draftId)), taskId: task.id };
   }
@@ -648,6 +675,53 @@ export class AssistantService {
     this.db.prepare("update assistant_drafts set status = 'discarded' where id = ?").run(draftId);
     this.emitNow(row.project_id);
     return draftView(this.draftRow(draftId));
+  }
+
+  // ---------------------------------------------------------------- reports and presets
+
+  /**
+   * A finished non-code task's report, with its suggested drafts created once (a finding's
+   * suggested task, an open follow-up). Null while the task is not done or produced nothing.
+   */
+  report(taskId: string): TaskReport | null {
+    const task = this.opts.host.task(taskId);
+    if (!task || task.kind === "code" || task.status !== "done") return null;
+    const read = readTaskReport(this.db, taskId);
+    if (!read) return null;
+    const insert = this.db.prepare(
+      `insert or ignore into assistant_drafts (id, conversation_id, project_id, source, source_task_id, source_key, title, description, kind, acceptance, size, created_at)
+       values (?, null, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    let added = false;
+    for (const sug of read.suggestions) {
+      const d = sug.draft;
+      const res = insert.run(randomUUID(), task.projectId, sug.source, taskId, sug.key, d.title, d.description, d.kind, JSON.stringify(d.acceptance), d.size, this.iso());
+      added ||= Number(res.changes) > 0;
+    }
+    if (added) this.opts.store.appendEvent({ kind: "assistant.suggestions", source: "assistant", payload: { count: read.suggestions.length }, projectId: task.projectId, taskId });
+    const drafts = (this.db.prepare("select * from assistant_drafts where source_task_id = ? order by created_at, rowid").all(taskId) as unknown as DraftRow[]).map(draftView);
+    return { taskId, ...read.report, drafts };
+  }
+
+  async presets(projectId: string): Promise<AssistantPresetsView> {
+    this.opts.host.project(projectId);
+    const facts = await this.opts.host.facts(projectId);
+    return { facts, suggested: suggestPresets(facts) };
+  }
+
+  /** A preset as an editable draft in the drafts column; no model call. */
+  preset(projectId: string, presetId: TaskPresetId): AssistantView {
+    this.opts.host.project(projectId);
+    const p = presetById(presetId);
+    if (!p) fail("assistant.preset_unknown");
+    const conv = this.conversationOrNew(projectId);
+    const n = Number((this.db.prepare("select count(*) as n from assistant_drafts where conversation_id = ?").get(conv.id) as { n: number }).n);
+    if (n >= ASSISTANT_LIMITS.draftsPerConversation) fail("assistant.too_many_drafts");
+    this.db
+      .prepare("insert into assistant_drafts (id, conversation_id, project_id, source, source_key, title, description, kind, acceptance, size, created_at) values (?, ?, ?, 'preset', ?, ?, ?, ?, '[]', ?, ?)")
+      .run(randomUUID(), conv.id, projectId, `preset:${p.id}:${randomUUID()}`, p.title, p.description, p.kind, p.size, this.iso());
+    this.emitNow(projectId);
+    return this.get(projectId);
   }
 
   private draftRow(id: string): DraftRow {
@@ -710,6 +784,8 @@ function draftView(r: DraftRow): AssistantDraftView {
   return {
     id: r.id,
     conversationId: r.conversation_id,
+    source: r.source,
+    sourceTaskId: r.source_task_id,
     title: r.title,
     description: r.description,
     kind: r.kind,

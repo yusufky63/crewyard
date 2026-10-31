@@ -1,4 +1,5 @@
 import type { AssistantSpendLabel, TaskDraftInput } from "../assistant.ts";
+import type { PresetSuggestion, ProjectFacts, TaskPresetId } from "../presets.ts";
 import type { RunnerId } from "../events.ts";
 import type { TaskKind, TaskSize } from "./tasks.ts";
 
@@ -40,9 +41,15 @@ export interface AssistantLine {
   truncated?: boolean;
 }
 
+/** Where a draft came from: the assistant's propose_task, a preset you picked, or a finished task's finding or follow-up. */
+export type AssistantDraftSource = "assistant" | "preset" | "finding" | "followup";
+
 export interface AssistantDraftView extends TaskDraftInput {
   id: string;
-  conversationId: string;
+  conversationId: string | null;
+  source: AssistantDraftSource;
+  /** For a finding or follow-up: the finished task it was suggested by. */
+  sourceTaskId: string | null;
   status: "open" | "added" | "discarded";
   /** The task this draft became; it still waits for its crew approval. */
   taskId: string | null;
@@ -86,6 +93,42 @@ export interface AssistantProfileOption {
   unavailable: "not_ready" | "no_read_only" | "no_mcp" | "no_adapter" | null;
   /** The key's spend counts in USD; false for plan sign-ins and local models. */
   paid: boolean;
+  /** What `Suggest tasks for this project` would cost on this profile, shown before you click it. */
+  suggestEstimate: { usd: number | null; label: AssistantSpendLabel };
+}
+
+export type ReportSeverity = "critical" | "high" | "medium" | "low" | "info";
+
+export interface TaskReportFinding {
+  title: string;
+  severity: ReportSeverity;
+  file: string | null;
+  line: number | null;
+  detail: string;
+}
+
+/**
+ * What a finished research, review or docs task produced (docs/adr/0014): the researcher's checked
+ * findings, a reviewer's verdict, a planner's plan, or the last run's final message. Agent text:
+ * cleaned, capped, shown as text only.
+ */
+export interface TaskReport {
+  taskId: string;
+  source: "findings" | "verdict" | "plan" | "text";
+  verdict: "pass" | "changes" | null;
+  summary: string;
+  findings: TaskReportFinding[];
+  /** Something was cut to the caps. */
+  truncated: boolean;
+  at: string;
+  /** Suggested follow-up tasks from the findings and the agent's propose_followup calls. */
+  drafts: AssistantDraftView[];
+}
+
+export interface AssistantPresetsView {
+  /** A few presets that fit this project, from local facts only (no model call). */
+  suggested: PresetSuggestion[];
+  facts: ProjectFacts;
 }
 
 export interface AssistantDraftEdit {
@@ -112,6 +155,11 @@ export interface AssistantIpc {
   /** Turns a draft (with your edits) into a task with a proposed crew. Nothing starts. */
   "assistant.addDraft": { params: { draftId: string; edit?: AssistantDraftEdit }; result: { draft: AssistantDraftView; taskId: string } };
   "assistant.discardDraft": { params: { draftId: string }; result: AssistantDraftView };
+  /** A finished non-code task's report and suggested drafts; null while it is not done or produced nothing. */
+  "assistant.report": { params: { taskId: string }; result: TaskReport | null };
+  "assistant.presets": { params: { projectId: string }; result: AssistantPresetsView };
+  /** Puts a preset into the drafts column as an editable draft. Local, no model call. */
+  "assistant.preset": { params: { projectId: string; presetId: TaskPresetId }; result: AssistantView };
 }
 
 export interface AssistantTopics {

@@ -31,6 +31,13 @@ export const ASSISTANT_LIMITS = {
   viewMessages: 200,
   /** How much of the earlier conversation a fresh session (no native resume) gets quoted. */
   recapBytes: 12_000,
+  /** A finished task's report as shown: the summary, findings and each finding's text. */
+  reportBytes: 16_000,
+  reportFindings: 50,
+  findingBytes: 2_000,
+  /** Tokens `Suggest tasks for this project` is estimated at: reading a good part of a repository, a short reply. */
+  suggestTokensIn: 60_000,
+  suggestTokensOut: 4_000,
 } as const;
 
 /**

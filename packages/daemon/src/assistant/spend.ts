@@ -1,4 +1,4 @@
-import { estimateCost, peakFactor, requestCost, type AgentEvent, type AssistantSpend, type AssistantSpendLabel } from "@crewyard/core";
+import { ASSISTANT_LIMITS, estimateCost, peakFactor, requestCost, type AgentEvent, type AssistantSpend, type AssistantSpendLabel } from "@crewyard/core";
 import type { Candidate } from "../orchestrator/directory.ts";
 
 // What the task assistant spends (docs/adr/0014), priced the way the orchestrator prices runs:
@@ -87,3 +87,14 @@ export function addSpend(total: AssistantSpend, d: Pick<PricedDelta, "usd" | "la
 
 /** A new conversation: nothing spent, and "estimated" until a delta says otherwise. */
 export const NO_SPEND: AssistantSpend = { usd: 0, label: "estimated", tokensIn: 0, tokensOut: 0 };
+
+/**
+ * What `Suggest tasks for this project` is expected to cost on a profile, shown on the button
+ * before you press it (PLAN.md §9: no hidden model calls): a fixed token assumption times the
+ * catalog price and the peak factor. Always Estimated; Unknown without a price; Plan for a sign-in.
+ */
+export function estimateSuggest(c: Pick<Candidate, "profile" | "model" | "peak">, now: Date): { usd: number | null; label: AssistantSpendLabel } {
+  if (c.profile.credential.kind !== "api_key") return { usd: null, label: "plan" };
+  const usd = c.model ? estimateCost(c.model, ASSISTANT_LIMITS.suggestTokensIn, ASSISTANT_LIMITS.suggestTokensOut) : null;
+  return usd === null ? { usd: null, label: "unknown" } : { usd: Math.round(usd * peakFactor(c.peak, now) * 1e6) / 1e6, label: "estimated" };
+}

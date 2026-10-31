@@ -829,7 +829,8 @@ export const MIGRATIONS: Migration[] = [
     sql: `create index if not exists events_project on events(project_id, seq);`,
   },
   // The task assistant (docs/adr/0014): one open conversation per project, its lines and the task
-  // drafts it proposed. `totals` holds the runner's last running usage totals for the session, so a
+  // drafts it proposed, picked from a preset, or suggested by a finished task's findings and
+  // follow-ups (`source_task_id`, one draft per `source_key`). `totals` holds the runner's last running usage totals for the session, so a
   // resumed session counts only what it adds.
   {
     id: "assistant",
@@ -862,8 +863,11 @@ export const MIGRATIONS: Migration[] = [
    create index if not exists assistant_messages_conversation on assistant_messages(conversation_id, at);
    create table if not exists assistant_drafts (
      id text primary key,
-     conversation_id text not null references assistant_conversations(id),
+     conversation_id text references assistant_conversations(id),
      project_id text not null,
+     source text not null default 'assistant' check (source in ('assistant', 'preset', 'finding', 'followup')),
+     source_task_id text,
+     source_key text,
      title text not null,
      description text not null,
      kind text not null,
@@ -873,7 +877,8 @@ export const MIGRATIONS: Migration[] = [
      task_id text,
      created_at text not null
    );
-   create index if not exists assistant_drafts_conversation on assistant_drafts(conversation_id, created_at);`,
+   create index if not exists assistant_drafts_conversation on assistant_drafts(conversation_id, created_at);
+   create unique index if not exists assistant_drafts_source on assistant_drafts(source_task_id, source_key);`,
   },
 ];
 
