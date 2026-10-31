@@ -190,7 +190,13 @@ function Body({ detail, target }: { detail: TaskDetail; target: InspectorTarget 
   const recheck = useRecheck();
   const inspect = useInspector((s) => s.open);
   const { selectTask, go } = useNav();
-  const [tab, setTab] = useState<Tab>(SHOT_TAB && TABS.includes(SHOT_TAB) ? SHOT_TAB : "details");
+  const [tab, setTab] = useState<Tab>(target.tab ?? (SHOT_TAB && TABS.includes(SHOT_TAB) ? SHOT_TAB : "details"));
+  // A target that names a tab (the Crew graph's Open changes, Open files) switches to it once.
+  const [seenTarget, setSeenTarget] = useState(target);
+  if (seenTarget !== target) {
+    setSeenTarget(target);
+    if (target.tab) setTab(target.tab);
+  }
   const [error, setError] = useState<string | null>(null);
   const { run, memberId } = resolveTarget(detail, target);
   const members = detail.crew?.members ?? [];

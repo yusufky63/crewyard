@@ -31,6 +31,7 @@ export type MemberStatus =
   | "stopped"
   | "interrupted"
   | "cancelled"
+  | "skipped"
   | "standby";
 
 export type Fact =
@@ -42,7 +43,9 @@ export type Fact =
   | { code: "standby_for"; step: string; more: number }
   | { code: "branch"; base: string; branch: string }
   | { code: "kind"; kind: TaskDetail["kind"]; size: TaskDetail["size"] }
-  | { code: "queued_messages"; count: number };
+  | { code: "queued_messages"; count: number }
+  | { code: "skipped" }
+  | { code: "pending_approval" };
 
 /**
  * The crew loop on a node: the step that writes code shows its fix attempts and why the loop last
@@ -58,6 +61,8 @@ export interface GraphNodeModel {
   /** Two-digit step number of the member ("02"); also used on its standby node. */
   step: string | null;
   role: RoleId | null;
+  /** The role file's title, for a custom role. */
+  roleTitle: string | null;
   memberId: string | null;
   runner: RunnerId | null;
   model: string | null;
@@ -69,6 +74,8 @@ export interface GraphNodeModel {
   /** Shown above the node as a leader-line annotation (limit reached, resumes at). */
   limit: { resumeAt: string | null } | null;
   loop: NodeLoop | null;
+  /** A step added to an approved crew that waits for its own approval. */
+  pending: boolean;
 }
 
 export type EdgeKind = "reports" | "depends" | "fallback";
@@ -78,12 +85,16 @@ export interface GraphEdgeModel {
   from: string;
   to: string;
   kind: EdgeKind;
+  /** Set on an edge between two steps: the dependency it draws, which an edit may remove. */
+  dep?: { memberId: string; dependsOn: string };
 }
 
 export interface GraphModel {
   nodes: GraphNodeModel[];
   edges: GraphEdgeModel[];
   fallback: FallbackMode;
+  /** The crew is still a proposal, so its steps and dependencies can be edited before approval. */
+  proposal: boolean;
 }
 
 export const TASK_NODE = "task";
@@ -99,8 +110,9 @@ export function latestRun(runs: RunView[], memberId: string): RunView | null {
   return best;
 }
 
-export function memberStatus(run: RunView | null, approved: boolean, cancelled: boolean): MemberStatus {
-  if (!run) return cancelled ? "cancelled" : approved ? "queued" : "proposed";
+export function memberStatus(run: RunView | null, approved: boolean, cancelled: boolean, member?: Pick<CrewMemberView, "pendingApproval" | "skippedAt">): MemberStatus {
+  if (!run && member?.skippedAt) return "skipped";
+  if (!run) return cancelled ? "cancelled" : approved && !member?.pendingApproval ? "queued" : "proposed";
   // Hibernated: the process is stopped while the run waits; the run still holds its step.
   if (run.hibernatedAt && !run.endedAt && run.state !== "paused") return "hibernated";
   switch (run.state) {
@@ -160,6 +172,8 @@ function memberFact(member: CrewMemberView, run: RunView | null, stepOf: Map<str
     if (run.queuedMessages > 0 && run.state !== "ended") return { code: "queued_messages", count: run.queuedMessages };
     return { code: "usage", tokens: run.tokensIn + run.tokensOut, usd: run.cost.usd, provenance: run.cost.provenance };
   }
+  if (member.skippedAt) return { code: "skipped" };
+  if (member.pendingApproval) return { code: "pending_approval" };
   if (member.blockedBy) return { code: "blocked", reason: member.blockedBy };
   const waiting = member.dependsOn.filter((d) => !finished.has(d)).map((d) => stepOf.get(d) ?? d);
   if (waiting.length > 0) return { code: "after", steps: waiting.join(", ") };
@@ -177,6 +191,7 @@ export function buildGraph(task: TaskDetail): GraphModel {
       kind: "task",
       step: null,
       role: null,
+      roleTitle: null,
       memberId: null,
       runner: null,
       model: null,
@@ -187,6 +202,7 @@ export function buildGraph(task: TaskDetail): GraphModel {
       fact: task.worktree ? { code: "branch", base: task.baseBranch ?? "", branch: task.worktree.branch } : { code: "kind", kind: task.kind, size: task.size },
       limit: null,
       loop: null,
+      pending: false,
     },
   ];
   const edges: GraphEdgeModel[] = [];
@@ -199,12 +215,13 @@ export function buildGraph(task: TaskDetail): GraphModel {
   members.forEach((m, i) => {
     const run = latestRun(task.runs, m.id);
     const chosen: CandidateView | null = m.chosen;
-    const status = memberStatus(run, approved, cancelled);
+    const status = memberStatus(run, approved, cancelled, m);
     nodes.push({
       id: memberNodeId(m.id),
       kind: "member",
       step: pad2(i + 1),
       role: m.role,
+      roleTitle: m.roleTitle ?? null,
       memberId: m.id,
       runner: run?.runner ?? chosen?.runner ?? null,
       model: run ? run.model : (chosen?.model ?? null),
@@ -215,13 +232,14 @@ export function buildGraph(task: TaskDetail): GraphModel {
       fact: memberFact(m, run, stepOf, finished),
       limit: run && (run.limitReached || run.state === "rate_limited") && run.state !== "ended" ? { resumeAt: run.resumeAt } : null,
       loop: memberLoop(task.loop, m.id),
+      pending: !!m.pendingApproval,
     });
     const deps = m.dependsOn.filter((d) => byStep.has(d));
     if (deps.length === 0) edges.push({ id: `e:${TASK_NODE}>${memberNodeId(m.id)}`, from: TASK_NODE, to: memberNodeId(m.id), kind: "reports" });
     deps.forEach((d, k) => {
       const from = memberNodeId(byStep.get(d)!.id);
       // The first dependency is the step this one builds on; the rest only gate its start.
-      edges.push({ id: `e:${from}>${memberNodeId(m.id)}`, from, to: memberNodeId(m.id), kind: k === 0 ? "reports" : "depends" });
+      edges.push({ id: `e:${from}>${memberNodeId(m.id)}`, from, to: memberNodeId(m.id), kind: k === 0 ? "reports" : "depends", dep: { memberId: m.id, dependsOn: d } });
     });
 
     const next = m.standby[0];
@@ -231,6 +249,7 @@ export function buildGraph(task: TaskDetail): GraphModel {
         kind: "standby",
         step: pad2(i + 1),
         role: m.role,
+        roleTitle: m.roleTitle ?? null,
         memberId: m.id,
         runner: next.runner,
         model: next.model,
@@ -241,12 +260,13 @@ export function buildGraph(task: TaskDetail): GraphModel {
         fact: { code: "standby_for", step: pad2(i + 1), more: m.standby.length - 1 },
         limit: null,
         loop: null,
+        pending: false,
       });
       edges.push({ id: `e:${memberNodeId(m.id)}>${standbyNodeId(m.id)}`, from: memberNodeId(m.id), to: standbyNodeId(m.id), kind: "fallback" });
     }
   });
 
-  return { nodes, edges, fallback: task.fallback };
+  return { nodes, edges, fallback: task.fallback, proposal: !!crew && !approved && !cancelled };
 }
 
 export interface Point {

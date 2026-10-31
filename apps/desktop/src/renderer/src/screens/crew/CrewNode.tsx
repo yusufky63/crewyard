@@ -17,6 +17,10 @@ export interface CrewNodeData extends Record<string, unknown> {
   selected: boolean;
   onPath: boolean;
   onKey(id: string, e: KeyboardEvent<HTMLDivElement>): void;
+  /** Can start a new dependency from its right edge (any step, while some step is editable). */
+  connectable: boolean;
+  /** Its own dependencies can change, so it accepts one on its left edge. */
+  editable: boolean;
 }
 
 export type CrewFlowNode = Node<CrewNodeData, "crew">;
@@ -26,7 +30,7 @@ export function useNodeTitle() {
   const { t } = useTranslation("crew");
   return (n: GraphNodeModel, taskTitle: string): string => {
     if (n.kind === "task") return t("node.taskTitle", { title: taskTitle });
-    const role = t(`role.${n.role}`);
+    const role = t(`role.${n.role}`, { defaultValue: n.roleTitle ?? n.role ?? "" });
     const head = n.kind === "standby" ? t("node.standbyHead", { step: n.step, role }) : t("node.memberHead", { step: n.step, role });
     return `${head} · ${runnerName(t, n.runner)}`;
   };
@@ -37,7 +41,7 @@ function CrewNodeView({ id, data }: NodeProps<CrewFlowNode>) {
   const fmt = useFormatters();
   const n = data.model;
   const loop = n.loop ? fmt.loop(n.loop) : null;
-  const cls = ["crew-node", "spec", loop?.tag ? "looped" : "", n.kind === "standby" ? "standby" : "", data.selected ? "selected" : "", data.onPath ? "on-path" : ""].filter(Boolean).join(" ");
+  const cls = ["crew-node", "spec", loop?.tag ? "looped" : "", n.kind === "standby" ? "standby" : "", n.pending ? "pending" : "", n.status === "skipped" ? "skipped" : "", data.selected ? "selected" : "", data.onPath ? "on-path" : ""].filter(Boolean).join(" ");
   const fact = loop?.fact ?? fmt.fact(n.fact);
   const modelLine = n.kind === "task" ? null : [n.model ?? t("node.defaultModel"), n.account ?? t("node.noAccount")].join(" · ");
 
@@ -52,7 +56,7 @@ function CrewNodeView({ id, data }: NodeProps<CrewFlowNode>) {
       aria-haspopup="menu"
       onKeyDown={(e) => data.onKey(id, e)}
     >
-      <Handle type="target" position={Position.Left} isConnectable={false} className="crew-handle" />
+      <Handle type="target" position={Position.Left} isConnectable={data.editable} className={data.editable ? "crew-handle on" : "crew-handle"} />
       {n.limit && (
         <span className="crew-annot" aria-hidden="true">
           <span>{t("annot.limit")}</span>
@@ -60,7 +64,7 @@ function CrewNodeView({ id, data }: NodeProps<CrewFlowNode>) {
         </span>
       )}
       {/* The role sits on the top border like a drawing label, which leaves the tile four rows. */}
-      <span className="lbl crew-node-role">{n.kind === "task" ? t("node.task") : t("node.memberHead", { step: n.step, role: t(`role.${n.role}`) })}</span>
+      <span className="lbl crew-node-role">{n.kind === "task" ? t("node.task") : t("node.memberHead", { step: n.step, role: fmt.role(n.role ?? "", n.roleTitle) })}</span>
       {n.kind === "task" ? (
         <span className="crew-node-title" title={data.taskTitle}>
           {data.taskTitle}
@@ -94,7 +98,7 @@ function CrewNodeView({ id, data }: NodeProps<CrewFlowNode>) {
           {loop.tag}
         </span>
       )}
-      <Handle type="source" position={Position.Right} isConnectable={false} className="crew-handle" />
+      <Handle type="source" position={Position.Right} isConnectable={data.connectable} className={data.connectable ? "crew-handle on" : "crew-handle"} />
     </div>
   );
 }

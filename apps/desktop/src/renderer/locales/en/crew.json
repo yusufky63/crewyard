@@ -36,7 +36,8 @@
     "reports": "Reports to",
     "depends": "Depends on",
     "fallback": "Fallback",
-    "help": "Drag to arrange · Alt+arrows move · right-click or Shift+F10 for actions · F full screen"
+    "help": "Drag to arrange · Alt+arrows move · right-click or Shift+F10 for actions · F full screen",
+    "helpEdit": "Click a step to edit it · drag from a step's right edge to another step to make it wait · right-click or Shift+F10 for actions"
   },
   "zoom": {
     "label": "Zoom",
@@ -52,7 +53,8 @@
       "ask": "fallback · asks first",
       "auto": "fallback · automatic",
       "wait_for_reset": "fallback · after reset wait"
-    }
+    },
+    "remove": "Remove dependency: {{to}} waits for {{from}}"
   },
   "annot": {
     "limit": "Limit reached",
@@ -99,7 +101,8 @@
     "stopped": "Stopped",
     "interrupted": "Interrupted",
     "cancelled": "Not run",
-    "standby": "Standby"
+    "standby": "Standby",
+    "skipped": "Skipped"
   },
   "taskStatus": {
     "proposed": "Waiting for approval",
@@ -136,7 +139,9 @@
     "branch": "{{base}} → {{branch}}",
     "kind": "{{kind}} · size {{size}}",
     "queuedMessages_one": "{{count}} message waiting",
-    "queuedMessages_other": "{{count}} messages waiting"
+    "queuedMessages_other": "{{count}} messages waiting",
+    "skipped": "skipped by you",
+    "pendingApproval": "waits for your approval"
   },
   "blocked": {
     "admission": {
@@ -171,8 +176,27 @@
       "no_run": "No run yet, so there is no id",
       "superseded": "A later run already continues this step",
       "working": "The agent is still working, so there is nothing to check",
-      "no_target": "This step has no other account to hand off to"
-    }
+      "no_target": "This step has no other account to hand off to",
+      "no_request": "Nothing asks about a handoff for this step now",
+      "no_reset": "The reset time is not known",
+      "last_step": "A crew keeps at least one step",
+      "skipped": "This step is already skipped",
+      "nothing_live": "No step is running",
+      "nothing_paused": "No step is paused"
+    },
+    "open_changes": "Open changes",
+    "open_files": "Open files",
+    "retry_failed": "Retry step",
+    "handoff_now": "Hand off now…",
+    "wait_reset": "Wait for reset",
+    "edit": "Edit step…",
+    "add_step": "Add a step…",
+    "add_after": "Add a step after this…",
+    "remove_step": "Remove step",
+    "skip": "Skip step…",
+    "follow_up": "Add a follow-up step…",
+    "pause_all": "Pause all",
+    "resume_all": "Resume all"
   },
   "stop": {
     "title": "Stop this agent?",
@@ -199,7 +223,17 @@
     "message": "Message sent",
     "copied": "Run id copied",
     "retry": "Checking {{target}} again",
-    "handoff": "Handing off {{target}}"
+    "handoff": "Handing off {{target}}",
+    "edit": "Crew updated · forecast {{cost}}",
+    "approved": "Crew approved; steps start as slots free up",
+    "approvedSteps": "New steps approved",
+    "skip": "Skipped {{target}}",
+    "followUp": "Follow-up added. It runs after you approve it",
+    "pauseAll_one": "Pausing {{count}} step",
+    "pauseAll_other": "Pausing {{count}} steps",
+    "resumeAll_one": "Resuming {{count}} step",
+    "resumeAll_other": "Resuming {{count}} steps",
+    "waitReset": "{{target}} waits for its limit to reset"
   },
   "error": {
     "generic": "The action failed ({{code}})",
@@ -219,9 +253,34 @@
     },
     "task": {
       "not_found": "That task no longer exists",
-      "cancelled": "The task was stopped"
+      "cancelled": "The task was stopped",
+      "not_proposed": "This crew is already approved"
     },
-    "crew": { "read_only_profile": "That account is read-only and this step changes files" },
+    "crew": {
+      "read_only_profile": "That account is read-only and this step changes files",
+      "unknown_step": "That step no longer exists",
+      "unknown_role": "That role is not available in this project",
+      "self": "A step cannot wait for itself",
+      "exists": "It already waits for that step",
+      "missing": "It does not wait for that step",
+      "cycle": "That would make a loop",
+      "started": "That step already ran",
+      "approved": "That step belongs to the approved crew",
+      "not_finished": "A follow-up goes after a finished step",
+      "last_step": "A crew keeps at least one step",
+      "too_many": "This crew has as many steps as it can hold",
+      "unknown_candidate": "That account was not scored for this role",
+      "independence": "Two steps would use the same model, against the independence rule",
+      "read_only_lease": "A read-only role never gets the worktree's write lease",
+      "standby_chosen": "The account in use cannot also stand by",
+      "standby_duplicate": "That account is already in the chain",
+      "standby_too_long": "The standby chain is full",
+      "skipped": "That step is already skipped",
+      "no_candidate": "A step has no account yet",
+      "missing_profile": "A step has no account yet",
+      "unknown_profile": "That account is not available",
+      "member_not_found": "That step no longer exists"
+    },
     "handoff": {
       "same_profile": "The step already runs on that account",
       "open": "This step is already being handed off",
@@ -238,9 +297,92 @@
   },
   "loop": {
     "attempt": "Fix attempt {{attempt}} of {{max}}",
-    "verdict": { "pass": "Pass", "changes": "Changes requested" },
+    "verdict": {
+      "pass": "Pass",
+      "changes": "Changes requested"
+    },
     "commit": "Commit {{sha}}",
     "noCommit": "No commit pinned",
     "stale": "Stale"
+  },
+  "bar": {
+    "label": "Crew",
+    "proposal": "Proposal",
+    "running": "Running crew",
+    "estimate": "Forecast {{cost}}",
+    "approve": "Approve and start",
+    "approveNote": "Nothing starts until you approve.",
+    "addStep": "Add step",
+    "pauseAll": "Pause all",
+    "resumeAll": "Resume all",
+    "pending_one": "{{count}} new step waits for your approval",
+    "pending_other": "{{count}} new steps wait for your approval",
+    "approveSteps": "Approve new steps",
+    "problem": "Before approving: {{problem}}"
+  },
+  "panel": {
+    "label": "Edit {{target}}",
+    "close": "Close the step editor",
+    "role": "Role",
+    "roleFile": "{{title}} · role file",
+    "ai": "AI and model",
+    "aiHint": "Every account scored for this role, best first.",
+    "loading": "Scoring candidates…",
+    "loadError": "The candidates could not be read ({{code}})",
+    "none": "No account fits this role. Add one in Providers, or pick another role.",
+    "inUse": "In use",
+    "use": "Use",
+    "score": "score {{score}}",
+    "headroom": "{{pct}}% left",
+    "headroomUnknown": "headroom unknown",
+    "conflict": "Same model as step {{step}}",
+    "standby": "Standby, in order",
+    "standbyHint": "Drag accounts into the order they take over. Alt+Up and Alt+Down move the focused one.",
+    "standbyEmpty": "No standby: if this step hits a limit, it waits for you. Drag an account here.",
+    "standbyFull": "The chain holds at most {{max}}",
+    "addStandby": "Add {{alias}} to the standby chain",
+    "removeStandby": "Remove {{alias}} from the standby chain",
+    "moveUp": "Move {{alias}} up",
+    "moveDown": "Move {{alias}} down",
+    "dependsOn": "Waits for",
+    "dependsHint": "In the graph, drag from a step's right edge to this step's left edge.",
+    "noOthers": "This is the only step.",
+    "remove": "Remove step",
+    "pendingNote": "This step was added to the running crew. It runs only after you approve it."
+  },
+  "addStep": {
+    "title": "Add a step",
+    "followTitle": "Add a follow-up after {{target}}",
+    "role": "Role",
+    "after": "Starts after",
+    "afterNone": "Right away, with no dependency",
+    "proposalNote": "The step gets the best account for its role; you can change it before approving.",
+    "followNote": "The new step waits for your approval before it runs.",
+    "confirm": "Add step"
+  },
+  "skip": {
+    "title": "Skip {{target}}?",
+    "body": "{{target}} will not run.",
+    "dependents": "{{steps}} wait for it and will start without its result.",
+    "noDependents": "No step waits for it.",
+    "confirm": "Skip step"
+  },
+  "handoffNow": {
+    "title": "Hand off {{target}} now",
+    "body": "This answers the limit question in the Inbox: the account you pick continues from the saved work."
+  },
+  "edit": {
+    "why": {
+      "unknown_step": "That step no longer exists",
+      "self": "A step cannot wait for itself",
+      "exists": "It already waits for that step",
+      "cycle": "That would make a loop: {{path}}",
+      "started": "This step already ran",
+      "approved": "This step belongs to the approved crew",
+      "independence": "Step {{step}} would use the same model as step {{other}}",
+      "read_only_lease": "Step {{step}} is read-only but holds the write lease",
+      "no_candidate": "Step {{step}} has no account yet",
+      "unknown_role": "The role {{role}} is not available"
+    }
   }
 }

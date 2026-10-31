@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, type KeyboardEvent } from "react";
-import { Background, BackgroundVariant, ReactFlow, useReactFlow, type NodeChange } from "@xyflow/react";
+import { Background, BackgroundVariant, ReactFlow, useReactFlow, type Connection, type Edge, type NodeChange } from "@xyflow/react";
 import { Maximize2, Minimize2, Minus, Plus, Scan } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { CrewEdge, type CrewFlowEdge } from "./CrewEdge.tsx";
@@ -31,9 +31,21 @@ export interface CanvasProps {
   onToggleFull(): void;
   /** Bumped by Reset layout so the view fits the new arrangement. */
   fitKey: number;
+  /**
+   * Steps whose dependencies can still change (a proposal, a follow-up waiting for approval). Their
+   * connect handles show, and drawing from one step's right edge to another's left edge makes the
+   * second wait for the first. Dragging the node itself still only moves it.
+   */
+  editable?: ReadonlySet<string>;
+  onConnect?(fromNodeId: string, toNodeId: string): void;
+  onRemoveDependency?(dep: { memberId: string; dependsOn: string }): void;
+  /** Accessible name of an edge's remove button. */
+  removeLabel?(fromNodeId: string, toNodeId: string): string;
 }
 
-export function CrewCanvas({ model, taskTitle, positions, selected, full, onMove, onSelect, onMenu, onToggleFull, fitKey }: CanvasProps) {
+const NO_EDIT: ReadonlySet<string> = new Set();
+
+export function CrewCanvas({ model, taskTitle, positions, selected, full, onMove, onSelect, onMenu, onToggleFull, fitKey, editable = NO_EDIT, onConnect, onRemoveDependency, removeLabel }: CanvasProps) {
   const { t } = useTranslation("crew");
   const flow = useReactFlow();
   const title = useNodeTitle();
@@ -73,9 +85,9 @@ export function CrewCanvas({ model, taskTitle, positions, selected, full, onMove
         width: NODE_W,
         height: nodeHeight(n),
         selectable: false,
-        data: { model: n, title: title(n, taskTitle), taskTitle, selected: n.id === selected, onPath: path.nodes.has(n.id), onKey },
+        data: { model: n, title: title(n, taskTitle), taskTitle, selected: n.id === selected, onPath: path.nodes.has(n.id), onKey, connectable: n.kind === "member" && editable.size > 0, editable: editable.has(n.id) },
       })),
-    [model, positions, selected, path, onKey, title, taskTitle],
+    [model, positions, selected, path, onKey, title, taskTitle, editable],
   );
 
   const fallbackLabel = t(`edge.fallback.${model.fallback}`);
@@ -105,11 +117,20 @@ export function CrewCanvas({ model, taskTitle, positions, selected, full, onMove
           type: "crew" as const,
           focusable: false,
           selectable: false,
-          data: { route: routeEdge(a, b, others, ports.get(e.id)), kind: e.kind, active: path.edges.has(e.id), label: e.kind === "fallback" ? fallbackLabel : null },
+          data: {
+            route: routeEdge(a, b, others, ports.get(e.id)),
+            kind: e.kind,
+            active: path.edges.has(e.id),
+            label: e.kind === "fallback" ? fallbackLabel : null,
+            remove: e.dep && editable.has(e.to) && onRemoveDependency ? { label: removeLabel?.(e.from, e.to) ?? "", run: () => onRemoveDependency(e.dep!) } : null,
+          },
         },
       ];
     });
-  }, [model, positions, path, fallbackLabel]);
+  }, [model, positions, path, fallbackLabel, editable, onRemoveDependency, removeLabel]);
+
+  // Only step to step, into a step that can still change; the rules (cycle, self) answer on connect.
+  const isValidConnection = useCallback((c: Connection | Edge) => c.source !== c.target && c.source.startsWith("m:") && editable.has(c.target), [editable]);
 
   const onNodesChange = useCallback(
     (changes: NodeChange<CrewFlowNode>[]) => {
@@ -159,7 +180,9 @@ export function CrewCanvas({ model, taskTitle, positions, selected, full, onMove
         snapToGrid
         snapGrid={[SNAP, SNAP]}
         nodeDragThreshold={4}
-        nodesConnectable={false}
+        nodesConnectable={editable.size > 0}
+        isValidConnection={isValidConnection}
+        onConnect={(c) => onConnect?.(c.source, c.target)}
         nodesFocusable={false}
         edgesFocusable={false}
         elementsSelectable={false}

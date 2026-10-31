@@ -1,4 +1,4 @@
-import { NO_RUN_CONTROLS, type CandidateView, type CrewMemberView, type LoopDecisionView, type RunView, type TaskDetail } from "@crewyard/core";
+import { NO_RUN_CONTROLS, type CandidateView, type CrewMemberView, type LoopDecisionView, type RoleView, type RunView, type TaskDetail } from "@crewyard/core";
 
 // Screenshot and test fixture only. CrewScreen loads it solely when the `fixture` query param is
 // present, which the main process passes only in screenshot mode (CREWYARD_SHOT_QUERY). A normal
@@ -6,17 +6,17 @@ import { NO_RUN_CONTROLS, type CandidateView, type CrewMemberView, type LoopDeci
 
 const at = (min: number) => new Date(Date.UTC(2026, 9, 30, 9, 0) + min * 60_000).toISOString();
 
-function candidate(profileId: string, alias: string, runner: CandidateView["runner"], providerId: string, model: string, usd: number | null): CandidateView {
+function candidate(profileId: string, alias: string, runner: CandidateView["runner"], providerId: string, model: string, usd: number | null, reasons: CandidateView["reasons"] = [], score = 80): CandidateView {
   return {
     profileId,
     alias,
     runner,
     providerId,
     model,
-    score: 0.8,
+    score,
     headroom: { pct: 60, window: "5h", provenance: "estimated" },
     estimate: { usd, provenance: usd === null ? "unknown" : "estimated" },
-    reasons: [],
+    reasons,
   };
 }
 
@@ -79,8 +79,55 @@ const TESTS_FAILED = { code: "loop.tests_failed" as const, params: { command: "p
  * for changes at a commit the implementer has moved on from (a stale verdict), and the implementer
  * is on its second fix attempt. The default variant is a crew mid-way with one step on a limit.
  */
-export function crewFixture(variant: "default" | "loop" = "default"): TaskDetail {
-  return variant === "loop" ? loopVariant(base()) : base();
+export type CrewFixture = "default" | "loop" | "proposal" | "manage";
+
+export function crewFixture(variant: CrewFixture = "default"): TaskDetail {
+  if (variant === "loop") return loopVariant(base());
+  if (variant === "proposal") return proposalVariant(base());
+  if (variant === "manage") return manageVariant(base());
+  return base();
+}
+
+/** What the daemon would rank for each role in the proposal fixture, best first (crew.candidates). */
+export function fixtureCandidates(role: string): CandidateView[] {
+  const why = (code: CandidateView["reasons"][number]["code"], params?: Record<string, string | number>) => ({ code, ...(params ? { params } : {}) });
+  const ranked = [
+    candidate(codex.profileId, codex.alias, codex.runner, codex.providerId, codex.model!, null, [why("fit.context", { context: 400_000 }), why("cost.unknown")], 74),
+    candidate(sonnet.profileId, sonnet.alias, sonnet.runner, sonnet.providerId, sonnet.model!, 0.18, [why("history.accepted", { accepted: 7, total: 8 })], 71),
+    candidate(deepseek.profileId, deepseek.alias, deepseek.runner, deepseek.providerId, deepseek.model!, 0.01, [why("cost.estimate", { usd: 0.01 })], 66),
+    candidate(glm.profileId, glm.alias, glm.runner, glm.providerId, glm.model!, 0, [why("cost.plan")], 63),
+    candidate(gemini.profileId, gemini.alias, gemini.runner, gemini.providerId, gemini.model!, 0.12, [why("fit.reasoning")], 61),
+  ];
+  return role === "planner" || role === "reviewer" ? [opus, ...ranked] : ranked;
+}
+
+/** The same crew before approval: nothing ran, so every step can still change. */
+function proposalVariant(t: TaskDetail): TaskDetail {
+  return {
+    ...t,
+    status: "proposed",
+    activeRuns: 0,
+    spend: { usd: 0, provenance: "estimated" },
+    crew: { ...t.crew!, approvedAt: null, members: t.crew!.members.map((m) => ({ ...m, standby: m.id === "m-impl" ? [sonnet, deepseek] : m.standby })) },
+    runs: [],
+    worktree: null,
+    loop: { maxIterations: 3, decisions: [], tests: [], verdicts: [] },
+  };
+}
+
+/**
+ * A running crew you are managing: the tester failed, the reviewer was skipped, and a Docs
+ * follow-up after the plan waits for approval.
+ */
+function manageVariant(t: TaskDetail): TaskDetail {
+  const [planRun, impl, tester] = t.runs as [RunView, RunView, RunView];
+  const docs: CrewMemberView = { ...member("m-docs", "docs", ["planner"], sonnet, [deepseek]), writesCode: true, edited: true, pendingApproval: true };
+  return {
+    ...t,
+    status: "failed",
+    crew: { ...t.crew!, members: [...t.crew!.members.map((m) => (m.id === "m-review" ? { ...m, skippedAt: at(18) } : m)), docs] },
+    runs: [planRun, { ...impl, state: "paused", pausedAt: at(17) }, { ...tester, state: "ended", endedAt: at(9), endReason: "failed", endDetail: "adapter_error", limitReached: false, resumeAt: null }],
+  };
 }
 
 function loopVariant(t: TaskDetail): TaskDetail {
@@ -169,4 +216,33 @@ function base(): TaskDetail {
     // The tests failed at the implementer's last turn boundary; the failure went back to the same session.
     loop: { maxIterations: 3, decisions: [decision("r-impl", "tests_failed", 1, TESTS_FAILED, 11)], tests: [], verdicts: [] },
   };
+}
+
+/** The role set the proposal fixture edits with: the built-ins and one custom role from a file. */
+export function fixtureRoles(): RoleView[] {
+  const role = (id: string, writes: RoleView["policy"]["writes"], independentOf: string[], custom?: { title: string; path: string }): RoleView => ({
+    id,
+    title: custom?.title ?? id,
+    builtin: !custom,
+    source: custom ? "repo" : "builtin",
+    path: custom?.path ?? null,
+    overrides: null,
+    policy: { writes, allowCommands: [], network: "denied" },
+    needsReadOnly: writes === "none",
+    prefersReasoning: false,
+    tokenShare: 0.15,
+    independentOf,
+    contractChars: 0,
+    steps: [],
+  });
+  return [
+    role("planner", "none", []),
+    role("implementer", "worktree", []),
+    role("reviewer", "none", ["implementer"]),
+    role("tester", "none", []),
+    role("researcher", "none", []),
+    role("docs", "docs", []),
+    role("security", "none", ["implementer"]),
+    role("perf-check", "none", ["implementer"], { title: "Performance check", path: "C:\\Projeler\\terrain lab\\.crewyard\\roles\\perf-check.md" }),
+  ];
 }

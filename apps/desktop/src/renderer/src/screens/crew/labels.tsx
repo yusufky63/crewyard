@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { ArrowLeftRight, Check, CircleDashed, CircleHelp, Clock, Gauge, GitPullRequest, Moon, Pause, RotateCcw, Square, SquareTerminal, Users, X, type LucideIcon } from "lucide-react";
+import { ArrowLeftRight, Check, CircleDashed, CircleHelp, Clock, Gauge, GitPullRequest, Moon, Pause, RotateCcw, SkipForward, Square, SquareTerminal, Users, X, type LucideIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { RunnerId, TaskStatus } from "@crewyard/core";
 import { useFormat } from "../tasks/parts.tsx";
@@ -24,6 +24,7 @@ const MEMBER: Record<MemberStatus, { tone: Tone; icon: LucideIcon | "spin" }> = 
   stopped: { tone: "muted", icon: Square },
   interrupted: { tone: "wait", icon: RotateCcw },
   cancelled: { tone: "muted", icon: Square },
+  skipped: { tone: "muted", icon: SkipForward },
   standby: { tone: "muted", icon: CircleDashed },
 };
 
@@ -103,6 +104,10 @@ export function useFormatters() {
         return t("fact.kind", { kind: t(`kind.${f.kind}`), size: f.size });
       case "queued_messages":
         return t("fact.queuedMessages", { count: f.count });
+      case "skipped":
+        return t("fact.skipped");
+      case "pending_approval":
+        return t("fact.pendingApproval");
     }
   };
 
@@ -114,7 +119,10 @@ export function useFormatters() {
   /** The fact line as one string, for the list view and tooltips. */
   const loopLine = (l: LoopLabel) => [l.tag, l.fact, l.stale ? t("loop.stale") : null].filter(Boolean).join(" · ");
 
-  return { fact, cost, loop, loopLine, time: (iso: string) => time.format(new Date(iso)) };
+  /** A step's role: built-ins are translated, a custom role shows its file's title or its id. */
+  const role = (id: string, title?: string | null) => t(`role.${id}`, { defaultValue: title ?? id });
+
+  return { fact, cost, loop, loopLine, role, time: (iso: string) => time.format(new Date(iso)) };
 }
 
 export function runnerName(t: (k: string) => string, runner: RunnerId | null): string {
