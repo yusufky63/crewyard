@@ -731,9 +731,15 @@ describe("the goal branch and its last review", () => {
 });
 
 /** A revision of cause `add` with one task you wrote, as `goals.addTask` (work item 3) stores it. */
-async function addRevision(o: Orchestrator, store: Store, projectId: string, goalId: string, spec: Spec, position: number, cause: "add" | "replan" = "add"): Promise<string> {
+/**
+ * A second revision holding one new task. A replan's plan lists the keys it keeps (`keep`) and its
+ * new task's key, as a real replan returns its frozen tasks unchanged; what it leaves out, or holds
+ * a new task for, approving it replaces (GoalPlanner.replacements).
+ */
+async function addRevision(o: Orchestrator, store: Store, projectId: string, goalId: string, spec: Spec, position: number, cause: "add" | "replan" = "add", keep: string[] = []): Promise<string> {
   const planId = randomUUID();
-  q(store, "insert into goal_plans (id, goal_id, revision, cause, plan, created_at) values (?, ?, 2, ?, ?, ?)", planId, goalId, cause, JSON.stringify({ summary: "", tasks: [] }), new Date().toISOString());
+  const planned = cause === "replan" ? [...keep, spec.key].map((key) => ({ key })) : [];
+  q(store, "insert into goal_plans (id, goal_id, revision, cause, plan, created_at) values (?, ?, 2, ?, ?, ?)", planId, goalId, cause, JSON.stringify({ summary: "", tasks: planned }), new Date().toISOString());
   const t = await flowOf(o).propose(
     { projectId, title: spec.title, kind: spec.kind, size: "S", mode: "solo", fallback: "manual" },
     {
@@ -803,6 +809,50 @@ describe("revisions after approval", () => {
     expect(at(ids.s!).released_at <= at(ids.a!).joined_at).toBe(true);
     const held = rows<{ payload: string }>(store, "select payload from events where kind = 'goal.task_held'").map((r) => JSON.parse(r.payload) as { taskId: string; reason: { code: string; params?: Record<string, unknown> } });
     expect(held).toContainEqual({ goalId, taskId: ids.c, reason: { code: "goal.waits_overlap", params: { task: "01", taskId: ids.a } } });
+  });
+});
+
+describe("approving a replan", () => {
+  it("discards the tasks it replaces in the same approval and moves the edges that waited for them", async () => {
+    const { o, store, project } = await setup();
+    const { goalId, ids } = await seedGoal(o, store, project.id, [
+      { key: "a", title: "[A] Araştır", kind: "research" },
+      { key: "b", title: "[B] Eski yol", kind: "research" },
+      { key: "c", title: "[C] Sonra araştır", kind: "research", deps: ["b"] },
+      { key: "x", title: "[X] Artık gereksiz", kind: "research" },
+    ]);
+    // Nothing is released, so every task of the first revision can still be replaced.
+    await o.goals.pauseAll(true);
+    await approve(o, goalId, ["a", "b", "c", "x"]);
+    // The replan keeps a and c, holds a new task for b, and drops x.
+    const b2 = await addRevision(o, store, project.id, goalId, { key: "b", title: "[B] Yeni yol", kind: "research" }, 1, "replan", ["a", "c"]);
+    await approve(o, goalId, ["b"], { revision: 2, budgetUsd: 100 });
+    const live = rows<{ task_id: string; key: string }>(store, "select task_id, key from goal_tasks where goal_id = ? and discarded_at is null order by key", goalId);
+    expect(live).toEqual([
+      { task_id: ids.a, key: "a" },
+      { task_id: b2, key: "b" },
+      { task_id: ids.c, key: "c" },
+    ]);
+    expect(o.get(ids.b!).status).toBe("cancelled");
+    expect(o.get(ids.x!).status).toBe("cancelled");
+    const deps = rows<{ task_id: string; depends_on: string }>(store, "select task_id, depends_on from goal_task_deps where goal_id = ? and task_id = ?", goalId, ids.c!);
+    expect(deps).toEqual([{ task_id: ids.c, depends_on: b2 }]);
+    // Kept tasks keep their place in the budget; the replaced ones hold no share any more.
+    const shares = rows<{ id: string }>(store, "select id from tasks where id in (?, ?, ?) and budget_usd > 0", ids.a!, b2, ids.c!);
+    expect(shares).toHaveLength(3);
+  });
+
+  it("refuses with goal.plan_moved when a task it replaces has started, and changes nothing", async () => {
+    const { o, store, project } = await setup();
+    const { goalId, ids } = await seedGoal(o, store, project.id, [{ key: "a", title: "[A] Araştır", kind: "research" }]);
+    await approve(o, goalId, ["a"]);
+    await waitFor(() => o.get(ids.a!).status === "done", 20_000);
+    // A plan that leaves out a task that already ran: approving it would cancel finished work.
+    const n = await addRevision(o, store, project.id, goalId, { key: "n", title: "[N] Başka iş", kind: "research" }, 1, "replan");
+    expect(await goalRefusal(approve(o, goalId, ["n"], { revision: 2, budgetUsd: 100 }))).toMatchObject({ code: "goal.plan_moved", params: { keys: "a" } });
+    expect(row<{ d: string | null }>(store, "select discarded_at as d from goal_tasks where task_id = ?", ids.a!).d).toBeNull();
+    expect(row<{ a: number | null }>(store, "select accepted as a from goal_tasks where task_id = ?", n).a).toBeNull();
+    expect(row<{ r: number }>(store, "select approved_revision as r from goals where id = ?", goalId).r).toBe(1);
   });
 });
 
@@ -906,7 +956,7 @@ describe("the stop rule and a replan", () => {
     await o.goals.decide(goalId, halt.id, "replan");
     // Replan is only recorded: the goal stays halted until you approve the new revision.
     expect(goalRow(store, goalId).halted_at).not.toBeNull();
-    const d = await addRevision(o, store, project.id, goalId, { key: "d", title: "[D] Yeni yoldan araştır", kind: "research" }, 2, "replan");
+    const d = await addRevision(o, store, project.id, goalId, { key: "d", title: "[D] Yeni yoldan araştır", kind: "research" }, 2, "replan", ["a", "b"]);
     await approve(o, goalId, ["d"], { revision: 2, budgetUsd: 100 });
     expect(goalRow(store, goalId).halted_at).toBeNull();
     expect(released(store, d)).toBe(true);

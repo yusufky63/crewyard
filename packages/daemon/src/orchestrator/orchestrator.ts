@@ -291,6 +291,8 @@ export class Orchestrator {
       resumeRun: (runId) => this.actions.resume(runId),
       retryRun: (runId) => this.actions.retry(runId),
       followUp: (runId, text) => this.messages.followUp(runId, text),
+      replacements: (goalId, revision) => this.goalPlanner.replacements(goalId, revision),
+      applyReplacements: (goalId, revision) => this.goalPlanner.applyReplacements(goalId, revision),
       tick: () => this.dispatcher.tick(),
     });
     this.db.taskExtras = (t) => ({ ...this.bestOfRunner.taskExtras(t), goal: this.goals.goalRef(t) });

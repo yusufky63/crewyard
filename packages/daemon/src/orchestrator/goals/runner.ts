@@ -280,6 +280,17 @@ export interface GoalRunnerDeps {
   retryRun(runId: string): Promise<unknown>;
   /** Messages.followUp, for a conflict sent back to the task's implementer. */
   followUp(runId: string, text: string): Promise<unknown>;
+  /**
+   * GoalPlanner.replacements: the live tasks of earlier revisions that approving `revision` would
+   * discard, and those among them that started since it was planned (approval is then refused).
+   */
+  replacements(goalId: string, revision: number): { discard: string[]; started: Array<{ key: string }> };
+  /**
+   * GoalPlanner.applyReplacements, inside this approval's transaction: discards what the revision
+   * replaces and points kept tasks' edges at the tasks that now hold those keys. Throws
+   * `goal.plan_moved` when a replaced task started meanwhile, which rolls the approval back.
+   */
+  applyReplacements(goalId: string, revision: number): string[];
   tick(): Promise<void>;
 }
 
@@ -922,8 +933,13 @@ export class GoalRunner extends Part {
       accept.add(key);
     }
     if (accept.size === 0) throw new GoalError("goal.no_accepted");
+    // A replan replaces live tasks of earlier revisions (design §4.10). They are left out of every
+    // check below, and discarded in the approval's own transaction, so a key never runs twice.
+    const replacing = this.deps.replacements(goal.id, target.revision);
+    if (replacing.started.length > 0) throw new GoalError("goal.plan_moved", { keys: replacing.started.map((s) => s.key).join(", ") });
+    const replaced = new Set(replacing.discard);
     // Tasks earlier revisions accepted and that still count: they keep their shares.
-    const kept = all.filter((t) => t.plan_id !== target.id && t.accepted === 1 && t.discarded_at === null && !this.db.task(t.task_id).cancelled_at);
+    const kept = all.filter((t) => t.plan_id !== target.id && t.accepted === 1 && t.discarded_at === null && !replaced.has(t.task_id) && !this.db.task(t.task_id).cancelled_at);
     if (kept.length + accept.size > goal.max_tasks) throw new GoalError("goal.too_many", { max: goal.max_tasks });
     const acceptedIds = new Set([...kept.map((t) => t.task_id), ...mine.filter((t) => accept.has(t.key)).map((t) => t.task_id)]);
 
@@ -938,7 +954,14 @@ export class GoalRunner extends Part {
       if (problem) throw new GoalError("goal.crew", { task: t.key, code: problem.code });
     }
 
-    const deps = this.rows.deps(goal.id);
+    // A kept task's edge to a replaced task moves to the task that holds its key now, as
+    // applyReplacements will write it, or goes when the revision dropped that key.
+    const keyOfTask = new Map(all.map((t) => [t.task_id, t.key]));
+    const deps = this.rows.deps(goal.id).flatMap((d) => {
+      if (!replaced.has(d.depends_on)) return [d];
+      const to = byKey.get(keyOfTask.get(d.depends_on) ?? "");
+      return to ? [{ ...d, depends_on: to.task_id }] : [];
+    });
     const live = [...kept, ...mine];
     const nodes: DagNode[] = live.map((t) => {
       const mineDeps = deps.filter((d) => d.task_id === t.task_id);
@@ -987,10 +1010,12 @@ export class GoalRunner extends Part {
     const accepted = mine.filter((t) => accept.has(t.key));
     const skippedRows = mine.filter((t) => !accept.has(t.key));
     let liftedHalt = false;
+    let discarded: string[] = [];
     const done = this.db.tx(() => {
       const now = this.rows.one<GoalPlanRow>("select * from goal_plans where id = ?", target.id);
       const newest = this.rows.latestPlan(goal.id);
       if (!now || now.approved_at || now.superseded_at || newest?.id !== now.id || this.rows.goal(goal.id).stopped_at) return false;
+      discarded = this.deps.applyReplacements(goal.id, target.revision);
       for (const t of accepted) {
         this.rows.run("update goal_tasks set accepted = 1 where task_id = ?", t.task_id);
         this.rows.run("update tasks set budget_usd = ? where id = ?", split.shares[t.task_id] ?? 0, t.task_id);
@@ -1001,7 +1026,9 @@ export class GoalRunner extends Part {
         this.rows.run("update tasks set cancelled_at = ? where id = ? and cancelled_at is null", at, t.task_id);
       }
       if (goal.integration_task_id && split.shares.review !== undefined && !(integrationShare && integrationShare > 0)) this.rows.run("update tasks set budget_usd = ? where id = ?", split.shares.review, goal.integration_task_id);
-      this.addOverlapOrder(goal.id, [...kept, ...mine], acceptedIds);
+      // Read again: applyReplacements numbered the kept tasks as the revision does.
+      const liveIds = new Set(live.map((t) => t.task_id));
+      this.addOverlapOrder(goal.id, this.rows.tasks(goal.id).filter((t) => liveIds.has(t.task_id)), acceptedIds);
       // Your approval of a revision is also your answer to a halt: the new plan starts from here.
       liftedHalt = this.rows.goal(goal.id).halted_at !== null;
       this.rows.run("update goals set approved_revision = ?, approved_at = ?, budget_usd = ?, max_parallel = ?, halted_reason = null, halted_at = null where id = ?", target.revision, at, budgetUsd, maxParallel, goal.id);
@@ -1026,6 +1053,7 @@ export class GoalRunner extends Part {
       ...(reviewEstimate ? { reviewEstimate } : {}),
     });
     for (const t of [...accepted, ...skippedRows]) this.emitTask(t.task_id, "goal");
+    for (const id of discarded) this.emitTask(id, "cancelled");
     if (goal.integration_task_id) {
       // The goal branch is made now when it can be; the pass makes it later if git was busy.
       await this.join.ensureGoalWorktree(goal).catch(() => undefined);
