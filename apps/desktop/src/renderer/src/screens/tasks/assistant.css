@@ -91,11 +91,11 @@
 .as-box[data-over] { border-color: var(--bad); box-shadow: inset 0 0 0 1px var(--bad); }
 .as-box textarea {
   display: block; width: 100%; field-sizing: content; min-height: calc(2lh + 12px); max-height: calc(8lh + 12px); resize: none;
-  padding: 8px 10px; border: 0; background: none; color: var(--ink); font-size: 13px; line-height: 1.55; align-self: stretch;
+  padding: 6px 10px; border: 0; background: none; color: var(--ink); font-size: 13px; line-height: 1.55; align-self: stretch;
 }
 .as-box textarea::placeholder { color: var(--ink-3); }
 .as-box textarea:focus-visible { outline: none; border: 0; box-shadow: none; }
-.as-box-bar { display: grid; justify-items: end; gap: 2px; padding: 4px 6px 6px 0; min-width: 0; }
+.as-box-bar { display: grid; justify-items: end; gap: 2px; padding: 3px 4px 4px 0; min-width: 0; }
 .as-keys-line { display: flex; align-items: center; gap: 4px 8px; min-width: 0; max-width: 100%; }
 .as-keys { font: 400 11px / 1.2 var(--mono); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .as-bytes { font: 400 11px / 1 var(--mono); color: var(--warn); white-space: nowrap; }
@@ -105,12 +105,17 @@
 @container (max-width: 520px) { .as-keys { display: none; } }
 .as-compose { container-type: inline-size; }
 .as-term > .tk-error { margin: 0 16px 12px; }
+/* Docked in the bottom panel every line counts: the box keeps its two lines, the frame around it
+   slims, so the conversation keeps room for your message and the live row under it. */
+.as-docked .as-compose { padding: 6px 8px 6px 16px; }
+.as-docked .as-log { padding: 8px 16px; }
+.as-docked .ap-strip { padding: 6px 8px 6px 16px; gap: 6px; }
 
 /* The info tooltip beside the keys: the full key list, read-only, spend and idle stop. */
 .as-info { display: inline-flex; flex: none; }
 .as-tip {
   position: fixed; z-index: var(--z-popover); width: 300px; display: grid; gap: 6px; padding: 10px 12px;
-  background: var(--surface); border: 1px solid var(--line-strong); color: var(--ink-2); font: 400 12px / 1.45 var(--ui); pointer-events: none;
+  background: var(--surface); border: 1px solid var(--line-strong); color: var(--ink-2); font: 400 12px / 1.45 var(--ui); user-select: text;
 }
 .as-tip[hidden] { display: none; }
 

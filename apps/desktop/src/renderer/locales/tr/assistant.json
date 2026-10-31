@@ -189,7 +189,7 @@
     "starting": "Oturum başlıyor…",
     "thinking": "Düşünüyor…",
     "tool": "Şu an",
-    "elapsed": "Mesajından bu yana geçen süre",
+    "elapsed": "Bu tur başlayalı geçen süre: mesajından ya da Autopilot notundan beri",
     "queued_one": "{{count}} mesaj bu tur bitince gidecek",
     "queued_other": "{{count}} mesaj bu tur bitince gidecek"
   },

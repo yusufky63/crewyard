@@ -123,6 +123,8 @@ test("the live row shows what the agent does under your message, then the reply 
   await expect(row).toContainText("Read README.md", { timeout: 20_000 });
   await expect(row.locator(".spin")).toHaveCount(1);
   await expect(row.locator(".as-live-time")).toHaveText(/^\d+:\d\d$/);
+  // The call in progress shows once, in the live row, not again as its own line just above it.
+  await expect(log.getByText("Read README.md", { exact: true })).toHaveCount(1);
   // Stop shows while it works, in the bad tone.
   await expect(p.locator(".as-box").getByRole("button", { name: "Stop" })).toHaveClass(/btn-bad/);
   await page.screenshot({ path: join(shots, "live-dark-1280.png") });
@@ -223,7 +225,10 @@ test("one draft is edited and added; Open task takes you to it from another scre
   await expect(drafts.locator(".as-draft-added .badge-ok")).toHaveText("Added");
 
   // From another screen, Open task goes to Tasks, selects the task, opens the inspector on it
-  // and puts focus on its row.
+  // and puts focus on its row, even when you had collapsed the inspector to its strip.
+  await page.locator("main .tk-row [data-list-id]", { hasText: "Find why the Windows build is slow on this machine" }).click();
+  await page.locator("#app-inspector").getByRole("button", { name: "Collapse panel" }).click();
+  await expect(page.locator("#app-inspector")).toHaveClass(/ins-strip/);
   await page.locator("#app-sidebar").getByRole("button", { name: "Inbox", exact: true }).click();
   await expect(page.locator("main").getByRole("heading", { name: "Tasks", level: 1 })).toHaveCount(0);
   await drafts.getByRole("button", { name: "Open task" }).click();
@@ -233,8 +238,21 @@ test("one draft is edited and added; Open task takes you to it from another scre
   await expect(row.locator("[data-list-id]")).toBeFocused();
   const inspector = page.locator("#app-inspector");
   await expect(inspector).toContainText("Find why the Windows build is slow on this machine");
+  await expect(inspector).not.toHaveClass(/ins-strip/);
   await expect(inspector.getByRole("tab", { name: "Details" })).toHaveAttribute("aria-selected", "true");
+  // The expanded inspector slides in; the screenshot waits for it to settle.
+  await inspector.evaluate((el) => Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished)));
   await page.screenshot({ path: join(shots, "open-task-dark-1280.png") });
+
+  // On the Tasks screen itself, Open task leaves the Schedules view and a filter that hides the task.
+  const main = page.locator("main");
+  await main.getByRole("tab", { name: /^Done/ }).click();
+  await expect(row).toHaveCount(0);
+  await main.getByRole("group", { name: "View" }).getByRole("button", { name: /^Schedules/ }).click();
+  await drafts.getByRole("button", { name: "Open task" }).click();
+  await expect(main.getByRole("group", { name: "View" }).getByRole("button", { name: "Tasks" })).toHaveAttribute("aria-pressed", "true");
+  await expect(main.getByRole("tab", { name: /^All/ })).toHaveAttribute("aria-selected", "true");
+  await expect(row.locator("[data-list-id]")).toBeFocused();
 
   for (const name of [/Cache the dependency install in CI/, /Measure the cold build time/]) {
     await drafts.getByRole("article", { name }).getByRole("button", { name: "Discard" }).click();
@@ -281,6 +299,20 @@ test("keyboard: the log is one Tab stop with arrows inside; the info tip; Esc st
   await page.keyboard.press("Escape");
   await expect(tip).toBeHidden();
   await expect(p).toBeVisible();
+  // A click opens it too and leaves it open (it does not toggle shut what hover just opened), the
+  // pointer can move onto it, and Escape closes only the tip even with focus back in the box.
+  await info.click();
+  await expect(tip).toBeVisible();
+  await tip.hover();
+  await expect(tip).toBeVisible();
+  await box.focus();
+  await expect(tip).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(tip).toBeHidden();
+  await expect(p).toBeVisible();
+  await page.mouse.move(0, 0);
+  await info.focus();
+  await expect(tip).toBeVisible();
 
   await page.keyboard.press("Tab");
   await expect(p.getByRole("button", { name: "Send" })).toBeDisabled();

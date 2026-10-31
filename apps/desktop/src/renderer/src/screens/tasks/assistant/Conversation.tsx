@@ -47,9 +47,11 @@ function useCopied(): [string | null, (key: string, text: string) => void] {
 
 export function Conversation({ view, sending, logRef, onScroll, onQuote, onDrafts, canDraft }: ConversationProps) {
   const { t } = useTranslation("assistant");
-  const entries = useMemo(() => groupLines(view?.lines ?? []), [view?.lines]);
   const lines = view?.lines ?? [];
   const live = liveState(view, sending);
+  // The live row names the call in progress, so that call's own line would only repeat it.
+  const hidden = live?.phase === "tool" ? live.toolId : null;
+  const entries = useMemo(() => groupLines((view?.lines ?? []).filter((l) => l.id !== hidden)), [view?.lines, hidden]);
   const [current, setCurrent] = useState<string | null>(null);
   const [copied, copy] = useCopied();
   const lastReply = [...lines].reverse().find((l) => l.role === "assistant")?.id ?? null;
@@ -127,7 +129,9 @@ function LiveRow({ live }: { live: LiveState }) {
             {live.phase === "tool" ? (
               <>
                 <span className="as-live-label">{t("live.tool")}</span>
-                <span className="as-live-tool">{live.tool}</span>
+                <span className="as-live-tool" title={live.tool ?? undefined}>
+                  {live.tool}
+                </span>
               </>
             ) : (
               <span className="as-live-label">{t(`live.${live.phase}`)}</span>

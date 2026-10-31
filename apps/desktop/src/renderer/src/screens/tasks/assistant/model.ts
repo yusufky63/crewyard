@@ -64,30 +64,45 @@ export interface LiveState {
   phase: LivePhase;
   /** The runner's title of the latest call in this turn (untrusted text). */
   tool: string | null;
-  /** When your message that started this turn was stored; the elapsed time counts from it. */
+  /** That call's line, which the row stands in for while it is the latest thing in the turn. */
+  toolId: string | null;
+  /** When the line that started this turn was stored; the elapsed time counts from it. */
   since: string | null;
   /** Your messages waiting for the next turn boundary. */
   queued: number;
 }
 
 /**
- * What the row at the end of the conversation says while a turn runs, or null when nothing runs.
- * `streaming` means the reply is arriving: the reply itself stands in for the row then, which only
- * stays to say that a queued message is waiting.
+ * A line that hands the session a new turn: your message, or a note Autopilot hands it
+ * (`autopilot.on`, `autopilot.status.done`, …; service.ts notify). Autopilot's record of a call it
+ * made (`autopilot.call.*`) is written during a turn and starts nothing. A queued line has not
+ * been handed over yet.
+ */
+function startsTurn(l: AssistantLine): boolean {
+  if (l.queued) return false;
+  if (l.role === "user") return true;
+  return l.role === "notice" && l.text.startsWith("autopilot.") && !l.text.startsWith("autopilot.call.");
+}
+
+/**
+ * What the row at the end of the conversation says while a turn runs, or null when it has nothing
+ * to say. While the reply streams, the reply itself stands in for the row, which only stays to say
+ * that a queued message is waiting.
  */
 export function liveState(view: Pick<AssistantView, "state" | "lines"> | undefined, sending: boolean): LiveState | null {
   const lines = view?.lines ?? [];
   const state = view?.state ?? "idle";
   const queued = lines.filter((l) => l.role === "user" && l.queued).length;
-  const lastUserIndex = findLastIndex(lines, (l) => l.role === "user" && !l.queued);
-  const since = lastUserIndex >= 0 ? lines[lastUserIndex]!.at : null;
-  if (state === "starting") return { phase: "starting", tool: null, since, queued };
-  if (state !== "working") return sending ? { phase: "sending", tool: null, since: null, queued } : null;
-  const after = lines.slice(lastUserIndex + 1).filter((l) => l.role === "assistant" || l.role === "tool");
+  const start = findLastIndex(lines, startsTurn);
+  const since = start >= 0 ? lines[start]!.at : null;
+  const idle = { tool: null, toolId: null, since, queued };
+  if (state === "starting") return { phase: "starting", ...idle };
+  if (state !== "working") return sending ? { phase: "sending", ...idle, since: null } : null;
+  const after = lines.slice(start + 1).filter((l) => l.role === "assistant" || l.role === "tool");
   const last = after.at(-1);
-  if (last?.role === "assistant") return { phase: "streaming", tool: null, since, queued };
-  if (last?.role === "tool") return { phase: "tool", tool: last.text, since, queued };
-  return { phase: "thinking", tool: null, since, queued };
+  if (last?.role === "assistant") return queued > 0 ? { phase: "streaming", ...idle } : null;
+  if (last?.role === "tool") return { phase: "tool", ...idle, tool: last.text, toolId: last.id };
+  return { phase: "thinking", ...idle };
 }
 
 function findLastIndex<T>(xs: readonly T[], f: (x: T) => boolean): number {

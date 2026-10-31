@@ -55,13 +55,30 @@ describe("liveState", () => {
     expect(liveState(view("starting", [you]), true)).toMatchObject({ phase: "starting", since: you.at });
     expect(liveState(view("working", [line("assistant", "old"), you]), false)).toMatchObject({ phase: "thinking", since: you.at, tool: null });
     expect(liveState(view("working", [you, line("tool", "Read a.ts"), line("notice", "denied")]), false)).toMatchObject({ phase: "tool", tool: "Read a.ts" });
-    expect(liveState(view("working", [you, line("tool", "Read a.ts"), line("assistant", "I read")]), false)?.phase).toBe("streaming");
+    const read = line("tool", "Read b.ts");
+    expect(liveState(view("working", [you, read]), false)).toMatchObject({ phase: "tool", toolId: read.id });
+    // The streaming reply stands in for the row: nothing to show, so no empty row.
+    expect(liveState(view("working", [you, line("tool", "Read a.ts"), line("assistant", "I read")]), false)).toBeNull();
   });
 
   it("counts queued messages and times the turn from the message that started it", () => {
     const first = line("user", "one");
     const s = liveState(view("working", [first, line("assistant", "half"), line("user", "two", { queued: true })]), false);
     expect(s).toMatchObject({ phase: "streaming", queued: 1, since: first.at });
+  });
+
+  it("a note Autopilot hands the session starts a turn of its own, timed from the note", () => {
+    const you = line("user", "u1", { at: "2026-10-31T10:00:00.000Z" });
+    const reply = line("assistant", "a1", { at: "2026-10-31T10:00:05.000Z" });
+    const note = line("notice", "autopilot.status.done", { at: "2026-10-31T11:00:00.000Z" });
+    expect(liveState(view("working", [you, reply, note]), false)).toMatchObject({ phase: "thinking", since: note.at });
+    const call = line("tool", "mcp__crewyard__read_task");
+    expect(liveState(view("working", [you, reply, note, call]), false)).toMatchObject({ phase: "tool", since: note.at, toolId: call.id });
+    // Autopilot's record of a call it made is part of the turn, not the start of one.
+    const done = line("notice", "autopilot.call.done.complete_task");
+    expect(liveState(view("working", [you, reply, note, call, done]), false)).toMatchObject({ phase: "tool", since: note.at });
+    // A note still waiting for the boundary has not started anything.
+    expect(liveState(view("working", [you, line("tool", "Read a.ts"), line("notice", "autopilot.on", { queued: true })]), false)).toMatchObject({ phase: "tool", since: you.at });
   });
 });
 

@@ -189,7 +189,7 @@
     "starting": "Starting the session…",
     "thinking": "Thinking…",
     "tool": "Now",
-    "elapsed": "Time since your message",
+    "elapsed": "Time since this turn began: your message, or a note from Autopilot",
     "queued_one": "{{count}} message goes when this turn ends",
     "queued_other": "{{count}} messages go when this turn ends"
   },
