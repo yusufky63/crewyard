@@ -191,9 +191,20 @@ export class OpenCodeV2Runner {
   /**
    * Fail closed: without the guard every agent command would see the provider key and the server
    * password, so a server that did not load it, or loaded it with an error, runs nothing.
+   *
+   * 2.2.4 loads a location's plugins only once the location is first used, in the background: the
+   * list is empty at first, then holds the built-in plugins and ours together (seen live
+   * 2026-10-31). So the location is touched, and the list read until it has entries.
    */
-  private async checkGuard(client: V2Client): Promise<void> {
-    const guard = (await client.plugins()).find((p) => p.id === GUARD_ID);
+  private async checkGuard(client: V2Client, timeoutMs = 20_000): Promise<void> {
+    await client.location();
+    const deadline = Date.now() + timeoutMs;
+    let plugins = await client.plugins();
+    while (plugins.length === 0 && Date.now() < deadline) {
+      await sleep(200);
+      plugins = await client.plugins();
+    }
+    const guard = plugins.find((p) => p.id === GUARD_ID);
     if (guard?.state.status === "active") return;
     const why = guard?.state.status === "failed" ? `it failed to load: ${guard.state.error.slice(0, 200)}` : "it was not loaded";
     throw new Error(`OpenCode did not start Crewyard's key guard plugin (${why}), so the run was not started: without it the agent's commands could read the provider key.`);

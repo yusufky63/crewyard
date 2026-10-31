@@ -32,9 +32,11 @@ log({
 const expectedAuth = `Basic ${Buffer.from(`opencode:${process.env.OPENCODE_PASSWORD ?? ""}`).toString("base64")}`;
 
 // Plugins: each configured local package is a folder with index.js; its default export's setup()
-// gets a ctx whose shell hooks run on every command, like the shell tool's environment.
+// gets a ctx whose shell hooks run on every command, like the shell tool's environment. Like 2.2.4,
+// the list stays empty until the location is first used and then holds the built-ins as well.
 const shellHooks = [];
-const plugins = [];
+const plugins = [{ id: "opencode.config.mcp", source: { type: "builtin" }, features: { server: true }, state: { status: "active" } }];
+let pluginsReadyAt = null;
 for (const entry of config.plugins ?? []) {
   const dir = typeof entry === "string" ? entry : entry.package;
   if (process.env.FAKE_V2_GUARD === "skip") continue;
@@ -274,7 +276,11 @@ const server = createServer(async (req, res) => {
     req.on("close", () => clients.delete(res));
     return;
   }
-  if (req.method === "GET" && path === "/api/plugin") return json(res, 200, { location: { directory: process.cwd() }, data: plugins });
+  if (req.method === "GET" && path === "/api/location") {
+    pluginsReadyAt ??= now() + 300;
+    return json(res, 200, { directory: process.cwd(), project: { id: "p", directory: process.cwd() } });
+  }
+  if (req.method === "GET" && path === "/api/plugin") return json(res, 200, { location: { directory: process.cwd() }, data: pluginsReadyAt !== null && now() >= pluginsReadyAt ? plugins : [] });
   if (req.method === "GET" && path === "/api/session/active") {
     const out = {};
     for (const s of sessions.values()) if (s.busy) out[s.id] = { type: "running" };
@@ -308,9 +314,10 @@ const server = createServer(async (req, res) => {
       return json(res, 204);
     }
     if (req.method === "GET" && sub[0] === "message") {
-      // Two pages when long enough, so the client follows the cursor.
+      // Two pages when long enough, so the client follows the cursor; like 2.2.4, a cursor comes alone.
+      if (url.searchParams.has("cursor") && url.searchParams.has("order")) return json(res, 400, { _tag: "InvalidRequestError", message: "Cursor cannot be combined with order" });
       const start = Number(url.searchParams.get("cursor") ?? 0);
-      const size = 3;
+      const size = 2;
       const page = s.messages.slice(start, start + size);
       const next = start + size < s.messages.length ? String(start + size) : null;
       return json(res, 200, { data: page, cursor: { next } });
