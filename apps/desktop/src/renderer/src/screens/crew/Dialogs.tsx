@@ -279,8 +279,9 @@ export function SkipDialog({ target, dependents, onConfirm, onClose }: { target:
           <Button variant="ghost" onClick={onClose} data-autofocus>
             {t("dialog.cancel")}
           </Button>
+          {/* Skipping holds a step back for good, so its confirm is warn rather than the neutral primary. */}
           <Button
-            variant="primary"
+            tone="warn"
             disabled={busy}
             onClick={() => {
               setBusy(true);

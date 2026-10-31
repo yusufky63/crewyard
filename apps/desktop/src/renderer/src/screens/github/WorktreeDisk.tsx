@@ -43,8 +43,8 @@ function DiskRow({ item }: { item: WorktreeDiskItem }) {
           <span>{item.title || item.branch}</span>
           <span className="mono">{parked ? t("parked") : size}</span>
           {item.port !== null && <span className="mono">{t("port", { port: item.port })}</span>}
-          {item.state === "failed" && <span className="gh-bad">{t("state.failed")}</span>}
-          {item.state === "waiting_approval" && <span>{t("state.waiting_approval")}</span>}
+          {item.state === "failed" && <span className="badge badge-bad">{t("state.failed")}</span>}
+          {item.state === "waiting_approval" && <span className="badge badge-warn">{t("state.waiting_approval")}</span>}
         </span>
         {asking ? (
           <span className="gh-act-stack">
@@ -56,11 +56,11 @@ function DiskRow({ item }: { item: WorktreeDiskItem }) {
             </Button>
           </span>
         ) : parked ? (
-          <Button size="sm" variant="ghost" onClick={() => void act()} disabled={busy}>
+          <Button size="sm" variant="ghost" tone="ok" onClick={() => void act()} disabled={busy}>
             {t("unpark")}
           </Button>
         ) : (
-          <Button size="sm" variant="ghost" onClick={() => setAsking(true)} disabled={busy || item.running} title={item.running ? t("runningHint") : undefined}>
+          <Button size="sm" variant="ghost" tone="warn" onClick={() => setAsking(true)} disabled={busy || item.running} title={item.running ? t("runningHint") : undefined}>
             {t("park")}
           </Button>
         )}

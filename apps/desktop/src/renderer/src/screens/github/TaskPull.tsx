@@ -128,7 +128,24 @@ function GateList({ items, label }: { items: Array<{ id: string; status: GateSta
 }
 
 /** Asks in place before an outward step; the sentence names exactly what will happen. */
-function Confirm({ text, action, busy, onCancel, onConfirm, icon }: { text: string; action: string; busy: boolean; onCancel: () => void; onConfirm: () => void; icon: ReactNode }) {
+function Confirm({
+  text,
+  action,
+  busy,
+  onCancel,
+  onConfirm,
+  icon,
+  tone,
+}: {
+  text: string;
+  action: string;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+  icon: ReactNode;
+  /** Merge confirms in ok and a removal in bad (owner, 2026-10-31); without one the confirm stays the neutral primary. */
+  tone?: "ok" | "bad";
+}) {
   const { t } = useTranslation("github");
   return (
     <div className="tp-confirm" role="group" onKeyDown={(e) => e.key === "Escape" && onCancel()}>
@@ -137,7 +154,7 @@ function Confirm({ text, action, busy, onCancel, onConfirm, icon }: { text: stri
         <Button size="sm" variant="ghost" onClick={onCancel} disabled={busy}>
           {t("pulls.cancel")}
         </Button>
-        <Button size="sm" variant="primary" onClick={onConfirm} disabled={busy} autoFocus>
+        <Button size="sm" variant={tone ? "secondary" : "primary"} tone={tone} onClick={onConfirm} disabled={busy} autoFocus>
           {icon}
           {action}
         </Button>
@@ -398,6 +415,7 @@ export function PullPanel({ v, showTitle = false }: { v: TaskPullView; showTitle
             <Confirm
               text={t("pulls.confirm", { number: v.pull.number, method: t(`pulls.method.${v.mergeMethod ?? "merge"}`), sha: sha(live.headSha) })}
               action={busy ? t("pulls.merging") : t("pulls.mergeNow")}
+              tone="ok"
               busy={busy}
               icon={<GitMerge {...ICON} />}
               onCancel={() => setAsking(null)}
@@ -405,7 +423,7 @@ export function PullPanel({ v, showTitle = false }: { v: TaskPullView; showTitle
             />
           ) : (
             <div>
-              <Button size="sm" variant={step === "merge" ? "primary" : "secondary"} disabled={!live?.gate?.readyForApproval || busy} title={live?.gate?.readyForApproval ? undefined : t("pulls.blocked")} onClick={() => setAsking("merge")}>
+              <Button size="sm" variant={step === "merge" ? "primary" : "secondary"} tone="ok" disabled={!live?.gate?.readyForApproval || busy} title={live?.gate?.readyForApproval ? undefined : t("pulls.blocked")} onClick={() => setAsking("merge")}>
                 <GitMerge {...ICON} />
                 {t("pulls.reviewMerge")}
               </Button>
@@ -429,6 +447,7 @@ export function PullPanel({ v, showTitle = false }: { v: TaskPullView; showTitle
                   <Confirm
                     text={t("taskPull.cleanup.confirm", { branch: v.cleanup.branch ?? "" })}
                     action={t("taskPull.cleanup.removeNow")}
+                    tone="bad"
                     busy={busy}
                     icon={<X {...ICON} />}
                     onCancel={() => setAsking(null)}

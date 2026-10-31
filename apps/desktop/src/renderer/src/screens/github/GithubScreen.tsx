@@ -174,7 +174,7 @@ function StaleWorktree({ projectId, path, branch }: { projectId: string; path: s
             </Button>
           </span>
         ) : (
-          <Button size="sm" variant="ghost" onClick={() => setAsking(true)}>
+          <Button size="sm" variant="ghost" tone="bad" onClick={() => setAsking(true)}>
             {t("taskPull.cleanup.remove")}
           </Button>
         )}
@@ -359,7 +359,7 @@ function PullRow({ projectId, pr, method, now }: { projectId: string; pr: PullSu
                   <Button size="sm" variant="ghost" onClick={() => setConfirm(false)} disabled={busy}>
                     {t("pulls.cancel")}
                   </Button>
-                  <Button size="sm" variant="primary" onClick={() => void merge()} disabled={busy}>
+                  <Button size="sm" tone="ok" onClick={() => void merge()} disabled={busy}>
                     <GitMerge {...ICON} />
                     {busy ? t("pulls.merging") : t("pulls.mergeNow")}
                   </Button>
