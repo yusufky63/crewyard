@@ -80,7 +80,8 @@ test("Crew graph: edits a proposal step by step and approves it", async () => {
   await expect(panel).toBeVisible();
   await expect(panel.getByRole("radio").first()).toBeChecked();
   const before = (await taskByTitle(page, title))!.crew!.members[1]!;
-  await panel.getByRole("radio").nth(1).check();
+  // The radio follows the crew as the daemon returns it, so click and wait for the stored change.
+  await panel.getByRole("radio").nth(1).click();
   await expect.poll(async () => (await taskByTitle(page, title))!.crew!.members[1]!.chosen?.profileId).not.toBe(before.chosen?.profileId);
   // The profile it replaced leads the standby chain (three profiles: one in use, two standing by).
   const chain = panel.locator(".crew-chain-item");
@@ -95,7 +96,7 @@ test("Crew graph: edits a proposal step by step and approves it", async () => {
   // Remove the dependency by its edge's button, then draw it again with the keyboard's checkbox.
   await screen.getByRole("button", { name: /^Remove dependency: 02 Test/ }).click();
   await expect.poll(async () => (await taskByTitle(page, title))!.crew!.members[1]!.dependsOn).toEqual([]);
-  await panel.getByRole("checkbox", { name: "01 Research" }).check();
+  await panel.getByRole("checkbox", { name: "01 Research" }).click();
   await expect.poll(async () => (await taskByTitle(page, title))!.crew!.members[1]!.dependsOn).toEqual(["researcher"]);
   // Making Research wait for Test would be a loop: its box is off and says why.
   // Esc closes the editor and gives the keyboard back to the step's tile.
