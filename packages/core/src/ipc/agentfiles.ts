@@ -120,7 +120,7 @@ export interface BridgeView {
 export interface StepAgentFiles {
   profileId: string;
   runner: ProfileRunner | null;
-  /** Shared copies in the profile folder, by kind and name; only current or outdated ones. */
+  /** Shared copies the profile folder holds, by kind and name, with their state; never-copied ones are left out. */
   shared: Array<{ kind: AgentFileKind; name: string; state: CopyState }>;
   /** Project files the runner reads by itself. */
   project: string[];

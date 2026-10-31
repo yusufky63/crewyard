@@ -107,7 +107,7 @@ export function hashText(text: string): string {
 export function memoryIsOurs(file: string): boolean {
   if (!existsSync(file)) return true;
   try {
-    return readFileSync(file, "utf8").replace(/^﻿/, "").startsWith(MEMORY_MARKER);
+    return readFileSync(file, "utf8").replace(/^\uFEFF/, "").startsWith(MEMORY_MARKER);
   } catch {
     return false;
   }

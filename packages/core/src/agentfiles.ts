@@ -213,7 +213,7 @@ export interface FrontMatter {
 
 /** Line-based reading of a Markdown file's YAML front matter; enough for names, descriptions and keys to drop. */
 export function readFrontMatter(text: string): FrontMatter {
-  const src = text.replace(/^﻿/, "").replace(/\r\n?/g, "\n");
+  const src = text.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n");
   const empty: FrontMatter = { keys: [], values: {}, body: src, lines: [] };
   if (!src.startsWith("---\n")) return empty;
   const end = src.indexOf("\n---", 3);
@@ -252,7 +252,7 @@ export function strippedKeysOf(fm: FrontMatter): string[] {
 /** Markdown with the stripped keys (and their indented values) taken out of the front matter. */
 export function stripFrontMatter(text: string): string {
   const fm = readFrontMatter(text);
-  if (fm.lines.length === 0) return text.replace(/^﻿/, "").replace(/\r\n?/g, "\n");
+  if (fm.lines.length === 0) return text.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n");
   const kept: string[] = [];
   let dropping = false;
   for (const line of fm.lines) {

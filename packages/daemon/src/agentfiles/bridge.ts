@@ -11,7 +11,7 @@ export type InstructionLookup = (runner: RunnerId, cwd: string) => string[] | nu
 
 export function bridgeDecorator(lookup: InstructionLookup): AdapterDecorator {
   const withFiles = (runner: RunnerId, req: StartRequest): StartRequest => {
-    let files: string[] | null = null;
+    let files: string[] | null;
     try {
       files = lookup(runner, req.cwd);
     } catch {
