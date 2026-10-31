@@ -1,6 +1,6 @@
 # Crewyard website
 
-The public site for Crewyard: what it is, how it works, downloads for Windows, macOS and Linux, the changelog, the FAQ and the security model. Next.js (App Router) on Vercel, deployed from this folder.
+The public site for Crewyard: what it is, how it works, downloads (Windows today; macOS and Linux files appear when a release includes them), the changelog, the FAQ and the security model. Next.js (App Router) on Vercel, deployed from this folder.
 
 Every release on GitHub shows up on the download and changelog pages within an hour, with no code change: the pages read `https://api.github.com/repos/yusufky63/crewyard/releases` with Next's fetch cache (`revalidate: 3600`). While the repository is private, or before the first public release, the API answers 404 and the pages say "No public release yet" with a link to the GitHub releases page. They never show a made-up file, size or version.
 
@@ -8,11 +8,12 @@ Every release on GitHub shows up on the download and changelog pages within an h
 
 | Path | What |
 |---|---|
-| `app/` | Pages (`/`, `/download`, `/how-it-works`, `/changelog`, `/faq`, `/security`, 404), a share card per page (`opengraph-image.tsx`), `sitemap.ts`, `robots.ts`, `manifest.ts`, `llms.txt`, the icons, and `api/revalidate` for the optional release webhook |
+| `app/` | Pages (`/`, `/download`, `/how-it-works`, `/changelog`, `/faq`, `/security`, `/status`, 404), a share card per page (`opengraph-image.tsx`), `sitemap.ts`, `robots.ts`, `manifest.ts`, `llms.txt`, the icons, `api/health` for monitors, and `api/revalidate` for the optional release webhook |
 | `lib/releases.ts` | Parsing the GitHub payload (zod), matching assets to platforms by file name, picking the release the buttons offer. Pure, tested in `releases.test.ts` |
 | `lib/github.ts` | The only module that calls GitHub (server-only): releases with pagination, the star count, the unavailable states |
 | `lib/content.ts` | Every product statement on the site, each from README, PLAN, DESIGN, the ADRs or the release notes. Change a sentence here and every page follows |
 | `lib/theme.ts` | System, light and dark themes from `design/tokens`, checked against `packages/ui/src/tokens.css` by `theme.test.ts` |
+| `lib/health.ts` | ok / degraded / down for `/status` and `/api/health`, from the same release answer the pages use |
 | `lib/og.tsx` | The share-card kit (next/og) |
 | `components/` | Header, footer, the OS-aware download button, the release notes renderer, screenshots |
 | `scripts/shots.mjs` | Takes the app screenshots in `public/shots` |
@@ -80,7 +81,7 @@ Nothing in the repository deploys by itself, and no workflow pushes to Vercel.
 
 | Name | Needed | What |
 |---|---|---|
-| `GITHUB_TOKEN` | strongly recommended | Server-only. Without it GitHub allows 60 API requests an hour per IP, and Vercel's functions share IPs. A fine-grained token with read access to public repositories only, and no other permission, is enough once the repository is public. Never prefix it with `NEXT_PUBLIC_`. |
+| `GITHUB_TOKEN` | strongly recommended | Server-only. Without it GitHub allows 60 API requests an hour per IP, and Vercel's functions share IPs. A fine-grained token with read access to public repositories only, and no other permission, is enough once the repository is public. Never prefix it with `NEXT_PUBLIC_`. If GitHub rejects it (401: expired, revoked or mistyped), the site logs one error and reads releases without it, so a dead token costs rate limit, not freshness; replace it when the log says so. |
 | `NEXT_PUBLIC_SITE_URL` | optional | The canonical origin, for example a custom domain (`https://example.com`, no trailing slash). Without it the site uses Vercel's production domain (`VERCEL_PROJECT_PRODUCTION_URL`), and `http://localhost:3240` locally. |
 | `GITHUB_WEBHOOK_SECRET` | optional | Turns on `/api/revalidate`. Without it that route answers 404. |
 
@@ -89,6 +90,18 @@ Nothing in the repository deploys by itself, and no workflow pushes to Vercel.
 Without a webhook a new release appears within the hour. To show it at once, add a repository webhook on GitHub: payload URL `https://<site>/api/revalidate`, content type `application/json`, the same secret as `GITHUB_WEBHOOK_SECRET`, and only the **Releases** event. The route checks the `X-Hub-Signature-256` HMAC and expires the cached release list; the next visit reads GitHub again.
 
 When GitHub is unreachable or rate-limits the site during a background refresh, the last good page stays in place and the refresh is tried again on the next visit; a build made while GitHub is unreachable shows "Release list not available right now" with a link to the releases page.
+
+### Monitoring
+
+`/api/health` answers `{ status, checks, checkedAt }` with `ok`, `degraded` (private repository, no releases yet, or rate-limited: the pages still render) or `down` (GitHub could not be read; HTTP 503). It names the reason only, never the token. `/status` shows the same check for people and is linked from the footer.
+
+### Before the first public deploy
+
+The site says the project is MIT-licensed and links to `LICENSE` on `main`. That file and the README licence section arrive with the public-release preparation; deploy only after they are on `main`, or the footer's licence link is a 404.
+
+## Research
+
+The choices behind this app (the list endpoint over `/releases/latest`, hourly revalidation plus an optional webhook, server-only token) and the sources read for them are in [ADR 0019](../../docs/adr/0019-website.md).
 
 ## Licence
 
