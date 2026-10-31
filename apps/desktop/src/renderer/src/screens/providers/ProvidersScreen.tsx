@@ -3,37 +3,20 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { History, Plus, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { BrandIcon, Button, Label, Panel } from "@crewyard/ui";
-import { PROFILE_RUNNERS, runnerSupport, type BalanceView, type CatalogProvider, type CredentialSummary, type KeyCheckView, type ProfileSummary, type SignInStatus, type SpendSlice } from "@crewyard/core";
+import { type BalanceView, type CatalogProvider, type CredentialSummary, type KeyCheckView, type ProfileSummary, type SignInStatus, type SpendSlice } from "@crewyard/core";
 import { call } from "../../ipc.ts";
 import { useProvidersQuery as useDaemon } from "./data.ts";
 import { FIXTURE } from "./fixture.ts";
 import { CatalogDialog, PinNote } from "./Catalog.tsx";
 import { AddProviderDialog, ManageDialog } from "./Dialogs.tsx";
 import { KeyStateNote, useKeyChecks } from "./KeyCheck.tsx";
+import { RunnerChips, RunnersHeader } from "./RunnerChips.tsx";
 import { newestModels, ProvBadge, useMoney, usePrice, useProvidersLive, useWhen } from "./shared.tsx";
 import { SignInBadge, useSignIn } from "./SignIn.tsx";
 import "./providers.css";
 
 type Filter = "all" | "connected" | CatalogProvider["group"];
 const FILTERS: Filter[] = ["all", "connected", "first-party", "coding-plan", "aggregator", "local"];
-
-function RunnerChips({ provider }: { provider: CatalogProvider }) {
-  const { t } = useTranslation("providers");
-  return (
-    <div className="rchips">
-      {PROFILE_RUNNERS.map((r) => {
-        const s = runnerSupport(provider, r);
-        if (s === "none") return null;
-        const cls = s === "config" ? "cfg" : s === "conversion" ? "off" : "on";
-        return (
-          <span key={r} className={`rchip ${cls}`} title={t(`support.${s}`)}>
-            {t(`runner.${r}`)}
-          </span>
-        );
-      })}
-    </div>
-  );
-}
 
 function ModelsCell({ provider }: { provider: CatalogProvider }) {
   const { t } = useTranslation("providers");
@@ -245,7 +228,9 @@ export function ProvidersScreen() {
             <tr>
               <th>{t("cols.provider")}</th>
               <th>{t("cols.models")}</th>
-              <th>{t("cols.runners")}</th>
+              <th>
+                <RunnersHeader />
+              </th>
               <th>{t("cols.credential")}</th>
               <th>
                 <span className="sr-only">{t("cols.actions")}</span>
