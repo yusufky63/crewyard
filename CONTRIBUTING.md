@@ -10,7 +10,7 @@ Thanks for helping. This page is the short version; [AGENTS.md](AGENTS.md) holds
 
 ## Set up
 
-Windows 11, Node.js 24 or newer, pnpm 9 (`corepack enable`), Git.
+Node.js 24 or newer, pnpm 9 (`corepack enable`), Git. Windows 11 is the primary platform and the one every change is tried on; macOS and Linux work follows the platform seams in [ADR 0010](docs/adr/0010-linux-macos-groundwork.md).
 
 ```bash
 pnpm install
@@ -22,7 +22,7 @@ The second line is needed once per machine, because pnpm skips Electron's downlo
 
 ## Before you open a pull request
 
-- `pnpm check` passes: token and contrast checks, typecheck, lint with zero warnings, tests and the build. CI runs the same.
+- `pnpm check` passes: token and contrast checks, typecheck, lint with zero warnings, tests and the build. CI runs the same on Linux, which also covers the POSIX branches of the platform code.
 - Tests sit next to the source they cover, and every rule in `packages/core` has one.
 - UI changes come with screenshots in dark and light at 1280 and 1920 px, and a keyboard pass (CLAUDE.md lists the screenshot command).
 - Every user-visible string goes through i18next, in English and Turkish together; the Turkish reads naturally, not word for word.
@@ -32,7 +32,7 @@ The second line is needed once per machine, because pnpm skips Electron's downlo
 
 - **Your own code.** Read any project to learn how it solves a problem, then write code for this architecture. Never copy or port code, including a line-by-line translation. Medium and large changes cite the sources they opened (AGENTS.md, "Research before building").
 - **Dependencies.** Only when unavoidable, MIT, Apache-2.0, ISC or BSD, added with an exact version (`pnpm add -E`), and named in the pull request.
-- **Windows first.** Child processes go through `packages/proc` (`cross-spawn`, `windowsHide`, never `shell: true`); UTF-8 IO, atomic writes, no symlinks, paths with spaces in tests.
+- **Windows first, never Windows only.** Child processes go through `packages/proc` (`cross-spawn`, `windowsHide`, never `shell: true`); UTF-8 IO, atomic writes, no symlinks, paths with spaces in tests. A Windows-only call gets its POSIX branch next to it, with the platform passed in so both branches run under test on any machine (ADR 0010).
 - **Secrets.** API keys only through DPAPI-encrypted storage and child environment variables: never on a command line, in a log, in a commit or in a URL. Never read or copy subscription tokens; each CLI signs in through its own login. Claude profiles use Anthropic API keys only.
 - **No network listener.** The UI uses IPC; outside callers use the per-user named pipe with a token.
 - **The user decides outward actions.** Push, pull request, merge, delete and spend past a cap always wait for an approval in the app.

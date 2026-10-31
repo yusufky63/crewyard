@@ -6,7 +6,7 @@ Report it privately through GitHub: open the repository's **Security** tab and c
 
 Include what you can of:
 
-- the Crewyard version (Settings → About) and Windows build;
+- the Crewyard version (Settings → About), and the operating system with its version (Windows, macOS or Linux);
 - what an attacker can do, and what they need first (another local user, a malicious repository, a crafted model reply, a compromised provider);
 - steps to reproduce, or a proof of concept;
 - whether the problem is already public anywhere.
@@ -23,7 +23,7 @@ Only the latest release gets security fixes. Crewyard is pre-release software: t
 
 In scope, for example:
 
-- an API key leaving DPAPI-encrypted storage other than as an environment variable of a runner process: on a command line, in a log, in git, in a URL, or to an agent shell;
+- an API key leaving encrypted storage (DPAPI on Windows, the macOS Keychain or the Linux Secret Service elsewhere; ADR 0002 and ADR 0010) other than as an environment variable of a runner process: on a command line, in a log, in git, in a URL, or to an agent shell;
 - an outward action (push, pull request, merge, delete, spend past a cap) happening without the user's approval in the app, including through Autopilot or the task assistant;
 - the external named pipe accepting a caller without its token, or any TCP listener opened by the app;
 - the dev-server preview reaching a non-loopback address, another task's port or the app's own session;
@@ -33,8 +33,8 @@ In scope, for example:
 Out of scope:
 
 - vulnerabilities in the runner CLIs themselves (Claude Code, Codex, Gemini CLI, OpenCode) or in a provider's service; report those to their owners;
-- the SmartScreen warning on an unsigned pre-release build;
-- attacks that already need code running as the same Windows user, or administrator rights, unless Crewyard makes them meaningfully easier;
+- the operating system's warning on a pre-release build: Windows SmartScreen on an unsigned installer, macOS Gatekeeper on a build that is not notarized;
+- attacks that already need code running as the same operating-system user, or administrator or root rights, unless Crewyard makes them meaningfully easier;
 - denial of service by a local user against their own Crewyard.
 
 The security model is described in the README ("Security model") and in PLAN.md.
