@@ -3,12 +3,14 @@ import { join } from "node:path";
 import { defaultProjectConfig, type CandidateView, type ProjectConfig, type RunOutput, type StartRequest } from "@crewyard/core";
 import type { FakeStep } from "@crewyard/adapter-fake";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createSettingsHandlers } from "../handlers/settings.ts";
 import { Store } from "../store.ts";
 import { admitGroup } from "./admission.ts";
 import { AdapterRegistry } from "./adapters.ts";
 import { groupPhase, parseNumstat, pickVariants } from "./best-of.ts";
 import { Orchestrator, type OrchestratorOptions } from "./orchestrator.ts";
-import { CANDIDATES, cleanTemps, git, ScriptedAdapter, tempDir, tempRepo, waitFor } from "./testing.ts";
+import type { Candidate } from "./directory.ts";
+import { candidate, CANDIDATES, cleanTemps, git, model, ScriptedAdapter, tempDir, tempRepo, waitFor } from "./testing.ts";
 
 // Best of N (feature scan A8) end to end over a real git repo: the variants run in their own
 // worktrees as hidden tasks, the group is admitted and reserved as one, and the kept variant's
@@ -31,7 +33,7 @@ const running: FakeStep = { emit: { type: "run.state", state: "running" } };
 const say = (text: string): FakeStep => ({ emit: { type: "message.delta", text } });
 const pass: RunOutput = { ok: true, value: { verdict: "pass", summary: "Looks right.", comments: [] } };
 
-async function setup(opts: { pick: Picker; config?: (c: ProjectConfig) => void; options?: Partial<OrchestratorOptions> }) {
+async function setup(opts: { pick: Picker; config?: (c: ProjectConfig) => void; options?: Partial<OrchestratorOptions>; candidates?: Candidate[]; switching?: boolean }) {
   const root = tempDir("crewyard bestof-");
   const repo = await tempRepo(root);
   const cfg = defaultProjectConfig("demo repo", join(root, ".mc", "worktrees", "demo repo"));
@@ -45,7 +47,7 @@ async function setup(opts: { pick: Picker; config?: (c: ProjectConfig) => void; 
   const adapter = new ScriptedAdapter(opts.pick, { result: (role) => (role === "reviewer" ? pass : undefined) });
   const adapters = new AdapterRegistry({});
   adapters.set("fake", adapter);
-  const cands = CANDIDATES();
+  const cands = opts.candidates ?? CANDIDATES();
   const o = new Orchestrator({
     store,
     dataDir: join(root, "data"),
@@ -59,6 +61,10 @@ async function setup(opts: { pick: Picker; config?: (c: ProjectConfig) => void; 
   });
   o.start();
   open.push({ o, store });
+  if (opts.switching) {
+    const settings = createSettingsHandlers({ store, info: { startedAt: "now", dbPath: join(root, "t.db"), dataDir: root }, emit: () => {} });
+    await settings["settings.update"]({ accountSwitch: { enabled: true, acceptTerms: true } });
+  }
   return { o, store, project, adapter, repo };
 }
 
@@ -216,5 +222,55 @@ describe("best of N: a task", () => {
     expect(cancelled.status).toBe("cancelled");
     expect(cancelled.bestOfGroup!.variants.map((v) => v.status)).toEqual(["cancelled", "cancelled"]);
     expect(o.requests({})).toEqual([]);
+  });
+});
+
+describe("best of N: the parent's caps count every variant (PLAN.md §9.4)", () => {
+  const key = (id: string, credentialId: string): Candidate => ({ ...candidate(id, "deepseek", model("deepseek-chat", { reasoning: false, cost: { input: 0.27, output: 1.1, cacheRead: 0.07 } })), credentialId });
+  const usage = (tokensIn: number): FakeStep => ({ emit: { type: "usage.update", tokensIn, tokensOut: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, contextUsed: null, contextSize: null, costUsd: null, costProvenance: "unknown" } });
+  const limitHit: FakeStep = { emit: { type: "limit.update", window: "5h", usedPct: 100, resetsAt: new Date(Date.now() + 3 * 3_600_000).toISOString(), provenance: "reported", reached: true } };
+  const ask = (id: string): FakeStep[] => [{ emit: { type: "request.question", requestId: id, questions: [{ prompt: "Go on?", options: [{ label: "yes" }], allowFreeText: false }] } }, { awaitAnswer: id }];
+  const byProfile =
+    (scripts: Record<string, FakeStep[]>): Picker =>
+    (role, req) =>
+      role === "implementer" ? (scripts[req.profile.id] ?? [running, say("done")]) : [running, say(`${role} done`)];
+  const addCredential = (store: Store, id: string, taskCap: number) =>
+    store.db.prepare("insert into credentials (id, alias, provider_id, kind, daily_cap_usd, task_cap_usd, created_at) values (?, ?, 'deepseek', 'api_key', null, ?, '2026-10-30T00:00:00Z')").run(id, id, taskCap);
+  const events = (store: Store, kind: string) => (store.db.prepare("select payload from events where kind = ? order by seq").all(kind) as Array<{ payload: string }>).map((r) => JSON.parse(r.payload) as Record<string, unknown>);
+
+  it("an account switch never moves a variant to a key already past its per-task cap on the parent", async () => {
+    // Variant 2 spends $0.27 on cred-b (charged to the parent); variant 1 then hits a limit on cred-a.
+    const pick = byProfile({ "ds-a": [running, ...ask("go"), limitHit, { awaitAnswer: "never" }], "ds-b": [running, usage(1_000_000), { awaitAnswer: "never" }] });
+    const { o, store, project } = await setup({ pick, candidates: [candidate("anthropic-key", "anthropic", model("claude-sonnet")), key("ds-a", "cred-a"), key("ds-b", "cred-b")], switching: true });
+    const t = await o.propose({ projectId: project.id, ...CODE_S, bestOf: 2, pins: { implementer: "ds-a", reviewer: "anthropic-key" } });
+    expect(t.bestOfGroup!.variants.map((v) => v.candidate.profileId)).toEqual(["ds-a", "ds-b"]);
+    await o.approve({ taskId: t.id });
+    await waitFor(() => o.get(t.id).spend.usd! > 0.2, 30_000);
+    addCredential(store, "cred-b", 0.2);
+    const q = await waitFor(() => o.requests({}).find((r) => r.kind === "question"), 30_000);
+    await o.answer(q.id, { kind: "question", answers: [{ selected: ["yes"] }] });
+
+    const variant = o.get(t.id).bestOfGroup!.variants[0]!.taskId!;
+    await waitFor(() => events(store, "account.switch_refused").length > 0 || o.get(variant).handoffs.length > 0, 30_000);
+    expect(o.get(variant).handoffs).toEqual([]);
+    expect(events(store, "account.switch_refused")[0]?.skipped).toEqual([{ profileId: "ds-b", alias: "ds-b", reason: "over_cap" }]);
+  });
+
+  it("a variant's handoff never offers a key already past its per-task cap on the parent", async () => {
+    // Variant 1 spends past cred-a's per-task cap and you move it to ds-b by hand; ds-b then hits a limit.
+    const pick = byProfile({ "ds-a": [running, usage(1_000_000), { awaitAnswer: "never" }], "ds-b": [running, ...ask("go"), limitHit, { awaitAnswer: "never" }] });
+    const { o, store, project } = await setup({ pick, candidates: [candidate("anthropic-key", "anthropic", model("claude-sonnet")), key("ds-a", "cred-a"), key("ds-b", "cred-b")] });
+    addCredential(store, "cred-a", 0.2);
+    const t = await o.propose({ projectId: project.id, ...CODE_S, bestOf: 2, pins: { implementer: "ds-a", reviewer: "anthropic-key" } });
+    await o.approve({ taskId: t.id });
+    const variant = o.get(t.id).bestOfGroup!.variants[0]!.taskId!;
+    const capped = await waitFor(() => o.requests({ taskId: variant }).find((r) => r.kind === "handoff"), 30_000);
+    expect(capped.payload).toMatchObject({ trigger: "budget", cap: { kind: "task_cap" } });
+    await o.answer(capped.id, { kind: "handoff", decision: "hand_off", targetProfileId: "ds-b" });
+    const go = await waitFor(() => o.requests({ taskId: variant }).find((r) => r.kind === "question"), 30_000);
+    await o.answer(go.id, { kind: "question", answers: [{ selected: ["yes"] }] });
+
+    const limit = await waitFor(() => o.requests({ taskId: variant }).find((r) => r.kind === "handoff" && r.payload.kind === "handoff" && r.payload.trigger === "limit"), 30_000);
+    expect(limit.payload.kind === "handoff" && limit.payload.candidates.map((c) => c.profileId)).toEqual([]);
   });
 });
