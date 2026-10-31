@@ -53,7 +53,8 @@
     "goal_parallel_cap": "{{running}} tasks already run at once",
     "goal_conflict": "Merging it into the goal branch conflicts: {{paths}}",
     "goal_not_approved": "Its plan is not approved yet",
-    "other": "Waiting"
+    "other": "Waiting",
+    "goal_error": "The goal could not be scheduled; see its decision"
   },
   "task": {
     "skipped": "Skipped",
@@ -245,7 +246,9 @@
     "goal_paused": "The goal is paused. Resume it first.",
     "goal_not_paused": "The goal is not paused.",
     "goal_no_integration": "This goal has no goal branch.",
-    "goal_collapse_after_approval": "Run as one task works only before approval."
+    "goal_collapse_after_approval": "Run as one task works only before approval.",
+    "goal_not_one_task": "The plan does not hold exactly one task.",
+    "goal_plan_moved": "Tasks this plan replaces have started since it was made: {{keys}}. Replan again."
   },
   "halt": {
     "same_failure": "two tasks failed the same way",
@@ -277,7 +280,14 @@
       "goal_stopped": "Stopped",
       "goal_finished": "Finished",
       "goal_error": "Scheduling error",
-      "goal_limits": "Limits changed"
+      "goal_limits": "Limits changed",
+      "goal_collapsed": "Run as one task",
+      "goal_plan_refused": "Plan sent back to the planner",
+      "goal_plan_ignored": "Outdated plan set aside",
+      "goal_integration_created": "Last review set up",
+      "goal_halt_lifted": "Halt lifted",
+      "goal_decision_closed": "Decision closed",
+      "goal_paused_all": "All goals paused or resumed"
     }
   }
 }

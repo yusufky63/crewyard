@@ -53,7 +53,8 @@
     "goal_parallel_cap": "Şu anda zaten {{running}} görev birlikte çalışıyor",
     "goal_conflict": "Hedef dalına birleştirmede çakışma var: {{paths}}",
     "goal_not_approved": "Planı henüz onaylanmadı",
-    "other": "Bekliyor"
+    "other": "Bekliyor",
+    "goal_error": "Hedef zamanlanamadı; hedefteki karara bakın"
   },
   "task": {
     "skipped": "Atlandı",
@@ -245,7 +246,9 @@
     "goal_paused": "Hedef duraklatılmış. Önce sürdürün.",
     "goal_not_paused": "Hedef duraklatılmamış.",
     "goal_no_integration": "Bu hedefin hedef dalı yok.",
-    "goal_collapse_after_approval": "Tek görev olarak çalıştırma yalnızca onaydan önce mümkün."
+    "goal_collapse_after_approval": "Tek görev olarak çalıştırma yalnızca onaydan önce mümkün.",
+    "goal_not_one_task": "Planda tam olarak bir görev yok.",
+    "goal_plan_moved": "Bu planın yerini aldığı görevler, plan yapıldıktan sonra başladı: {{keys}}. Yeniden planlayın."
   },
   "halt": {
     "same_failure": "iki görev aynı şekilde başarısız oldu",
@@ -277,7 +280,14 @@
       "goal_stopped": "Durduruldu",
       "goal_finished": "Bitti",
       "goal_error": "Zamanlama hatası",
-      "goal_limits": "Sınırlar değişti"
+      "goal_limits": "Sınırlar değişti",
+      "goal_collapsed": "Tek görev olarak çalıştırıldı",
+      "goal_plan_refused": "Plan planlayana geri gönderildi",
+      "goal_plan_ignored": "Eskimiş plan bir kenara bırakıldı",
+      "goal_integration_created": "Son inceleme hazırlandı",
+      "goal_halt_lifted": "Durdurma kaldırıldı",
+      "goal_decision_closed": "Karar kapandı",
+      "goal_paused_all": "Tüm hedefler duraklatıldı ya da sürdürüldü"
     }
   }
 }
