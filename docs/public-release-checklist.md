@@ -19,7 +19,7 @@ Patterns: Anthropic `sk-ant-`, OpenAI project, service-account and admin keys, O
 | DPAPI blobs | None. |
 | Email addresses in files | Only sample addresses in tests (`github.com` users in remote URLs, a `.com` host in a preview test) and a package author's public address inside `pnpm-lock.yaml`. |
 | Commit metadata | Every commit is authored and committed with a personal Gmail address. See decision 3b. |
-| Large binaries | None of 500 KiB or more. The 62 images are PNG screenshots under `design/screens/` and `docs/research/plan-quota-shots/` and the app icons under `apps/desktop/build/`. The screenshots are rendered from fixture or sample data and show no real key, account balance or token. See decision 3e for the project names in them. |
+| Large binaries | None of 500 KiB or more. The 62 images are PNG screenshots under `design/screens/` and `docs/research/plan-quota-shots/` and the app icons under `apps/desktop/build/`. The screenshots are rendered from fixture or sample data and show no real key, account balance or token. Since decision 3e they show only invented sample project names. |
 | Tracked local files | None: `.claude/`, editor folders, logs and test output were never tracked. `.gitignore` now also covers Claude Code worktrees and local settings, editor folders, Playwright's default output folders and signing certificates. |
 
 ### Before the flip
@@ -63,7 +63,7 @@ c. **The v0.1.0 pre-release.** Its unsigned Windows installer (`Crewyard-Setup-0
 
 d. **Old Actions runs.** The existing workflow runs and their logs become public. The repository has no Actions secrets or variables, so the logs hold no masked values; delete the runs only if you want a clean list.
 
-e. **Your own project names in the design material.** `design/prototype.html` and every screenshot rendered from it (all of `design/screens/*.png`) use the owner's own project names and folders as sample data: in the title-bar project picker, the recent projects, the paths and the GitHub screens. At least one of them is the name of another private repository. If those names should stay unknown, rename the sample projects in the prototype and re-shoot the whole `design/screens/` set, not only some of it. The names stay in history either way.
+e. **Your own project names in the design material.** Done on 2026-10-31: the owner chose "rename and re-shoot". `design/prototype.html` used the owner's own project names and folders as sample data (title-bar project picker, recent projects, paths, GitHub screen, task id prefix), and two renderer tests used a name close to another private repository. The prototype now uses invented projects (`atlas-engine`, `harbor-api`, `northwind-web`, `ledger-cli`, `quill-notes`, `kestrel-game`) under `C:\Users\dev\code`, the tests use `harbor api`, and all 22 `design/screens/*.png` were re-shot from the edited prototype with the same names and sizes. The screenshots in `docs/research/plan-quota-shots/` and `apps/web/public/shots/` already showed only `shot project`, `sample-project` and `crewyard`. The old names stay in git history.
 
 f. **Copyright line in the installer.** Settled on 2026-10-31: the installer, the exe metadata, LICENSE and NOTICE all say "Copyright (c) 2026 Yusuf", from the single `LICENCE` constant in `apps/desktop/scripts/release-assets.cjs`, which `release-check` compares with LICENSE.
 

@@ -29,8 +29,8 @@ describe("rankCommands", () => {
     { id: "s:limits", group: "screen", title: "Limits" },
     { id: "a:new-task", group: "action", title: "New task" },
     { id: "p:old", group: "project", title: "old-game", keywords: "C:\\Projeler\\old-game", recency: "2026-10-01T00:00:00Z" },
-    { id: "p:new", group: "project", title: "stick wars", keywords: "C:\\Projeler\\stick wars", recency: "2026-10-29T00:00:00Z" },
-    { id: "t:1", group: "task", title: "Fix the limits banner", keywords: "stick wars", recency: "2026-10-28T00:00:00Z" },
+    { id: "p:new", group: "project", title: "harbor api", keywords: "C:\\Projeler\\harbor api", recency: "2026-10-29T00:00:00Z" },
+    { id: "t:1", group: "task", title: "Fix the limits banner", keywords: "harbor api", recency: "2026-10-28T00:00:00Z" },
     { id: "t:2", group: "task", title: "Add task search", keywords: "old-game", recency: "2026-10-27T00:00:00Z" },
   ];
 
@@ -46,7 +46,7 @@ describe("rankCommands", () => {
   });
 
   it("weights keyword hits below title hits", () => {
-    const ids = rankCommands(cmds, "stick").map((c) => c.id);
+    const ids = rankCommands(cmds, "harbor").map((c) => c.id);
     expect(ids[0]).toBe("p:new");
     expect(ids[1]).toBe("t:1");
   });

@@ -36,7 +36,7 @@ const request = (id: string, createdAt: string, answeredAt: string | null = null
   answeredBy: null,
 });
 
-const projects: ProjectSummary[] = [{ id: "p1", name: "stick wars", path: "C:\\Projeler\\stick wars", lastOpenedAt: null }];
+const projects: ProjectSummary[] = [{ id: "p1", name: "harbor api", path: "C:\\Projeler\\harbor api", lastOpenedAt: null }];
 
 describe("work summary", () => {
   it("counts every run that has not ended and lands on the oldest open request", () => {
@@ -45,7 +45,7 @@ describe("work summary", () => {
     expect(w.needYou).toBe(2);
     expect(w.firstRequest).toEqual({ projectId: "p1", taskId: "t1", requestId: "q1" });
     expect(w.runningTasks.map((x) => [x.title, x.projectName])).toEqual([
-      ["Task t1", "stick wars"],
+      ["Task t1", "harbor api"],
       ["Task t3", "p9"],
     ]);
   });
@@ -53,11 +53,11 @@ describe("work summary", () => {
   it("names what quitting stops, in either language, and counts the rest", () => {
     const tasks = Array.from({ length: 8 }, (_, i) => task(`t${i}`, 1));
     const en = quitDetail(summarize(tasks, [], projects), translator("en"), 6);
-    expect(en).toContain("· Task t0 · stick wars");
+    expect(en).toContain("· Task t0 · harbor api");
     expect(en).not.toContain("Task t6");
     expect(en).toContain("· and 2 more");
     const tr = quitDetail(summarize(tasks.slice(0, 1), [], projects), translator("tr"));
-    expect(tr).toContain("Şunlar şimdi durur:\n· Task t0 · stick wars");
+    expect(tr).toContain("Şunlar şimdi durur:\n· Task t0 · harbor api");
   });
 });
 
