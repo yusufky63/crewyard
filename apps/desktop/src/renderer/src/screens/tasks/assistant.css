@@ -57,3 +57,28 @@
 .as-field select option { background: var(--surface); color: var(--ink); }
 .as-field :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .as-draft-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+/* Presets and Suggest in the drafts column. */
+.as-presets { display: grid; gap: 8px; padding-bottom: 10px; border-bottom: 1px dashed var(--tick); }
+.as-preset-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.as-preset-list .btn { max-width: 100%; }
+.as-preset-list .btn[data-suggested] { --tk: var(--accent); }
+.as-suggest { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; }
+
+/* A finished task's report: one line on the row, the whole report in the inspector. */
+.tk-report-line { display: flex; align-items: center; gap: 10px; margin-top: 8px; min-width: 0; }
+.tk-report-line > .lbl, .tk-report-line > .btn { flex: none; white-space: nowrap; }
+.tk-report-text { flex: 1 1 auto; min-width: 0; font-size: 13px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tk-report { display: grid; gap: 10px; }
+.tk-report-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.tk-report-summary { margin: 0; font-size: 13px; line-height: 1.5; color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+.tk-findings { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.tk-findings li { display: grid; gap: 4px; padding-top: 10px; border-top: 1px solid var(--line); }
+.tk-finding-top { display: flex; align-items: baseline; gap: 8px; }
+.tk-finding-title { font-size: 13px; font-weight: 500; color: var(--ink); overflow-wrap: anywhere; }
+.tk-finding-detail { margin: 0; font-size: 12px; line-height: 1.45; color: var(--ink-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+.tk-report-drafts { display: grid; gap: 8px; }
+.tk-report-drafts p { margin: 0; }
+.tk-sev-bad { color: var(--bad); }
+.tk-sev-warn { color: var(--warn); }
+.tk-sev-ok { color: var(--ok); }

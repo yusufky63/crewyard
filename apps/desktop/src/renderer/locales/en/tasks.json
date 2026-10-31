@@ -37,6 +37,9 @@
     "assistant": "Assistant",
     "assistantClose": "Close assistant",
     "assistantTitle": "Plan tasks in a chat with a read-only agent ({{keys}})",
+    "preset": "Ready-made",
+    "presetNone": "Pick…",
+    "presetTitle": "Fill the composer with a ready-made analysis: a research task that ends with findings and suggested tasks",
     "note": "Proposing only drafts a crew. Nothing starts until you approve it."
   },
   "kind": { "auto": "Detect", "code": "Code", "research": "Research", "review": "Review", "docs": "Docs" },

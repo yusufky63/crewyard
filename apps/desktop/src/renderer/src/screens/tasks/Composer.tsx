@@ -1,7 +1,7 @@
 import { useId, useState, type FormEvent, type KeyboardEvent } from "react";
 import { Folder, GitBranch, SquareTerminal } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import type { FallbackMode, IssueDetail, TaskKind } from "@crewyard/core";
+import { TASK_PRESETS, type FallbackMode, type IssueDetail, type TaskKind } from "@crewyard/core";
 import { Button, Label, Panel } from "@crewyard/ui";
 import { useNav } from "../../nav.ts";
 import { AttachButton, DraftAttachments, useAttachmentDraft, useDiscardOnUnmount } from "./Attachments.tsx";
@@ -38,7 +38,8 @@ export function Composer({ projectId, projectName, assistantOpen, onAssistant }:
   const [issue, setIssue] = useState<{ number: number; url: string; title: string } | null>(null);
   const attach = useAttachmentDraft();
   useDiscardOnUnmount(attach);
-  const ids = { text: useId(), branch: useId(), kind: useId(), fallback: useId(), budget: useId(), bestOf: useId() };
+  const ids = { text: useId(), branch: useId(), kind: useId(), fallback: useId(), budget: useId(), bestOf: useId(), preset: useId() };
+  const ta = useTranslation("assistant").t;
 
   const { title, description } = splitTaskText(text);
   const budgetUsd = budget.trim() === "" ? undefined : Number(budget);
@@ -110,6 +111,28 @@ export function Composer({ projectId, projectName, assistantOpen, onAssistant }:
             <GitBranch size={14} strokeWidth={1.75} aria-hidden="true" />
             <span className="sr">{t("composer.branch")}</span>
             <input id={ids.branch} value={branch} onChange={(e) => setBranch(e.target.value)} placeholder={repo.data?.currentBranch ?? t("composer.branchCurrent")} spellCheck={false} />
+          </label>
+          <label className="chip tk-field" htmlFor={ids.preset} title={t("composer.presetTitle")}>
+            {t("composer.preset")}
+            <select
+              id={ids.preset}
+              className="tk-preset"
+              value=""
+              onChange={(e) => {
+                const p = TASK_PRESETS.find((x) => x.id === e.target.value);
+                if (!p) return;
+                // A ready-made analysis: a research task whose contract asks for findings (docs/adr/0014).
+                setText(`${ta(`presets.items.${p.id}`)}\n${p.description}`);
+                setKind(p.kind);
+              }}
+            >
+              <option value="">{t("composer.presetNone")}</option>
+              {TASK_PRESETS.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {ta(`presets.items.${p.id}`)}
+                </option>
+              ))}
+            </select>
           </label>
           <label className="chip tk-field" htmlFor={ids.kind}>
             {t("composer.kind")}

@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent 
 import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
-import type { AssistantDraftView, AssistantLine, AssistantProfileOption, AssistantView, TaskKind, TaskSize } from "@crewyard/core";
+import { TASK_PRESETS, type AssistantDraftView, type AssistantLine, type AssistantProfileOption, type AssistantView, type TaskKind, type TaskPresetId, type TaskSize } from "@crewyard/core";
 import { BrandIcon, Button, Label, Panel, ProvenanceBadge } from "@crewyard/ui";
 import { matches } from "../../keys.ts";
 import { useNav } from "../../nav.ts";
@@ -40,6 +40,7 @@ export function AssistantPanel({ projectId, onClose }: { projectId: string; onCl
   // Read fresh on every open: changes while the panel was closed (the stop it just asked for) went unheard.
   const view = useWork("assistant.get", { projectId }, { refetchOnMount: "always" });
   const profiles = useWork("assistant.profiles", { projectId }, { staleTime: 30_000 });
+  const presets = useWork("assistant.presets", { projectId }, { staleTime: 60_000 });
   const [chosen, setChosen] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -107,6 +108,30 @@ export function AssistantPanel({ projectId, onClose }: { projectId: string; onCl
     // Closing stops the session; the conversation and drafts stay for next time.
     void act("assistant.stop", { projectId }).catch(() => undefined);
     onClose();
+  };
+
+  const addPreset = async (presetId: TaskPresetId) => {
+    setError(null);
+    try {
+      set(await act("assistant.preset", { projectId, presetId }));
+    } catch (err) {
+      setError(errorText(err));
+    }
+  };
+
+  /** One message with a fixed request; its estimated cost is on the button before you press it. */
+  const suggest = async () => {
+    if (!profileId || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      set(await act("assistant.send", { projectId, profileId, text: t("suggest.message") }));
+      atEnd.current = true;
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
   };
 
   const clear = async () => {
@@ -233,6 +258,13 @@ export function AssistantPanel({ projectId, onClose }: { projectId: string; onCl
           )}
         </div>
         <section className="as-drafts" aria-label={t("drafts.label")}>
+          <Presets
+            suggested={presets.data?.suggested ?? []}
+            onPick={(id) => void addPreset(id)}
+            onSuggest={() => void suggest()}
+            estimate={running?.suggestEstimate ?? null}
+            canSuggest={Boolean(profileId) && !busy && v?.state !== "working" && v?.state !== "starting"}
+          />
           <div className="as-drafts-head">
             <Label>{t("drafts.title")}</Label>
             <span className="muted num">{drafts.length}</span>
@@ -250,6 +282,67 @@ export function AssistantPanel({ projectId, onClose }: { projectId: string; onCl
   );
 }
 
+function Presets({
+  suggested,
+  onPick,
+  onSuggest,
+  estimate,
+  canSuggest,
+}: {
+  suggested: Array<{ id: TaskPresetId; reason: string; count?: number }>;
+  onPick(id: TaskPresetId): void;
+  onSuggest(): void;
+  estimate: AssistantProfileOption["suggestEstimate"] | null;
+  canSuggest: boolean;
+}) {
+  const { t } = useTranslation("assistant");
+  const picked = new Set(suggested.map((s) => s.id));
+  const rest = TASK_PRESETS.filter((p) => !picked.has(p.id));
+  const reasons = [...new Set(suggested.map((s) => t(`presets.reason.${s.reason}`, { count: s.count ?? 0 })))];
+  return (
+    <div className="as-presets">
+      <Label>{t("presets.title")}</Label>
+      {suggested.length > 0 && (
+        <>
+          <span className="muted tk-small">{t("presets.forProject")}</span>
+          <div className="as-preset-list">
+            {suggested.map((s) => (
+              <Button key={s.id} size="sm" data-suggested="" title={t(`presets.reason.${s.reason}`, { count: s.count ?? 0 })} onClick={() => onPick(s.id)}>
+                {t(`presets.items.${s.id}`)}
+              </Button>
+            ))}
+          </div>
+          <span className="muted tk-small">{reasons.join(" · ")}</span>
+        </>
+      )}
+      <div className="as-preset-list">
+        {rest.map((p) => (
+          <Button key={p.id} size="sm" variant="ghost" onClick={() => onPick(p.id)}>
+            {t(`presets.items.${p.id}`)}
+          </Button>
+        ))}
+      </div>
+      <div className="as-suggest">
+        <Button size="sm" onClick={onSuggest} disabled={!canSuggest} title={t("suggest.title")}>
+          {t("suggest.button")}
+        </Button>
+        {estimate && (
+          <span className="as-spend">
+            {estimate.label === "plan" ? (
+              <span className="badge">{t("spend.plan")}</span>
+            ) : (
+              <>
+                <span className="num">{estimate.usd === null ? t("spend.noPrice") : t("suggest.about", { usd: estimate.usd.toFixed(4) })}</span>
+                <ProvenanceBadge provenance={estimate.label === "unknown" ? "unknown" : "estimated"}>{t(estimate.label === "unknown" ? "spend.unknown" : "spend.estimated")}</ProvenanceBadge>
+              </>
+            )}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function StateChip({ state }: { state: AssistantView["state"] }) {
   const { t } = useTranslation("assistant");
   return (
@@ -263,6 +356,8 @@ function StateChip({ state }: { state: AssistantView["state"] }) {
 function Spend({ view }: { view: AssistantView }) {
   const { t, i18n } = useTranslation("assistant");
   const s = view.spend;
+  // Nothing spent yet (no message sent, or only presets picked): no number to show.
+  if (s.tokensIn + s.tokensOut === 0 && !s.usd) return null;
   const tokens = new Intl.NumberFormat(i18n.language).format(s.tokensIn + s.tokensOut);
   if (s.label === "plan")
     return (
@@ -304,7 +399,8 @@ function Line({ line }: { line: AssistantLine }) {
   );
 }
 
-function DraftCard({ draft, index }: { draft: AssistantDraftView; index: number }) {
+/** One editable draft: the assistant's, a preset's, or a finished task's suggestion. `onChanged` re-reads its list. */
+export function DraftCard({ draft, index, onChanged }: { draft: AssistantDraftView; index: number; onChanged?: () => void }) {
   const { t } = useTranslation("assistant");
   const tk = useTranslation("tasks").t;
   const errorText = useAssistantError();
@@ -349,6 +445,7 @@ function DraftCard({ draft, index }: { draft: AssistantDraftView; index: number 
       });
       // The task opens with its crew proposal, which still waits for your approval.
       selectTask(res.taskId);
+      onChanged?.();
     } catch (err) {
       setError(errorText(err));
     } finally {
@@ -360,6 +457,7 @@ function DraftCard({ draft, index }: { draft: AssistantDraftView; index: number 
     setError(null);
     try {
       await act("assistant.discardDraft", { draftId: draft.id });
+      onChanged?.();
     } catch (err) {
       setError(errorText(err));
     }
@@ -369,7 +467,7 @@ function DraftCard({ draft, index }: { draft: AssistantDraftView; index: number 
     <article className="spec as-draft" aria-label={t("drafts.cardLabel", { n: index, title: draft.title })}>
       <div className="as-draft-top">
         <span className="lbl num">{n}</span>
-        <span className="lbl">{t("drafts.proposed")}</span>
+        <span className="lbl">{t(`drafts.from.${draft.source}`)}</span>
       </div>
       <label className="as-field">
         <span className="lbl">{t("drafts.fieldTitle")}</span>

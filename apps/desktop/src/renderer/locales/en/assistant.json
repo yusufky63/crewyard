@@ -69,7 +69,6 @@
     "label": "Task drafts",
     "title": "Drafts",
     "empty": "Drafts the assistant proposes appear here. Nothing starts until you add one and approve its crew.",
-    "proposed": "Proposed draft",
     "cardLabel": "Draft {{n}}: {{title}}",
     "fieldTitle": "Title",
     "fieldKind": "Kind",
@@ -83,7 +82,68 @@
     "adding": "Adding…",
     "discard": "Discard",
     "added": "Added to Tasks. Its crew waits for your approval.",
-    "open": "Open task"
+    "open": "Open task",
+    "from": {
+      "assistant": "Proposed by the assistant",
+      "preset": "Ready-made",
+      "finding": "From a finding",
+      "followup": "Agent's follow-up"
+    }
+  },
+  "presets": {
+    "title": "Ready-made tasks",
+    "forProject": "For this project",
+    "reason": {
+      "no_test_command": "no test command is set",
+      "recent_activity_one": "{{count}} commit in the last 14 days",
+      "recent_activity_other": "{{count}} commits in the last 14 days",
+      "dependencies": "it has dependencies",
+      "remote": "it has a remote",
+      "general": "useful for any project"
+    },
+    "items": {
+      "review": "Review the project and comment",
+      "optimize": "Suggest optimizations",
+      "bugs": "Find bugs and problems",
+      "security": "Find security issues",
+      "deps": "Audit dependencies and licences",
+      "tests": "Find test coverage gaps"
+    }
+  },
+  "suggest": {
+    "button": "Suggest tasks for this project",
+    "title": "Asks the assistant once, on the profile above; the cost beside it is our estimate before you press it",
+    "about": "about ${{usd}}",
+    "message": "Suggest tasks for this project. Look through the code and propose three to five tasks that would help it most, each with a kind, acceptance criteria and a size."
+  },
+  "report": {
+    "label": "Report",
+    "open": "Open report",
+    "findingsCount_one": "{{count}} finding",
+    "findingsCount_other": "{{count}} findings",
+    "suggestedCount_one": "{{count}} suggested task",
+    "suggestedCount_other": "{{count}} suggested tasks",
+    "source": {
+      "findings": "Findings",
+      "verdict": "Review verdict",
+      "plan": "Plan",
+      "text": "Final message"
+    },
+    "verdict": {
+      "pass": "Pass",
+      "changes": "Changes asked"
+    },
+    "truncated": "Part of the report was cut to fit.",
+    "findings": "Findings",
+    "severity": {
+      "critical": "Critical",
+      "high": "High",
+      "medium": "Medium",
+      "low": "Low",
+      "info": "Info"
+    },
+    "suggested": "Suggested tasks",
+    "suggestedNote": "From the findings and the agent's follow-ups. Nothing starts until you add one and approve its crew."
   },
   "errors": {
     "assistant_closed": "Crewyard is shutting down.",
@@ -105,6 +165,8 @@
     "assistant_draft_invalid": "Check the draft: a one-line title of at most 120 bytes, at most 12 short criteria.",
     "assistant_draft_not_found": "That draft no longer exists.",
     "project_not_found": "The project is gone.",
+    "assistant_preset_unknown": "That ready-made task does not exist.",
+    "assistant_too_many_drafts": "This conversation already has 20 drafts. Add or discard some first.",
     "other": "Something went wrong: {{message}}"
   }
 }

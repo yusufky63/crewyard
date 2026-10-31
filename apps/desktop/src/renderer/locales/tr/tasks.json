@@ -37,6 +37,9 @@
     "assistant": "Asistan",
     "assistantClose": "Asistanı kapat",
     "assistantTitle": "Görevleri salt okunur bir ajanla sohbet ederek planla ({{keys}})",
+    "preset": "Hazır",
+    "presetNone": "Seç…",
+    "presetTitle": "Oluşturucuyu hazır bir analizle doldurur: bulgular ve önerilen görevlerle biten bir araştırma görevi",
     "note": "Öneri yalnızca bir ekip taslağı çıkarır. Siz onaylamadan hiçbir şey başlamaz."
   },
   "kind": { "auto": "Algıla", "code": "Kod", "research": "Araştırma", "review": "İnceleme", "docs": "Belge" },

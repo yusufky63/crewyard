@@ -69,7 +69,6 @@
     "label": "Görev taslakları",
     "title": "Taslaklar",
     "empty": "Asistanın önerdiği taslaklar burada görünür. Birini ekleyip ekibini onaylamadan hiçbir şey başlamaz.",
-    "proposed": "Önerilen taslak",
     "cardLabel": "Taslak {{n}}: {{title}}",
     "fieldTitle": "Başlık",
     "fieldKind": "Tür",
@@ -83,7 +82,68 @@
     "adding": "Ekleniyor…",
     "discard": "Vazgeç",
     "added": "Görevler'e eklendi. Ekibi onayını bekliyor.",
-    "open": "Görevi aç"
+    "open": "Görevi aç",
+    "from": {
+      "assistant": "Asistanın önerisi",
+      "preset": "Hazır görev",
+      "finding": "Bir bulgudan",
+      "followup": "Ajanın takip önerisi"
+    }
+  },
+  "presets": {
+    "title": "Hazır görevler",
+    "forProject": "Bu proje için",
+    "reason": {
+      "no_test_command": "test komutu tanımlı değil",
+      "recent_activity_one": "son 14 günde {{count}} commit",
+      "recent_activity_other": "son 14 günde {{count}} commit",
+      "dependencies": "bağımlılıkları var",
+      "remote": "uzak deposu var",
+      "general": "her projede işe yarar"
+    },
+    "items": {
+      "review": "Projeyi incele ve yorumla",
+      "optimize": "Optimizasyon öner",
+      "bugs": "Hataları ve sorunları bul",
+      "security": "Güvenlik sorunlarını bul",
+      "deps": "Bağımlılıkları ve lisansları denetle",
+      "tests": "Test kapsamındaki boşlukları bul"
+    }
+  },
+  "suggest": {
+    "button": "Bu proje için görev öner",
+    "title": "Asistana yukarıdaki profille bir kez sorar; yanındaki tutar, düğmeye basmadan önceki tahminimizdir",
+    "about": "yaklaşık ${{usd}}",
+    "message": "Bu proje için görev öner. Koda göz at ve projeye en çok yarayacak üç ila beş görev öner; her birinin türü, kabul ölçütleri ve boyutu olsun."
+  },
+  "report": {
+    "label": "Rapor",
+    "open": "Raporu aç",
+    "findingsCount_one": "{{count}} bulgu",
+    "findingsCount_other": "{{count}} bulgu",
+    "suggestedCount_one": "{{count}} önerilen görev",
+    "suggestedCount_other": "{{count}} önerilen görev",
+    "source": {
+      "findings": "Bulgular",
+      "verdict": "İnceleme kararı",
+      "plan": "Plan",
+      "text": "Son mesaj"
+    },
+    "verdict": {
+      "pass": "Geçti",
+      "changes": "Değişiklik istendi"
+    },
+    "truncated": "Raporun bir kısmı sığması için kesildi.",
+    "findings": "Bulgular",
+    "severity": {
+      "critical": "Kritik",
+      "high": "Yüksek",
+      "medium": "Orta",
+      "low": "Düşük",
+      "info": "Bilgi"
+    },
+    "suggested": "Önerilen görevler",
+    "suggestedNote": "Bulgulardan ve ajanın takip önerilerinden. Birini ekleyip ekibini onaylamadan hiçbir şey başlamaz."
   },
   "errors": {
     "assistant_closed": "Crewyard kapanıyor.",
@@ -105,6 +165,8 @@
     "assistant_draft_invalid": "Taslağı kontrol et: en fazla 120 baytlık tek satırlık bir başlık, en fazla 12 kısa ölçüt.",
     "assistant_draft_not_found": "Bu taslak artık yok.",
     "project_not_found": "Proje artık yok.",
+    "assistant_preset_unknown": "Böyle bir hazır görev yok.",
+    "assistant_too_many_drafts": "Bu sohbette zaten 20 taslak var. Önce bazılarını ekle ya da vazgeç.",
     "other": "Bir şeyler ters gitti: {{message}}"
   }
 }

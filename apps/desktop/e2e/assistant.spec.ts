@@ -98,7 +98,7 @@ test("the agent proposes two drafts, read-only, and the spend shows as Estimated
   await expect(p.getByText("Your turn")).toBeVisible();
   const drafts = p.getByRole("region", { name: "Task drafts" });
   await expect(drafts.getByRole("article")).toHaveCount(2);
-  await expect(p.locator(".as-spend")).toContainText("Estimated");
+  await expect(p.locator(".as-head .as-spend")).toContainText("Estimated");
   await expect(p.locator(".as-run")).toContainText("Fake");
 
   // Nothing became a task on its own.
@@ -150,8 +150,13 @@ test("keyboard: Tab reaches the log, the box and every draft control; Esc stops 
   await expect(box).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(p.getByRole("button", { name: "Send" })).toBeDisabled();
-  // Disabled Send is skipped; the drafts column comes next.
-  await expect(p.getByRole("region", { name: "Task drafts" }).getByRole("button", { name: "Open task" })).toBeFocused();
+  // Disabled Send is skipped; the drafts column comes next, ready-made tasks first.
+  const column = p.getByRole("region", { name: "Task drafts" });
+  await expect(column.locator(".as-presets").getByRole("button").first()).toBeFocused();
+  // Every ready-made task, then Suggest, then the added draft's Open task, one Tab each.
+  const stops = await column.locator("button:not([disabled])").count();
+  for (let i = 1; i < stops; i++) await page.keyboard.press("Tab");
+  await expect(column.getByRole("button", { name: "Open task" })).toBeFocused();
 
   await box.focus();
   await page.keyboard.press("Escape");
