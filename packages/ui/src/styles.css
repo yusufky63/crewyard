@@ -175,3 +175,10 @@ svg.i, .i { width: 16px; height: 16px; flex: none; }
 .splitter-inline::after { left: 7px; }
 .splitter-inline:focus-visible::after, .splitter-inline[data-dragging]::after { left: 6px; }
 :root.is-resizing, :root.is-resizing * { cursor: col-resize !important; user-select: none; }
+/* A horizontal splitter sits on a pane's top or bottom edge and sizes its height (Activity drawer). */
+.splitter[aria-orientation="horizontal"] { top: auto; bottom: auto; left: 0; right: 0; width: auto; height: 9px; cursor: row-resize; }
+.splitter[aria-orientation="horizontal"][data-edge="start"] { top: -5px; }
+.splitter[aria-orientation="horizontal"][data-edge="end"] { bottom: -5px; }
+.splitter[aria-orientation="horizontal"]::after { top: 4px; bottom: auto; left: 0; right: 0; width: auto; height: 1px; }
+.splitter[aria-orientation="horizontal"]:focus-visible::after, .splitter[aria-orientation="horizontal"][data-dragging]::after { top: 3px; left: 0; width: auto; height: 3px; }
+:root.is-resizing-rows, :root.is-resizing-rows * { cursor: row-resize !important; }

@@ -24,7 +24,15 @@ interface Prefs extends LayoutPrefs {
   setInspectorWidth(px: number): void;
   setInspectorCollapsed(collapsed: boolean): void;
   setInboxListWidth(px: number): void;
+  setDrawerHeight(px: number): void;
+  setDrawerOpen(open: boolean): void;
+  toggleDrawer(): void;
+  drawerTab: DrawerTab;
+  setDrawerTab(tab: DrawerTab): void;
 }
+
+/** The Activity drawer's tabs; the terminal view is not built (DESIGN.md §4). */
+export type DrawerTab = "events" | "logs";
 
 // localStorage can be missing or throw (private profiles, blocked storage); fall back to memory.
 const memory = new Map<string, string>();
@@ -71,6 +79,11 @@ export const usePrefs = create<Prefs>()(
       setInspectorWidth: (inspectorWidth) => set({ inspectorWidth }),
       setInspectorCollapsed: (inspectorCollapsed) => set({ inspectorCollapsed }),
       setInboxListWidth: (inboxListWidth) => set({ inboxListWidth }),
+      setDrawerHeight: (drawerHeight) => set({ drawerHeight }),
+      setDrawerOpen: (drawerOpen) => set({ drawerOpen }),
+      toggleDrawer: () => set((s) => ({ drawerOpen: !s.drawerOpen })),
+      drawerTab: "events",
+      setDrawerTab: (drawerTab) => set({ drawerTab }),
     }),
     {
       name: "crewyard:prefs",

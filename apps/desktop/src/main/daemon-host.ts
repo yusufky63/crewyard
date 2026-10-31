@@ -1,9 +1,12 @@
 import { utilityProcess, type UtilityProcess } from "electron";
 import { isHostRequest, type HostMethod, type HostRequest, type HostResponse, type IpcMessage, type IpcMethod, type IpcResponse } from "@crewyard/core";
+import { lineSplitter, type AppLogs } from "./logs.ts";
 
 // Owns the daemon utility process. Requests from the renderer are relayed with an id; responses
 // are matched back. If the daemon exits it is restarted with a short backoff and pending calls fail.
 // The daemon's own host requests (core host.ts) go to `host`, which only Linux and macOS pass.
+// With `logs`, the daemon's stdout and stderr go to daemon.log (and still to this console), and its
+// starts and exits to main.log, for the Activity drawer.
 
 export type HostHandler = (method: HostMethod, data: string) => Promise<string>;
 
@@ -19,13 +22,33 @@ export class DaemonHost {
     private readonly dataDir: string,
     private readonly onEvent: (topic: string, payload: unknown) => void,
     private readonly host?: HostHandler,
+    private readonly logs?: AppLogs,
   ) {}
 
   start(): void {
+    const logs = this.logs;
     const child = utilityProcess.fork(this.entry, [], {
       serviceName: "Crewyard daemon",
-      env: { ...process.env, CREWYARD_DATA_DIR: this.dataDir },
+      env: { ...process.env, CREWYARD_DATA_DIR: this.dataDir, ...(logs ? { CREWYARD_LOG_DIR: logs.dir } : {}) },
+      ...(logs ? { stdio: "pipe" as const } : {}),
     });
+    if (logs) {
+      const out = lineSplitter((l) => logs.daemon.write("info", l));
+      const err = lineSplitter((l) => logs.daemon.write("error", l));
+      child.stdout?.on("data", (c: Buffer) => {
+        process.stdout.write(c);
+        out.push(c);
+      });
+      child.stderr?.on("data", (c: Buffer) => {
+        process.stderr.write(c);
+        err.push(c);
+      });
+      child.once("exit", () => {
+        out.flush();
+        err.flush();
+      });
+      logs.main.write("info", `Daemon starting${this.restarts ? ` (restart ${this.restarts})` : ""}`);
+    }
     child.on("message", (msg: IpcMessage | HostRequest) => {
       if (isHostRequest(msg)) void this.answerHost(child, msg);
       else if (msg.kind === "response") this.settle(msg);
@@ -43,6 +66,7 @@ export class DaemonHost {
       if (this.stopping) return;
       this.onEvent("daemon.exited", { code });
       const delay = Math.min(30_000, 500 * 2 ** this.restarts++);
+      this.logs?.main.write("warn", `Daemon exited (code ${code}), restarting in ${delay} ms`);
       setTimeout(() => this.start(), delay);
     });
     this.child = child;

@@ -1,0 +1,63 @@
+/* The Activity drawer under the main view (DESIGN.md §4): a row of its own in the main column,
+   sized by --drawer-h, which App.tsx writes on <html> before the first paint. */
+.main-col { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.main-col > .main { flex: 1; min-height: 0; }
+
+.drawer {
+  position: relative; flex: none; height: min(var(--drawer-h, 280px), calc(100vh - 40px - 28px - 200px)); min-height: 160px;
+  display: flex; flex-direction: column; border-top: 1px solid var(--line); background: var(--surface);
+}
+.drawer-head { display: flex; align-items: center; gap: 12px; padding: 0 8px 0 16px; border-bottom: 1px solid var(--line); min-height: 36px; }
+.drawer-tabs { display: flex; gap: 16px; align-self: stretch; }
+.drawer-tabs [role="tab"] { position: relative; padding: 0 2px; font: 500 11px / 1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+.drawer-tabs [role="tab"]:hover { color: var(--ink); }
+.drawer-tabs [role="tab"][aria-selected="true"] { color: var(--ink); }
+.drawer-tabs [role="tab"][aria-selected="true"]::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; background: var(--ink); }
+.drawer-note { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.drawer-head .drawer-note { margin-left: auto; }
+.drawer-x { width: 28px; height: 28px; display: grid; place-items: center; flex: none; color: var(--ink-3); }
+.drawer-x:hover { color: var(--ink); background: var(--raised); }
+.drawer-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.drawer-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+.ev, .logs { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.drawer-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 16px; border-bottom: 1px solid var(--line); }
+.drawer-field { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.drawer-select { height: 28px; max-width: 220px; min-width: 0; border: 1px solid var(--line-strong); background: var(--canvas); padding: 0 6px; font: 400 12px / 1 var(--ui); color: var(--ink); }
+.drawer-select.mono { font-family: var(--mono); }
+.drawer-check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-2); min-height: 28px; }
+.drawer-check input { accent-color: var(--accent); }
+.drawer-pager { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+.drawer-page { font-size: 11px; color: var(--ink-3); padding: 0 4px; }
+.drawer-empty { padding: 16px; font-size: 13px; }
+
+.ev-list, .log-list { flex: 1; min-height: 0; overflow: auto; margin: 0; padding: 0; list-style: none; background: var(--sunken); scrollbar-width: thin; scrollbar-color: var(--tick) transparent; }
+.ev-row { border-bottom: 1px solid var(--line); padding: 4px 16px; }
+.ev-line { display: flex; align-items: baseline; gap: 12px; min-width: 0; min-height: 28px; }
+.ev-time { flex: none; font: 400 11px / 1.6 var(--mono); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.ev-kind { flex: none; font: 400 12px / 1.5 var(--mono); color: var(--ink-2); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ev-who { flex: none; font-size: 12px; color: var(--ink-2); max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ev-text { flex: 1; min-width: 0; font: 400 12px / 1.5 var(--mono); color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ev-more { flex: none; }
+.ev-err { font-size: 12px; color: var(--bad); padding: 4px 0; }
+.ev-full {
+  margin: 4px 0 8px; padding: 8px 12px; max-height: 240px; overflow: auto; border: 1px solid var(--line); background: var(--canvas);
+  font: 400 12px / 1.5 var(--mono); color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere;
+}
+
+.log-row { display: flex; align-items: baseline; gap: 12px; padding: 4px 16px; border-bottom: 1px solid var(--line); min-width: 0; }
+.log-level { flex: none; display: inline-flex; align-items: center; gap: 4px; width: 92px; font: 400 11px / 1.6 var(--mono); color: var(--ink-2); }
+.log-level svg { align-self: center; }
+.log-level.l-warn { color: var(--warn); }
+.log-level.l-error { color: var(--bad); }
+.log-source { flex: none; width: 112px; font-size: 12px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.log-text { flex: 1; min-width: 0; font: 400 12px / 1.5 var(--mono); color: var(--ink); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+:root[data-density="compact"] .drawer-tools { padding: 6px 12px; }
+:root[data-density="compact"] .ev-row, :root[data-density="compact"] .log-row { padding: 2px 12px; }
+
+@media (max-width: 1180px) {
+  .drawer-head .drawer-note { display: none; }
+  .drawer-x { margin-left: auto; }
+  .drawer-pager { margin-left: 0; }
+}

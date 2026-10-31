@@ -1,0 +1,79 @@
+{
+  "label": "Etkinlik",
+  "tabsLabel": "Etkinlik görünümleri",
+  "tab": {
+    "events": "Olaylar",
+    "logs": "Günlükler"
+  },
+  "closeNote": "Bu çekmeceyi kapatmak hiçbir şeyi durdurmaz.",
+  "close": "Etkinlik çekmecesini kapat",
+  "closeTitle": "Kapat ({{keys}} ya da Esc). Hiçbir şey durmaz.",
+  "resize": "Etkinlik çekmecesini yeniden boyutlandır",
+  "resizeHint": "Boyutlandırmak için sürükleyin, kapatmak için aşağı çekin. Sıfırlamak için çift tıklayın.",
+  "loading": "Yükleniyor…",
+  "toggle": {
+    "label": "Etkinlik",
+    "show": "Olayları ve günlükleri göster ({{keys}})",
+    "hide": "Olayları ve günlükleri gizle ({{keys}}). Hiçbir şey durmaz."
+  },
+  "events": {
+    "filters": "Olay filtreleri",
+    "task": "Görev",
+    "allTasks": "Tüm görevler",
+    "run": "Çalıştırma",
+    "allRuns": "Tüm çalıştırmalar",
+    "runOption": "{{role}} · {{runner}} · {{at}}",
+    "kind": "Tür",
+    "allKinds": "Tüm türler",
+    "family": "{{family}}* · tümü ({{count}})",
+    "kindOption": "{{kind}} ({{count}})",
+    "stream": "Akan metin",
+    "clear": "Filtreleri temizle",
+    "newer": "Daha yeni",
+    "older": "Daha eski",
+    "page": "Sayfa {{n}}",
+    "newest": "En yenileri göster ({{count}} yeni)",
+    "newWaiting": "Yeni olaylar geldi. Görmek için en yenileri gösterin.",
+    "listLabel": "Olaylar, en yenisi başta",
+    "source": "Yazan: {{source}}",
+    "noText": "Metin yok",
+    "showAll": "Tümünü göster · {{size}} karakter",
+    "showAllLabel": "{{kind}} olayının tamamını göster",
+    "showLess": "Daha az göster",
+    "fullLabel": "{{kind}} olayının tamamı",
+    "loading": "Yükleniyor…",
+    "loadFailed": "Olayın tamamı yüklenemedi.",
+    "none": "Bu projede henüz olay yok.",
+    "noneFiltered": "Bu filtrelere uyan olay yok.",
+    "error": "Olay günlüğü okunamadı."
+  },
+  "logs": {
+    "filters": "Günlük filtreleri",
+    "source": "Kaynak",
+    "sources": {
+      "all": "Tüm kaynaklar",
+      "main": "Uygulama",
+      "daemon": "Arka plan servisi",
+      "updater": "Güncelleyici"
+    },
+    "levelLabel": "Düzey",
+    "levels": {
+      "all": "Tüm düzeyler",
+      "warn": "Uyarılar ve hatalar",
+      "error": "Yalnızca hatalar"
+    },
+    "level": {
+      "debug": "Hata ayıklama",
+      "info": "Bilgi",
+      "warn": "Uyarı",
+      "error": "Hata"
+    },
+    "redacted": "Satırlar gösterilmeden önce anahtarlar ve belirteçler gizlenir.",
+    "openFolder": "Klasörü aç",
+    "older": "Daha eskileri göster",
+    "listLabel": "Günlük satırları, en yenisi başta",
+    "none": "Henüz günlük satırı yok.",
+    "noneFiltered": "Bu filtrelere uyan günlük satırı yok.",
+    "error": "Günlük dosyaları okunamadı."
+  }
+}

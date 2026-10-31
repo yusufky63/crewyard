@@ -11,6 +11,7 @@ import { createSetupHandlers } from "./handlers/setup.ts";
 import { createTasksHandlers } from "./handlers/tasks.ts";
 import { createWorktreesHandlers } from "./handlers/worktrees.ts";
 import { createUsageHandlers } from "./handlers/usage.ts";
+import { createActivityHandlers } from "./handlers/activity.ts";
 import type { HandlerContext, HandlerMap } from "./handlers/types.ts";
 import { checkDefender, checkEnv, checkMachine, checkTool, TOOL_BINS } from "./machine.ts";
 import { assertFolder, scanForRepos } from "./projects.ts";
@@ -55,6 +56,7 @@ export function createHandlers(ctx: HandlerContext): Handlers {
     ...createMcpHandlers(ctx),
     ...createRolesHandlers(ctx),
     ...createPreviewHandlers(ctx),
+    ...createActivityHandlers(ctx),
   };
 }
 

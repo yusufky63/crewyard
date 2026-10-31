@@ -9,6 +9,13 @@ export const SIDEBAR_ID = "app-sidebar";
 export const SIDEBAR = { default: 224, min: 184, max: 360, rail: 56, collapseBelow: 136 } as const;
 export const INSPECTOR = { default: 380, min: 320, max: 720, collapsed: 44 } as const;
 export const INBOX_LIST = { default: 360, min: 280, max: 560 } as const;
+/** The Activity drawer under the main view (DESIGN.md §4); a drag under `closeBelow` closes it. */
+export const DRAWER = { default: 280, min: 160, max: 640, closeBelow: 96 } as const;
+/** id of the drawer region, for aria-controls on its toggle and handle. */
+export const DRAWER_ID = "activity-drawer";
+/** Title bar and status bar heights; the drawer never pushes the main view under MAIN_MIN_HEIGHT. */
+const CHROME_HEIGHT = 40 + 28;
+export const MAIN_MIN_HEIGHT = 200;
 
 /** Below this the inspector overlays the main view instead of taking a column. */
 export const OVERLAY_BELOW = 1280;
@@ -27,6 +34,8 @@ export interface LayoutPrefs {
   inspectorWidth: number;
   inspectorCollapsed: boolean;
   inboxListWidth: number;
+  drawerHeight: number;
+  drawerOpen: boolean;
 }
 
 export const DEFAULT_LAYOUT: LayoutPrefs = {
@@ -35,6 +44,9 @@ export const DEFAULT_LAYOUT: LayoutPrefs = {
   inspectorWidth: INSPECTOR.default,
   inspectorCollapsed: false,
   inboxListWidth: INBOX_LIST.default,
+  drawerHeight: DRAWER.default,
+  // Closed by default (DESIGN.md §2): normal telemetry stays out of the first view.
+  drawerOpen: false,
 };
 
 const num = (v: unknown, fallback: number, b: SplitBounds) => (typeof v === "number" && Number.isFinite(v) ? clampSize(v, b) : fallback);
@@ -48,6 +60,8 @@ export function sanitizeLayout(stored: unknown): LayoutPrefs {
     inspectorWidth: num(s.inspectorWidth, INSPECTOR.default, INSPECTOR),
     inspectorCollapsed: s.inspectorCollapsed === true,
     inboxListWidth: num(s.inboxListWidth, INBOX_LIST.default, INBOX_LIST),
+    drawerHeight: num(s.drawerHeight, DRAWER.default, DRAWER),
+    drawerOpen: s.drawerOpen === true,
   };
 }
 
@@ -67,6 +81,11 @@ export function inboxListBounds(gridWidth: number, handle: number): SplitBounds 
   return { min: INBOX_LIST.min, max: Math.max(INBOX_LIST.min, Math.min(INBOX_LIST.max, gridWidth - handle - INBOX_DETAIL_MIN)) };
 }
 
+/** How tall the drawer may get in a window this high, so the main view keeps its minimum. */
+export function drawerBounds(viewportHeight: number): SplitBounds {
+  return { min: DRAWER.min, max: Math.max(DRAWER.min, Math.min(DRAWER.max, viewportHeight - CHROME_HEIGHT - MAIN_MIN_HEIGHT)) };
+}
+
 /**
  * The CSS custom properties the layout reads. Written on <html> before the first render and on
  * every change, so the panes open at their saved size (no shift at start) and dragging never
@@ -77,5 +96,6 @@ export function layoutVars(l: LayoutPrefs): Record<string, string> {
     "--sidebar-w": `${l.sidebarWidth}px`,
     "--inspector-w": `${l.inspectorWidth}px`,
     "--inbox-list-w": `${l.inboxListWidth}px`,
+    "--drawer-h": `${l.drawerHeight}px`,
   };
 }

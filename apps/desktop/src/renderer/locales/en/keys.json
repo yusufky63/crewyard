@@ -16,8 +16,9 @@
   "action": {
     "palette": "Search screens, projects and tasks",
     "sidebar": "Collapse or expand the sidebar",
+    "drawer": "Show or hide the Activity drawer (events and logs)",
     "help": "Show this list",
-    "close": "Close the topmost layer: menu, dialog, inspector, then full screen",
+    "close": "Close the topmost layer: menu, dialog, the Activity drawer while focus is in it, inspector, then full screen",
     "submit": "Submit the composer, approve the focused crew, send a message or comment",
     "list.next": "Next item in the list",
     "list.prev": "Previous item in the list",

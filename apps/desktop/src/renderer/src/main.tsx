@@ -31,6 +31,10 @@ else if (forcedSidebar && Number(forcedSidebar) > 0) usePrefs.setState({ sidebar
 if (Number(query.get("inspectorW")) > 0) usePrefs.setState({ inspectorWidth: Number(query.get("inspectorW")) });
 if (query.get("inspector") === "collapsed") usePrefs.setState({ inspectorCollapsed: true });
 if (Number(query.get("inboxW")) > 0) usePrefs.setState({ inboxListWidth: Number(query.get("inboxW")) });
+// ?drawer=events or ?drawer=logs opens the Activity drawer on that tab; ?drawerH= sets its height.
+const forcedDrawer = query.get("drawer");
+if (forcedDrawer === "events" || forcedDrawer === "logs") usePrefs.setState({ drawerOpen: true, drawerTab: forcedDrawer });
+if (Number(query.get("drawerH")) > 0) usePrefs.setState({ drawerHeight: Number(query.get("drawerH")) });
 
 // ?project= and ?screen= are screenshot mode too: add the folder to the throwaway profile and open it.
 const forcedProject = query.get("project");

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_LAYOUT, inboxListBounds, inspectorBounds, layoutVars, sanitizeLayout, sidebarColumn } from "./layout.ts";
+import { DEFAULT_LAYOUT, drawerBounds, inboxListBounds, inspectorBounds, layoutVars, sanitizeLayout, sidebarColumn } from "./layout.ts";
 
 describe("sanitizeLayout", () => {
   it("fills the defaults when nothing was stored", () => {
@@ -8,13 +8,23 @@ describe("sanitizeLayout", () => {
   });
 
   it("keeps stored sizes inside their limits and drops values of the wrong type", () => {
-    const l = sanitizeLayout({ sidebarWidth: 9000, sidebarCollapsed: true, inspectorWidth: 12, inspectorCollapsed: "yes", inboxListWidth: "wide" });
-    expect(l).toEqual({ sidebarWidth: 360, sidebarCollapsed: true, inspectorWidth: 320, inspectorCollapsed: false, inboxListWidth: 360 });
+    const l = sanitizeLayout({ sidebarWidth: 9000, sidebarCollapsed: true, inspectorWidth: 12, inspectorCollapsed: "yes", inboxListWidth: "wide", drawerHeight: 5, drawerOpen: "true" });
+    expect(l).toEqual({ sidebarWidth: 360, sidebarCollapsed: true, inspectorWidth: 320, inspectorCollapsed: false, inboxListWidth: 360, drawerHeight: 160, drawerOpen: false });
   });
 
   it("round-trips what the store persists", () => {
-    const saved = { sidebarWidth: 272, sidebarCollapsed: false, inspectorWidth: 512, inspectorCollapsed: true, inboxListWidth: 420 };
+    const saved = { sidebarWidth: 272, sidebarCollapsed: false, inspectorWidth: 512, inspectorCollapsed: true, inboxListWidth: 420, drawerHeight: 344, drawerOpen: true };
     expect(sanitizeLayout(JSON.parse(JSON.stringify(saved)))).toEqual(saved);
+  });
+});
+
+describe("drawerBounds", () => {
+  it("keeps the drawer closed by default and leaves the main view its minimum height", () => {
+    expect(DEFAULT_LAYOUT.drawerOpen).toBe(false);
+    expect(DEFAULT_LAYOUT.drawerHeight).toBe(280);
+    expect(drawerBounds(1080)).toEqual({ min: 160, max: 640 });
+    expect(drawerBounds(720)).toEqual({ min: 160, max: 452 });
+    expect(drawerBounds(300)).toEqual({ min: 160, max: 160 });
   });
 });
 
@@ -50,6 +60,6 @@ describe("inboxListBounds", () => {
 
 describe("layoutVars", () => {
   it("writes each size as a pixel custom property", () => {
-    expect(layoutVars(DEFAULT_LAYOUT)).toEqual({ "--sidebar-w": "224px", "--inspector-w": "380px", "--inbox-list-w": "360px" });
+    expect(layoutVars(DEFAULT_LAYOUT)).toEqual({ "--sidebar-w": "224px", "--inspector-w": "380px", "--inbox-list-w": "360px", "--drawer-h": "280px" });
   });
 });

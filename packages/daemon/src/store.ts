@@ -823,6 +823,11 @@ export const MIGRATIONS: Migration[] = [
    create index if not exists attachments_task on attachments(task_id);
    create index if not exists attachments_outbox on attachments(outbox_id);`,
   },
+  // The Activity drawer pages a project's events newest first (packages/daemon/src/activity).
+  {
+    id: "events-project",
+    sql: `create index if not exists events_project on events(project_id, seq);`,
+  },
 ];
 
 /** What the positional scheme applied: a database at `user_version` N has the first N of these. */

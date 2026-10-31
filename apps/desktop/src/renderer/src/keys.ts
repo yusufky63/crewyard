@@ -28,6 +28,7 @@ const arrows = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"];
 export const SHORTCUTS = [
   { id: "palette", group: "global", chords: [{ key: "k", ctrl: true }] },
   { id: "sidebar", group: "global", chords: [{ key: "b", ctrl: true }] },
+  { id: "drawer", group: "global", chords: [{ key: "j", ctrl: true }] },
   { id: "help", group: "global", chords: [{ key: "?" }, { key: "F1" }] },
   { id: "close", group: "global", chords: [{ key: "Escape" }] },
   { id: "go.tasks", group: "navigate", after: "g", chords: [{ key: "t" }] },
