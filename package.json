@@ -19,6 +19,7 @@
     "logos:sync": "node catalog/sync-logos.mjs",
     "package": "pnpm --filter @crewyard/desktop package",
     "stress": "pnpm --filter @crewyard/daemon stress",
+    "conformance": "pnpm --filter @crewyard/daemon conformance",
     "check": "pnpm tokens --check && pnpm contrast && pnpm typecheck && pnpm lint && pnpm test && pnpm build"
   },
   "devDependencies": {

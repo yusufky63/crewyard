@@ -185,6 +185,18 @@ Attachments never go into events: the bytes would blow past `MAX_EVENT_JSON` (`p
 
 Start a run in a temp repo, receive a plan and a tool call, approve once, deny once, answer a question, interrupt, resume, read usage, read limits, stop and confirm no process remains. Recorded frames replay in CI; the live suite runs locally on Windows before an agent version bump.
 
+`pnpm conformance` (`packages/daemon/src/conformance`) runs these scenarios for free against the installed CLIs, through our own adapters. A scripted model server on `127.0.0.1`, port 0, inside the test process stands in for the provider. It speaks each runner's wire format: Responses for Codex (a `[model_providers]` block written by `writeCodexConfig`), Anthropic Messages for Claude Code (`ANTHROPIC_BASE_URL`), Chat Completions for OpenCode (its inline openai-compatible provider), and Gemini's `streamGenerateContent` for Gemini CLI (`GOOGLE_GEMINI_BASE_URL`, honoured since gemini-cli PR #25357). Each run writes a report and the requests each CLI sent, so a version bump that changes a tool name or a stream shows up as a named failure. The paid live suite stays for real provider behaviour.
+
+First run, 2026-10-31, on Windows 11 (the later list is open work, not fixed here):
+
+- Codex 0.147.0: `request_user_input` answers "unavailable in Default mode". The tool is offered, but only Plan mode, or the under-development `default_mode_request_user_input` feature, lets it ask. So `answerQuestions` does not hold for normal runs. An interrupt ends the run `stopped` with detail `interrupted`, while the other adapters say `interrupted`. Both count as resumable.
+- Claude Code 2.1.314: every scenario passes. Limits do not apply (API keys only). The task tools are deferred behind ToolSearch, so a model has to load `TaskCreate` before it can plan.
+- OpenCode 1.19.5: the interrupt works, but `interrupt()` rejects with `fetch failed (ECONNRESET)`. The adapter closes the server on the idle event before the `session.abort` response arrives.
+- Gemini CLI 0.66.0:
+  - No plan shows. `write_todos` asks for approval and then runs, but Gemini's ACP code sends no `plan` session update, and the tool call carries no input to map.
+  - Tokens show 0. Its ACP `PromptResponse.usage` carries input, output and cached tokens, but the ACP adapter reads only `usage_update`, which has the context size only.
+  - There is no question tool to test.
+
 ## 6. Accounts and credentials
 
 - **Claude is API-key only.** Anthropic's Agent SDK terms say third-party products may not offer claude.ai login or rate limits without Anthropic's approval. Because the app may be shared later, Claude profiles always use an Anthropic API key, from the first build. Several Claude profiles means several keys (for example one per Anthropic workspace), each with its own daily and per-task cap. If Anthropic ever approves claude.ai login for the app, it becomes a separate profile kind; nothing else changes.

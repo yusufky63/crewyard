@@ -10,7 +10,8 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
     "stress": "vitest run --config vitest.stress.config.ts --reporter=verbose",
-    "live": "vitest run --config vitest.live.config.ts --reporter=verbose"
+    "live": "vitest run --config vitest.live.config.ts --reporter=verbose",
+    "conformance": "vitest run --config vitest.conformance.config.ts --reporter=verbose"
   },
   "dependencies": {
     "@crewyard/adapter-acp": "workspace:^",
