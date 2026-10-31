@@ -16,6 +16,11 @@ export interface DispatcherDeps {
   startGroup(task: TaskRow, m: MemberRow, group: GroupRow, project: ProjectRow, slots: number, candidates: Candidate[]): Promise<void>;
   budgetHold(task: TaskRow, m: MemberRow, candidate: Candidate | undefined): Reason | null;
   launch(spec: LaunchSpec): Promise<string>;
+  /**
+   * Orchestra's queued corrective planner turns (goals/planner.ts), started here so they pass the
+   * same admission as every other step instead of taking a slot outside it.
+   */
+  goalTurns(admit: (task: TaskRow, m: MemberRow, profileId: string) => Promise<Reason | null>): Promise<void>;
 }
 
 export class Dispatcher extends Part {
@@ -48,6 +53,7 @@ export class Dispatcher extends Part {
 
   private async schedulePass(): Promise<void> {
     for (const [runId, cause] of [...this.pendingWake]) await this.deps.wakeRun(runId, cause);
+    await this.deps.goalTurns((task, m, profileId) => this.admitStep(task, m, profileId));
     for (const task of this.db.schedulable()) {
       const status = this.db.status(task);
       if (status === "failed" || status === "cancelled") continue;
@@ -99,6 +105,15 @@ export class Dispatcher extends Part {
         else await this.deps.launch({ task, member: m, target: chosen! });
       }
     }
+  }
+
+  /** Admission plus the spend other runs hold, for a step started outside the crew loop below. */
+  private async admitStep(task: TaskRow, m: MemberRow, profileId: string): Promise<Reason | null> {
+    const project = this.db.project(task.project_id);
+    const { config } = this.config(project);
+    const admitted = this.admission(task, m, profileId, config.rules.slots);
+    if (admitted) return admitted;
+    return this.deps.budgetHold(task, m, (await this.candidates(project)).find((c) => c.profile.id === profileId));
   }
 
   private admission(task: TaskRow, m: MemberRow, profileId: string, projectSlots: number): Reason | null {

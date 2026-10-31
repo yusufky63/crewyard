@@ -399,6 +399,7 @@
       "too_large": "{{limit}} bayttan büyük olduğu için okunmadı.",
       "too_many": "{{limit}} rol dosyasından fazlası var; geri kalanlar yok sayıldı.",
       "bad_name": "Dosya adı geçerli bir rol kimliği değil: küçük harf, rakam ve tire kullanın.",
+      "reserved": "Bu rol adı Orkestra planlayıcısına ayrılmış; dosya kullanılmıyor.",
       "front_matter": "Ön bilgi yok: dosya bir --- bloğuyla başlamalı.",
       "yaml": "Ön bilgi geçerli bir YAML değil: {{detail}}",
       "not_mapping": "Ön bilgi anahtar ve değerlerden oluşmalı.",

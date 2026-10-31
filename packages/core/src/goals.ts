@@ -73,6 +73,8 @@ export const GOAL_SETTINGS = {
   pausedAll: "goals.paused_all",
   goalBudget: (projectId: string) => `orchestra.goalBudget.${projectId}`,
   introduced: (projectId: string) => `orchestra.introduced.${projectId}`,
+  /** The planner you picked on the chip, remembered per project (design §4.4). */
+  planner: (projectId: string) => `orchestra.planner.${projectId}`,
 } as const;
 
 /**

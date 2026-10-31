@@ -1,4 +1,4 @@
-import type { AgentAdapter, HandoffStop, RequestAnswer, RequestView, RunnerId, RunView, SessionSeen, TaskDetail, TaskKind, TaskSummary, TasksIpc, TasksTopics } from "@crewyard/core";
+import type { AgentAdapter, GoalPreview, GoalTaskDraft, HandoffStop, RequestAnswer, RequestView, RunnerId, RunView, SessionSeen, TaskDetail, TaskKind, TaskSummary, TasksIpc, TasksTopics } from "@crewyard/core";
 import type { McpHook } from "../mcp/service.ts";
 import { Bootstrapper } from "../worktrees/bootstrap.ts";
 import { AccountSwitcher, type AccountSwitches } from "./account-switch.ts";
@@ -10,7 +10,9 @@ import { CrewManager } from "./crew-manage.ts";
 import type { OrchestratorDb } from "./db.ts";
 import type { ProfileDirectory } from "./directory.ts";
 import { Dispatcher } from "./dispatch.ts";
+import { OrchestratorError } from "./errors.ts";
 import { Fallback } from "./fallback.ts";
+import { GoalPlanner, type GoalPlanStart, type GoalReplacements } from "./goals/planner.ts";
 import { Handoffs } from "./handoffs.ts";
 import { Hibernator, type HibernationStore } from "./hibernation.ts";
 import { Inbox } from "./inbox.ts";
@@ -76,6 +78,7 @@ export class Orchestrator {
   private readonly hibernator: Hibernator;
   private readonly bestOfRunner: BestOfRunner;
   private readonly recovery: Recovery;
+  private readonly goalPlanner: GoalPlanner;
   private hibernateTimer: NodeJS.Timeout | null = null;
   private stallTimer: NodeJS.Timeout | null = null;
   private interval: NodeJS.Timeout | null = null;
@@ -140,6 +143,7 @@ export class Orchestrator {
       startGroup: (task, m, group, project, slots, candidates) => this.bestOfRunner.startGroup(task, m, group, project, slots, candidates),
       budgetHold: (task, m, candidate) => this.budget.budgetHold(task, m, candidate),
       launch: (spec) => this.launcher.launch(spec),
+      goalTurns: (admit) => this.goalPlanner.correctiveTurns(admit),
     });
     this.launcher = new Launcher(ctx, {
       reviewCheckout: (runId, task, wt) => this.loopRunner.reviewCheckout(runId, task, wt),
@@ -168,6 +172,7 @@ export class Orchestrator {
       reviewLoop: (reviewerRunId, result) => this.loopRunner.reviewLoop(reviewerRunId, result),
       dropCheckout: (runId) => this.loopRunner.dropCheckout(runId),
       refreshVariantDiff: (variantId) => this.bestOfRunner.refreshVariantDiff(variantId),
+      planningEnded: (runId, reason, result) => this.goalPlanner.planningEnded(runId, reason, result),
       tick: () => this.dispatcher.tick(),
     });
     this.actions = new RunActions(ctx, {
@@ -257,6 +262,15 @@ export class Orchestrator {
       pause: (runId) => this.actions.pause(runId),
       resume: (runId) => this.actions.resume(runId),
       goalManaged: (taskId) => this.taskFlow.goalManaged(taskId),
+    });
+    // Orchestra's planner (docs/adr/0019): planning runs, plan revisions and their proposed tasks.
+    this.goalPlanner = new GoalPlanner(ctx, {
+      propose: (p, hooks) => this.taskFlow.propose(p, hooks),
+      cancel: (taskId) => this.taskFlow.cancel(taskId),
+      followUp: (runId, text) => this.messages.followUp(runId, text),
+      approve: (p) => this.taskFlow.approve(p),
+      get: (taskId) => this.taskFlow.get(taskId),
+      tick: () => this.dispatcher.tick(),
     });
     this.db.taskExtras = (t) => this.bestOfRunner.taskExtras(t);
     this.db.taskLoop = (t) => this.loopRunner.loopView(t);
@@ -380,7 +394,8 @@ export class Orchestrator {
     return this.taskFlow.start(p);
   }
 
-  edit(taskId: string, patch: { title?: string; description?: string; kind?: TaskKind; budgetUsd?: number }): Promise<TaskDetail> {
+  async edit(taskId: string, patch: { title?: string; description?: string; kind?: TaskKind; budgetUsd?: number }): Promise<TaskDetail> {
+    this.notPlanning(taskId);
     return this.taskFlow.edit(taskId, patch);
   }
 
@@ -410,21 +425,38 @@ export class Orchestrator {
     return this.actions.stop(runId, seen);
   }
 
-  retry(runId: string): Promise<RunView> {
+  async retry(runId: string): Promise<RunView> {
+    this.notPlanningRun(runId);
     return this.actions.retry(runId);
   }
 
-  handoff(runId: string, targetProfileId: string, stop: HandoffStop = "interrupt"): Promise<RunView> {
+  async handoff(runId: string, targetProfileId: string, stop: HandoffStop = "interrupt"): Promise<RunView> {
+    this.notPlanningRun(runId);
     return this.handoffs.handoff(runId, targetProfileId, stop);
+  }
+
+  /**
+   * A planning task's runs start only from the goal's own clicks (Plan goal, Revise, Replan,
+   * Retry planning), each counted against its cap (design §4.10). The task path's retry,
+   * follow-up, messages, handoff, undo and edit would start or steer the planner around them.
+   */
+  private notPlanning(taskId: string): void {
+    if (this.goalPlanner.isPlanningTask(taskId)) throw new OrchestratorError("task.goal_managed");
+  }
+
+  private notPlanningRun(runId: string): void {
+    this.notPlanning(this.db.run(runId).task_id);
   }
 
   // ---------------------------------------------------------------- messages, queue and undo (messages.ts)
 
-  message(runId: string, text: string, seen?: SessionSeen, attachmentIds: string[] = []): Promise<RunView> {
+  async message(runId: string, text: string, seen?: SessionSeen, attachmentIds: string[] = []): Promise<RunView> {
+    this.notPlanningRun(runId);
     return this.messages.message(runId, text, seen, attachmentIds);
   }
 
   enqueue(runId: string, text: string): { run: RunView; messageId: string } {
+    this.notPlanningRun(runId);
     return this.messages.enqueue(runId, text);
   }
 
@@ -440,7 +472,8 @@ export class Orchestrator {
     return this.messages.queueMove(runId, messageId, index);
   }
 
-  queueSteer(runId: string, messageId: string, seen?: SessionSeen): Promise<RunView> {
+  async queueSteer(runId: string, messageId: string, seen?: SessionSeen): Promise<RunView> {
+    this.notPlanningRun(runId);
     return this.messages.queueSteer(runId, messageId, seen);
   }
 
@@ -448,12 +481,68 @@ export class Orchestrator {
     return this.messages.undoPreview(runId);
   }
 
-  undo(runId: string, turnId: string): Promise<RunView> {
+  async undo(runId: string, turnId: string): Promise<RunView> {
+    this.notPlanningRun(runId);
     return this.messages.undo(runId, turnId);
   }
 
-  followUp(runId: string, text: string): Promise<RunView> {
+  async followUp(runId: string, text: string): Promise<RunView> {
+    this.notPlanningRun(runId);
     return this.messages.followUp(runId, text);
+  }
+
+  // ---------------------------------------------------------------- goal planning (goals/planner.ts)
+
+  /** What `Plan goal` would cost, and whether it can run; writes nothing. */
+  previewGoal(p: { projectId: string; text: string; plannerProfileId?: string }): Promise<GoalPreview> {
+    return this.goalPlanner.preview(p);
+  }
+
+  /** `Plan goal`: the goal and its one read-only planning run, approved by this click. */
+  createGoal(p: { projectId: string; text: string; plannerProfileId?: string; baseBranch?: string; attachments?: string[]; defaultBudgetUsd?: number }): Promise<GoalPlanStart> {
+    return this.goalPlanner.create(p);
+  }
+
+  reviseGoal(goalId: string, revision: number, note: string): Promise<GoalPlanStart> {
+    return this.goalPlanner.revise(goalId, revision, note);
+  }
+
+  replanGoal(goalId: string, note?: string): Promise<GoalPlanStart> {
+    return this.goalPlanner.replan(goalId, note);
+  }
+
+  addGoalTask(goalId: string, draft: GoalTaskDraft, dependsOn: string[]): Promise<GoalPlanStart> {
+    return this.goalPlanner.addTask(goalId, draft, dependsOn);
+  }
+
+  /** `Run as one task`, before approval. */
+  collapseGoal(goalId: string): Promise<GoalPlanStart> {
+    return this.goalPlanner.collapse(goalId);
+  }
+
+  /** `Approve and start` on a plan of one task: it becomes an ordinary task, approved in the same click. */
+  approveOneTaskGoal(goalId: string, revision: number, params: Omit<TasksIpc["tasks.approve"]["params"], "taskId"> = {}): Promise<TaskDetail> {
+    return this.goalPlanner.approveOneTask(goalId, revision, params);
+  }
+
+  /** What approving a revision would discard, and which replaced tasks have started (for goals.approve). */
+  goalReplacements(goalId: string, revision: number): GoalReplacements {
+    return this.goalPlanner.replacements(goalId, revision);
+  }
+
+  /** Inside goals.approve's transaction: discards what the revision replaces (GoalPlanner.applyReplacements). */
+  applyGoalReplacements(goalId: string, revision: number): string[] {
+    return this.goalPlanner.applyReplacements(goalId, revision);
+  }
+
+  /** Orchestra's switch (`orchestra.enabled`, or the shipped default). */
+  orchestraEnabled(): boolean {
+    return this.goalPlanner.enabled();
+  }
+
+  /** A goal's derived status. */
+  goalState(goalId: string): ReturnType<GoalPlanner["state"]> {
+    return this.goalPlanner.state(goalId);
   }
 
   // ---------------------------------------------------------------- requests (inbox.ts)

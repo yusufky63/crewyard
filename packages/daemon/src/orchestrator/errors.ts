@@ -1,4 +1,4 @@
-import type { OrchestratorErrorCode } from "@crewyard/core";
+import type { GoalErrorCode, OrchestratorErrorCode } from "@crewyard/core";
 
 /**
  * The message is the code itself, so the IPC error string stays translatable in the renderer;
@@ -6,7 +6,8 @@ import type { OrchestratorErrorCode } from "@crewyard/core";
  */
 export class OrchestratorError extends Error {
   constructor(
-    readonly code: OrchestratorErrorCode,
+    // Goal refusals (docs/adr/0019) travel the same way: the code as the message, params for the log.
+    readonly code: OrchestratorErrorCode | GoalErrorCode,
     readonly params: Record<string, string | number> = {},
   ) {
     super(code);
