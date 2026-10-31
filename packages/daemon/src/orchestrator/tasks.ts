@@ -16,7 +16,7 @@ import { reachedCaps, spendCredential } from "./spend.ts";
 // cancel, which stops every run and closes what is open but keeps the worktrees. A task is
 // drafted in one of two modes (docs/adr/0019): Crew, the full plan for its kind, or Solo, one step
 // of the kind's main role, which `start` proposes and approves in one click when it can price it.
-// A task that belongs to an Orchestra goal is never approved here: it starts with its plan.
+// A task that belongs to an Orchestra goal is never approved or edited here: it starts with its plan.
 
 /** Solo or Crew from untrusted input; anything else is `fallback`. */
 const modeOf = (v: unknown, fallback: TaskMode): TaskMode => (v === "solo" || v === "crew" ? v : fallback);
@@ -54,8 +54,12 @@ export class TaskFlow extends Part {
     return { ...this.db.detail(task, this.blocked), bestOfGroup: this.deps.groupView(task), accountSwitch: this.switches.taskEnabled(task.id), ...(attachments.length > 0 ? { attachments } : {}) };
   }
 
-  /** Classifies the task and stores a draft crew. No process, worktree or network call. */
-  async propose(p: ProposeParams): Promise<TaskDetail> {
+  /**
+   * Classifies the task and stores a draft crew. No process, worktree or network call.
+   * `inTx` runs inside the transaction that creates the task, so a goal's materialisation can
+   * write the task's `goal_tasks` row there: a goal task is never visible, or approvable, without it.
+   */
+  async propose(p: ProposeParams, hooks: { inTx?: (taskId: string) => void } = {}): Promise<TaskDetail> {
     const project = this.db.project(p.projectId);
     const { config, fromFile } = this.config(project);
     const description = p.description ?? "";
@@ -85,6 +89,7 @@ export class TaskFlow extends Part {
         at,
       );
       this.writeCrew(taskId, draft, at);
+      hooks.inTx?.(taskId);
     });
     if (attachmentIds.length > 0) this.attachments.claim(attachmentIds, taskId, null);
     this.audit(taskId, null, "task.proposed", { kind: cls.kind, size: cls.size, mode, members: crew.members.map((m) => ({ role: m.role, profileId: m.chosen?.profileId ?? null })), bestOf: draft.group?.candidates.map((c) => c.profileId) ?? null, ...(attachmentIds.length > 0 ? { attachments: attachmentIds } : {}) });
@@ -142,13 +147,31 @@ export class TaskFlow extends Part {
   }
 
   /**
-   * Solo's `Start` (docs/adr/0019): proposes the task and approves its crew in the same call, so
-   * the click that showed the profile, model and estimate is the approval. Spend nobody can price
-   * still needs a click (feature scan F4): an Unknown estimate, a cap the steps would pass, or a
-   * crew problem leaves the proposal standing and returns it with the reason.
+   * Solo's `Start` (docs/adr/0019): proposes a one-step task and approves its crew in the same call,
+   * so the click that showed the profile, model and estimate is the approval. Spend nobody can
+   * price still needs a click (feature scan F4): an Unknown estimate, a cap the step would pass, or
+   * a crew problem leaves the proposal standing and returns it with the reason. Only Solo starts
+   * this way: a Crew or Best of N proposal exists so that you review it, so any other mode is
+   * refused and the propose params are copied field by field (IPC params are not checked at
+   * runtime, so a stray `bestOf` must not reach `propose`).
    */
   async start(p: TasksIpc["tasks.start"]["params"]): Promise<TaskStartResult> {
-    const proposed = await this.propose({ ...p, mode: modeOf(p.mode, "solo") });
+    if ((p.mode as unknown) !== undefined && p.mode !== "solo") throw new OrchestratorError("task.start_solo_only");
+    const proposed = await this.propose({
+      projectId: p.projectId,
+      title: p.title,
+      description: p.description,
+      kind: p.kind,
+      size: p.size,
+      budgetUsd: p.budgetUsd,
+      pins: p.pins,
+      exclude: p.exclude,
+      baseBranch: p.baseBranch,
+      fallback: p.fallback,
+      waitResetMinutes: p.waitResetMinutes,
+      attachments: p.attachments,
+      mode: "solo",
+    });
     const held = await this.startHold(proposed.id);
     if (held) return this.heldStart(proposed.id, held);
     try {
@@ -177,8 +200,7 @@ export class TaskFlow extends Part {
     const problem = validateCrew({ members: this.checkMembers(members), views, candidates });
     const estimate: CostEstimate = { usd: crew.estimate_usd, provenance: crew.estimate_provenance };
     return this.holdFor(problem, estimate, () => {
-      // Every paid step is checked against the whole estimate: exact for Solo's one step, and for a
-      // crew spread over several keys it holds a little early, which only means one more click.
+      // `start` drafts only Solo, so this checks its one step against the whole estimate.
       for (const v of views.values()) {
         const cap = v ? this.deps.capFor(task.id, null, candidates.find((c) => c.profile.id === v.profileId), estimate.usd ?? 0) : null;
         if (cap) return cap;
@@ -223,20 +245,34 @@ export class TaskFlow extends Part {
    * True for a task an Orchestra goal starts (docs/adr/0019): a plan task, or the goal's
    * integration task. The goal scheduler releases them in dependency order, never this path.
    */
-  private goalManaged(taskId: string): boolean {
+  goalManaged(taskId: string): boolean {
     const db = this.opts.store.db;
     return db.prepare("select 1 as x from goal_tasks where task_id = ?").get(taskId) !== undefined || db.prepare("select 1 as x from goals where integration_task_id = ?").get(taskId) !== undefined;
   }
 
   /**
-   * The mode the task's crew was drafted in, so a new kind is drafted the same way: the goal
-   * plan's choice for a goal task, else the last proposal or edit that recorded one, else Crew,
-   * which never starts without your approval.
+   * Refuses unless `crewId` is still the task's crew, unapproved, on a task that is not cancelled
+   * and, unless the goal's own code asks, not a goal's. Reads fresh rows every time, so a call
+   * inside a transaction sees what is true at the write.
    */
-  private draftedMode(taskId: string): TaskMode {
+  private assertProposal(taskId: string, crewId: string | null, byGoal: boolean): void {
+    if (!byGoal && this.goalManaged(taskId)) throw new OrchestratorError("task.goal_managed");
+    if (this.db.task(taskId).cancelled_at) throw new OrchestratorError("task.cancelled");
+    const crew = this.db.crew(taskId);
+    if (!crew || crewId === null || crew.id !== crewId || crew.approved_at) throw new OrchestratorError("task.not_proposed");
+  }
+
+  /**
+   * The mode the task's crew was drafted in, so a new kind is drafted the same way: the plan's
+   * choice when the goal's own code edits its task, else the last proposal or edit that recorded
+   * one, else Crew, which never starts without your approval.
+   */
+  private draftedMode(taskId: string, byGoal: boolean): TaskMode {
     const db = this.opts.store.db;
-    const goal = db.prepare("select mode from goal_tasks where task_id = ?").get(taskId) as { mode: string } | undefined;
-    if (goal) return modeOf(goal.mode, "crew");
+    if (byGoal) {
+      const goal = db.prepare("select mode from goal_tasks where task_id = ?").get(taskId) as { mode: string } | undefined;
+      if (goal) return modeOf(goal.mode, "crew");
+    }
     const rows = db.prepare("select payload from events where task_id = ? and kind in ('task.proposed', 'task.edited') order by seq desc").all(taskId) as Array<{ payload: string }>;
     for (const r of rows) {
       try {
@@ -283,21 +319,26 @@ export class TaskFlow extends Part {
    * Changes the title, description or kind of a task whose crew is still a proposal (docs/adr/0017).
    * A new kind is classified and proposed again, replacing the crew; nothing has run, so nothing
    * else points at the old members. A Best of N task keeps its kind. A budget may only go down.
+   * A goal task is refused: what it does was accepted with its plan revision, so its edits go
+   * through the goal (`goals.editTask`), whose own code passes `byGoal` (docs/adr/0019).
    */
-  async edit(taskId: string, patch: { title?: string; description?: string; kind?: TaskKind; budgetUsd?: number }): Promise<TaskDetail> {
+  async edit(taskId: string, patch: { title?: string; description?: string; kind?: TaskKind; budgetUsd?: number }, how: { byGoal?: boolean } = {}): Promise<TaskDetail> {
+    const byGoal = how.byGoal === true;
     const task = this.db.task(taskId);
-    if (task.cancelled_at) throw new OrchestratorError("task.cancelled");
     const crew = this.db.crew(task.id);
-    if (!crew || crew.approved_at) throw new OrchestratorError("task.not_proposed");
+    this.assertProposal(task.id, crew?.id ?? null, byGoal);
+    if (!crew) throw new OrchestratorError("task.not_proposed");
     const title = patch.title ?? task.title;
     const description = patch.description ?? task.description;
     const rekind = patch.kind !== undefined && patch.kind !== task.kind;
     if (rekind && this.bestOf.group(task.id)) throw new OrchestratorError("task.best_of_kind");
     const budgetUsd = patch.budgetUsd !== undefined && (task.budget_usd === null || patch.budgetUsd < task.budget_usd) ? patch.budgetUsd : task.budget_usd;
     const project = this.db.project(task.project_id);
-    const mode = rekind ? this.draftedMode(task.id) : null;
+    const mode = rekind ? this.draftedMode(task.id, byGoal) : null;
     const draft = rekind ? await this.draftCrew(project, title, description, { kind: patch.kind, size: task.size }, budgetUsd, mode ?? "crew") : null;
     this.db.tx(() => {
+      // Drafting awaited the directory: what was checked above may have changed meanwhile.
+      this.assertProposal(task.id, crew.id, byGoal);
       this.db.exec("update tasks set title = ?, description = ?, budget_usd = ? where id = ?", title, description, budgetUsd, task.id);
       if (!draft) return;
       const members = this.db.members(crew.id).map((m) => m.id);
@@ -325,10 +366,9 @@ export class TaskFlow extends Part {
 
   private async approveCrew(p: TasksIpc["tasks.approve"]["params"], how: { by?: "start" }): Promise<TaskDetail> {
     const task = this.db.task(p.taskId);
-    if (this.goalManaged(task.id)) throw new OrchestratorError("task.goal_managed");
-    if (task.cancelled_at) throw new OrchestratorError("task.cancelled");
     const crew = this.db.crew(task.id);
-    if (!crew || crew.approved_at) throw new OrchestratorError("task.not_proposed");
+    this.assertProposal(task.id, crew?.id ?? null, false);
+    if (!crew) throw new OrchestratorError("task.not_proposed");
     const project = this.db.project(task.project_id);
     const members = this.db.members(crew.id);
     const checked = this.checkMembers(members);
@@ -349,6 +389,10 @@ export class TaskFlow extends Part {
     if (problem) throw new OrchestratorError(problem.code, problem.params);
 
     this.db.tx(() => {
+      // The checks above ran before awaiting the directory. Meanwhile a goal may have claimed the
+      // task, or it was cancelled, approved by another click or re-drafted by an edit; read again
+      // here, where nothing else can interleave, so exactly one approval of this crew succeeds.
+      this.assertProposal(task.id, crew.id, false);
       for (const edit of p.edits ?? []) {
         const m = members.find((x) => x.id === edit.memberId)!;
         const v = views.get(m.id)!;

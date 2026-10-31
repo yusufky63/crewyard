@@ -507,6 +507,8 @@
     "task_not_proposed": "This crew was already approved or cancelled.",
     "task_best_of_kind": "A Best of N task keeps its kind.",
     "task_cancelled": "The task is cancelled.",
+    "task_goal_managed": "Goal tasks start with their plan. Change them in the goal.",
+    "task_start_solo_only": "Start runs one agent. To review a crew first, use Propose crew.",
     "crew_member_not_found": "That role is not in this crew.",
     "crew_missing_profile": "A role has no account yet. Pick one before approving.",
     "crew_unknown_profile": "That account cannot take this role.",

@@ -111,7 +111,8 @@ export type OrchestratorErrorCode =
   | "task.not_proposed" // approve on a task that is already approved or cancelled
   | "task.best_of_kind" // a Best of N task's kind cannot change: its variants were proposed for it
   | "task.cancelled"
-  | "task.goal_managed" // the task belongs to an Orchestra goal: it starts with its plan, never through tasks.approve
+  | "task.goal_managed" // the task belongs to an Orchestra goal: it starts with its plan, never through tasks.approve or tasks.edit
+  | "task.start_solo_only" // tasks.start was asked for another mode: a crew is proposed for review, never started in one call
   | "crew.member_not_found"
   | "crew.missing_profile" // { role } still has no profile
   | "crew.unknown_profile" // { profileId }
@@ -949,11 +950,13 @@ export interface TasksIpc {
    */
   "tasks.preview": { params: TaskPreviewParams; result: TaskPreview };
   /**
-   * Solo's `Start`: proposes the task and approves its crew in the same call. When the estimate is
-   * Unknown, a cap would hold the step, or the crew has a problem, nothing is approved and the
-   * proposal comes back with `held`, so spend nobody can price still needs your click.
+   * Solo's `Start`: proposes a one-step task and approves its crew in the same call. When the
+   * estimate is Unknown, a cap would hold the step, or the crew has a problem, nothing is approved
+   * and the proposal comes back with `held`, so spend nobody can price still needs your click.
+   * Only Solo starts this way: any other `mode` is refused with `task.start_solo_only`, and Best of
+   * N is not taken, because a crew is proposed so that you review it first.
    */
-  "tasks.start": { params: TaskPreviewParams & { baseBranch?: string; fallback?: FallbackMode; waitResetMinutes?: number; attachments?: string[] }; result: TaskStartResult };
+  "tasks.start": { params: Omit<TaskPreviewParams, "mode"> & { mode?: "solo"; baseBranch?: string; fallback?: FallbackMode; waitResetMinutes?: number; attachments?: string[] }; result: TaskStartResult };
   /**
    * Approves the crew, optionally with edits (remembered as preferences), and lets the scheduler
    * start ready steps under admission control. Fails with `crew.missing_profile` or

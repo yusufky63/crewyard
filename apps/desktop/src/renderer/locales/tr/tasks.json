@@ -507,6 +507,8 @@
     "task_not_proposed": "Bu ekip zaten onaylandı ya da iptal edildi.",
     "task_best_of_kind": "Best of N görevinin türü değiştirilemez.",
     "task_cancelled": "Görev iptal edildi.",
+    "task_goal_managed": "Hedef görevleri planlarıyla birlikte başlar. Değişikliği hedefin içinden yapın.",
+    "task_start_solo_only": "Başlat tek bir ajanı çalıştırır. Önce ekibi incelemek için Ekip öner'i kullanın.",
     "crew_member_not_found": "Bu rol ekipte yok.",
     "crew_missing_profile": "Bir rolün henüz hesabı yok. Onaylamadan önce bir hesap seçin.",
     "crew_unknown_profile": "Bu hesap bu rolü üstlenemez.",

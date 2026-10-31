@@ -256,6 +256,7 @@ export class Orchestrator {
       tick: () => this.dispatcher.tick(),
       pause: (runId) => this.actions.pause(runId),
       resume: (runId) => this.actions.resume(runId),
+      goalManaged: (taskId) => this.taskFlow.goalManaged(taskId),
     });
     this.db.taskExtras = (t) => this.bestOfRunner.taskExtras(t);
     this.db.taskLoop = (t) => this.loopRunner.loopView(t);

@@ -36,6 +36,8 @@ export interface CrewManagerDeps {
   tick(): Promise<void>;
   pause(runId: string): Promise<unknown>;
   resume(runId: string): Promise<unknown>;
+  /** TaskFlow's goal check: true for a task an Orchestra goal starts (docs/adr/0019). */
+  goalManaged(taskId: string): boolean;
 }
 
 interface Loaded {
@@ -66,6 +68,7 @@ export class CrewManager extends Part {
 
   async edit(taskId: string, edit: CrewProposalEdit): Promise<TaskDetail> {
     const c = this.load(taskId);
+    this.refuseUnreleasedGoalTask(c);
     if (c.task.cancelled_at) throw new OrchestratorError("task.cancelled");
     const touches = "memberId" in edit ? edit.memberId : null;
     if (touches && touches === (this.bestOf.group(c.task.id)?.member_id ?? null) && (edit.kind === "remove_step" || edit.kind === "set_role")) throw new CrewEditError("best_of");
@@ -83,6 +86,9 @@ export class CrewManager extends Part {
     // The lease follows the role (core sets it); refuse anything that would still disagree.
     const lease = crewProblems(next, env.rules).find((p) => p.code === "read_only_lease");
     if (lease) throw new CrewEditError("read_only_lease", lease.params);
+    // Ranking awaited the directory; a goal may have claimed the task meanwhile. Nothing awaits
+    // between this check and the write.
+    this.refuseUnreleasedGoalTask(this.load(taskId));
     this.write(c, next, edit);
     this.audit(c.task.id, null, "crew.edited", { edit });
     this.emitTask(c.task.id, "crew_edited");
@@ -157,6 +163,15 @@ export class CrewManager extends Part {
       }
     }
     return { taskId, runIds, skipped };
+  }
+
+  /**
+   * A goal task's crew is what its approved plan revision accepted, and the goal scheduler
+   * releases it as it is (docs/adr/0019), so it cannot change before release. Once released it is
+   * an approved crew like any other, and a step added then still waits for your approval.
+   */
+  private refuseUnreleasedGoalTask(c: Loaded): void {
+    if (!c.approved && this.deps.goalManaged(c.task.id)) throw new OrchestratorError("task.goal_managed");
   }
 
   // ---- loading and writing

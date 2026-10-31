@@ -12,6 +12,7 @@ import { OrchestratorError } from "./errors.ts";
 import { orchestratorFor } from "./index.ts";
 import { Orchestrator, type OrchestratorOptions } from "./orchestrator.ts";
 import { ROLES } from "./roles.ts";
+import type { TaskFlow } from "./tasks.ts";
 import { CANDIDATES, candidate, cleanTemps, git, model, ScriptedAdapter, tempDir, tempRepo, waitFor } from "./testing.ts";
 
 // TaskFlow's run modes, the goal guard and Solo's Start (docs/adr/0019), over a real store and a
@@ -34,6 +35,12 @@ const running: FakeStep = { emit: { type: "run.state", state: "running" } };
 const say = (text: string): FakeStep => ({ emit: { type: "message.delta", text } });
 const quick: Picker = (role) => [running, say(`${role} done`)];
 
+/**
+ * Runs once, the next time anything asks the directory for candidates, before they are returned:
+ * the await every TaskFlow call makes before it writes, where another call can interleave.
+ */
+type DirectoryHook = { next: ((call: number) => void | Promise<void>) | null; calls: number };
+
 async function setup(opts: { pick?: Picker; candidates?: Candidate[]; config?: (c: ProjectConfig) => void } = {}) {
   const root = tempDir("crewyard tasks flow-");
   const repo = await tempRepo(root, "demo repo with spaces");
@@ -51,12 +58,22 @@ async function setup(opts: { pick?: Picker; candidates?: Candidate[]; config?: (
   const adapters = new AdapterRegistry({});
   adapters.set("fake", adapter);
   const cands = opts.candidates ?? CANDIDATES();
+  const hook: DirectoryHook = { next: null, calls: 0 };
   const options: OrchestratorOptions = {
     store,
     dataDir: join(root, "data"),
     emit: () => undefined,
     adapters,
-    directory: { candidates: () => cands, envFor: () => ({}) },
+    directory: {
+      candidates: async () => {
+        hook.calls++;
+        const fn = hook.next;
+        hook.next = null;
+        await fn?.(hook.calls);
+        return cands;
+      },
+      envFor: () => ({}),
+    },
     tickMs: 0,
     freeMemoryMb: () => 64_000,
     stopTimeoutMs: 2_000,
@@ -64,8 +81,20 @@ async function setup(opts: { pick?: Picker; candidates?: Candidate[]; config?: (
   const o = new Orchestrator(options);
   o.start();
   open.push({ o, store });
-  return { o, store, project, adapter, cands, root, repo };
+  return { o, store, project, adapter, cands, root, repo, hook };
 }
+
+/** The part itself, for the calls only other parts make (a goal's materialisation and edits). */
+const flowOf = (o: Orchestrator): TaskFlow => (o as unknown as { taskFlow: TaskFlow }).taskFlow;
+
+const refusal = async (p: Promise<unknown>): Promise<string> => {
+  const err = await p.then(
+    () => null,
+    (e: unknown) => e,
+  );
+  if (!(err instanceof OrchestratorError)) throw new Error(`expected a refusal, got ${String(err)}`);
+  return err.code;
+};
 
 const q = (store: Store, sql: string, ...args: Array<string | number | null>) => store.db.prepare(sql).run(...args);
 const count = (store: Store, table: string) => Number((store.db.prepare(`select count(*) as n from ${table}`).get() as { n: number }).n);
@@ -113,12 +142,12 @@ describe("run modes", () => {
     expect((await o.edit(crew.id, { kind: "code" })).crew!.members.map((m) => m.role)).toEqual(["planner", "implementer", "tester", "reviewer"]);
   });
 
-  it("drafts a goal task again in the mode its plan chose", async () => {
+  it("drafts a goal task again in the mode its plan chose, when the goal's own code edits it", async () => {
     const { o, store, project } = await setup();
     const t = await o.propose({ projectId: project.id, ...CODE_TR, kind: "research", size: "M" });
     seedGoal(store, project.id);
     seedGoalTask(store, t.id, "server", "solo");
-    expect((await o.edit(t.id, { kind: "code" })).crew!.members.map((m) => m.role)).toEqual(["implementer"]);
+    expect((await flowOf(o).edit(t.id, { kind: "code" }, { byGoal: true })).crew!.members.map((m) => m.role)).toEqual(["implementer"]);
   });
 });
 
@@ -159,6 +188,80 @@ describe("goal tasks start with their plan", () => {
     expect(await call(2, "tasks.approve", { taskId: proposed.result.id })).toMatchObject({ ok: false, error: "task.goal_managed" });
   });
 
+  it("refuses tasks.edit and crew.edit on a goal task before the goal releases it", async () => {
+    const { o, store, project } = await setup();
+    const t = await o.propose({ projectId: project.id, ...CODE_TR, kind: "code", size: "S" });
+    seedGoal(store, project.id);
+    seedGoalTask(store, t.id, "server");
+    const before = o.get(t.id);
+    expect(await refusal(o.edit(t.id, { kind: "docs" }))).toBe("task.goal_managed");
+    expect(await refusal(o.edit(t.id, { title: "Başka bir iş", description: "Plan dışı" }))).toBe("task.goal_managed");
+    expect(await refusal(o.crew.edit(t.id, { kind: "add_step", role: "docs", after: ["implementer"] }))).toBe("task.goal_managed");
+    const after = o.get(t.id);
+    expect([after.title, after.kind, after.crew!.members.map((m) => [m.id, m.role])]).toEqual([before.title, before.kind, before.crew!.members.map((m) => [m.id, m.role])]);
+    expect(events(store, t.id, "task.edited")).toEqual([]);
+    expect(events(store, t.id, "crew.edited")).toEqual([]);
+
+    // Released (its crew approved by the goal), it is an approved crew like any other and meets
+    // the ordinary rules: a follow-up waits for a finished step.
+    q(store, "update crews set approved_at = 'now' where task_id = ?", t.id);
+    await expect(o.crew.edit(t.id, { kind: "add_step", role: "docs", after: ["implementer"] })).rejects.toThrow("crew.not_finished");
+  });
+
+  it("refuses crew.edit on a goal task through the IPC handler", async () => {
+    const root = tempDir("crewyard tasks ipc-");
+    const repo = await tempRepo(root, "demo repo with spaces");
+    const store = new Store(join(root, "t.db"));
+    const ctx = { store, info: { startedAt: "now", dbPath: "t.db", dataDir: root }, emit: () => {} };
+    const o = orchestratorFor(ctx, { tickMs: 0 });
+    open.push({ o, store });
+    const handlers = createHandlers(ctx);
+    const call = (id: number, method: string, params: unknown) => handleMessage(handlers, { kind: "request", id, method, params } as IpcMessage);
+    const project = store.addProject(repo, "demo repo with spaces");
+    const proposed = (await call(1, "tasks.propose", { projectId: project.id, title: "Araştır" })) as { ok: true; result: { id: string } };
+    seedGoal(store, project.id);
+    seedGoalTask(store, proposed.result.id, "research");
+    expect(await call(2, "crew.edit", { taskId: proposed.result.id, edit: { kind: "add_step", role: "docs", after: ["researcher"] } })).toMatchObject({ ok: false, error: "task.goal_managed" });
+  });
+
+  it("refuses an approve when a goal claims the task while approve awaits the directory", async () => {
+    const { o, store, project, hook, adapter } = await setup();
+    const t = await o.propose({ projectId: project.id, ...CODE_TR, kind: "code", size: "S" });
+    hook.next = () => {
+      seedGoal(store, project.id);
+      seedGoalTask(store, t.id, "server");
+    };
+    expect(await refusal(o.approve({ taskId: t.id }))).toBe("task.goal_managed");
+    expect(o.get(t.id).crew!.approvedAt).toBeNull();
+    expect(events(store, t.id, "task.approved")).toEqual([]);
+    await o.settle();
+    expect(adapter.started).toEqual([]);
+  });
+
+  it("writes the goal row in the transaction that creates the task", async () => {
+    const { o, store, project } = await setup();
+    seedGoal(store, project.id);
+    let seen: string | null = null;
+    const t = await flowOf(o).propose(
+      { projectId: project.id, ...CODE_TR, kind: "code", size: "S" },
+      {
+        inTx: (id) => {
+          seen = id;
+          seedGoalTask(store, id, "server");
+        },
+      },
+    );
+    expect(seen).toBe(t.id);
+    expect(await refusal(o.approve({ taskId: t.id }))).toBe("task.goal_managed");
+    // A hook that fails takes the task with it: no task is ever left without its goal row.
+    const tasks = count(store, "tasks");
+    const failing = () => {
+      throw new Error("goal row refused");
+    };
+    await expect(flowOf(o).propose({ projectId: project.id, title: "Yarım kalan", kind: "docs" }, { inTx: failing })).rejects.toThrow("goal row refused");
+    expect([count(store, "tasks"), count(store, "crews")]).toEqual([tasks, tasks]);
+  });
+
   it("lets a collapsed goal's one task and the planning task through: they are ordinary tasks", async () => {
     const { o, store, project } = await setup();
     const collapsed = await o.propose({ projectId: project.id, ...CODE_TR, kind: "research", size: "M" });
@@ -166,6 +269,45 @@ describe("goal tasks start with their plan", () => {
     seedGoal(store, project.id, { collapsedTask: collapsed.id, planTask: planning.id });
     expect((await o.approve({ taskId: collapsed.id })).crew!.approvedAt).not.toBeNull();
     expect((await o.approve({ taskId: planning.id })).crew!.approvedAt).not.toBeNull();
+  });
+});
+
+describe("one approval per crew", () => {
+  it("lets exactly one of two concurrent approvals through", async () => {
+    const { o, store, project } = await setup();
+    const t = await o.propose({ projectId: project.id, ...CODE_TR, kind: "code", size: "S" });
+    const impl = t.crew!.members.find((m) => m.role === "implementer")!;
+    const rev = t.crew!.members.find((m) => m.role === "reviewer")!;
+    const other = CANDIDATES().find((c) => c.profile.id !== impl.chosen!.profileId && c.profile.id !== rev.chosen!.profileId)!.profile.id;
+    const results = await Promise.allSettled([o.approve({ taskId: t.id }), o.approve({ taskId: t.id, edits: [{ memberId: impl.id, profileId: other }] })]);
+    expect(results.map((r) => r.status)).toEqual(["fulfilled", "rejected"]);
+    expect(((results[1] as PromiseRejectedResult).reason as OrchestratorError).code).toBe("task.not_proposed");
+    expect(events(store, t.id, "task.approved")).toHaveLength(1);
+    // The losing call's edit was never written: the stored crew is the one that was approved.
+    expect(o.get(t.id).crew!.members.find((m) => m.id === impl.id)!.chosen!.profileId).toBe(impl.chosen!.profileId);
+  });
+
+  it("refuses an approve when the task is cancelled while approve awaits the directory", async () => {
+    const { o, store, project, hook } = await setup();
+    const t = await o.propose({ projectId: project.id, ...CODE_TR, kind: "code", size: "S" });
+    hook.next = () => {
+      q(store, "update tasks set cancelled_at = 'now' where id = ?", t.id);
+    };
+    expect(await refusal(o.approve({ taskId: t.id }))).toBe("task.cancelled");
+    expect(o.get(t.id).crew!.approvedAt).toBeNull();
+  });
+
+  it("refuses an edit whose crew was approved while the new kind was drafted", async () => {
+    const { o, store, project, hook } = await setup();
+    const t = await o.propose({ projectId: project.id, ...CODE_TR, kind: "code", size: "S" });
+    hook.next = async () => {
+      await o.approve({ taskId: t.id });
+    };
+    expect(await refusal(o.edit(t.id, { kind: "docs" }))).toBe("task.not_proposed");
+    const after = o.get(t.id);
+    // The approved crew is still the one that was approved, not a re-draft nobody approved.
+    expect([after.kind, after.crew!.approvedAt !== null, after.crew!.members.map((m) => m.id)]).toEqual(["code", true, t.crew!.members.map((m) => m.id)]);
+    expect(events(store, t.id, "task.edited")).toEqual([]);
   });
 });
 
@@ -204,35 +346,38 @@ describe("validateCrew matches approve's refusals case by case", () => {
     const rev = t.crew!.members.find((m) => m.role === "reviewer")!;
     const spare = cands.find((c) => c.profile.id !== impl.chosen!.profileId && c.profile.id !== rev.chosen!.profileId)!.profile.id;
 
-    const cases: Array<{ name: string; edits?: Array<{ memberId: string; profileId: string }>; mutate?: () => void; expected: CrewProblem["code"] }> = [
-      { name: "member not in the crew", edits: [{ memberId: "not-a-member", profileId: spare }], expected: "crew.member_not_found" },
-      { name: "edit to a profile that does not exist", edits: [{ memberId: impl.id, profileId: "deleted-profile" }], expected: "crew.unknown_profile" },
-      { name: "reviewer edited onto the implementer's model", edits: [{ memberId: rev.id, profileId: impl.chosen!.profileId }], expected: "crew.independence" },
-    ];
-    for (const c of cases) {
-      const fromApprove = await approveResult(o, t.id, c.edits);
-      expect(fromApprove, c.name).toEqual(pureResult(o, t.id, cands, c.edits));
-      expect(fromApprove?.code, c.name).toBe(c.expected);
-    }
+    // Each expectation is the old approve's literal refusal (its code and params, in its order of
+    // checks: the edits one by one, then every member in crew order), not a value computed here.
+    const agree = async (name: string, expected: CrewProblem, edits?: Array<{ memberId: string; profileId: string }>) => {
+      expect(await approveResult(o, t.id, edits), name).toEqual(expected);
+      expect(pureResult(o, t.id, cands, edits), name).toEqual(expected);
+    };
+    await agree("member not in the crew", { code: "crew.member_not_found", params: { memberId: "not-a-member" } }, [{ memberId: "not-a-member", profileId: spare }]);
+    await agree("edit to a profile that does not exist", { code: "crew.unknown_profile", params: { profileId: "deleted-profile" } }, [{ memberId: impl.id, profileId: "deleted-profile" }]);
+    await agree("reviewer edited onto the implementer's model", { code: "crew.independence", params: { role: "reviewer" } }, [{ memberId: rev.id, profileId: impl.chosen!.profileId }]);
+    await agree("two bad edits: the first one is reported", { code: "crew.member_not_found", params: { memberId: "not-a-member" } }, [
+      { memberId: "not-a-member", profileId: spare },
+      { memberId: impl.id, profileId: "deleted-profile" },
+    ]);
 
     // A read-only profile edited into the writing role.
     const ro = cands.findIndex((c) => c.profile.id === spare);
     cands[ro] = { ...cands[ro]!, readOnly: true };
     const edits = [{ memberId: impl.id, profileId: spare }];
-    expect(await approveResult(o, t.id, edits)).toEqual(pureResult(o, t.id, cands, edits));
-    expect((await approveResult(o, t.id, edits))?.code).toBe("crew.read_only_profile");
+    await agree("read-only profile edited into the writing role", { code: "crew.read_only_profile", params: { profileId: spare, role: "implementer" } }, edits);
     // An edit to a profile that is there but cannot take the role (not ready).
     cands[ro] = { ...cands[ro]!, readOnly: false, ready: false };
-    expect(await approveResult(o, t.id, edits)).toEqual(pureResult(o, t.id, cands, edits));
-    expect((await approveResult(o, t.id, edits))?.code).toBe("crew.unknown_profile");
+    await agree("profile that is not ready", { code: "crew.unknown_profile", params: { profileId: spare } }, edits);
     cands[ro] = { ...cands[ro]!, ready: true };
 
     // The implementer's own profile marked read-only after the proposal.
     const mine = cands.findIndex((c) => c.profile.id === impl.chosen!.profileId);
     const before = cands[mine]!;
     cands[mine] = { ...before, readOnly: true };
-    expect(await approveResult(o, t.id)).toEqual(pureResult(o, t.id, cands));
-    expect((await approveResult(o, t.id))?.code).toBe("crew.read_only_profile");
+    await agree("implementer's profile turned read-only", { code: "crew.read_only_profile", params: { profileId: impl.chosen!.profileId, role: "implementer" } });
+    // Two problems at once: that, plus the reviewer moved onto the implementer's model. The old
+    // loop met the implementer first, so the read-only refusal is the one reported.
+    await agree("read-only implementer and a reviewer on its model", { code: "crew.read_only_profile", params: { profileId: impl.chosen!.profileId, role: "implementer" } }, [{ memberId: rev.id, profileId: impl.chosen!.profileId }]);
     cands[mine] = before;
 
     // A profile that vanished after the proposal: approve never refused that, and still does not.
@@ -317,13 +462,59 @@ describe("Solo's Start", () => {
     expect(res).toMatchObject({ started: false, held: { code: "crew", params: { code: "crew.missing_profile", role: "implementer" } } });
   });
 
-  it("starts Solo unless Crew is asked for", async () => {
-    const { o, project } = await setup({ candidates: [priced("key-a", "anthropic"), priced("key-b", "openai")] });
-    const solo = await o.startTask({ projectId: project.id, ...CODE_TR, kind: "code", size: "M" });
+  it("returns the proposal when the step would pass the key's per-task cap", async () => {
+    const { o, store, project, adapter } = await setup({ candidates: [{ ...priced("key-a", "deepseek"), credentialId: "cred-a" }] });
+    q(store, "insert into credentials (id, alias, provider_id, kind, daily_cap_usd, task_cap_usd, created_at) values ('cred-a', 'a', 'deepseek', 'api_key', null, 0.0001, '2026-10-30T00:00:00Z')");
+    const res = await o.startTask({ projectId: project.id, ...CODE_TR, kind: "research", size: "S" });
+    expect(res).toMatchObject({ started: false, held: { code: "over_cap", params: { cap: "task_cap" } } });
+    expect(res.task.crew!.approvedAt).toBeNull();
+    expect(events(store, res.task.id, "task.approved")).toEqual([]);
+    await o.settle();
+    expect(adapter.started).toEqual([]);
+  });
+
+  it("returns the proposal when the profile turns read-only between the check and the approval", async () => {
+    const cands = [priced("key-a", "anthropic")];
+    const { o, store, project, hook, adapter } = await setup({ candidates: cands });
+    // propose drafts (directory call 1), the hold check reads it again (2), then approve (3).
+    const turnReadOnly = (call: number): void => {
+      if (call < 3) {
+        hook.next = turnReadOnly;
+        return;
+      }
+      cands[0] = { ...cands[0]!, readOnly: true };
+    };
+    hook.next = turnReadOnly;
+    const res = await o.startTask({ projectId: project.id, ...CODE_TR, kind: "code", size: "S" });
+    expect(res).toMatchObject({ started: false, held: { code: "crew", params: { code: "crew.read_only_profile", profileId: "key-a", role: "implementer" } } });
+    expect(res.task.status).toBe("proposed");
+    expect(res.task.crew!.approvedAt).toBeNull();
+    expect(events(store, res.task.id, "task.start_held")).toHaveLength(1);
+    await o.settle();
+    expect(adapter.started).toEqual([]);
+  });
+
+  it("refuses any mode but Solo and writes nothing", async () => {
+    const { o, store, project } = await setup({ candidates: [priced("key-a", "anthropic"), priced("key-b", "openai")] });
+    const before = { tasks: count(store, "tasks"), events: count(store, "events") };
+    for (const mode of ["crew", "swarm"]) {
+      expect(await refusal(o.startTask({ projectId: project.id, ...CODE_TR, kind: "code", size: "M", mode } as never))).toBe("task.start_solo_only");
+    }
+    expect({ tasks: count(store, "tasks"), events: count(store, "events") }).toEqual(before);
+    const solo = await o.startTask({ projectId: project.id, ...CODE_TR, kind: "code", size: "M", mode: "solo" });
     expect(solo.task.crew!.members.map((m) => m.role)).toEqual(["implementer"]);
-    const crew = await o.startTask({ projectId: project.id, ...CODE_TR, kind: "code", size: "M", mode: "crew" });
-    expect(crew.task.crew!.members.map((m) => m.role)).toEqual(["planner", "implementer", "tester", "reviewer"]);
-    expect(crew.started).toBe(true);
+  });
+
+  it("never takes Best of N or other propose fields nobody declared", async () => {
+    const { o, store, project, adapter } = await setup({ candidates: [priced("key-a", "anthropic"), priced("key-b", "openai"), priced("key-c", "google")] });
+    const res = await o.startTask({ projectId: project.id, ...CODE_TR, kind: "code", size: "S", bestOf: 3 } as never);
+    expect(res.started).toBe(true);
+    expect(res.task.bestOfGroup).toBeNull();
+    expect(res.task.crew!.members.map((m) => m.role)).toEqual(["implementer"]);
+    expect(events(store, res.task.id, "task.proposed")[0]).toMatchObject({ mode: "solo", bestOf: null });
+    await waitFor(() => adapter.started.find((s) => s.role === "implementer"));
+    await o.settle();
+    expect(adapter.started.map((s) => s.role)).toEqual(["implementer"]);
   });
 });
 
