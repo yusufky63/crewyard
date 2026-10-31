@@ -1,4 +1,5 @@
 import type { AssistantSpendLabel, TaskDraftInput } from "../assistant.ts";
+import type { AutopilotLimits, AutopilotRefusal, AutopilotSource, AutopilotTool } from "../autopilot.ts";
 import type { PresetSuggestion, ProjectFacts, TaskPresetId } from "../presets.ts";
 import type { RunnerId } from "../events.ts";
 import type { TaskKind, TaskSize } from "./tasks.ts";
@@ -123,6 +124,8 @@ export interface TaskReport {
   at: string;
   /** Suggested follow-up tasks from the findings and the agent's propose_followup calls. */
   drafts: AssistantDraftView[];
+  /** Autopilot read this report and marked the task done (docs/adr/0017); its reason is agent text. */
+  completed?: { by: "autopilot"; at: string; reason: string } | null;
 }
 
 export interface AssistantPresetsView {
@@ -137,6 +140,68 @@ export interface AssistantDraftEdit {
   kind: TaskKind;
   acceptance: string[];
   size: TaskSize | null;
+}
+
+// ---------------------------------------------------------------- Autopilot (docs/adr/0017)
+
+/** What Autopilot used against its limits; the money is Estimated (crew estimates or spend so far). */
+export interface AutopilotUsage {
+  createdLastHour: number;
+  startedLastHour: number;
+  /** Its tasks running, waiting, or with a report it has not marked done. */
+  active: number;
+  committedTodayUsd: number;
+}
+
+/**
+ * One line of the Autopilot log: a call (allowed or refused) or a change you made. `action` is the
+ * tool name, or `enabled`, `disabled`, `limits`, `killed`, `resumed`, `halted`. `reason` is the
+ * agent's text for a call (untrusted, render as text), empty for your own changes.
+ */
+export interface AutopilotLogEntry {
+  seq: number;
+  at: string;
+  action: AutopilotTool | "enabled" | "disabled" | "limits" | "killed" | "resumed" | "halted";
+  outcome: "done" | "refused" | "changed";
+  code: AutopilotRefusal | null;
+  reason: string;
+  taskId: string | null;
+  taskTitle: string | null;
+  /** A refusal's detail for the agent, or a halt's failure; untrusted, capped. */
+  detail: string | null;
+}
+
+export interface AutopilotTaskView {
+  taskId: string;
+  title: string;
+  /** The quote of your message it was based on, and where its content came from. */
+  basis: string;
+  sources: AutopilotSource[];
+  createdAt: string;
+  approvedAt: string | null;
+  completedAt: string | null;
+}
+
+export interface AutopilotView {
+  projectId: string;
+  enabled: boolean;
+  /** When you accepted what Autopilot may do in this project; enabling is refused before that. */
+  consentAt: string | null;
+  limits: AutopilotLimits;
+  /** The global kill switch: every call is refused in every project while set. */
+  killed: boolean;
+  /** Stopped by the stop rule until you turn it on again. */
+  halted: { reason: "repeated_failure"; at: string; detail: string | null } | null;
+  usage: AutopilotUsage;
+  tasks: AutopilotTaskView[];
+  log: AutopilotLogEntry[];
+}
+
+export interface AutopilotGlobal {
+  killed: boolean;
+  killedAt: string | null;
+  /** Projects where Autopilot is on, with their names. */
+  projects: Array<{ projectId: string; name: string; halted: boolean }>;
 }
 
 export interface AssistantIpc {
@@ -160,9 +225,24 @@ export interface AssistantIpc {
   "assistant.presets": { params: { projectId: string }; result: AssistantPresetsView };
   /** Puts a preset into the drafts column as an editable draft. Local, no model call. */
   "assistant.preset": { params: { projectId: string; presetId: TaskPresetId }; result: AssistantView };
+  "autopilot.get": { params: { projectId: string }; result: AutopilotView };
+  /**
+   * Your change to Autopilot in a project: on or off, and its limits. The first `enabled: true`
+   * needs `consent: true` (`autopilot.consent` otherwise); turning it on again clears a halt.
+   * Only this method changes Autopilot's settings; no assistant tool can.
+   */
+  "autopilot.set": { params: { projectId: string; enabled?: boolean; consent?: boolean; limits?: Partial<AutopilotLimits> }; result: AutopilotView };
+  "autopilot.global": { params: Record<string, never>; result: AutopilotGlobal };
+  /** The kill switch. Refuses every Autopilot call at once; never stops running agents. */
+  "autopilot.kill": { params: { killed: boolean }; result: AutopilotGlobal };
 }
 
 export interface AssistantTopics {
   /** Something in the project's assistant changed; re-read assistant.get. Streaming text is batched. */
   "assistant.changed": { projectId: string };
+  /**
+   * Autopilot changed in a project (null: the kill switch). `action` is set for a call it made,
+   * which the main process batches into toasts; `halted` for a stop by the stop rule.
+   */
+  "autopilot.changed": { projectId: string | null; action?: { tool: AutopilotTool; outcome: "done" | "refused" }; halted?: boolean };
 }

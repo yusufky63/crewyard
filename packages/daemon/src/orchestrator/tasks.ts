@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { CandidateView, TaskDetail, TaskSummary, TasksIpc, EndReason, BestOfView } from "@crewyard/core";
+import type { CandidateView, TaskDetail, TaskSummary, TasksIpc, EndReason, BestOfView, TaskKind, TaskSize } from "@crewyard/core";
 import type { OrchestratorContext, ProposeParams } from "./context.ts";
 import { Part } from "./part.ts";
 import type { BestOfRunner } from "./best-of.ts";
@@ -51,21 +51,10 @@ export class TaskFlow extends Part {
     const description = p.description ?? "";
     const attachmentIds = p.attachments ?? [];
     this.attachments.check(attachmentIds);
-    const cls = classifyTask(p.title, description, { kind: p.kind, size: p.size });
     const budgetUsd = p.budgetUsd ?? (fromFile ? config.budget.perTaskUsd : null);
-    const candidates = await this.candidates(project);
-    const ctx = this.scoring(project.id, cls.size, budgetUsd, p.pins, p.exclude);
-    const roles = projectRoles(this.opts.dataDir, project.path, config, null);
-    const crew = proposeCrew(cls.kind, cls.security, candidates, ctx, { templates: new Map([...roles.set.roles].map(([id, r]) => [id, r.template])), steps: roles.steps });
-    for (const m of crew.members) {
-      const path = roles.set.roles.get(m.role)?.path;
-      if (path) m.reasons.unshift({ code: "role.file", params: { path } });
-    }
-    const group = p.bestOf === undefined ? null : this.deps.groupCandidates(crew.members, candidates, ctx, p.bestOf);
-    const estimate = group ? sumEstimates(crew.members.flatMap((m, i) => (i === group.index ? group.candidates.map((c) => c.estimate) : [m.chosen?.estimate ?? { usd: null, provenance: "unknown" as const }]))) : crew.estimate;
+    const draft = await this.draftCrew(project, p.title, description, { kind: p.kind, size: p.size }, budgetUsd, p);
+    const { cls, crew } = draft;
     const taskId = randomUUID();
-    const crewId = randomUUID();
-    const memberIds = crew.members.map(() => randomUUID());
     const at = this.iso();
     this.db.tx(() => {
       this.db.exec(
@@ -84,34 +73,94 @@ export class TaskFlow extends Part {
         JSON.stringify(cls.reasons),
         at,
       );
-      this.db.exec("insert into crews (id, task_id, proposed_at, estimate_usd, estimate_provenance) values (?, ?, ?, ?, ?)", crewId, taskId, at, estimate.usd, estimate.provenance);
-      crew.members.forEach((m, i) =>
-        this.db.exec(
-          `insert into crew_members (id, crew_id, position, step, role, depends_on, required, writes_code, chosen, standby, reasons)
-           values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          memberIds[i]!,
-          crewId,
-          i,
-          m.step,
-          m.role,
-          JSON.stringify(m.dependsOn),
-          m.required ? 1 : 0,
-          m.writesCode ? 1 : 0,
-          m.chosen ? JSON.stringify(m.chosen) : null,
-          JSON.stringify(m.standby),
-          JSON.stringify(m.reasons),
-        ),
-      );
-      crew.members.forEach((m, i) => {
-        const r = roles.set.roles.get(m.role);
-        if (r && r.source !== "builtin") this.db.saveRoleTemplate(memberIds[i]!, r);
-      });
-      if (group) this.bestOf.create(taskId, memberIds[group.index]!, group.candidates);
+      this.writeCrew(taskId, draft, at);
     });
     if (attachmentIds.length > 0) this.attachments.claim(attachmentIds, taskId, null);
-    this.audit(taskId, null, "task.proposed", { kind: cls.kind, size: cls.size, members: crew.members.map((m) => ({ role: m.role, profileId: m.chosen?.profileId ?? null })), bestOf: group?.candidates.map((c) => c.profileId) ?? null, ...(attachmentIds.length > 0 ? { attachments: attachmentIds } : {}) });
+    this.audit(taskId, null, "task.proposed", { kind: cls.kind, size: cls.size, members: crew.members.map((m) => ({ role: m.role, profileId: m.chosen?.profileId ?? null })), bestOf: draft.group?.candidates.map((c) => c.profileId) ?? null, ...(attachmentIds.length > 0 ? { attachments: attachmentIds } : {}) });
     this.emitTask(taskId, "proposed");
     return this.get(taskId);
+  }
+
+  /** Classification and crew for a task's text, scored on today's candidates; nothing is written. */
+  private async draftCrew(project: ReturnType<OrchestratorContext["db"]["project"]>, title: string, description: string, given: { kind?: TaskKind; size?: TaskSize }, budgetUsd: number | null, p: Pick<ProposeParams, "pins" | "exclude" | "bestOf"> = {}) {
+    const { config } = this.config(project);
+    const cls = classifyTask(title, description, given);
+    const candidates = await this.candidates(project);
+    const ctx = this.scoring(project.id, cls.size, budgetUsd, p.pins, p.exclude);
+    const roles = projectRoles(this.opts.dataDir, project.path, config, null);
+    const crew = proposeCrew(cls.kind, cls.security, candidates, ctx, { templates: new Map([...roles.set.roles].map(([id, r]) => [id, r.template])), steps: roles.steps });
+    for (const m of crew.members) {
+      const path = roles.set.roles.get(m.role)?.path;
+      if (path) m.reasons.unshift({ code: "role.file", params: { path } });
+    }
+    const group = p.bestOf === undefined ? null : this.deps.groupCandidates(crew.members, candidates, ctx, p.bestOf);
+    const estimate = group ? sumEstimates(crew.members.flatMap((m, i) => (i === group.index ? group.candidates.map((c) => c.estimate) : [m.chosen?.estimate ?? { usd: null, provenance: "unknown" as const }]))) : crew.estimate;
+    return { cls, crew, roles, group, estimate };
+  }
+
+  /** Stores a drafted crew for the task; inside the caller's transaction. */
+  private writeCrew(taskId: string, d: Awaited<ReturnType<TaskFlow["draftCrew"]>>, at: string): void {
+    const { crew, roles, group, estimate } = d;
+    const crewId = randomUUID();
+    const memberIds = crew.members.map(() => randomUUID());
+    this.db.exec("insert into crews (id, task_id, proposed_at, estimate_usd, estimate_provenance) values (?, ?, ?, ?, ?)", crewId, taskId, at, estimate.usd, estimate.provenance);
+    crew.members.forEach((m, i) =>
+      this.db.exec(
+        `insert into crew_members (id, crew_id, position, step, role, depends_on, required, writes_code, chosen, standby, reasons)
+         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        memberIds[i]!,
+        crewId,
+        i,
+        m.step,
+        m.role,
+        JSON.stringify(m.dependsOn),
+        m.required ? 1 : 0,
+        m.writesCode ? 1 : 0,
+        m.chosen ? JSON.stringify(m.chosen) : null,
+        JSON.stringify(m.standby),
+        JSON.stringify(m.reasons),
+      ),
+    );
+    crew.members.forEach((m, i) => {
+      const r = roles.set.roles.get(m.role);
+      if (r && r.source !== "builtin") this.db.saveRoleTemplate(memberIds[i]!, r);
+    });
+    if (group) this.bestOf.create(taskId, memberIds[group.index]!, group.candidates);
+  }
+
+  /**
+   * Changes the title, description or kind of a task whose crew is still a proposal (docs/adr/0017).
+   * A new kind is classified and proposed again, replacing the crew; nothing has run, so nothing
+   * else points at the old members. A Best of N task keeps its kind. A budget may only go down.
+   */
+  async edit(taskId: string, patch: { title?: string; description?: string; kind?: TaskKind; budgetUsd?: number }): Promise<TaskDetail> {
+    const task = this.db.task(taskId);
+    if (task.cancelled_at) throw new OrchestratorError("task.cancelled");
+    const crew = this.db.crew(task.id);
+    if (!crew || crew.approved_at) throw new OrchestratorError("task.not_proposed");
+    const title = patch.title ?? task.title;
+    const description = patch.description ?? task.description;
+    const rekind = patch.kind !== undefined && patch.kind !== task.kind;
+    if (rekind && this.bestOf.group(task.id)) throw new OrchestratorError("task.best_of_kind");
+    const budgetUsd = patch.budgetUsd !== undefined && (task.budget_usd === null || patch.budgetUsd < task.budget_usd) ? patch.budgetUsd : task.budget_usd;
+    const project = this.db.project(task.project_id);
+    const draft = rekind ? await this.draftCrew(project, title, description, { kind: patch.kind, size: task.size }, budgetUsd) : null;
+    this.db.tx(() => {
+      this.db.exec("update tasks set title = ?, description = ?, budget_usd = ? where id = ?", title, description, budgetUsd, task.id);
+      if (!draft) return;
+      const members = this.db.members(crew.id).map((m) => m.id);
+      for (const id of members) {
+        this.db.exec("delete from crew_member_roles where member_id = ?", id);
+        this.db.exec("delete from crew_member_flags where member_id = ?", id);
+      }
+      this.db.exec("delete from crew_members where crew_id = ?", crew.id);
+      this.db.exec("delete from crews where id = ?", crew.id);
+      this.db.exec("update tasks set kind = ?, size = ?, classification = ? where id = ?", draft.cls.kind, draft.cls.size, JSON.stringify(draft.cls.reasons), task.id);
+      this.writeCrew(task.id, draft, this.iso());
+    });
+    this.audit(task.id, null, "task.edited", { title: patch.title !== undefined, description: patch.description !== undefined, kind: rekind ? patch.kind : null, ...(budgetUsd !== task.budget_usd ? { budgetUsd } : {}) });
+    this.emitTask(task.id, "edited");
+    return this.get(task.id);
   }
 
   /** Approves the crew, with optional edits, then lets the scheduler start ready steps. */

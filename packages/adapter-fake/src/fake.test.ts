@@ -33,4 +33,14 @@ describe("FakeAdapter", () => {
     const first = await pending;
     expect(first.value).toMatchObject({ type: "run.ended", reason: "stopped" });
   });
+
+  it("waits for the next turn mid-script and goes on with what it was given", async () => {
+    const inputs = ["first answer"];
+    const adapter = new FakeAdapter([{ emit: { type: "message.delta", text: "a" } }, { awaitTurn: true }, { emit: { type: "message.delta", text: "b" } }, { awaitTurn: true }, { emit: { type: "message.delta", text: "never" } }]);
+    const run = await adapter.start({ ...req, nextTurn: async () => inputs.shift() ?? null });
+    const texts: string[] = [];
+    for await (const ev of adapter.events(run)) if (ev.type === "message.delta") texts.push(ev.text);
+    expect(texts).toEqual(["a", "b"]);
+    expect(adapter.inspect(run).inputs).toHaveLength(1);
+  });
 });
