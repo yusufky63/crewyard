@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, readdirSync, rmdirSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import {
   capEvent,
@@ -8,7 +8,6 @@ import {
   type AgentEvent,
   type Attachment,
   type CandidateView,
-  type CrewEdit,
   type EndReason,
   type ForkResult,
   type HandoffStop,
@@ -25,7 +24,6 @@ import {
   type StartRequest,
   type TaskDetail,
   type TaskSummary,
-  type BestOfView,
   type TasksIpc,
   sessionProblemOf,
   type UserInput,
@@ -34,10 +32,10 @@ import {
 } from "@crewyard/core";
 import type { McpHook } from "../mcp/service.ts";
 import { Bootstrapper } from "../worktrees/bootstrap.ts";
-import { admit, admitGroup, DEFAULT_LIMITS } from "./admission.ts";
-import { BEST_OF_MAX, BEST_OF_MIN, groupFact, groupPhase, pickVariants, worktreeDiff, type DiffStat, type GroupRow } from "./best-of.ts";
+import { admit, DEFAULT_LIMITS } from "./admission.ts";
 import { OrchestratorContext, type Ended, type LaunchSpec, type Live, type OrchestratorOptions, type ProposeParams } from "./context.ts";
 import { Part } from "./part.ts";
+import { BestOfRunner } from "./best-of.ts";
 import { Hibernator } from "./hibernation.ts";
 import { LoopRunner } from "./loops.ts";
 import { AccountSwitcher } from "./account-switch.ts";
@@ -46,17 +44,17 @@ import { Handoffs } from "./handoffs.ts";
 import { Budget } from "./budget.ts";
 import { Inbox } from "./inbox.ts";
 import { classifyTask } from "./classify.ts";
-import { eligible, estimateFor, proposeCrew, rankForRole, readOnlyConflict, sameModel, scoreCandidate, sumEstimates, type ScoringContext } from "./crew.ts";
-import type { MemberRow, OrchestratorDb, ProjectRow, RunRow, TaskRow, WorktreeRow } from "./db.ts";
+import { eligible, estimateFor, proposeCrew, readOnlyConflict, sameModel, scoreCandidate, sumEstimates } from "./crew.ts";
+import type { MemberRow, ProjectRow, RunRow, TaskRow, WorktreeRow } from "./db.ts";
 import type { Candidate, ProfileDirectory } from "./directory.ts";
 import { errorCode, errorDetail, OrchestratorError, redactDetail } from "./errors.ts";
-import { ensureWorktree, git, sameDir, taskSlug, writeFileAtomic } from "./git.ts";
+import { ensureWorktree, sameDir, taskSlug, writeFileAtomic } from "./git.ts";
 import { reviewContext } from "./loops.ts";
 import { applyResult, outputSchemaFor, type RoleResult } from "./results.ts";
 import type { LimitMonitor } from "./limits.ts";
 import { rolePrompt } from "./prompts.ts";
 import { projectRoles } from "./role-files.ts";
-import { capResetsAt, capWindow, overCap, reachedCaps, reservedUsd, reserveSpend, settleReservation, spendCredential } from "./spend.ts";
+import { capResetsAt, capWindow, reserveSpend, settleReservation, spendCredential } from "./spend.ts";
 import { joinMessages } from "./queue.ts";
 import { Scheduler } from "./schedules.ts";
 import { snapshotTranscript } from "./transcripts.ts";
@@ -69,10 +67,6 @@ export type { OrchestratorOptions } from "./context.ts";
 
 /** Roles that read a pinned, detached checkout of the commit they review instead of the live worktree. */
 const PINNED_ROLES: RoleId[] = ["reviewer", "security"];
-
-/** Parking a discarded Best of N variant: tries, and the wait before the next one (times the try). */
-const PARK_ATTEMPTS = 3;
-const PARK_RETRY_MS = 1_500;
 
 /** Largest tool output kept whole on disk when its event is cut; bigger ones keep only the head. */
 const KEEP_FULL_MAX = 8 * 1024 * 1024;
@@ -140,6 +134,14 @@ export class Orchestrator extends Part {
     continueRun: (runId, text) => this.continueRun(runId, text),
     endRun: (runId, reason, detail) => this.endRun(runId, reason, detail),
     onFailure: (runId, detail) => this.fallback.onFailure(runId, detail),
+    tick: () => this.tick(),
+  });
+  private readonly bestOfRunner: BestOfRunner = new BestOfRunner(this.ctx, {
+    insertRun: (spec) => this.insertRun(spec),
+    boot: (runId, spec) => this.boot(runId, spec),
+    stopRun: (runId, detail, reason) => this.stopRun(runId, detail, reason),
+    cancel: (taskId) => this.cancel(taskId),
+    get: (taskId) => this.get(taskId),
     tick: () => this.tick(),
   });
 
@@ -213,7 +215,7 @@ export class Orchestrator extends Part {
       audit: (projectId, taskId, kind, payload) => opts.store.appendEvent({ kind, source: "orchestrator", payload, projectId, taskId }),
       track: (p) => this.track(p),
     });
-    this.db.taskExtras = (t) => this.taskExtras(t);
+    this.db.taskExtras = (t) => this.bestOfRunner.taskExtras(t);
     this.db.taskLoop = (t) => this.loopRunner.loopView(t);
   }
 
@@ -290,7 +292,7 @@ export class Orchestrator extends Part {
   get(taskId: string): TaskDetail {
     const task = this.db.task(taskId);
     const attachments = this.attachments.taskViews(task.id);
-    return { ...this.db.detail(task, this.blocked), bestOfGroup: this.groupView(task), accountSwitch: this.switches.taskEnabled(task.id), ...(attachments.length > 0 ? { attachments } : {}) };
+    return { ...this.db.detail(task, this.blocked), bestOfGroup: this.bestOfRunner.groupView(task), accountSwitch: this.switches.taskEnabled(task.id), ...(attachments.length > 0 ? { attachments } : {}) };
   }
 
   /** Classifies the task and stores a draft crew. No process, worktree or network call. */
@@ -310,7 +312,7 @@ export class Orchestrator extends Part {
       const path = roles.set.roles.get(m.role)?.path;
       if (path) m.reasons.unshift({ code: "role.file", params: { path } });
     }
-    const group = p.bestOf === undefined ? null : this.groupCandidates(crew.members, candidates, ctx, p.bestOf);
+    const group = p.bestOf === undefined ? null : this.bestOfRunner.groupCandidates(crew.members, candidates, ctx, p.bestOf);
     const estimate = group ? sumEstimates(crew.members.flatMap((m, i) => (i === group.index ? group.candidates.map((c) => c.estimate) : [m.chosen?.estimate ?? { usd: null, provenance: "unknown" as const }]))) : crew.estimate;
     const taskId = randomUUID();
     const crewId = randomUUID();
@@ -390,7 +392,7 @@ export class Orchestrator extends Part {
 
     const group = this.bestOf.group(task.id);
     if (p.bestOf && !group) throw new OrchestratorError("best_of.not_found");
-    const groupCands = group ? this.approvedVariants(task, project, members, views, candidates, group, p) : null;
+    const groupCands = group ? this.bestOfRunner.approvedVariants(task, project, members, views, candidates, group, p) : null;
 
     for (const m of members) {
       const v = views.get(m.id);
@@ -469,351 +471,8 @@ export class Orchestrator extends Part {
 
   // ---------------------------------------------------------------- Best of N (feature scan A8)
 
-  /** At proposal: the variants for the implement step, never on a reviewer's model. */
-  private groupCandidates(members: ReturnType<typeof proposeCrew>["members"], candidates: Candidate[], ctx: ScoringContext, n: number): { index: number; candidates: CandidateView[] } {
-    if (!Number.isInteger(n) || n < BEST_OF_MIN || n > BEST_OF_MAX) throw new OrchestratorError("best_of.bad_count", { min: BEST_OF_MIN, max: BEST_OF_MAX });
-    const index = members.findIndex((m) => m.role === "implementer" && m.writesCode);
-    if (index < 0) throw new OrchestratorError("best_of.not_found");
-    const independent = members.filter((m) => m.chosen && m.template.independentOf.includes("implementer")).map((m) => m.chosen!);
-    const ranked = rankForRole(candidates, "implementer", ctx, { models: new Set(), providers: new Set() }).filter((c) => !independent.some((r) => sameModel(r, c)));
-    const picked = pickVariants(members[index]!.chosen, ranked, n);
-    if (picked.length < n) throw new OrchestratorError("best_of.too_few", { found: picked.length, needed: n });
-    return { index, candidates: picked };
-  }
-
-  /**
-   * At approval: the group's variants after your edits, checked against the rules that make the
-   * group able to start at all: enough slots for every variant at once, and an estimate that fits
-   * the task budget on its own.
-   */
-  private approvedVariants(task: TaskRow, project: ProjectRow, members: MemberRow[], views: Map<string, CandidateView | null>, candidates: Candidate[], group: GroupRow, p: { edits?: CrewEdit[]; bestOf?: { profileIds: string[] } }): CandidateView[] {
-    const ctx = this.scoring(project.id, task.size, task.budget_usd);
-    const member = members.find((m) => m.id === group.member_id)!;
-    let out = this.bestOf.candidates(group.id);
-    if (p.bestOf) {
-      const ids = p.bestOf.profileIds;
-      if (ids.length < BEST_OF_MIN || ids.length > BEST_OF_MAX || new Set(ids).size !== ids.length) throw new OrchestratorError("best_of.bad_count", { min: BEST_OF_MIN, max: BEST_OF_MAX });
-      const before = out;
-      out = ids.map((id) => {
-        const c = candidates.find((x) => x.profile.id === id);
-        if (c && readOnlyConflict(c, this.tpl(member))) throw new OrchestratorError("crew.read_only_profile", { profileId: id, role: member.role });
-        if (!c || !eligible(c, this.tpl(member), ctx)) throw new OrchestratorError("crew.unknown_profile", { profileId: id });
-        return before.find((v) => v.profileId === id) ?? scoreCandidate(c, this.tpl(member), ctx);
-      });
-    } else if (p.edits?.some((e) => e.memberId === member.id)) {
-      // Changing the implementer in the crew changes the first variant.
-      const first = views.get(member.id)!;
-      out = [first, ...out.filter((v) => v.profileId !== first.profileId)].slice(0, out.length);
-    }
-    const slots = Math.min(this.config(project).config.rules.slots, this.opts.limits?.globalSlots ?? DEFAULT_LIMITS.globalSlots);
-    if (out.length > slots) throw new OrchestratorError("best_of.slots", { needed: out.length, slots });
-    const estimate = sumEstimates(out.map((v) => v.estimate));
-    if (task.budget_usd !== null && estimate.usd !== null && estimate.usd > task.budget_usd) throw new OrchestratorError("best_of.over_budget", { estimateUsd: estimate.usd, capUsd: task.budget_usd });
-    views.set(member.id, out[0]!);
-    return out;
-  }
-
-  /**
-   * Starts every variant of a group at once, or none: admission for all of them, then every
-   * paid variant's estimate reserved against the parent's caps in one step, so parallel steps
-   * cannot take the room between two variants. Then one hidden task per variant, and its run.
-   */
-  private async startGroup(task: TaskRow, m: MemberRow, group: GroupRow, project: ProjectRow, slots: number, candidates: Candidate[]): Promise<void> {
-    const variants = this.bestOf.variants(group.id);
-    const views = variants.map((v) => JSON.parse(v.candidate) as CandidateView);
-    const missing = views.find((v) => !this.adapters.has(v.runner));
-    const reason: Reason | null = missing ? { code: "admission.no_adapter", params: { runner: missing.runner } } : (this.groupAdmission(task, views, slots) ?? this.groupBudgetHold(task, m, views, candidates));
-    if (reason) {
-      const prev = this.blocked.get(m.id);
-      this.blocked.set(m.id, reason);
-      if (prev?.code !== reason.code) this.emitTask(task.id, "admission");
-      return;
-    }
-    this.blocked.delete(m.id);
-    const at = this.iso();
-    const created = new Map<string, string>();
-    const specs: LaunchSpec[] = [];
-    this.db.tx(() => {
-      for (const [i, v] of variants.entries()) {
-        const view = views[i]!;
-        const taskId = randomUUID();
-        const crewId = randomUUID();
-        const memberId = randomUUID();
-        this.db.exec(
-          `insert into tasks (id, project_id, title, description, kind, size, base_branch, fallback, wait_reset_minutes, budget_usd, classification, created_at)
-           values (?, ?, ?, ?, ?, ?, ?, ?, ?, null, '[]', ?)`,
-          taskId,
-          task.project_id,
-          task.title,
-          task.description,
-          task.kind,
-          task.size,
-          task.base_branch,
-          task.fallback,
-          task.wait_reset_minutes,
-          at,
-        );
-        this.db.exec("insert into crews (id, task_id, proposed_at, approved_at, estimate_usd, estimate_provenance) values (?, ?, ?, ?, ?, ?)", crewId, taskId, at, at, view.estimate.usd, view.estimate.provenance);
-        this.db.exec(
-          "insert into crew_members (id, crew_id, position, step, role, depends_on, required, writes_code, chosen, standby, reasons) values (?, ?, 0, ?, ?, '[]', 1, 1, ?, '[]', '[]')",
-          memberId,
-          crewId,
-          m.step,
-          m.role,
-          JSON.stringify(view),
-        );
-        this.db.copyRoleTemplate(m.id, memberId);
-        created.set(v.id, taskId);
-        specs.push({ runId: randomUUID(), task: this.db.task(taskId), member: this.db.member(memberId), target: view });
-      }
-      this.bestOf.start(group.id, created);
-      for (const spec of specs) {
-        const c = candidates.find((x) => x.profile.id === spec.target.profileId);
-        if (c?.profile.credential.kind === "api_key") reserveSpend(this.opts.store.db, { runId: spec.runId!, taskId: task.id, credentialId: spendCredential(c), amountUsd: estimateFor(c, this.tpl(m), task.size, this.now()).usd ?? 0 }, this.now());
-      }
-    });
-    for (const spec of specs) this.insertRun(spec);
-    this.audit(task.id, null, "best_of.started", { groupId: group.id, variants: views.map((v) => v.profileId), estimate: sumEstimates(views.map((v) => v.estimate)) });
-    this.emitTask(task.id, "best_of");
-    // One after another: parallel `git worktree add` on one repo races for its locks.
-    this.track(
-      (async () => {
-        for (const spec of specs) await this.boot(spec.runId!, spec);
-      })(),
-    );
-  }
-
-  private groupAdmission(task: TaskRow, views: CandidateView[], projectSlots: number): Reason | null {
-    const counts = this.db.activeCounts();
-    const needed = new Map<string, number>();
-    for (const v of views) needed.set(v.profileId, (needed.get(v.profileId) ?? 0) + 1);
-    return admitGroup(
-      {
-        projectActive: counts.byProject.get(task.project_id) ?? 0,
-        globalActive: counts.total,
-        freeMb: this.freeMb(),
-        profiles: [...needed].map(([profileId, n]) => ({ profileId, needed: n, active: counts.byProfile.get(profileId) ?? 0 })),
-      },
-      { ...DEFAULT_LIMITS, ...this.opts.limits, projectSlots },
-    );
-  }
-
-  /**
-   * Like budgetHold for one step, for the whole group: it waits while other unfinished runs hold
-   * the room every variant's estimate needs together. A group that would not fit even once they
-   * finish starts, and each paid variant pauses on its cap with a request, as a single step does.
-   */
-  private groupBudgetHold(task: TaskRow, m: MemberRow, views: CandidateView[], candidates: Candidate[]): Reason | null {
-    const byCredential = new Map<string, { c: Candidate; usd: number }>();
-    let total = 0;
-    for (const v of views) {
-      const c = candidates.find((x) => x.profile.id === v.profileId);
-      if (c?.profile.credential.kind !== "api_key") continue;
-      const usd = estimateFor(c, this.tpl(m), task.size, this.now()).usd ?? 0;
-      total += usd;
-      const key = spendCredential(c) ?? `profile:${c.profile.id}`;
-      const cur = byCredential.get(key);
-      byCredential.set(key, { c, usd: (cur?.usd ?? 0) + usd });
-    }
-    for (const { c, usd } of byCredential.values()) {
-      const cap = reachedCaps(this.opts.store.db, spendCredential(c), task.id, this.now(), { addUsd: usd }).find((x) => x.reservedUsd);
-      if (cap && !overCap(cap.spentUsd, 0, usd, cap.capUsd)) return { code: "admission.budget_reserved", params: { reservedUsd: cap.reservedUsd!, capUsd: cap.capUsd, cap: cap.kind } };
-    }
-    if (task.budget_usd !== null && total > 0) {
-      const spent = this.db.spend(this.budgetRuns(task.id)).usd ?? 0;
-      const held = reservedUsd(this.opts.store.db, { taskId: task.id });
-      if (held > 0 && overCap(spent, held, total, task.budget_usd) && !overCap(spent, 0, total, task.budget_usd)) {
-        return { code: "admission.budget_reserved", params: { reservedUsd: Math.round(held * 1_000_000) / 1_000_000, capUsd: task.budget_usd, cap: "task_budget" } };
-      }
-    }
-    return null;
-  }
-
-  private async refreshVariantDiff(variantId: string): Promise<void> {
-    const v = this.bestOf.variant(variantId);
-    const wt = v?.task_id ? this.db.worktree(v.task_id) : null;
-    if (!v || !wt || !existsSync(wt.path)) return;
-    try {
-      this.bestOf.setDiff(v.id, await worktreeDiff(wt.path, wt.base_sha, this.opts.gitBin));
-      this.emitTask(v.task_id!, "best_of");
-    } catch (err) {
-      this.audit(v.task_id!, null, "best_of.diff_failed", { code: errorCode(err) });
-    }
-  }
-
-  /**
-   * Keeps one finished variant (after you confirmed in the compare view). Its worktree, bootstrap
-   * state and session move to the parent task, recorded as a completed run of the implement step,
-   * so test, review and PR continue there. Every other variant is stopped, cancelled and parked.
-   */
-  async keepVariant(taskId: string, variantId: string): Promise<TaskDetail> {
-    const task = this.db.task(taskId);
-    if (task.cancelled_at) throw new OrchestratorError("task.cancelled");
-    const group = this.bestOf.group(task.id);
-    const kept = group ? this.bestOf.variant(variantId) : null;
-    if (!group || !kept || kept.group_id !== group.id) throw new OrchestratorError("best_of.not_found");
-    if (group.kept_variant_id) throw new OrchestratorError("best_of.kept");
-    if (!group.started_at || !kept.task_id) throw new OrchestratorError("best_of.not_started");
-    const runs = this.db.runs(kept.task_id);
-    const last = runs.filter((r) => r.end_reason === "completed" && !this.db.successor(r, runs)).at(-1);
-    const wt = this.db.worktree(kept.task_id);
-    if (!last || !wt || runs.some((r) => !r.ended_at)) throw new OrchestratorError("best_of.not_finished", { variantId });
-    if (this.db.worktree(task.id)) throw new OrchestratorError("best_of.kept");
-    const member = this.db.member(group.member_id);
-    const variantMember = this.db.member(last.member_id);
-    const adoptedId = randomUUID();
-    const at = this.iso();
-    this.db.tx(() => {
-      this.bestOf.keep(group.id, kept.id);
-      // The worktree row moves, so its id (and every run that names it) stays valid.
-      this.db.exec("update worktrees set task_id = ? where task_id = ?", task.id, kept.task_id);
-      this.db.exec("update worktree_bootstrap set task_id = ? where task_id = ?", task.id, kept.task_id);
-      this.db.exec(
-        `insert into runs (id, task_id, member_id, role, profile_id, runner, model, cwd, worktree_id, native_session_id, started_at, ended_at, end_reason, end_detail, last_state, last_activity_at, cost_provenance, plan, diff)
-         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed', 'best_of.kept', ?, ?, 'estimated', ?, ?)`,
-        adoptedId,
-        task.id,
-        member.id,
-        member.role,
-        last.profile_id,
-        last.runner,
-        last.model,
-        last.cwd,
-        wt.id,
-        last.native_session_id,
-        at,
-        at,
-        last.last_state,
-        last.last_activity_at,
-        last.plan,
-        last.diff,
-      );
-    });
-    this.loops.enlist(adoptedId, member.id);
-    // The reviewer's prompt cites the last test; it belongs to the kept variant's worktree.
-    const test = this.loops.lastTest(variantMember.id);
-    if (test) this.loops.addTest({ task_id: task.id, member_id: member.id, run_id: adoptedId, command: test.command, exit_code: test.exit_code, passed: test.passed, tail: test.tail, tree_sha: test.tree_sha, head_sha: test.head_sha, duration_ms: test.duration_ms });
-    this.audit(task.id, adoptedId, "best_of.kept", { groupId: group.id, variantId: kept.id, variantTaskId: kept.task_id, fromRun: last.id, profileId: last.profile_id, branch: wt.branch });
-    for (const other of this.bestOf.variants(group.id).filter((v) => v.id !== kept.id && v.task_id)) await this.discardVariant(other.id, other.task_id!);
-    this.emitTask(task.id, "best_of");
-    await this.tick();
-    return this.get(task.id);
-  }
-
-  private async discardVariant(variantId: string, variantTaskId: string): Promise<void> {
-    for (const r of this.db.runs(variantTaskId).filter((r) => !r.ended_at)) await this.stopRun(r.id, "best_of.discarded");
-    await this.cancel(variantTaskId);
-    const wt = this.db.worktree(variantTaskId);
-    if (!wt) {
-      this.bestOf.parked(variantId, null);
-      return;
-    }
-    let error: string | null = null;
-    for (let attempt = 1; ; attempt++) {
-      try {
-        await this.bootstrap.park(variantTaskId);
-        break;
-      } catch (err) {
-        // On Windows a process tree killed a moment ago can still hold its folder: git removed the
-        // files and the registration but not the folder. Finish that, or try again shortly.
-        if (await this.finishHalfRemoved(wt)) break;
-        if (attempt >= PARK_ATTEMPTS) {
-          // A cleanup step waiting for approval, a locked file: the folder stays and the code says why.
-          error = errorCode(err);
-          this.audit(variantTaskId, null, "best_of.park_failed", { variantId, code: error, detail: errorDetail(err, []).slice(0, 400) });
-          break;
-        }
-        await new Promise((r) => setTimeout(r, PARK_RETRY_MS * attempt));
-      }
-    }
-    this.bestOf.parked(variantId, error);
-    this.audit(variantTaskId, null, "best_of.discarded", { variantId, parked: error === null });
-  }
-
-  /** True when a park left only an empty folder behind, which is then removed and pruned from git. */
-  private async finishHalfRemoved(wt: WorktreeRow): Promise<boolean> {
-    if (!existsSync(wt.path)) return true;
-    if (existsSync(join(wt.path, ".git")) || readdirSync(wt.path).length > 0) return false;
-    for (let i = 0; i < PARK_ATTEMPTS; i++) {
-      try {
-        rmdirSync(wt.path);
-        break;
-      } catch {
-        await new Promise((r) => setTimeout(r, PARK_RETRY_MS));
-      }
-    }
-    if (existsSync(wt.path)) return false;
-    await git(wt.repo_path, ["worktree", "prune"], this.opts.gitBin).catch(() => "");
-    return true;
-  }
-
-  private groupView(task: TaskRow): BestOfView | null {
-    const group = this.bestOf.group(task.id);
-    if (!group) return null;
-    const crew = this.db.crew(task.id);
-    const max = this.config(this.db.project(task.project_id)).config.loop.maxIterations;
-    const variants = this.bestOf.variants(group.id).map((v) => {
-      const candidate = JSON.parse(v.candidate) as CandidateView;
-      const vt = v.task_id ? this.db.task(v.task_id) : null;
-      const summary = vt ? this.db.summary(vt) : null;
-      const run = vt ? (this.db.runs(vt.id).at(-1) ?? null) : null;
-      const loop = vt ? this.loops.view(vt.id, max, () => false) : null;
-      // The kept variant's worktree belongs to the parent now.
-      const wt = vt ? (this.db.worktree(vt.id) ?? (v.outcome === "kept" ? this.db.worktree(task.id) : null)) : null;
-      // Parked later from the compare view or the Worktrees screen: the folder is gone, so it is parked.
-      const parkedLater = v.outcome === "discarded" && !v.parked_at && wt !== null && !existsSync(wt.path);
-      return {
-        id: v.id,
-        position: v.position,
-        candidate,
-        taskId: v.task_id,
-        status: summary?.status ?? null,
-        run: run ? this.db.runView(run) : null,
-        resumableRunIds: summary?.resumableRunIds ?? [],
-        spend: summary?.spend ?? { usd: 0, provenance: "estimated" as const },
-        diffStat: v.diff_stat ? (JSON.parse(v.diff_stat) as DiffStat) : null,
-        test: loop?.tests.at(-1) ?? null,
-        decisions: loop?.decisions ?? [],
-        branch: wt?.branch ?? null,
-        worktreePath: wt?.path ?? null,
-        outcome: v.outcome,
-        parkedAt: v.parked_at ?? (parkedLater ? group.kept_at : null),
-        parkError: parkedLater ? null : v.park_error,
-      };
-    });
-    return {
-      id: group.id,
-      memberId: group.member_id,
-      n: variants.length,
-      phase: groupPhase(group, Boolean(crew?.approved_at), variants.map((v) => ({ status: v.status, finished: v.status === "review" }))),
-      estimate: sumEstimates(variants.map((v) => v.candidate.estimate)),
-      variants,
-      startedAt: group.started_at,
-      keptVariantId: group.kept_variant_id,
-      keptAt: group.kept_at,
-    };
-  }
-
-  /** What a task's summary adds from Best of N and schedules; cheap reads, called on every summary. */
-  private taskExtras(t: TaskRow): ReturnType<OrchestratorDb["taskExtras"]> {
-    const parent = this.bestOf.parentOf(t.id);
-    const scheduled = this.schedules.taskOrigin(t.id);
-    if (parent) {
-      const v = this.bestOf.variantByTask(t.id)!;
-      return { scheduled, bestOf: null, variantOf: { taskId: parent, position: v.position, n: this.bestOf.variants(v.group_id).length }, fact: null, groupRuns: [] };
-    }
-    const group = this.bestOf.group(t.id);
-    if (!group) return { scheduled, bestOf: null, variantOf: null, fact: null, groupRuns: [] };
-    const variants = this.bestOf.variants(group.id);
-    const statuses = variants.map((v) => (v.task_id ? this.db.status(this.db.task(v.task_id)) : null));
-    const phase = groupPhase(group, Boolean(this.db.crew(t.id)?.approved_at), statuses.map((status) => ({ status, finished: status === "review" })));
-    return {
-      scheduled,
-      bestOf: { n: variants.length, phase },
-      variantOf: null,
-      fact: groupFact(phase, statuses),
-      groupRuns: variants.flatMap((v) => (v.task_id ? this.db.runs(v.task_id) : [])),
-    };
+  keepVariant(taskId: string, variantId: string): Promise<TaskDetail> {
+    return this.bestOfRunner.keepVariant(taskId, variantId);
   }
 
   // ---------------------------------------------------------------- runs
@@ -1236,7 +895,7 @@ export class Orchestrator extends Part {
         // A Best of N step runs as its variants' tasks until you keep one; then the kept run is its run.
         const group = this.bestOf.group(task.id);
         if (group?.member_id === m.id && !runs.some((r) => r.member_id === m.id)) {
-          if (!group.started_at && !group.kept_variant_id) await this.startGroup(task, m, group, project, config.rules.slots, (candidates ??= await this.candidates(project)));
+          if (!group.started_at && !group.kept_variant_id) await this.bestOfRunner.startGroup(task, m, group, project, config.rules.slots, (candidates ??= await this.candidates(project)));
           continue;
         }
         const chosen = m.chosen ? (JSON.parse(m.chosen) as CandidateView) : null;
@@ -1692,7 +1351,7 @@ export class Orchestrator extends Part {
     this.pendingWake.delete(runId);
     // A Best of N variant's diff is what you compare; read it from git once its run is over.
     const variant = this.bestOf.variantByTask(run.task_id);
-    if (variant) this.track(this.refreshVariantDiff(variant.id));
+    if (variant) this.track(this.bestOfRunner.refreshVariantDiff(variant.id));
     // A handoff target that ends before it confirmed leaves the source paused and asks you.
     const pendingHandoff = this.confirming.get(runId);
     if (pendingHandoff) {
