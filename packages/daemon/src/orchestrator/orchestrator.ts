@@ -12,7 +12,6 @@ import {
   type EndReason,
   type ForkResult,
   type HandoffStop,
-  type LoopDecisionKind,
   type HandoffTrigger,
   type Reason,
   type ReviewTarget,
@@ -40,6 +39,7 @@ import { admit, admitGroup, DEFAULT_LIMITS } from "./admission.ts";
 import { BEST_OF_MAX, BEST_OF_MIN, groupFact, groupPhase, pickVariants, worktreeDiff, type DiffStat, type GroupRow } from "./best-of.ts";
 import { OrchestratorContext, type Ended, type LaunchSpec, type Live, type OrchestratorOptions, type ProposeParams } from "./context.ts";
 import { Part } from "./part.ts";
+import { LoopRunner } from "./loops.ts";
 import { AccountSwitcher } from "./account-switch.ts";
 import { Fallback } from "./fallback.ts";
 import { Handoffs } from "./handoffs.ts";
@@ -50,10 +50,8 @@ import { eligible, estimateFor, proposeCrew, rankForRole, readOnlyConflict, same
 import type { MemberRow, OrchestratorDb, ProjectRow, RunRow, TaskRow, WorktreeRow } from "./db.ts";
 import type { Candidate, ProfileDirectory } from "./directory.ts";
 import { errorCode, errorDetail, OrchestratorError, redactDetail } from "./errors.ts";
-import { addDetachedCheckout, checkpoint, ensureWorktree, git, headSha, isClean, removeDetachedCheckout, sameDir, taskSlug, writeFileAtomic } from "./git.ts";
-import { reviewChangesMessage, reviewContext, testFailureMessage } from "./loops.ts";
-import { snapshot } from "./checkpoints.ts";
-import { runSteps } from "../worktrees/steps.ts";
+import { ensureWorktree, git, sameDir, taskSlug, writeFileAtomic } from "./git.ts";
+import { reviewContext } from "./loops.ts";
 import { applyResult, outputSchemaFor, type RoleResult } from "./results.ts";
 import type { LimitMonitor } from "./limits.ts";
 import { rolePrompt } from "./prompts.ts";
@@ -69,9 +67,6 @@ export type { OrchestratorOptions } from "./context.ts";
 // The deterministic scheduler (PLAN.md D7, D8, §8, §9): it runs the crew you approved as a DAG,
 // under admission control, and never lets an agent start another agent. All state lives in the
 // store as facts; this class only holds live process handles, timers and the admission notes.
-
-/** Longest the Test step may run the project's test command. */
-const TEST_TIMEOUT_SEC = 900;
 
 /** Roles that read a pinned, detached checkout of the commit they review instead of the live worktree. */
 const PINNED_ROLES: RoleId[] = ["reviewer", "security"];
@@ -137,6 +132,10 @@ export class Orchestrator extends Part {
   private readonly switcher: AccountSwitcher = new AccountSwitcher(this.ctx, {
     avoidFor: (member) => this.handoffs.avoidFor(member),
     performHandoff: (sourceRunId, target, trigger, opts) => this.handoffs.performHandoff(sourceRunId, target, trigger, opts),
+  });
+  private readonly loopRunner: LoopRunner = new LoopRunner(this.ctx, {
+    capFor: (taskId, runId, candidate) => this.budget.capFor(taskId, runId, candidate),
+    launch: (spec) => this.launch(spec),
   });
 
   override get db() {
@@ -210,14 +209,7 @@ export class Orchestrator extends Part {
       track: (p) => this.track(p),
     });
     this.db.taskExtras = (t) => this.taskExtras(t);
-    this.db.taskLoop = (t) => this.loopView(t);
-  }
-
-  /** A verdict may be stale once any writer of the task started after it: the head can have moved. */
-  private loopView(task: TaskRow) {
-    const writers = this.db.runs(task.id).filter((r) => r.worktree_id !== null && this.db.member(r.member_id).writes_code === 1);
-    const max = this.config(this.db.project(task.project_id)).config.loop.maxIterations;
-    return this.loops.view(task.id, max, (at) => writers.some((r) => r.started_at > at));
+    this.db.taskLoop = (t) => this.loopRunner.loopView(t);
   }
 
   /** Recovers from the last session, then starts scheduling. */
@@ -1205,7 +1197,7 @@ export class Orchestrator extends Part {
     if (!live || queued.length === 0) {
       // Run until green (feature scan A9): before an implementer finishes, the Test step runs the
       // project's tests; a failure becomes the next turn of the same session.
-      const fix = !stop && live ? await this.testGate(runId) : null;
+      const fix = !stop && live ? await this.loopRunner.testGate(runId) : null;
       if (fix && live && this.live.get(runId) === live && !this.stopping.has(runId)) {
         live.inTurn = true;
         await this.turns.begin(runId);
@@ -1233,143 +1225,6 @@ export class Orchestrator extends Part {
 
   // ---------------------------------------------------------------- crew loops (feature scan A9)
 
-  private decide(memberId: string, taskId: string, runId: string | null, kind: LoopDecisionKind, reason: Reason, iteration: number, max: number): void {
-    const d = this.loops.decide({ taskId, memberId, runId, iteration, max, kind, reason });
-    this.audit(taskId, runId, "loop.decision", { decisionId: d.id, memberId, kind, reason, iteration, max });
-    this.emitTask(taskId, "loop");
-  }
-
-  /**
-   * The Test step at an implementer's turn boundary. Returns the failure as the next turn's text,
-   * or null to let the run finish: the tests passed, the project has none, or a stop rule ended
-   * the loop (then the run ends failed with the rule as its detail, never as completed).
-   */
-  private async testGate(runId: string): Promise<string | null> {
-    const run = this.db.run(runId);
-    const task = this.db.task(run.task_id);
-    const member = this.db.member(run.member_id);
-    if (task.kind !== "code" || member.role !== "implementer" || !run.worktree_id) return null;
-    const project = this.db.project(task.project_id);
-    const { config } = this.config(project);
-    const max = config.loop.maxIterations;
-    const attempts = this.loops.attempts(member.id);
-    const command = config.commands.test?.trim() || null;
-    if (!command) {
-      if (!this.loops.decided(runId, "tests_skipped")) this.decide(member.id, task.id, runId, "tests_skipped", { code: "loop.tests_skipped" }, attempts, max);
-      return null;
-    }
-    const live = this.live.get(runId);
-    // The agent is idle while its tests run: the stall rules must not read that as a hung turn,
-    // and the turn boundary stays held, so a queued message waits for it instead of racing the tests.
-    if (live) live.testing = true;
-    try {
-      return await this.runTests(runId, run, task, member, project, command, attempts, max, live);
-    } finally {
-      if (live) live.testing = false;
-    }
-  }
-
-  private async runTests(runId: string, run: RunRow, task: TaskRow, member: MemberRow, project: ProjectRow, command: string, attempts: number, max: number, live: Live | undefined): Promise<string | null> {
-    const tree = await snapshot(run.cwd, null, this.opts.gitBin).then((s) => s.tree).catch(() => null);
-    const started = this.now().getTime();
-    const res = await runSteps([{ command, timeoutSec: TEST_TIMEOUT_SEC }], run.cwd, { ...process.env, ...this.bootstrapEnv(run, project) });
-    const tail = res.failure ? redactDetail(res.failure.tail, await this.secretsFor(run.profile_id)) : "";
-    const previous = this.loops.lastTest(member.id);
-    this.loops.addTest({ task_id: task.id, member_id: member.id, run_id: runId, command, exit_code: res.ok ? 0 : (res.failure?.code ?? null), passed: res.ok ? 1 : 0, tail, tree_sha: tree, head_sha: null, duration_ms: this.now().getTime() - started });
-    if (res.ok) {
-      this.decide(member.id, task.id, runId, "tests_passed", { code: "loop.tests_passed", params: { command } }, attempts, max);
-      return null;
-    }
-    const now = this.db.run(runId);
-    if (now.ended_at || now.paused_at || this.stopping.has(runId) || this.db.task(task.id).cancelled_at) return null;
-    const stopWith = (kind: LoopDecisionKind, reason: Reason, detail: string): null => {
-      this.decide(member.id, task.id, runId, kind, reason, attempts, max);
-      this.loopFailed.set(runId, detail);
-      return null;
-    };
-    // The same tree as the last failing try: the agent changed nothing, another try would not either.
-    if (previous && previous.passed === 0 && tree !== null && previous.tree_sha === tree) return stopWith("stop_no_change", { code: "loop.no_change" }, "loop.no_change");
-    if (attempts >= max) return stopWith("stop_iteration_cap", { code: "loop.iteration_cap", params: { max } }, "loop.iteration_cap");
-    const cap = this.budget.capFor(task.id, runId, live?.candidate);
-    if (cap) return stopWith("stop_spend_cap", { code: "loop.spend_cap", params: { cap: cap.kind } }, "loop.spend_cap");
-    const exitCode = res.failure?.code ?? -1;
-    this.decide(member.id, task.id, runId, "tests_failed", { code: "loop.tests_failed", params: { command, exitCode } }, attempts + 1, max);
-    return testFailureMessage({ command, exitCode: res.failure?.code ?? null, timedOut: res.failure?.timedOut ?? false, tail, attempt: attempts + 1, max });
-  }
-
-  /**
-   * An implementer finished: whatever it left uncommitted is committed, so the commit the reviewer
-   * pins and the verdict names is exactly what was tested.
-   */
-  private async pinHead(runId: string): Promise<void> {
-    const run = this.db.run(runId);
-    const wt = run.worktree_id ? this.db.worktree(run.task_id) : null;
-    if (!wt || wt.id !== run.worktree_id || this.db.member(run.member_id).writes_code !== 1 || this.db.task(run.task_id).kind !== "code") return;
-    try {
-      if (await isClean(wt.path, this.opts.gitBin)) return;
-      const res = await checkpoint(wt.path, `crewyard: commit what the ${run.role} left uncommitted`, this.opts.gitBin);
-      if (res.committed) {
-        this.loops.pinTest(runId, res.sha);
-        this.audit(run.task_id, runId, "worktree.pinned", { sha: res.sha, skipped: res.skipped.length });
-      }
-    } catch (err) {
-      this.audit(run.task_id, runId, "worktree.pin_failed", { code: errorCode(err) });
-    }
-  }
-
-  /** The implementer step a reviewer's verdict goes back to: the writer it depends on. */
-  private writerFor(member: MemberRow): MemberRow | null {
-    const deps = JSON.parse(member.depends_on) as string[];
-    return this.db.members(member.crew_id).find((m) => deps.includes(m.step) && m.writes_code === 1 && m.role === "implementer") ?? null;
-  }
-
-  /**
-   * The review loop: a "changes" verdict goes back to the same implementer, as a native resume of
-   * its session with the comments, and the same stage. Test and Review then run again (the
-   * scheduler re-runs a step whose dependency finished again). A pass, an invalid result or a stop
-   * rule ends the loop with a recorded decision.
-   */
-  private async reviewLoop(reviewerRunId: string, result: RoleResult): Promise<void> {
-    const run = this.db.run(reviewerRunId);
-    const task = this.db.task(run.task_id);
-    if (task.cancelled_at || task.kind !== "code") return;
-    const writer = this.writerFor(this.db.member(run.member_id));
-    if (!writer) return;
-    const max = this.config(this.db.project(task.project_id)).config.loop.maxIterations;
-    const attempts = this.loops.attempts(writer.id);
-    if (result.kind === "invalid") {
-      this.decide(writer.id, task.id, run.id, "review_invalid", { code: "loop.review_invalid", params: { error: result.error.slice(0, 200) } }, attempts, max);
-      return;
-    }
-    if (result.kind !== "review") return;
-    const verdict = this.loops.verdict(run.id);
-    const sha = verdict?.headSha?.slice(0, 12) ?? "";
-    if (!verdict || verdict.verdict === "pass") {
-      this.decide(writer.id, task.id, run.id, "review_passed", { code: "loop.review_passed", params: { sha } }, attempts, max);
-      return;
-    }
-    const stop = (kind: LoopDecisionKind, reason: Reason) => this.decide(writer.id, task.id, run.id, kind, reason, attempts, max);
-    if (attempts >= max) return stop("stop_iteration_cap", { code: "loop.iteration_cap", params: { max } });
-    const runs = this.db.runs(task.id);
-    const last = runs.filter((r) => r.member_id === writer.id).at(-1);
-    if (!last || last.end_reason !== "completed" || this.db.successor(last, runs)) return;
-    const adapter = this.adapters.get(last.runner);
-    // The comments belong to the session that wrote the code; it is never replaced on its own.
-    if (!adapter?.capabilities.resume || !last.native_session_id) return stop("stop_no_resume", { code: "loop.no_resume", params: { runner: last.runner } });
-    const cap = this.budget.capFor(task.id, null, await this.candidateFor(last));
-    if (cap) return stop("stop_spend_cap", { code: "loop.spend_cap", params: { cap: cap.kind } });
-    this.decide(writer.id, task.id, run.id, "review_changes", { code: "loop.review_changes", params: { comments: verdict.comments.length, sha } }, attempts + 1, max);
-    await this.launch({
-      task,
-      member: writer,
-      target: { profileId: last.profile_id, runner: last.runner, model: last.model },
-      cwd: last.cwd,
-      prompt: reviewChangesMessage({ verdict, attempt: attempts + 1, max }),
-      resumeRef: { runner: last.runner, sessionId: last.native_session_id },
-      resumedFrom: last.id,
-    });
-  }
-
   /**
    * A completed step runs again when a step it depends on finished again after it started (the
    * review loop, a fix from PR feedback): Test and Review re-read the new head. Returns the run it
@@ -1384,37 +1239,6 @@ export class Orchestrator extends Part {
       .filter((d) => deps.includes(d.step))
       .some((d) => runs.some((r) => r.member_id === d.id && r.end_reason === "completed" && r.ended_at !== null && r.ended_at > latest.started_at && !this.db.successor(r, runs)));
     return newer ? latest : null;
-  }
-
-  /**
-   * Pinned review: a detached checkout of the exact head the reviewer reads, next to the task
-   * worktree. The implementer may change the worktree meanwhile; the verdict is stored with this sha.
-   */
-  private async reviewCheckout(runId: string, task: TaskRow, wt: WorktreeRow): Promise<{ path: string; sha: string }> {
-    const sha = await headSha(wt.path, this.opts.gitBin);
-    const path = `${wt.path}.review-${sha.slice(0, 8)}`;
-    await addDetachedCheckout(wt.repo_path, path, sha, this.opts.gitBin);
-    this.loops.addCheckout({ run_id: runId, task_id: task.id, repo_path: wt.repo_path, path, sha });
-    this.audit(task.id, runId, "review.checkout", { sha, path });
-    return { path, sha };
-  }
-
-  /** Removes a run's review checkout once no other unfinished run reads the same folder. */
-  private async dropCheckout(runId: string): Promise<void> {
-    const c = this.loops.checkout(runId);
-    if (!c || c.removed_at) return;
-    const shared = this.loops.openCheckouts().some((o) => o.run_id !== runId && sameDir(o.path, c.path) && !this.db.run(o.run_id).ended_at);
-    if (shared) {
-      this.loops.checkoutRemoved(runId);
-      return;
-    }
-    try {
-      await removeDetachedCheckout(c.repo_path, c.path, this.opts.gitBin);
-      this.loops.checkoutRemoved(runId);
-    } catch (err) {
-      // A file held open keeps the folder; the next daemon start tries again.
-      this.audit(c.task_id, runId, "review.checkout_kept", { code: errorCode(err) });
-    }
   }
 
   /** Copies the runner's own transcript into the task folder (feature scan A18); returns our copy's path. */
@@ -1595,7 +1419,7 @@ export class Orchestrator extends Part {
       cwd ??= wt?.path ?? project.path;
       // Pinned review: a read-only reviewer of a code task reads a detached checkout of the exact
       // head, never the live worktree the implementer may still change.
-      const pinned = !spec.cwd && PINNED_ROLES.includes(member.role) && task.kind === "code" && wt && existsSync(wt.path) ? await this.reviewCheckout(runId, task, wt) : null;
+      const pinned = !spec.cwd && PINNED_ROLES.includes(member.role) && task.kind === "code" && wt && existsSync(wt.path) ? await this.loopRunner.reviewCheckout(runId, task, wt) : null;
       if (pinned) cwd = pinned.path;
       const worktreeId = wt && sameDir(wt.path, cwd) ? wt.id : null;
       this.db.exec("update runs set cwd = ?, worktree_id = ? where id = ?", cwd, worktreeId, runId);
@@ -1912,7 +1736,7 @@ export class Orchestrator extends Part {
     const detail = ended.detail === null ? null : redactDetail(ended.detail, await this.secretsFor(run.profile_id)) || null;
     // Claude reports a gone or locked session only in its stream (adapter-claude: "session.gone: ...").
     const problem = ended.reason === "failed" && this.resumed.has(runId) && !run.handoff_id ? /^session\.(gone|locked):/.exec(detail ?? "")?.[1] : undefined;
-    if (ended.reason === "completed") await this.pinHead(runId);
+    if (ended.reason === "completed") await this.loopRunner.pinHead(runId);
     this.endRun(runId, ended.reason, detail);
     if (problem && !this.confirming.has(runId)) {
       await this.replaceSession(runId, problem as SessionProblem);
@@ -1921,7 +1745,7 @@ export class Orchestrator extends Part {
     if (ended.reason === "failed") await this.fallback.onFailure(runId, detail);
     const verdict = this.verdicts.get(runId);
     this.verdicts.delete(runId);
-    if (ended.reason === "completed" && verdict) await this.reviewLoop(runId, verdict);
+    if (ended.reason === "completed" && verdict) await this.loopRunner.reviewLoop(runId, verdict);
   }
 
   /** A reviewer's checked verdict, stored with the commit its pinned checkout held. */
@@ -1946,7 +1770,7 @@ export class Orchestrator extends Part {
     this.draining.delete(runId);
     this.drainRelease.get(runId)?.(null);
     this.drainRelease.delete(runId);
-    this.track(this.dropCheckout(runId));
+    this.track(this.loopRunner.dropCheckout(runId));
     // The runner may expire its own record; ours stays with the task (feature scan A18).
     if (run.native_session_id) this.track(this.copyTranscript(runId));
     settleReservation(this.opts.store.db, runId, this.now());
@@ -2093,7 +1917,7 @@ export class Orchestrator extends Part {
       this.track(this.reconcileHandoff(h.from_run_id, h.trigger_kind));
     }
     // Review checkouts of runs the last daemon left behind.
-    for (const c of this.loops.openCheckouts()) if (this.db.run(c.run_id).ended_at) this.track(this.dropCheckout(c.run_id));
+    for (const c of this.loops.openCheckouts()) if (this.db.run(c.run_id).ended_at) this.track(this.loopRunner.dropCheckout(c.run_id));
     tasks.forEach((t) => this.emitTask(t, "recovered"));
   }
 
