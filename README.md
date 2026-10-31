@@ -54,7 +54,7 @@ Status: pre-release. It is built and tested on Windows 11. Linux and macOS are p
   | Claude Code | 2.1.312 or newer |
   | Codex | 0.147.0 or newer |
   | Gemini CLI | 0.25.0 or newer |
-  | OpenCode | exactly 1.19.5 |
+  | OpenCode | exactly 1.19.5 (2.x is detected and has its own client, but is not used until it passes its conformance run) |
 
 ## Development
 

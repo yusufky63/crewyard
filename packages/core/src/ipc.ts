@@ -43,9 +43,11 @@ export interface ToolCopy {
  * - `outdated`: older than the adapter needs.
  * - `untested`: a version the conformance suite has not passed yet (exact rule).
  * - `isolation`: too old to keep profiles apart, so runs would use the user's own config folder.
+ * - `pending`: a major version Crewyard has a client for that has not passed its conformance and
+ *   live runs yet, so crews do not use it (OpenCode 2.x, docs/adr/0012).
  * - `unknown`: installed, but no version could be read.
  */
-export type VersionGateStatus = "ok" | "outdated" | "untested" | "isolation" | "unknown";
+export type VersionGateStatus = "ok" | "outdated" | "untested" | "isolation" | "pending" | "unknown";
 
 export interface VersionGate {
   status: VersionGateStatus;

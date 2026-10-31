@@ -2,7 +2,7 @@ import { basename, dirname, join } from "node:path";
 import { GEMINI_ISOLATION_MIN, versionAtLeast } from "@crewyard/adapter-acp";
 import { SDK_CLI_VERSION } from "@crewyard/adapter-claude";
 import { MIN_CODEX_VERSION } from "@crewyard/adapter-codex";
-import { TESTED_VERSION } from "@crewyard/adapter-opencode";
+import { majorOf, TESTED_VERSION, v2Pending } from "@crewyard/adapter-opencode";
 import type { DefenderCheck, MachineEnv, MachineReport, ToolCheck, ToolCopy, ToolId, VersionGate, VersionGateStatus } from "@crewyard/core";
 import { parseVersion, ProbeCache, resolveBin, run, whichAll } from "@crewyard/proc";
 import { CREWYARD_DIR, LEGACY_WORKTREES_DIR } from "./setup/config.ts";
@@ -25,6 +25,8 @@ interface GateRule {
   miss: Exclude<VersionGateStatus, "ok" | "unknown">;
   /** From each CLI's own install docs (opened 2026-10-30). */
   update: string;
+  /** A version on a line that has a client but has not passed conformance yet, and the way back. */
+  pending?: { test: (version: string) => boolean; update: string };
 }
 
 /** The versions each adapter was verified with; the adapters refuse or warn on the same rules. */
@@ -32,7 +34,8 @@ export const VERSION_GATES: Partial<Record<ToolId, GateRule>> = {
   claude: { verified: SDK_CLI_VERSION, rule: "min", miss: "outdated", update: "claude update" },
   codex: { verified: MIN_CODEX_VERSION, rule: "min", miss: "outdated", update: "npm install -g @openai/codex" },
   // OpenCode is pinned: only the version that passed the conformance suite counts, newer or older.
-  opencode: { verified: TESTED_VERSION, rule: "exact", miss: "untested", update: `opencode upgrade v${TESTED_VERSION}` },
+  // 2.x has its own client, not run until it passes; going back means the 1.x npm package (docs/adr/0012).
+  opencode: { verified: TESTED_VERSION, rule: "exact", miss: "untested", update: `opencode upgrade v${TESTED_VERSION}`, pending: { test: (v) => (majorOf(v) ?? 0) >= 2 && v2Pending(v) !== null, update: `npm install -g opencode-ai@${TESTED_VERSION}` } },
   // Older Gemini CLIs ignore GEMINI_CLI_HOME and would run every profile in the user's own ~/.gemini.
   gemini: { verified: GEMINI_ISOLATION_MIN, rule: "min", miss: "isolation", update: "npm install -g @google/gemini-cli@latest" },
 };
@@ -42,6 +45,7 @@ export function versionGate(id: ToolId, version: string | null): VersionGate | n
   if (!g) return null;
   const base = { verified: g.verified, rule: g.rule };
   if (!version) return { ...base, status: "unknown", update: g.update };
+  if (g.pending?.test(version)) return { ...base, status: "pending", update: g.pending.update };
   const ok = g.rule === "exact" ? version === g.verified : versionAtLeast(version, g.verified);
   return ok ? { ...base, status: "ok", update: null } : { ...base, status: g.miss, update: g.update };
 }

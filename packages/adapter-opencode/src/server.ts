@@ -27,6 +27,10 @@ export interface ServerOptions {
   /** More variable names to blank in the agent's commands (an inline config that carries MCP secrets). */
   hidden?: string[];
   readyTimeoutMs: number;
+  /** Writes the key guard for this CLI line; 1.x's `shell.env` plugin unless given (2.x has its own). */
+  writeGuard?: (configDir: string, secrets: Record<string, string>, hidden: readonly string[]) => Promise<unknown>;
+  /** More variables that carry the launch password; 2.x documents OPENCODE_PASSWORD. */
+  passwordVars?: string[];
 }
 
 export interface OpenCodeServer {
@@ -91,8 +95,13 @@ export function envGuardSource(names: readonly string[]): string {
   ].join("\n");
 }
 
+/** The names a guard blanks: the run's credentials, the server password and the extra names given. */
+export function guardedNames(secrets: Record<string, string>, hidden: readonly string[] = []): string[] {
+  return [...Object.keys(secrets).filter((k) => SECRET_NAME.test(k)), "OPENCODE_SERVER_PASSWORD", ...hidden];
+}
+
 export async function writeEnvGuard(configDir: string, secrets: Record<string, string>, hidden: readonly string[] = []): Promise<void> {
-  const names = [...Object.keys(secrets).filter((k) => SECRET_NAME.test(k)), "OPENCODE_SERVER_PASSWORD", ...hidden];
+  const names = guardedNames(secrets, hidden);
   const file = envGuardFile(configDir);
   await mkdir(dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
@@ -104,10 +113,11 @@ export async function launchServer(opts: ServerOptions): Promise<OpenCodeServer>
   const password = randomBytes(24).toString("base64url");
   await Promise.all(["config", "data", "state", "cache"].map((d) => mkdir(join(opts.configDir, d), { recursive: true })));
   // Before the server starts: OpenCode loads plugins once per project directory.
-  await writeEnvGuard(opts.configDir, opts.env, opts.hidden);
+  await (opts.writeGuard ?? writeEnvGuard)(opts.configDir, opts.env, opts.hidden ?? []);
+  const passwords = Object.fromEntries((opts.passwordVars ?? []).map((k) => [k, password]));
   const child = start(opts.executable, [...opts.prefixArgs, "serve", "--hostname", "127.0.0.1", "--port", "0"], {
     cwd: opts.cwd,
-    env: childEnv(opts.configDir, opts.env, password, process.env, opts.extraEnv),
+    env: { ...childEnv(opts.configDir, opts.env, password, process.env, opts.extraEnv), ...passwords },
     stdio: ["ignore", "pipe", "pipe"],
   });
 
@@ -123,8 +133,9 @@ export async function launchServer(opts: ServerOptions): Promise<OpenCodeServer>
       resolve(null);
     });
   });
+  // 2.x prints "server password <password>" at start; it never reaches an error message.
   child.stderr?.setEncoding("utf8").on("data", (d: string) => {
-    tail = (tail + d).slice(-TAIL);
+    tail = (tail + d.split(password).join("[password]")).slice(-TAIL);
   });
 
   const url = await new Promise<string>((resolve, reject) => {

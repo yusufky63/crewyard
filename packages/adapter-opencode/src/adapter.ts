@@ -34,21 +34,42 @@ import { isUserMcpPermission, mcpConfig, mcpPermissionRules, withMcpConfig } fro
 import { mustReject, permissionRules } from "./policy.ts";
 import { EventQueue } from "./queue.ts";
 import { basicAuth, childEnv, launchServer, providerConfigEnv, type OpenCodeServer } from "./server.ts";
+import { OpenCodeV2Runner, type V2LaunchOptions } from "./v2/runner.ts";
 
 /** The CLI version this adapter was checked against; others are flagged until the suite passes. */
 export const TESTED_VERSION = "1.19.5";
 
 /**
- * OpenCode 2.x (GitHub release v2.2.2, 2026-10-29; npm opencode-ai is still 1.19.5) redesigned the
- * server API: new routes and clients, OPENCODE_PASSWORD, and an ordered `permissions` list in which
- * `bash` became `shell` and `task` became `subagent` (opencode.ai/v2/docs/migrate-v1). Driving it
- * with the 1.x client would fail in ways that look like model errors, or worse, run without our
- * permission rules, so 2.x is refused with the reason until it passes its own conformance run.
+ * OpenCode 2.x (GitHub release v2.2.4, 2026-10-30; npm opencode-ai is still 1.19.5, the 2.x CLI is
+ * npm @opencode/cli) redesigned the server API: `/api/...` routes, OPENCODE_PASSWORD, an ordered
+ * `permissions` list, forms for questions, and plugins that 1.x's do not run in
+ * (opencode.ai/v2/docs/migrate-v1). It gets a client of its own (src/v2, docs/adr/0012), written
+ * against the 2.2.4 API. Until a 2.x version passes the conformance and live runs it is not
+ * offered to crews and refuses to start, with the reason; the 1.x path below is unchanged.
  */
-export function unsupportedVersion(version: string | null): string | null {
+export const V2_API_VERSION = "2.2.4";
+
+/** The 2.x version that passed the conformance and live runs; null until one has. */
+export const TESTED_V2_VERSION: string | null = null;
+
+export function majorOf(version: string | null): number | null {
   const major = version ? Number(version.split(".")[0]) : NaN;
-  if (!Number.isFinite(major) || major < 2) return null;
-  return `OpenCode ${version} is not supported yet: version 2 changed the server API and its permission format, and Crewyard drives the 1.x API until 2.x passes its own conformance run. Install opencode-ai ${TESTED_VERSION} ("npm install -g opencode-ai@${TESTED_VERSION}") to keep using OpenCode.`;
+  return Number.isFinite(major) ? major : null;
+}
+
+/** Why this 2.x version is not run yet, or null when it may run (1.x, or a 2.x that passed). */
+export function v2Pending(version: string | null): string | null {
+  if ((majorOf(version) ?? 0) < 2 || version === TESTED_V2_VERSION) return null;
+  return `OpenCode ${version} runs through Crewyard's OpenCode 2.x client, which has not passed its conformance and live runs yet, so crews do not use it. Install opencode-ai ${TESTED_VERSION} ("npm install -g opencode-ai@${TESTED_VERSION}") to keep using OpenCode now.`;
+}
+
+/**
+ * What the 2.x path does, for the probe: no transcript and no handoff fork yet (2.x has export
+ * and import only under /api/experimental), and launch only once a 2.x version has passed.
+ */
+export function v2Capabilities(base: AgentCapabilities, version: string | null): AgentCapabilities {
+  const { fork: _fork, transcript: _transcript, ...rest } = base;
+  return { ...rest, launch: v2Pending(version) === null, undo: { files: true, history: true } };
 }
 
 export interface OpenCodeAdapterOptions {
@@ -63,6 +84,8 @@ export interface OpenCodeAdapterOptions {
    * fetch headers timeout, since summarize answers only once the compaction turn is done.
    */
   forkTimeoutMs?: number;
+  /** Runs a 2.x that has not passed conformance yet; only the conformance and live runs set it. */
+  allowUntestedV2?: boolean;
 }
 
 interface ModelRef {
@@ -131,6 +154,7 @@ export class OpenCodeAdapter implements AgentAdapter {
   readonly capabilities: AgentCapabilities;
   private readonly opts: Required<Omit<OpenCodeAdapterOptions, "executable">> & { executable: string | null };
   private readonly runs = new Map<string, Run>();
+  private readonly v2 = new OpenCodeV2Runner();
   private version: string | null = null;
 
   constructor(capabilities: AgentCapabilities, opts: OpenCodeAdapterOptions = {}) {
@@ -141,6 +165,7 @@ export class OpenCodeAdapter implements AgentAdapter {
       readyTimeoutMs: opts.readyTimeoutMs ?? 30_000,
       reconnectDelayMs: opts.reconnectDelayMs ?? 1_000,
       forkTimeoutMs: opts.forkTimeoutMs ?? 240_000,
+      allowUntestedV2: opts.allowUntestedV2 ?? false,
     };
   }
 
@@ -151,16 +176,19 @@ export class OpenCodeAdapter implements AgentAdapter {
     const version = parseVersion(res.stdout);
     if (version) this.version = version;
     const problems: string[] = [];
-    const unsupported = unsupportedVersion(version);
+    const pending = v2Pending(version);
+    const v2 = (majorOf(version) ?? 0) >= 2;
     if (res.code !== 0 || !version) problems.push(`opencode --version failed: ${res.stderr.trim().slice(0, 200)}`);
-    else if (unsupported) problems.push(unsupported);
-    else if (version !== TESTED_VERSION) problems.push(`OpenCode ${version} has not passed the conformance suite yet (checked: ${TESTED_VERSION})`);
+    else if (pending) problems.push(pending);
+    else if (!v2 && version !== TESTED_VERSION) problems.push(`OpenCode ${version} has not passed the conformance suite yet (checked: ${TESTED_VERSION})`);
     // Sign-in state lives in the profile's auth.json, which we never read; provider keys may also come from env.
-    const capabilities = unsupported ? { ...this.capabilities, launch: false } : this.capabilities;
+    const capabilities = v2 ? v2Capabilities(this.capabilities, version) : this.capabilities;
     return { installed: true, executable, version, signedIn: null, capabilities, problems };
   }
 
   async start(req: StartRequest): Promise<RunHandle> {
+    const v2 = await this.v2Launch();
+    if (v2) return this.v2.start(req, v2);
     const run = await this.open(req, null);
     try {
       const created = await run.client.session.create({ title: title(req.prompt), permission: [...permissionRules(req.policy), ...mcpPermissionRules(req.mcpServers ?? [], req.policy)] });
@@ -175,6 +203,8 @@ export class OpenCodeAdapter implements AgentAdapter {
   }
 
   async resume(ref: NativeSessionRef, req: StartRequest): Promise<RunHandle> {
+    const v2 = await this.v2Launch();
+    if (v2) return this.v2.resume(ref, req, v2);
     const run = await this.open(req, ref.sessionId);
     try {
       const info = need(
@@ -203,15 +233,18 @@ export class OpenCodeAdapter implements AgentAdapter {
   }
 
   events(handle: RunHandle): AsyncIterable<AgentEvent> {
+    if (this.v2.owns(handle)) return this.v2.events(handle);
     return this.mustGet(handle).queue;
   }
 
   async send(handle: RunHandle, input: UserInput): Promise<void> {
+    if (this.v2.owns(handle)) return this.v2.send(handle, input);
     const run = this.live(handle);
     await this.prompt(run, input.text, input.attachments);
   }
 
   async answer(handle: RunHandle, requestId: string, answer: Answer): Promise<void> {
+    if (this.v2.owns(handle)) return this.v2.answer(handle, requestId, answer);
     const run = this.live(handle);
     const kind = run.mapper.pending.get(requestId);
     if (!kind) throw new Error(`No open request ${requestId} on run ${handle.runId}`);
@@ -232,6 +265,7 @@ export class OpenCodeAdapter implements AgentAdapter {
   }
 
   async interrupt(handle: RunHandle): Promise<void> {
+    if (this.v2.owns(handle)) return this.v2.interrupt(handle);
     const run = this.live(handle);
     run.interrupted = true;
     if (!run.awaiting) {
@@ -245,6 +279,7 @@ export class OpenCodeAdapter implements AgentAdapter {
 
   /** OpenCode takes the model per prompt, so the switch applies from the next turn on. */
   async setModel(handle: RunHandle, model: string): Promise<void> {
+    if (this.v2.owns(handle)) return this.v2.setModel(handle, model);
     const run = this.live(handle);
     run.model = openCodeModel(run.req.profile.providerId, model);
   }
@@ -258,6 +293,8 @@ export class OpenCodeAdapter implements AgentAdapter {
     if (!req.turnRef) return { files: false, history: false, detail: "OpenCode gave this turn no message id." };
     const executable = await this.executable();
     if (!executable) throw new Error("opencode was not found on PATH");
+    const v2 = await this.v2Launch();
+    if (v2) return this.v2.rewind(req, v2);
     const server = await launchServer({ executable, prefixArgs: this.opts.prefixArgs, cwd: req.cwd, configDir: req.profile.configDir, env: req.env, extraEnv: providerEnv(req), readyTimeoutMs: this.opts.readyTimeoutMs });
     try {
       const client = createOpencodeClient({ baseUrl: server.url, directory: req.cwd, headers: { Authorization: basicAuth(server.password) }, throwOnError: true });
@@ -272,6 +309,8 @@ export class OpenCodeAdapter implements AgentAdapter {
   async transcript(req: TranscriptRequest): Promise<TranscriptSource | null> {
     const executable = await this.executable();
     if (!executable) return null;
+    // 2.x has no documented `opencode export`; its export route is experimental (docs/adr/0012).
+    if (await this.isV2(executable)) return null;
     const res = await runCommand(executable, [...this.opts.prefixArgs, "export", req.session.sessionId], { cwd: req.cwd, timeoutMs: 60_000, env: childEnv(req.profile.configDir, req.env, newPassword(), process.env, providerEnv(req)) });
     const text = res.stdout.trim();
     if (res.code !== 0 || !text.startsWith("{")) return null;
@@ -288,7 +327,7 @@ export class OpenCodeAdapter implements AgentAdapter {
   async fork(req: ForkRequest): Promise<ForkResult> {
     const executable = await this.executable();
     if (!executable) throw new Error("opencode was not found on PATH");
-    await this.ensureVersion(executable);
+    if (await this.isV2(executable)) throw new Error("Moving a session between OpenCode 2.x profiles is not supported yet; the handoff sends the written package instead.");
     const sourceId = req.source.session.sessionId;
     const model = req.compact ? (req.target.model ?? req.target.profile.defaultModel) : null;
     if (req.compact && !model) throw new Error("Compacting needs a model on the target profile");
@@ -351,6 +390,7 @@ export class OpenCodeAdapter implements AgentAdapter {
   }
 
   async stop(handle: RunHandle): Promise<void> {
+    if (this.v2.owns(handle)) return this.v2.stop(handle);
     const run = this.runs.get(handle.runId);
     if (!run) return;
     run.stopping = true;
@@ -371,8 +411,21 @@ export class OpenCodeAdapter implements AgentAdapter {
   private async ensureVersion(executable: string): Promise<void> {
     // Every event carries the CLI version (PLAN.md §5.3); read it once per adapter.
     if (this.version === null) this.version = parseVersion((await runCommand(executable, [...this.opts.prefixArgs, "--version"], { timeoutMs: 15_000 })).stdout);
-    const unsupported = unsupportedVersion(this.version);
-    if (unsupported) throw new Error(unsupported);
+    const pending = v2Pending(this.version);
+    if (pending && !this.opts.allowUntestedV2) throw new Error(pending);
+  }
+
+  private async isV2(executable: string): Promise<boolean> {
+    await this.ensureVersion(executable);
+    return (majorOf(this.version) ?? 0) >= 2;
+  }
+
+  /** The launch settings when the installed CLI is 2.x (and may run), null for 1.x. */
+  private async v2Launch(): Promise<V2LaunchOptions | null> {
+    const executable = await this.executable();
+    if (!executable) throw new Error("opencode was not found on PATH");
+    if (!(await this.isV2(executable))) return null;
+    return { executable, prefixArgs: this.opts.prefixArgs, readyTimeoutMs: this.opts.readyTimeoutMs, reconnectDelayMs: this.opts.reconnectDelayMs, cliVersion: this.version };
   }
 
   private async open(req: StartRequest, sessionId: string | null): Promise<Run> {

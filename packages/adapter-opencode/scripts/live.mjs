@@ -7,6 +7,8 @@
 //   CREWYARD_LIVE_ENV=NAME,NAME          env vars passed to opencode, e.g. DEEPSEEK_API_KEY
 //   CREWYARD_LIVE_MODEL2=provider/model  optional second model for the model-switch step
 //   CREWYARD_LIVE_MAX_OUTPUT=512         output token cap per model call
+//   CREWYARD_LIVE_OPENCODE_V2=1          drive an installed OpenCode 2.x before it passed (docs/adr/0012);
+//                                        add the envcheck step to prove the key guard in the agent's shell
 //
 // From the repo root, with the key from the vault:
 //   node ~/.claude/skills/env-vault/scripts/vault.mjs run --only DEEPSEEK_API_KEY -- node packages/adapter-opencode/scripts/live.mjs
@@ -100,9 +102,9 @@ function check(step, ok, note = "") {
 }
 
 const reqFor = (prompt, policy = worktree, extra = {}) => ({ profile, cwd, model: null, prompt, policy, env, ...extra });
-const adapter = createAdapter();
+const adapter = createAdapter({ allowUntestedV2: process.env.CREWYARD_LIVE_OPENCODE_V2 === "1" });
 
-// CREWYARD_LIVE_STEPS=approve,resume,question,plan,readonly,interrupt,stop picks steps; resume needs approve.
+// CREWYARD_LIVE_STEPS=approve,resume,question,plan,readonly,interrupt,stop,envcheck picks steps; resume needs approve.
 const steps = new Set((process.env.CREWYARD_LIVE_STEPS ?? "approve,resume,question,plan,readonly,interrupt,stop").split(","));
 if (steps.has("resume")) steps.add("approve");
 
@@ -179,6 +181,17 @@ try {
       }
     });
     check("stop", g.ended?.reason === "stopped" && !g.processLeft, g.ended?.reason ?? "");
+  }
+
+  if (steps.has("envcheck")) {
+    // Only lengths are printed, so a guard that failed shows a number, never the key itself.
+    const names = [...Object.keys(secrets), "OPENCODE_PASSWORD", "OPENCODE_SERVER_PASSWORD"];
+    const script = `console.log(${JSON.stringify(names)}.map((n) => n + "=" + (process.env[n] || "").length).join(" "))`;
+    const h = await turn("envcheck", adapter, () => adapter.start(reqFor(`Run this exact shell command with your shell tool and reply with its output only: node -e '${script}'`)), async (ev, run) => {
+      if (ev.type === "request.approval") await adapter.answer(run, ev.requestId, { kind: "approval", decision: "allow_once" });
+    });
+    const out = h.events.flatMap((e) => (e.type === "tool.update" && e.output ? [e.output] : [])).join("\n");
+    check("key guard in the agent's shell", names.every((n) => out.includes(`${n}=0`)), out.trim().slice(0, 200));
   }
 
   check("read limits", true, "not offered by OpenCode (reportedLimits: false)");

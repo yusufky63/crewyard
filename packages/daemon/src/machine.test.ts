@@ -23,7 +23,12 @@ describe("versionGate", () => {
 
   it("pins OpenCode to the exact version that passed conformance, newer included", () => {
     expect(versionGate("opencode", opencode)?.status).toBe("ok");
-    expect(versionGate("opencode", "99.0.0")).toMatchObject({ status: "untested", rule: "exact", update: `opencode upgrade v${opencode}` });
+    expect(versionGate("opencode", "1.25.0")).toMatchObject({ status: "untested", rule: "exact", update: `opencode upgrade v${opencode}` });
+  });
+
+  it("marks OpenCode 2.x as waiting for its conformance run, with the way back to the checked 1.x", () => {
+    expect(versionGate("opencode", "2.2.4")).toMatchObject({ status: "pending", verified: opencode, update: `npm install -g opencode-ai@${opencode}` });
+    expect(versionGate("opencode", "99.0.0")?.status).toBe("pending");
   });
 
   it("says unknown when no version could be read, and has no gate for git or gh", () => {
