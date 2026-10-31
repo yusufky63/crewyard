@@ -534,6 +534,7 @@
     "handoff_open": "Bu çalışma zaten devrediliyor.",
     "handoff_target_not_ready": "Bu hesabın oturumu açık değil ya da anahtarı yok.",
     "handoff_over_cap": "Bu hesabın anahtarı günlük ya da görev başına sınırını aştı.",
+    "handoff_over_project_daily": "Bu hesap ücretli bir anahtarla çalışıyor ve projenin bugünkü harcama sınırı doldu.",
     "git_failed": "Bir git komutu başarısız oldu.",
     "worktree_branch_elsewhere": "Görevin dalı başka bir worktree'de açık.",
     "worktree_locked": "Worktree kilitli.",
@@ -557,7 +558,7 @@
   },
   "exitCode": "çıkış kodu {{code}}",
   "exitNone": "çıkış kodu yok",
-  "capKind": { "daily_cap": "Günlük sınır", "task_cap": "Görev başına sınır", "task_budget": "Görev bütçesi" },
+  "capKind": { "daily_cap": "Günlük sınır", "task_cap": "Görev başına sınır", "task_budget": "Görev bütçesi", "project_daily": "Projenin günlük sınırı" },
   "handoffStop": {
     "label": "Ne zaman geçilsin",
     "interrupt": "Hemen durdur",
@@ -676,6 +677,7 @@
       "independence": "gözden geçirenin kaçınması gereken model",
       "left_before": "bu adım ondan zaten ayrıldı",
       "over_cap": "anahtarı bir harcama sınırında",
+      "project_daily": "ücretli anahtar ve projenin günlük sınırı doldu",
       "over_budget": "görev bütçesi bitti",
       "headroom_low": "%20 ya da daha az pay kaldı"
     },

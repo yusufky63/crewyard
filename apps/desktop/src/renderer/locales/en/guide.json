@@ -167,7 +167,7 @@
       },
       "points": {
         "a": "A window turns amber past 80% and red past 95%, with one notice each time.",
-        "b": "Spend caps are per key and per task; a run stops and asks at the cap."
+        "b": "Spend caps hold per key and per task. Each project also has a daily cap over every API key, set in setup and $10 without one; it counts task runs, while assistant chats count only against their key's own cap. A run stops and asks at a cap."
       },
       "go": "Open Limits"
     },

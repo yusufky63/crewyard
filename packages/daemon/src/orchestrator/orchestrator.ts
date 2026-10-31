@@ -232,11 +232,13 @@ export class Orchestrator {
       stopRun: (runId, detail, reason) => this.lifecycle.stopRun(runId, detail, reason),
       endRun: (runId, reason, detail) => this.lifecycle.endRun(runId, reason, detail),
       copyTranscript: (runId) => this.lifecycle.copyTranscript(runId),
-      capFor: (taskId, runId, candidate, addUsd, alsoApproved) => this.budget.capFor(taskId, runId, candidate, addUsd, alsoApproved),
+      capFor: (taskId, runId, candidate, addUsd, alsoApproved, excludeRunId) => this.budget.capFor(taskId, runId, candidate, addUsd, alsoApproved, excludeRunId === undefined ? runId : excludeRunId),
       approvalsFor: (runId) => this.budget.approvalsFor(runId),
+      projectCap: (projectId, candidate, opts) => this.budget.projectCap(projectId, candidate, opts),
     });
     this.switcher = new AccountSwitcher(ctx, {
       avoidFor: (member) => this.handoffs.avoidFor(member),
+      projectCap: (projectId, candidate, opts) => this.budget.projectCap(projectId, candidate, opts),
       performHandoff: (sourceRunId, target, trigger, opts) => this.handoffs.performHandoff(sourceRunId, target, trigger, opts),
     });
     this.loopRunner = new LoopRunner(ctx, {

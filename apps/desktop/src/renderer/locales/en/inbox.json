@@ -43,9 +43,11 @@
     "cap_daily_cap": "Daily spend cap of {{usd}} reached",
     "cap_task_cap": "Task spend cap of {{usd}} reached",
     "cap_task_budget": "Task budget of {{usd}} reached",
+    "cap_project_daily": "This project's daily cap of {{usd}} reached",
     "capWould_daily_cap": "This step would pass the daily cap of {{usd}}",
     "capWould_task_cap": "This step would pass the per-task cap of {{usd}}",
     "capWould_task_budget": "This step would pass the task budget of {{usd}}",
+    "capWould_project_daily": "This step would pass this project's daily cap of {{usd}}",
     "handoff_unpriced": "No known price for {{model}}",
     "handoff_limit": "Limit reached on the {{window}}",
     "handoff_crashed": "The agent stopped unexpectedly",
@@ -112,7 +114,8 @@
   "cap": {
     "daily_cap": "Daily cap on this API key",
     "task_cap": "Per-task cap on this API key",
-    "task_budget": "This task's budget"
+    "task_budget": "This task's budget",
+    "project_daily": "This project's daily cap, all API keys"
   },
   "handoffDetail": {
     "no_target": "No standby account passed preflight: signed in, headroom above 20%, budget left.",

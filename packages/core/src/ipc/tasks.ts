@@ -143,6 +143,7 @@ export type OrchestratorErrorCode =
   | "handoff.target_not_ready" // { profileId }: not signed in, no key, or no adapter
   | "handoff.over_cap" // { profileId, cap }: the target's key is past its daily or per-task cap
   | "handoff.over_budget" // { spentUsd, capUsd }: the task is past its own budget and you have not approved going on
+  | "handoff.over_project_daily" // { profileId, spentUsd, capUsd }: the target spends on a paid key and the project's daily cap is used up
   | "git.failed" // { command, detail }
   | "worktree.branch_elsewhere" // { branch, path }: the task's branch is checked out in another worktree
   | "worktree.locked" // { path }: registered, folder missing, and locked with `git worktree lock`
@@ -743,13 +744,15 @@ export type RequestPayload =
     };
 
 /**
- * Which spend limit paused a run: the task's own budget, or the credential's daily or per-task cap
- * from the Limits screen. Amounts are Estimated unless the provider billed them.
+ * Which spend limit paused a run: the task's own budget, the credential's daily or per-task cap
+ * from the Limits screen, or the project's daily cap over every API key (`project_daily`, the
+ * setup wizard's `budget.dailyUsd`; docs/adr/0019). Amounts are Estimated unless the provider billed them.
  */
 export interface SpendCap {
-  kind: "task_budget" | "daily_cap" | "task_cap";
+  kind: "task_budget" | "daily_cap" | "task_cap" | "project_daily";
   spentUsd: number;
   capUsd: number;
+  /** The key a key cap belongs to; null for the task budget and the project daily cap. */
   credentialId: string | null;
   /** Held by other unfinished runs for their estimates; set only when some is. */
   reservedUsd?: number;
@@ -780,6 +783,7 @@ export type AccountSwitchRefusal =
   | "independence" // the model another role must stay independent of
   | "left_before" // this step already switched away from this account
   | "over_cap" // its key is at its daily or per-task cap
+  | "project_daily" // a paid key, and the project's daily cap over every key is used up
   | "over_budget" // the task budget is spent
   | "headroom_low"; // 20% or less left on a window
 

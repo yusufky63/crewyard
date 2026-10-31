@@ -544,6 +544,18 @@ describe("tasks.preview", () => {
     expect((await none.o.preview({ projectId: none.project.id, ...CODE_TR, kind: "docs", mode: "solo" })).hold).toEqual({ code: "crew", params: { code: "crew.missing_profile", role: "docs" } });
   });
 
+  it("says Start would propose when the project's daily cap would be passed, and holds the stored task the same way", async () => {
+    const paidKey = { ...candidate("key-a", "deepseek", model("deepseek-chat")), credentialId: "cred-a" };
+    const full = await setup({ candidates: [paidKey], config: (c) => void (c.budget.dailyUsd = 0) });
+    expect((await full.o.preview({ projectId: full.project.id, ...CODE_TR, kind: "research", mode: "solo" })).hold).toEqual({ code: "over_cap", params: { cap: "project_daily" } });
+    const res = await full.o.startTask({ projectId: full.project.id, ...CODE_TR, kind: "research", mode: "solo" });
+    expect([res.started, res.held]).toEqual([false, { code: "over_cap", params: { cap: "project_daily" } }]);
+    expect(full.adapter.started).toEqual([]);
+    // A plan sign-in spends nothing the ledger sees, so the same project lets it start.
+    const free = await setup({ candidates: [candidate("plan-a", "openai", model("gpt-5"), "plan_signin")], config: (c) => void (c.budget.dailyUsd = 0) });
+    expect((await free.o.preview({ projectId: free.project.id, ...CODE_TR, kind: "research", mode: "solo" })).hold).toBeNull();
+  });
+
   it("is served with tasks.start through the daemon's handler map", async () => {
     const root = tempDir("crewyard tasks ipc-");
     const repo = await tempRepo(root, "demo repo with spaces");

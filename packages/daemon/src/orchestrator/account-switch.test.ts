@@ -1,5 +1,6 @@
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { FallbackMode, StartRequest } from "@crewyard/core";
+import { defaultProjectConfig, type FallbackMode, type SpendCap, type StartRequest } from "@crewyard/core";
 import type { FakeStep } from "@crewyard/adapter-fake";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createSettingsHandlers } from "../handlers/settings.ts";
@@ -42,18 +43,20 @@ describe("account switch rules", () => {
   });
 
   it("acts on a limit, an empty credit and a key's cap, never on the task budget, an unknown price or a crash", () => {
-    const cap = (kind: "task_budget" | "daily_cap" | "task_cap") => ({ kind, spentUsd: 1, capUsd: 1, credentialId: "c" });
+    const cap = (kind: SpendCap["kind"]) => ({ kind, spentUsd: 1, capUsd: 1, credentialId: "c" });
     expect(switchTrigger({ trigger: "limit" })).toBe("limit");
     expect(switchTrigger({ trigger: "limit", failure: "credit" })).toBe("credit");
     expect(switchTrigger({ trigger: "budget", cap: cap("daily_cap") })).toBe("spend_cap");
     expect(switchTrigger({ trigger: "budget", cap: cap("task_cap") })).toBe("spend_cap");
     expect(switchTrigger({ trigger: "budget", cap: cap("task_budget") })).toBeNull();
+    // The project's daily cap counts every key of the project: another key does not lift it.
+    expect(switchTrigger({ trigger: "budget", cap: cap("project_daily") })).toBeNull();
     expect(switchTrigger({ trigger: "unpriced" })).toBeNull();
     expect(switchTrigger({ trigger: "crashed", failure: "transient" })).toBeNull();
   });
 
   it("refuses a target that fails any preflight rule, in a fixed order, and lets Unknown headroom pass", () => {
-    const ok: SwitchFacts = { sameKind: true, ready: true, claudeSubscription: false, roleOk: true, independent: true, leftBefore: false, overCap: false, overBudget: false, headroom: { pct: null, window: null, provenance: "unknown" } };
+    const ok: SwitchFacts = { sameKind: true, ready: true, claudeSubscription: false, roleOk: true, independent: true, leftBefore: false, overCap: false, overProjectCap: false, overBudget: false, headroom: { pct: null, window: null, provenance: "unknown" } };
     expect(refusalOf(ok)).toBeNull();
     expect(refusalOf({ ...ok, claudeSubscription: true, ready: false })).toBe("claude_subscription");
     expect(refusalOf({ ...ok, sameKind: false, ready: false })).toBe("other_kind");
@@ -62,6 +65,8 @@ describe("account switch rules", () => {
     expect(refusalOf({ ...ok, independent: false })).toBe("independence");
     expect(refusalOf({ ...ok, leftBefore: true })).toBe("left_before");
     expect(refusalOf({ ...ok, overCap: true })).toBe("over_cap");
+    expect(refusalOf({ ...ok, overProjectCap: true })).toBe("project_daily");
+    expect(refusalOf({ ...ok, overCap: true, overProjectCap: true })).toBe("over_cap");
     expect(refusalOf({ ...ok, overBudget: true })).toBe("over_budget");
     // More than 20% left is needed (PLAN.md §8.2).
     expect(refusalOf({ ...ok, headroom: { pct: 20, window: "5h", provenance: "reported" } })).toBe("headroom_low");
@@ -310,5 +315,43 @@ describe("account switch flow", () => {
     expect(q.payload).toMatchObject({ trigger: "budget", cap: { kind: "task_budget" } });
     expect(budget.o.get(t3.id).handoffs).toEqual([]);
     expect(budget.o.switches.list({ taskId: t3.id })).toEqual([]);
+  });
+
+  it("never switches keys on the project's daily cap, and passes over paid keys while it is used up", async () => {
+    /** The project's file with a daily cap over every key, as the setup wizard writes it. */
+    const projectCap = (path: string, usd: number) => {
+      const cfg = defaultProjectConfig("demo repo", join(path, "..", "worktrees"));
+      cfg.budget.dailyUsd = usd;
+      mkdirSync(join(path, ".crewyard"), { recursive: true });
+      writeFileSync(join(path, ".crewyard", "project.json"), JSON.stringify(cfg));
+    };
+    // A pause on the project's cap: a second key spends on the same cap, so the step waits for you.
+    const capped = await setup({ pick: byProfile({ "ds-a": [running, usage(1_000_000), hold] }), candidates: [key("ds-a", "cred-a"), key("ds-b", "cred-b")], switching: true });
+    projectCap(capped.project.path, 0.1);
+    const t1 = await research(capped, "ds-a", "auto");
+    const q1 = await waitFor(() => capped.o.requests({ taskId: t1.id }).find((r) => r.kind === "handoff"));
+    expect(q1.payload).toMatchObject({ trigger: "budget", cap: { kind: "project_daily", capUsd: 0.1 } });
+    expect(capped.o.switches.list({ taskId: t1.id })).toEqual([]);
+    expect(capped.o.get(t1.id).handoffs).toEqual([]);
+    expect(q1.payload.kind === "handoff" && q1.payload.candidates.map((c) => c.profileId)).toEqual([]);
+
+    // An empty credit while today's project spend is used up: the other key is passed over, with the reason.
+    const credit = await setup({
+      pick: byProfile({ "ds-a": [running, { emit: { type: "request.question", requestId: "hold-credit", questions: [{ prompt: "Devam?", options: [{ label: "evet" }], allowFreeText: false }] } }, { awaitAnswer: "hold-credit" }, failWith('API Error: 402 {"error":{"message":"Insufficient Balance"}}')] }),
+      candidates: [key("ds-a", "cred-a"), key("ds-b", "cred-b")],
+      switching: true,
+    });
+    projectCap(credit.project.path, 1);
+    const t2 = await research(credit, "ds-a", "manual");
+    const hold2 = await waitFor(() => credit.o.requests({ taskId: t2.id })[0]);
+    credit.store.db
+      .prepare("insert into spend (at, credential_id, profile_id, task_id, run_id, provider_id, model, cost_usd, source) values (?, 'cred-a', 'ds-a', ?, null, 'deepseek', null, 1, 'estimated')")
+      .run(new Date().toISOString(), t2.id);
+    await credit.o.answer(hold2.id, { kind: "question", answers: [{ selected: ["evet"] }] });
+    const q2 = await waitFor(() => credit.o.requests({ taskId: t2.id }).find((r) => r.kind === "handoff"));
+    const [refused] = events(credit.store, "account.switch_refused");
+    expect(refused).toMatchObject({ phase: "refused", trigger: "credit", skipped: [{ profileId: "ds-b", alias: "ds-b", reason: "project_daily" }] });
+    expect(credit.o.switches.list({ taskId: t2.id })).toEqual([]);
+    expect(q2.payload.kind === "handoff" && q2.payload.candidates.map((c) => c.profileId)).toEqual([]);
   });
 });

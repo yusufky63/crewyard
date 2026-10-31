@@ -288,7 +288,8 @@
       "open": "Bu adım zaten devrediliyor",
       "target_not_ready": "Bu hesap hazır değil: anahtar yok, oturum açık değil ya da çalıştırıcı yok",
       "over_cap": "Bu hesap harcama sınırını aştı",
-      "over_budget": "Bu görev bütçesini aştı. Önce Gelen kutusunda bütçeyi aşmayı onayla"
+      "over_budget": "Bu görev bütçesini aştı. Önce Gelen kutusunda bütçeyi aşmayı onayla",
+      "over_project_daily": "Projenin bugünkü harcama sınırı doldu ve bu hesap ücretli bir anahtar kullanıyor. Bir abonelik ya da yerel model seç ya da sınırın gece yarısı sıfırlanmasını bekle"
     }
   },
   "changeAi": {

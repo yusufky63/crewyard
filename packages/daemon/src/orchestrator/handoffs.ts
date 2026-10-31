@@ -36,8 +36,9 @@ export interface HandoffsDeps {
   stopRun(runId: string, detail: string, reason?: EndReason): Promise<void>;
   endRun(runId: string, reason: EndReason, detail: string | null): void;
   copyTranscript(runId: string): Promise<string | null>;
-  capFor(taskId: string, runId: string | null, candidate: Candidate | undefined, addUsd?: number, alsoApproved?: Set<string>): SpendCap | null;
+  capFor(taskId: string, runId: string | null, candidate: Candidate | undefined, addUsd?: number, alsoApproved?: Set<string>, excludeRunId?: string | null): SpendCap | null;
   approvalsFor(runId: string): Set<string>;
+  projectCap(projectId: string, candidate: Candidate | undefined, opts?: { addUsd?: number; excludeRunId?: string | null }): SpendCap | null;
 }
 
 export class Handoffs extends Part {
@@ -98,8 +99,10 @@ export class Handoffs extends Part {
     return order
       .map((id) => all.find((c) => c.profile.id === id))
       .filter((c): c is Candidate => c !== undefined && eligible(c, this.tpl(member), ctx) && !avoid.models.has(modelKey(c)) && usable(c))
-      // Budget left (PLAN.md §8.2 step 2): a key past its daily or task cap is no target.
+      // Budget left (PLAN.md §8.2 step 2): a key past its daily or task cap is no target, and
+      // neither is any paid key once the project's daily cap is used up; a plan or local model still is.
       .filter((c) => reachedCaps(this.opts.store.db, spendCredential(c), root, this.now(), { excludeRunId: run.id }).length === 0)
+      .filter((c) => this.deps.projectCap(task.project_id, c, { excludeRunId: run.id }) === null)
       .map((c) => scoreCandidate(c, this.tpl(member), ctx, avoid))
       .filter((v) => (v.headroom.pct === null || v.headroom.pct > MIN_HEADROOM) && (budget === null || v.estimate.usd === 0 || spent < budget));
   }
@@ -186,8 +189,11 @@ export class Handoffs extends Part {
     if (avoid.models.has(modelKey(c))) throw new OrchestratorError("crew.independence", { role: member.role });
     // Your "continue" past the task budget on this step carries over to the AI you move it to.
     const stepApproved = new Set([...this.deps.approvalsFor(source.id)].filter((k) => k === "task_budget"));
-    const cap = this.deps.capFor(task.id, null, c, 0, stepApproved);
+    // The source's own hold is settled before the target starts, so it does not count here: the
+    // same view the Inbox candidates and the account switcher take, so what they offer is accepted.
+    const cap = this.deps.capFor(task.id, null, c, 0, stepApproved, source.id);
     if (cap?.kind === "task_budget") throw new OrchestratorError("handoff.over_budget", { spentUsd: cap.spentUsd, capUsd: cap.capUsd });
+    if (cap?.kind === "project_daily") throw new OrchestratorError("handoff.over_project_daily", { profileId, spentUsd: cap.spentUsd, capUsd: cap.capUsd });
     if (cap) throw new OrchestratorError("handoff.over_cap", { profileId, cap: cap.kind });
     return scoreCandidate(c, this.tpl(member), ctx, avoid);
   }

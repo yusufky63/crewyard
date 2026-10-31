@@ -167,7 +167,7 @@
       },
       "points": {
         "a": "Bir zaman penceresi %80'i geçince sarıya, %95'i geçince kırmızıya döner ve her seferinde bir kez bildirim gelir.",
-        "b": "Harcama sınırları anahtar ve görev başınadır; sınıra gelen çalıştırma durur ve sorar."
+        "b": "Harcama sınırları anahtar ve görev başınadır. Her projenin ayrıca tüm API anahtarlarını kapsayan bir günlük sınırı vardır: kurulumda girilir, kurulum yapılmadıysa 10 $'dır. Bu sınıra görev çalıştırmaları sayılır; asistan sohbetleri yalnızca kendi anahtarının sınırına sayılır. Sınıra gelen çalıştırma durur ve sorar."
       },
       "go": "Limitleri aç"
     },
