@@ -2,7 +2,17 @@ import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent 
 import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
-import { TASK_PRESETS, type AssistantDraftView, type AssistantLine, type AssistantProfileOption, type AssistantView, type TaskKind, type TaskPresetId, type TaskSize } from "@crewyard/core";
+import {
+  TASK_PRESETS,
+  type AssistantDraftView,
+  type AssistantLine,
+  type AssistantProfileOption,
+  type AssistantToolLine,
+  type AssistantView,
+  type TaskKind,
+  type TaskPresetId,
+  type TaskSize,
+} from "@crewyard/core";
 import { BrandIcon, Button, Label, Panel, ProvenanceBadge } from "@crewyard/ui";
 import { matches } from "../../keys.ts";
 import { useNav } from "../../nav.ts";
@@ -394,6 +404,18 @@ function AutopilotNotice({ code }: { code: string }) {
   return <p className={`as-line as-notice as-autopilot${call?.[1] === "refused" ? " as-autopilot-refused" : ""}`}>{text}</p>;
 }
 
+/**
+ * Crewyard's own line for one of the assistant's read or draft tools (docs/adr/0018), worded here in
+ * the person's language from the tool, its outcome and its subject. The subject is a task's or
+ * draft's title: untrusted, so it is only ever an interpolated text value, never markup.
+ */
+function ToolCallText({ call }: { call: AssistantToolLine }) {
+  const { t } = useTranslation("assistant");
+  const title = t(`toolLine.${call.outcome}.${call.tool}`);
+  const subject = call.days !== undefined ? t("toolLine.days", { count: call.days }) : call.status ? t(`toolLine.status.${call.status}`) : call.subject;
+  return <>{subject ? t("toolLine.withSubject", { title, subject }) : title}</>;
+}
+
 function Line({ line }: { line: AssistantLine }) {
   const { t } = useTranslation("assistant");
   if (line.role === "notice" && line.text.startsWith("autopilot.")) return <AutopilotNotice code={line.text} />;
@@ -404,7 +426,7 @@ function Line({ line }: { line: AssistantLine }) {
         <span className="as-who" aria-hidden="true">
           ·
         </span>
-        <span className="as-text">{line.text}</span>
+        <span className="as-text">{line.call ? <ToolCallText call={line.call} /> : line.text}</span>
       </p>
     );
   const user = line.role === "user";
@@ -431,6 +453,17 @@ export function DraftCard({ draft, index, onChanged }: { draft: AssistantDraftVi
   const [kind, setKind] = useState<TaskKind>(draft.kind);
   const [size, setSize] = useState<TaskSize | "">(draft.size ?? "");
   const [criteria, setCriteria] = useState(draft.acceptance.join("\n"));
+  // The agent may refine its own open draft (edit_draft, docs/adr/0018) while the card is open.
+  // Its change reaches each field the person has not typed in; a field they changed keeps their text.
+  const [synced, setSynced] = useState(draft);
+  if (synced !== draft) {
+    setSynced(draft);
+    if (title === synced.title) setTitle(draft.title);
+    if (description === synced.description) setDescription(draft.description);
+    if (kind === synced.kind) setKind(draft.kind);
+    if (size === (synced.size ?? "")) setSize(draft.size ?? "");
+    if (criteria === synced.acceptance.join("\n")) setCriteria(draft.acceptance.join("\n"));
+  }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const id = useId();

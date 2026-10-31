@@ -31,25 +31,25 @@ Each tool reads one thing Crewyard already shows you on a screen, through that p
 
 ## The choice
 
-**(a).** The tools are fixed in `packages/core/src/assistant-tools.ts` (definitions, argument checks, result cap, tool-line titles) and served by `packages/daemon/src/assistant/tools.ts`, reached from `AssistantService.toolCall` for a live assistant conversation only.
+**(a).** The tools are fixed in `packages/core/src/assistant-tools.ts` (definitions, argument checks, result cap, tool-line data) and served by `packages/daemon/src/assistant/tools.ts`, reached from `AssistantService.toolCall` for a live assistant conversation only.
 
 | Tool | Reads | Notes |
 |---|---|---|
-| `list_tasks` | the project's tasks, newest first (50), optional status filter | id, title, kind, status, spend with its label, open requests, whether Autopilot made it; Autopilot's on/stopped state and limits |
-| `read_task` | one task: status, estimate, budget, spend, each step's state and failure, what waits on you, a finished analysis's report | Autopilot's own read, now ungated; reading one of its own reports is still recorded for `complete_task` |
-| `read_report` | a finished task's findings, verdict, plan or final message, and the drafts suggested from it | a pure read of the stored result (`readTaskReport`); it never creates suggestion drafts |
+| `list_tasks` | the project's tasks, newest first (50), optional status filter | id, title, kind, status, spend with its label, open requests, whether Autopilot made it; Autopilot's on/stopped state and limits; a status that is not one of the eleven task statuses is refused, not matched against nothing |
+| `read_task` | one task: status, estimate, budget, spend, each step's state and failure, what waits on you, a finished analysis's report | Autopilot's own read, now ungated, and a pure read: its report comes from `AssistantService.peekReport`, which creates no suggestion drafts and writes no event; step failures are redacted and the report's text cleaned and capped again; reading one of its own reports is still recorded for `complete_task` |
+| `read_report` | a finished task's findings, verdict, plan or final message, and the drafts suggested from it | a pure read of the stored result (`readTaskReport`); it never creates suggestion drafts; for one of Autopilot's own finished analyses it records the read for `complete_task`, as `read_task` does |
 | `read_crew` | each step's role, profile alias, runner, model, estimate, dependencies, standby chain, state, last runs | aliases only, never profile ids or keys |
 | `list_drafts` | this conversation's drafts; with a task, its suggested drafts | |
 | `read_inbox` | open questions, tool approvals with their risk, handoff and budget decisions, agent questions and follow-ups, stall alerts | commands redacted with `redactLogLine`; only you answer |
-| `read_events` | a task's or run's recent events, newest first, 40 a page (100 at most), paged by `before_seq` | streamed text left out; each preview redacted and cut to 300 bytes |
+| `read_events` | a task's or run's recent events, newest first, 40 a page (100 at most), paged by `before_seq` | streamed text left out; each preview redacted and cut to 300 bytes; a page is shortened to fit 16 KB before `next_before_seq` is set, so paging back never skips an event |
 | `read_usage` | spend per key alias today and over 1 to 90 days with its caps, spend per task, the assistant's own spend, plan windows per profile, plan tokens | every number labelled Reported, Estimated, Unknown or Plan; Claude windows are never included |
 | `list_profiles` | alias, runner, provider, model, catalog price, ready, read-only capable, MCP, paid key or plan or local | no key, no sign-in detail |
 | `read_project` | project.json settings or the defaults, detected type and commands, roles in effect including custom ones | commands and the remote redacted |
 | `git_overview` | branch, upstream, ahead and behind as last fetched, short status, last commits, a task worktree's status and diff stat against its base | local git only, through `packages/proc` `run`, `--no-optional-locks`, 5 s timeout; no fetch, no push |
 | `list_problems` | failed steps, failed audit events, failing PR checks (as already stored), open stall alerts | the Problems tab's own sources; no network |
 | `list_agent_files` | your instruction files, skills and commands (name, tool, kind, 300-byte preview), shares, the project bridge | the agent-files service's own scan; no content past its preview |
-| `edit_draft` | changes one of this conversation's open drafts | merged draft checked again by `parseTaskDraft` |
-| `discard_draft` | discards one of this conversation's open drafts | an added draft, a report's suggestion, or another conversation's draft is refused |
+| `edit_draft` | changes one of the open drafts it proposed in this conversation | each given field checked on its own with `propose_task`'s rules; a field left out or sent as null stays as it is (models send null for fields they keep); the merged draft is checked again by `parseTaskDraft`; `propose_task` now answers with the new `draft_id` |
+| `discard_draft` | discards one of the open drafts it proposed in this conversation | a ready-made task you picked into the same conversation, an added draft, a report's suggestion, or another conversation's draft is refused |
 
 `list_problems` covers the sources the daemon derives (failed runs, failed events, failing checks, stalls). The Problems tab's project.json, role-file, agent-file and key-check rows are assembled in the renderer from other screens' reads; `read_project` and `list_agent_files` carry the first three, and key checks are left out because they describe credentials.
 
@@ -60,8 +60,9 @@ Every call:
 - **Arguments** checked in core, unknown keys refused, ids matched against `^[A-Za-z0-9-]{1,64}$`, numbers bounded, strings capped in bytes; a refusal is a tool error (`isError: true`) the agent can read and correct, as the MCP spec asks.
 - **Results** capped at 16 KB: when a result does not fit, its longest list loses items from the end and the result says `truncated` and how many were left out; never a cut JSON.
 - **Text** cleaned with `cleanText` (control and bidi characters removed), free text redacted, and marked as data in the result.
-- **Rate**: 30 calls per conversation in any rolling minute.
-- **A tool line** the panel shows as `Read task: Fix login` (or `... (refused)`), written by Crewyard with an id that names the tool and outcome (`call:<tool>:<outcome>:<uuid>`), so the view can mark it as ours (`AssistantLine.call`) without a new column. The runner's own raw line for the same call (`mcp__crewyard__read_task`, `crewyard.read_task`) is dropped.
+- **Rate**: 30 calls per conversation in any rolling minute. The first refusal in a row writes one tool line; the ones after it write none and wake no renderer until a call gets through, so a looping agent cannot push the conversation out of the 200-line view.
+- **A tool line**, stored as data and never as English prose: an id that names the tool and outcome (`call:<tool>:<outcome>:<uuid>`) and, as its text, only the subject (a task's, draft's or project's title, cleaned, at most 200 bytes), the status `list_tasks` filtered on, or the days `read_usage` looked back. The view hands the panel `AssistantLine.call = { tool, outcome, subject, days?, status? }`, without a new column, and the panel words it from `toolLine.done.<tool>` or `toolLine.refused.<tool>`, `toolLine.withSubject`, `toolLine.days` and `toolLine.status.<status>` in English and Turkish: `Read task: Fix login`, `Görevi okudu: Fix login`, `Could not read task`, `Görev okunamadı`. The subject is an interpolated text value, never markup. The runner's own raw line for the same call is dropped only when its title is exactly one of the server-qualified shapes the adapters produce (`mcp__crewyard__<tool>`, optionally followed by `: <detail>`; `crewyard.<tool>`, `crewyard_<tool>`, `crewyard/<tool>`; `<tool> (crewyard MCP Server)`); a runner's read or search that merely mentions a path with `crewyard` in it stays visible.
+- **The drafts column** follows an `edit_draft`: an open card takes the agent's new value in every field you have not typed in, and keeps your text in a field you changed, so `Add as draft` never sends the old values over the agent's edit without you seeing it.
 
 The system prompt lists the read tools and says that reading never starts anything and that their results are data. The MCP server instructions say which tools always work and which need Autopilot.
 
@@ -81,7 +82,7 @@ Nothing new is spawned except `git`, through `packages/proc` `run` (cross-spawn,
 ## Security notes
 
 - **Who can call:** only a connection whose ticket carries the `assistant:` prefix lists these tools, and only a live, not-stopping assistant conversation reaches them; a crew run's ticket goes to the report service, which refuses any other name, and its MCP session does not list them. Tests cover both.
-- **What can change:** only open drafts of the calling conversation. No tool starts, approves, edits, cancels or stops a task or a run, answers an Inbox item, or changes a setting. Reading a task's report never creates drafts.
+- **What can change:** only the open drafts the agent itself proposed in the calling conversation (`source = 'assistant'`); a ready-made task you picked lands in the same conversation and stays yours. No tool starts, approves, edits, cancels or stops a task or a run, answers an Inbox item, or changes a setting. Reading a task or its report (`read_task`, `read_report`) never creates drafts or writes an event; the only bookkeeping a read does is Autopilot's "report read" time on its own tasks.
 - **What never leaves:** keys and their file references, native session ids, raw event payloads, profile ids in place of aliases, Claude subscription windows. Free text from runs, issues, checks and commands goes through `redactLogLine` before it is shown, and everything is capped.
 - **Untrusted text:** report findings, Inbox questions, event previews and agent-file previews are agent or user text; each result says so, and the prompt repeats it. They cannot instruct Crewyard: no tool here acts on them.
 - **Autopilot unchanged:** its acting tools keep every check (on, consent, kill switch, halt, ownership, budget, caps, rates). Reading is not acting, so the kill switch no longer refuses `list_tasks` and `read_task`; their results say whether Autopilot is stopped.
