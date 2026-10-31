@@ -167,7 +167,7 @@
       },
       "points": {
         "a": "A window turns amber past 80% and red past 95%, with one notice each time.",
-        "b": "Spend caps are per key and per task; a run stops and asks at the cap."
+        "b": "Spend caps are per key, per task and per project per day (the daily cap set in setup, over every API key); a run stops and asks at the cap."
       },
       "go": "Open Limits"
     },

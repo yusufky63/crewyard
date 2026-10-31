@@ -14,7 +14,7 @@ import { Part } from "./part.ts";
 import { estimateFor } from "./crew.ts";
 import type { MemberRow, RunRow, TaskRow } from "./db.ts";
 import type { Candidate } from "./directory.ts";
-import { capResetsAt, capWindow, credentialCaps, overCap, reachedCaps, recordRunSpend, reservedUsd, spendCredential } from "./spend.ts";
+import { capResetsAt, capWindow, credentialCaps, overCap, projectDailyCap, projectDailyCapUsd, reachedCaps, recordRunSpend, reservedUsd, spendCredential } from "./spend.ts";
 
 // What runs spend and the caps that hold them (PLAN.md §6, feature scan F3, F4): usage reports
 // become ledger entries, a paid run or step stops at the first spend cap it may not pass, and
@@ -121,10 +121,11 @@ export class Budget extends Part {
   }
 
   /**
-   * The first spend limit this run may not pass: the key's daily cap, its per-task cap, then the
-   * task's own budget. Committed spend counts what other unfinished runs still hold, and `addUsd`
-   * (a step's estimate before it starts) must fit too. Caps you approved for this run with
-   * "continue" are skipped; plans and local models never spend, so only paid keys are held.
+   * The first spend limit this run may not pass: the key's daily cap, its per-task cap, the
+   * project's daily cap over every key, then the task's own budget. Committed spend counts what
+   * other unfinished runs still hold, and `addUsd` (a step's estimate before it starts) must fit
+   * too. Caps you approved for this run with "continue" are skipped; plans and local models never
+   * spend, so only paid keys are held.
    */
   capFor(taskId: string, runId: string | null, candidate: Candidate | undefined, addUsd = 0, alsoApproved: Set<string> = new Set()): SpendCap | null {
     if (candidate?.profile.credential.kind !== "api_key") return null;
@@ -134,6 +135,8 @@ export class Budget extends Part {
     const root = this.budgetTask(taskId);
     const caps = reachedCaps(db, spendCredential(candidate), root, this.now(), { addUsd, excludeRunId: runId });
     const task = this.db.task(root);
+    const daily = this.projectCap(task.project_id, candidate, { addUsd, excludeRunId: runId });
+    if (daily) caps.push(daily);
     if (task.budget_usd !== null) {
       const spent = this.db.spend(this.budgetRuns(root)).usd;
       const held = reservedUsd(db, { taskId: root, excludeRunId: runId });
@@ -147,17 +150,32 @@ export class Budget extends Part {
   /**
    * Feature scan F4: spend on a model without a price (no catalog price, and the runner gave none)
    * counts against no cap. So on a paid key, a task with any cap (its budget, the key's daily or
-   * per-task cap) needs your "continue" in the Inbox first. Without any cap there is nothing to protect.
+   * per-task cap, the project's daily cap) needs your "continue" in the Inbox first. Without any
+   * cap there is nothing to protect.
    */
   unpricedFor(task: TaskRow, runId: string, candidate: Candidate | undefined, model: string | null, unknownPrice: boolean): UnpricedSpend | null {
     if (!unknownPrice || candidate?.profile.credential.kind !== "api_key") return null;
     if (this.db.approvedCaps(runId).has("unpriced")) return null;
-    const keyCaps = credentialCaps(this.opts.store.db, spendCredential(candidate));
+    const credentialId = spendCredential(candidate);
+    const keyCaps = credentialCaps(this.opts.store.db, credentialId);
     const caps: UnpricedSpend["caps"] = [];
     if (keyCaps?.dailyUsd != null) caps.push("daily_cap");
     if (keyCaps?.taskUsd != null) caps.push("task_cap");
+    // Unpriced spend would never reach the project's total either, so its cap cannot see it.
+    if (credentialId !== null && projectDailyCapUsd(this.db.project(task.project_id)) !== null) caps.push("project_daily");
     if (this.db.task(this.budgetTask(task.id)).budget_usd !== null) caps.push("task_budget");
     return caps.length > 0 ? { model: model ?? candidate.model?.id ?? candidate.profile.defaultModel, caps } : null;
+  }
+
+  /**
+   * The project's daily cap when a run on `candidate` would pass it, else null. It holds only what
+   * the ledger records (a paid key it knows), so a plan, a local model or an unknown key passes;
+   * handoff and account-switch preflight ask it so a fallback never lands on a paid key the
+   * project may not spend on today.
+   */
+  projectCap(projectId: string, candidate: Candidate | undefined, opts: { addUsd?: number; excludeRunId?: string | null } = {}): SpendCap | null {
+    if (spendCredential(candidate) === null) return null;
+    return projectDailyCap(this.opts.store.db, projectId, projectDailyCapUsd(this.db.project(projectId)), this.now(), opts);
   }
 
   /**

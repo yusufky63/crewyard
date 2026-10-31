@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { CandidateView, LimitNoticePayload, RequestPayload, RequestView } from "@crewyard/core";
+import type { CandidateView, LimitNoticePayload, RequestPayload, RequestView, SpendCap } from "@crewyard/core";
+import { LANGUAGES, resources } from "../../i18n.ts";
 import { canAllowAlways, defaultTarget, denyAnswer, emptyForm, formAnswer, formReady, handoffChoices, infoNotices, orderRequests, riskTone, stallText, titleKey } from "./model.ts";
 
 type Handoff = Extract<RequestPayload, { kind: "handoff" }>;
@@ -24,6 +25,22 @@ describe("inbox", () => {
     expect(titleKey(handoff({ trigger: "crashed" }))).toBe("handoff_crashed");
     expect(titleKey(handoff({ trigger: "budget", cap: { kind: "task_cap", spentUsd: 0, capUsd: 1, credentialId: "c", reservedUsd: 0.6, estimateUsd: 0.5 } }))).toBe("capWould_task_cap");
     expect(titleKey(handoff({ trigger: "unpriced", unpriced: { model: "m", caps: ["task_budget"] } }))).toBe("handoff_unpriced");
+  });
+
+  it("titles the project's daily cap, and every cap kind has its title, its would-pass title and its name in each language", () => {
+    expect(titleKey(handoff({ trigger: "budget", cap: { kind: "project_daily", spentUsd: 10.2, capUsd: 10, credentialId: null } }))).toBe("cap_project_daily");
+    expect(titleKey(handoff({ trigger: "budget", cap: { kind: "project_daily", spentUsd: 9.9, capUsd: 10, credentialId: null, estimateUsd: 0.4 } }))).toBe("capWould_project_daily");
+    const kinds: Array<SpendCap["kind"]> = ["daily_cap", "task_cap", "task_budget", "project_daily"];
+    for (const lang of LANGUAGES) {
+      const inbox = resources[lang]?.inbox as { title: Record<string, string>; cap: Record<string, string> };
+      const tasks = resources[lang]?.tasks as { capKind: Record<string, string> };
+      for (const kind of kinds) {
+        expect(inbox.title[`cap_${kind}`], `${lang} cap_${kind}`).toContain("{{usd}}");
+        expect(inbox.title[`capWould_${kind}`], `${lang} capWould_${kind}`).toContain("{{usd}}");
+        expect(inbox.cap[kind], `${lang} cap.${kind}`).toBeTruthy();
+        expect(tasks.capKind[kind], `${lang} capKind.${kind}`).toBeTruthy();
+      }
+    }
   });
 
   it("never offers always-allow for high risk, and continue only for a spend pause", () => {

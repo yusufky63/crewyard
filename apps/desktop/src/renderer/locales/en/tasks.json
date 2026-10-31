@@ -534,6 +534,7 @@
     "handoff_open": "This run is already being handed off.",
     "handoff_target_not_ready": "That account is not signed in or has no key.",
     "handoff_over_cap": "That account's key is past its daily or per-task cap.",
+    "handoff_over_project_daily": "That account spends on a paid key, and this project's daily cap is used up.",
     "git_failed": "A git command failed.",
     "worktree_branch_elsewhere": "The task's branch is checked out in another worktree.",
     "worktree_locked": "The worktree is locked.",
@@ -557,7 +558,7 @@
   },
   "exitCode": "exit {{code}}",
   "exitNone": "no exit code",
-  "capKind": { "daily_cap": "Daily cap", "task_cap": "Per-task cap", "task_budget": "Task budget" },
+  "capKind": { "daily_cap": "Daily cap", "task_cap": "Per-task cap", "task_budget": "Task budget", "project_daily": "Project daily cap" },
   "handoffStop": {
     "label": "When to switch",
     "interrupt": "Stop now",
@@ -676,6 +677,7 @@
       "independence": "the model the reviewer must avoid",
       "left_before": "this step already left it",
       "over_cap": "its key is at a spend cap",
+      "project_daily": "a paid key, and the project's daily cap is used up",
       "over_budget": "the task budget is spent",
       "headroom_low": "20% or less left"
     },

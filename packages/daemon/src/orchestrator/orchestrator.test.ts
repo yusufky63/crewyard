@@ -677,6 +677,118 @@ describe("spend caps", () => {
   });
 });
 
+describe("project daily cap (docs/adr/0019 §5.1)", () => {
+  const usageOf = (tokensIn: number): FakeStep => ({
+    emit: { type: "usage.update", tokensIn, tokensOut: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, contextUsed: null, contextSize: null, costUsd: null, costProvenance: "unknown" },
+  });
+  // deepseek-chat input is $0.27 per million tokens; the key has no caps of its own, so only the project's can hold it.
+  const paid = (): Candidate[] => CANDIDATES().map((c) => (c.profile.id === "deepseek-key" ? { ...c, credentialId: "cred-ds", catalogVersion: "cat-1" } : c));
+  const daily = (usd: number) => (c: ProjectConfig) => {
+    c.budget.dailyUsd = usd;
+  };
+  const ledger = (store: Store, taskId: string, costUsd: number) =>
+    store.db
+      .prepare("insert into spend (at, credential_id, profile_id, task_id, run_id, provider_id, model, cost_usd, source) values (?, 'cred-other', 'other', ?, null, 'openai', null, ?, 'estimated')")
+      .run(new Date().toISOString(), taskId, costUsd);
+
+  it("pauses a run that passes the project's budget.dailyUsd with a budget Inbox item, and continues only after you approve", async () => {
+    const pick: Picker = (_role, _req, resumed) => (resumed ? [running, usageOf(2_000_000), say("bitti")] : [running, usageOf(1_000_000), { awaitAnswer: "never" }]);
+    const { o, project, topics } = await setup({ pick, candidates: paid(), config: daily(0.1) });
+    const t = await o.propose({ projectId: project.id, title: "Araştırma: giriş sınırı", pins: { researcher: "deepseek-key" }, budgetUsd: 5 });
+    await o.approve({ taskId: t.id });
+
+    const q = await waitFor(() => o.requests({ taskId: t.id }).find((r) => r.kind === "handoff"));
+    expect(q.payload).toMatchObject({ kind: "handoff", trigger: "budget", window: "budget-day", proposedTarget: null, cap: { kind: "project_daily", spentUsd: 0.27, capUsd: 0.1, credentialId: null } });
+    if (q.payload.kind !== "handoff") throw new Error("unexpected payload");
+    // A daily cap resets at local midnight, so waiting for the reset is offered.
+    expect(Date.parse(q.payload.resetsAt!)).toBeGreaterThan(Date.now());
+    const run = o.get(t.id).runs[0]!;
+    expect(run.state).toBe("rate_limited");
+    expect(topics.some((x) => x.topic === "limits.notice" && (x.payload as { kind: string }).kind === "reached" && (x.payload as { window: string }).window === "budget-day")).toBe(true);
+    await expect(o.resume(run.id)).rejects.toThrow("run.still_limited");
+
+    await o.answer(q.id, { kind: "handoff", decision: "continue" });
+    await waitFor(() => o.get(t.id).status === "done");
+    // The approval covers this run: its next report goes past the cap without asking again.
+    expect(o.requests({ taskId: t.id })).toEqual([]);
+  });
+
+  it("counts every task of the project and holds a step whose estimate would not fit before it starts", async () => {
+    const { o, project, store, adapter } = await setup({ pick: () => [running, say("bitti")], candidates: paid(), config: daily(1) });
+    const earlier = await o.propose({ projectId: project.id, title: "Önceki araştırma" });
+    const t = await o.propose({ projectId: project.id, title: "Araştırma B", pins: { researcher: "deepseek-key" } });
+    const est = t.crew!.members[0]!.chosen!.estimate.usd!;
+    expect(est).toBeGreaterThan(0);
+    // Another task of this project already spent nearly all of today's cap, on another key.
+    ledger(store, earlier.id, 1 - est / 2);
+    await o.approve({ taskId: t.id });
+
+    const q = await waitFor(() => o.requests({ taskId: t.id }).find((r) => r.kind === "handoff"));
+    expect(q.payload).toMatchObject({ trigger: "budget", cap: { kind: "project_daily", capUsd: 1, estimateUsd: est } });
+    expect(adapter.started).toEqual([]);
+    await o.answer(q.id, { kind: "handoff", decision: "continue" });
+    await waitFor(() => o.get(t.id).status === "done");
+    expect(adapter.started.map((s) => s.role)).toEqual(["researcher"]);
+  });
+
+  it("never holds a run that spends nothing the ledger sees: a plan sign-in, or a key without a ledger entry", async () => {
+    const plan = candidate("plan-a", "openai", model("gpt-5"), "plan_signin");
+    const { o, project, adapter } = await setup({ pick: () => [running, usageOf(1_000_000), say("bitti")], candidates: [...paid(), plan], config: daily(0) });
+    const a = await o.propose({ projectId: project.id, title: "Araştırma A", pins: { researcher: "plan-a" } });
+    const b = await o.propose({ projectId: project.id, title: "Araştırma B", pins: { researcher: "openai-key" } });
+    await o.approve({ taskId: a.id });
+    await o.approve({ taskId: b.id });
+    await waitFor(() => o.get(a.id).status === "done" && o.get(b.id).status === "done");
+    expect(o.requests({ taskId: a.id, includeAnswered: true })).toEqual([]);
+    expect(o.requests({ taskId: b.id, includeAnswered: true })).toEqual([]);
+    expect(adapter.started).toHaveLength(2);
+  });
+
+  it("asks first before an unpriced run in a project with a daily cap, and not in a project without one", async () => {
+    const mystery = (): Candidate[] => [...CANDIDATES(), { ...candidate("mystery-key", "custom", null), credentialId: "cred-m" }];
+    const capped = await setup({ pick: () => [running, usageOf(1_000), say("bitti")], candidates: mystery(), config: daily(10) });
+    const t = await capped.o.propose({ projectId: capped.project.id, title: "Araştırma A", pins: { researcher: "mystery-key" } });
+    // The project file also gives the task a budget; without it, the daily cap alone must ask.
+    capped.store.db.prepare("update tasks set budget_usd = null where id = ?").run(t.id);
+    await capped.o.approve({ taskId: t.id });
+    const q = await waitFor(() => capped.o.requests({ taskId: t.id }).find((r) => r.kind === "handoff"));
+    expect(q.payload).toMatchObject({ kind: "handoff", trigger: "unpriced", unpriced: { caps: ["project_daily"] } });
+    expect(capped.adapter.started).toEqual([]);
+    await expect(capped.o.resume(capped.o.get(t.id).runs[0]!.id)).rejects.toThrow("run.price_unknown");
+    await capped.o.answer(q.id, { kind: "handoff", decision: "continue" });
+    await waitFor(() => capped.o.get(t.id).status === "done");
+    expect(capped.o.requests({ taskId: t.id })).toEqual([]);
+
+    // A folder added without setup has no project file, so no cap was ever set for it.
+    const bare = await setup({ pick: () => [running, usageOf(1_000), say("bitti")], candidates: mystery() });
+    const u = await bare.o.propose({ projectId: bare.project.id, title: "Araştırma A", pins: { researcher: "mystery-key" } });
+    await bare.o.approve({ taskId: u.id });
+    await waitFor(() => bare.o.get(u.id).status === "done");
+    expect(bare.o.requests({ taskId: u.id, includeAnswered: true })).toEqual([]);
+  });
+
+  it("keeps fallbacks off paid keys while the cap is used up: Change AI refuses one, the Inbox offers only free targets", async () => {
+    const plans = [candidate("plan-a", "openai", model("gpt-5"), "plan_signin"), candidate("plan-b", "google", model("gpt-5"), "plan_signin")];
+    const limit: FakeStep = { emit: { type: "limit.update", window: "5h", usedPct: 100, resetsAt: new Date(Date.now() + 3_600_000).toISOString(), provenance: "reported", reached: true } };
+    const pick: Picker = (_role, req) => (req.profile.id === "plan-a" ? [running, ...question("hold"), limit, { awaitAnswer: "never" }] : [running, say("bitti")]);
+    const { o, project, store } = await setup({ pick, candidates: [...paid(), ...plans], config: daily(0.5) });
+    const earlier = await o.propose({ projectId: project.id, title: "Önceki araştırma" });
+    ledger(store, earlier.id, 0.5);
+    const t = await o.propose({ projectId: project.id, title: "Araştırma A", pins: { researcher: "plan-a" }, fallback: "manual" });
+    await o.approve({ taskId: t.id });
+    const hold = await waitFor(() => o.requests({ taskId: t.id })[0]);
+    const run = o.get(t.id).runs[0]!;
+
+    await expect(o.handoff(run.id, "deepseek-key")).rejects.toThrow("handoff.over_project_daily");
+    await o.answer(hold.id, { kind: "question", answers: [{ selected: ["redis"] }] });
+    const q = await waitFor(() => o.requests({ taskId: t.id }).find((r) => r.kind === "handoff"));
+    if (q.payload.kind !== "handoff") throw new Error("unexpected payload");
+    const offered = q.payload.candidates.map((c) => c.profileId);
+    expect(offered).not.toContain("deepseek-key");
+    expect(offered).toContain("plan-b");
+  });
+});
+
 describe("manual handoff and retry", () => {
   it("hands a step to another AI on request through the durable handoff", async () => {
     let starts = 0;

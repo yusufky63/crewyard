@@ -7,9 +7,9 @@ import { classifyTask } from "./classify.ts";
 import { applyCrewEdits, proposeCrew, sumEstimates, validateCrew, type CrewCheckMember, type CrewProblem } from "./crew.ts";
 import { OrchestratorError } from "./errors.ts";
 import { projectRoles } from "./role-files.ts";
-import type { MemberRow, RequestRow, TaskRow } from "./db.ts";
+import type { MemberRow, ProjectRow, RequestRow, TaskRow } from "./db.ts";
 import type { Candidate } from "./directory.ts";
-import { reachedCaps, spendCredential } from "./spend.ts";
+import { projectDailyCap, projectDailyCapUsd, reachedCaps, spendCredential } from "./spend.ts";
 
 // A task from proposal to cancel (PLAN.md §9): classify it and store a draft crew (no process, no
 // worktree, no network), approve the crew with your edits (remembered as preferences), and
@@ -142,7 +142,7 @@ export class TaskFlow extends Part {
       blockedBy: null,
     }));
     const problem = validateCrew({ members: draft.crew.members.map((m, i) => ({ id: ids[i]!, role: m.role, template: m.template })), views: new Map(draft.crew.members.map((m, i) => [ids[i]!, m.chosen])), candidates: draft.candidates });
-    const hold = this.holdFor(problem, draft.estimate, () => this.previewCap(draft.crew.members.map((m) => m.chosen), draft.candidates, draft.estimate.usd ?? 0, budgetUsd));
+    const hold = this.holdFor(problem, draft.estimate, () => this.previewCap(project, draft.crew.members.map((m) => m.chosen), draft.candidates, draft.estimate.usd ?? 0, budgetUsd));
     return { kind: draft.cls.kind, size: draft.cls.size, mode, classification: draft.cls.reasons, members, estimate: draft.estimate, hold };
   }
 
@@ -218,16 +218,19 @@ export class TaskFlow extends Part {
 
   /**
    * The caps a task that does not exist yet would meet: each paid key's daily and per-task caps,
-   * and the budget it would get. The task has spent nothing, so a fresh id stands in for it.
-   * `start` checks again through Budget against the stored proposal; this is the button's hint.
+   * the project's daily cap, and the budget it would get. The task has spent nothing, so a fresh
+   * id stands in for it. `start` checks again through Budget against the stored proposal; this is
+   * the button's hint.
    */
-  private previewCap(views: Array<CandidateView | null>, candidates: Candidate[], addUsd: number, budgetUsd: number | null): SpendCap | null {
+  private previewCap(project: ProjectRow, views: Array<CandidateView | null>, candidates: Candidate[], addUsd: number, budgetUsd: number | null): SpendCap | null {
     const ghost = randomUUID();
     for (const v of views) {
       const c = v ? candidates.find((x) => x.profile.id === v.profileId) : undefined;
       if (c?.profile.credential.kind !== "api_key") continue;
       const cap = reachedCaps(this.opts.store.db, spendCredential(c), ghost, this.now(), { addUsd })[0];
       if (cap) return cap;
+      const daily = spendCredential(c) === null ? null : projectDailyCap(this.opts.store.db, project.id, projectDailyCapUsd(project), this.now(), { addUsd });
+      if (daily) return daily;
       if (budgetUsd !== null && addUsd > budgetUsd) return { kind: "task_budget", spentUsd: 0, capUsd: budgetUsd, credentialId: null, estimateUsd: addUsd };
     }
     return null;

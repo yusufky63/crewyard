@@ -43,12 +43,13 @@ export function sameProviderAccounts(source: Candidate, all: Candidate[]): Candi
 
 /**
  * The stops a switch acts on. A task budget is not one: a second key does not make the task's
- * budget bigger. Neither is a model without a price, a crash or a transient error.
+ * budget bigger. Nor is the project's daily cap, which counts every key of the project together.
+ * Neither is a model without a price, a crash or a transient error.
  */
 export function switchTrigger(info: { trigger: string; failure?: string; cap?: SpendCap | null }): AccountSwitchTrigger | null {
   if (info.failure === "credit") return "credit";
   if (info.trigger === "limit") return "limit";
-  if (info.trigger === "budget" && info.cap && info.cap.kind !== "task_budget") return "spend_cap";
+  if (info.trigger === "budget" && info.cap && info.cap.kind !== "task_budget" && info.cap.kind !== "project_daily") return "spend_cap";
   return null;
 }
 
@@ -70,6 +71,8 @@ export interface SwitchFacts {
   leftBefore: boolean;
   /** Its key is at its daily or per-task cap. */
   overCap: boolean;
+  /** It spends on a paid key and the project's daily cap over every key is used up. */
+  overProjectCap: boolean;
   /** The task budget is spent and this account costs money. */
   overBudget: boolean;
   headroom: Headroom;
@@ -88,6 +91,7 @@ export function refusalOf(f: SwitchFacts): AccountSwitchRefusal | null {
   if (!f.independent) return "independence";
   if (f.leftBefore) return "left_before";
   if (f.overCap) return "over_cap";
+  if (f.overProjectCap) return "project_daily";
   if (f.overBudget) return "over_budget";
   if (f.headroom.pct !== null && f.headroom.pct <= MIN_HEADROOM) return "headroom_low";
   return null;
@@ -291,6 +295,7 @@ export function sourceOf(trigger: AccountSwitchTrigger, info: { window: AccountS
 export interface AccountSwitcherDeps {
   avoidFor(member: MemberRow): { models: Set<string>; providers: Set<string> };
   performHandoff(sourceRunId: string, target: CandidateView, trigger: HandoffTrigger, opts?: { mode?: FallbackMode; onClaim?: (handoffId: string) => void }): Promise<void>;
+  projectCap(projectId: string, candidate: Candidate | undefined, opts?: { addUsd?: number; excludeRunId?: string | null }): SpendCap | null;
 }
 
 export class AccountSwitcher extends Part {
@@ -340,6 +345,7 @@ export class AccountSwitcher extends Part {
         independent: !avoid.models.has(modelKey(c)),
         leftBefore: left.has(accountOf(c)!),
         overCap: reachedCaps(this.opts.store.db, spendCredential(c), root, this.now(), { excludeRunId: run.id }).length > 0,
+        overProjectCap: this.deps.projectCap(project.id, c, { excludeRunId: run.id }) !== null,
         overBudget: budget !== null && view.estimate.usd !== 0 && spent >= budget,
         headroom: view.headroom,
       });
