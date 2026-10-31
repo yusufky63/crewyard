@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
 import { AUTOPILOT_BOUNDS, type AutopilotLimits, type AutopilotLogEntry } from "@crewyard/core";
 import { Button, Label, ProvenanceBadge } from "@crewyard/ui";
-import { useNav } from "../../nav.ts";
+import { openTask } from "./assistant/openTask.ts";
 import { act, useWork } from "./data.ts";
 
 // DESIGN.md `Autopilot` (docs/adr/0017): the strip under the task assistant's header. Off by
@@ -73,7 +73,12 @@ export function AutopilotStrip({ projectId }: { projectId: string }) {
             <span className="muted num">{t("usage.active", { n: v.usage.active, cap: v.limits.concurrent })}</span>
           </span>
         )}
-        {!v.enabled && !asking && <span className="muted ap-lead">{t("lead")}</span>}
+        {/* One line, so the strip leaves the conversation room; the consent card spells it all out. */}
+        {!v.enabled && !asking && (
+          <span className="muted ap-lead" title={t("lead")}>
+            {t("lead")}
+          </span>
+        )}
         <div className="end">
           {v.enabled ? (
             <>
@@ -81,23 +86,23 @@ export function AutopilotStrip({ projectId }: { projectId: string }) {
                 {t("limits.edit")}
               </Button>
               {v.halted ? (
-                <Button size="sm" onClick={() => void save({ enabled: true })}>
+                <Button size="sm" tone="ok" onClick={() => void save({ enabled: true })}>
                   {t("halted.again")}
                 </Button>
               ) : null}
-              <Button size="sm" onClick={() => void save({ enabled: false })}>
+              <Button size="sm" tone="warn" onClick={() => void save({ enabled: false })}>
                 {t("off")}
               </Button>
             </>
           ) : (
-            <Button size="sm" onClick={() => (v.consentAt ? void save({ enabled: true }) : setAsking(true))} disabled={asking}>
+            <Button size="sm" tone="ok" onClick={() => (v.consentAt ? void save({ enabled: true }) : setAsking(true))} disabled={asking}>
               {v.consentAt ? t("on") : t("onFirst")}
             </Button>
           )}
         </div>
       </div>
 
-      {v.killed && <p className="banner banner-warn ap-banner">{t("killed")}</p>}
+      {v.killed && <p className="banner banner-bad ap-banner">{t("killed")}</p>}
       {v.halted && (
         <p className="banner banner-warn ap-banner">
           {t("halted.text")}
@@ -131,6 +136,7 @@ export function AutopilotStrip({ projectId }: { projectId: string }) {
           </div>
           <LimitsForm
             limits={v.limits}
+            tone="ok"
             submit={t("consent.accept")}
             cancel={t("consent.cancel")}
             onCancel={() => setAsking(false)}
@@ -167,7 +173,7 @@ export function AutopilotStrip({ projectId }: { projectId: string }) {
           </summary>
           <ol aria-labelledby={ids.log}>
             {v.log.map((e) => (
-              <LogLine key={e.seq} e={e} />
+              <LogLine key={e.seq} e={e} projectId={projectId} />
             ))}
           </ol>
         </details>
@@ -177,7 +183,8 @@ export function AutopilotStrip({ projectId }: { projectId: string }) {
   );
 }
 
-function LimitsForm({ limits, submit, cancel, onSubmit, onCancel }: { limits: AutopilotLimits; submit: string; cancel: string; onSubmit(l: AutopilotLimits): void | Promise<void>; onCancel(): void }) {
+/** `tone`: the consent's `Turn on` changes state and takes the ok tone; saving limits stays primary. */
+function LimitsForm({ limits, submit, cancel, onSubmit, onCancel, tone }: { limits: AutopilotLimits; submit: string; cancel: string; onSubmit(l: AutopilotLimits): void | Promise<void>; onCancel(): void; tone?: "ok" }) {
   const { t } = useTranslation("autopilot");
   const [draft, setDraft] = useState<Record<keyof AutopilotLimits, string>>(() => Object.fromEntries(LIMIT_KEYS.map((k) => [k, String(limits[k])])) as Record<keyof AutopilotLimits, string>);
   const parsed: AutopilotLimits = { perTaskUsd: Number(draft.perTaskUsd), perDayUsd: Number(draft.perDayUsd), tasksPerHour: Number(draft.tasksPerHour), concurrent: Number(draft.concurrent) };
@@ -198,7 +205,7 @@ function LimitsForm({ limits, submit, cancel, onSubmit, onCancel }: { limits: Au
       ))}
       <div className="ap-limits-acts">
         {!valid && <span className="tk-small ap-invalid">{t("limits.invalid")}</span>}
-        <Button size="sm" variant="primary" type="submit" disabled={!valid}>
+        <Button size="sm" variant={tone ? "secondary" : "primary"} tone={tone} type="submit" disabled={!valid}>
           {submit}
         </Button>
         <Button size="sm" variant="ghost" type="button" onClick={onCancel}>
@@ -209,18 +216,17 @@ function LimitsForm({ limits, submit, cancel, onSubmit, onCancel }: { limits: Au
   );
 }
 
-function LogLine({ e }: { e: AutopilotLogEntry }) {
+function LogLine({ e, projectId }: { e: AutopilotLogEntry; projectId: string }) {
   const { t, i18n } = useTranslation("autopilot");
-  const selectTask = useNav((s) => s.selectTask);
   const time = new Intl.DateTimeFormat(i18n.language, { hour: "2-digit", minute: "2-digit" }).format(new Date(e.at));
   return (
     <li className={`ap-entry ap-${e.outcome}`}>
       <span className="muted num">{time}</span>
       <span className="ap-what">
         <span>{t(`log.action.${e.action}`, { defaultValue: e.action })}</span>
-        {e.outcome === "refused" && <span className="badge ap-refused-badge">{t("log.refused", { code: t(`refusal.${e.code ?? "failed"}`, { defaultValue: e.code ?? "" }) })}</span>}
+        {e.outcome === "refused" && <span className="badge badge-bad ap-refused-badge">{t("log.refused", { code: t(`refusal.${e.code ?? "failed"}`, { defaultValue: e.code ?? "" }) })}</span>}
         {e.taskId && e.taskTitle && (
-          <button type="button" className="ap-link as-typed" onClick={() => selectTask(e.taskId!)}>
+          <button type="button" className="ap-link as-typed" onClick={() => openTask(e.taskId!, projectId)}>
             {e.taskTitle}
           </button>
         )}
