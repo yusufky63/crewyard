@@ -1,0 +1,110 @@
+{
+  "label": "Task assistant",
+  "title": "Task assistant",
+  "runningOn": "The profile, runner and model this conversation runs on",
+  "profile": "Profile",
+  "noProfiles": "No profile yet: add one in Providers",
+  "unavailable": {
+    "not_ready": "not signed in or no key",
+    "no_read_only": "cannot run read-only",
+    "no_mcp": "cannot take Crewyard's tools",
+    "no_adapter": "runner not supported"
+  },
+  "new": "New conversation",
+  "close": "Stop and close",
+  "closeTitle": "Closing stops the assistant. The conversation and drafts stay; your next message resumes it.",
+  "conversation": "Conversation with the task assistant",
+  "empty": {
+    "lead": "Describe what you want done or found out. The assistant reads the project, asks when something is unclear, and drafts tasks you can edit.",
+    "example": "For example: \"The Windows build got slow and CI reinstalls everything. Find out why and plan a fix.\""
+  },
+  "failed": "Failed",
+  "placeholder": "Describe the work or a question to research",
+  "input": "Message to the task assistant",
+  "send": "Send",
+  "keys": "Enter sends · Shift Enter adds a line · Esc stops and closes",
+  "note": "Read-only: it never edits files or starts runs. Spend counts against the profile's key. Stops after {{minutes}} min idle.",
+  "you": "You",
+  "agent": "Agent",
+  "truncated": "[cut at 32 KB]",
+  "queued": "Waits for the reply",
+  "state": {
+    "idle": "Stopped",
+    "starting": "Starting",
+    "working": "Working",
+    "waiting": "Your turn"
+  },
+  "spend": {
+    "title": "What this conversation spent on the profile's key; it counts against the key's daily cap",
+    "planTitle": "A plan sign-in or local model: tokens count against the plan, not in dollars",
+    "tokens": "{{tokens}} tokens",
+    "plan": "Plan",
+    "noPrice": "no price",
+    "estimated": "Estimated",
+    "reported": "Reported",
+    "unknown": "Unknown"
+  },
+  "notice": {
+    "denied": "Refused a request to write, run a command or use the network: the assistant is read-only.",
+    "question_cancelled": "The agent tried to ask through a dialog; it was told to ask in its reply instead.",
+    "undelivered": "Messages still waiting were not sent: the session ended first.",
+    "ended": {
+      "closed": "Stopped: you closed the panel. Your next message resumes it.",
+      "ended": "The runner ended the session. Your next message starts it again.",
+      "idle": "Stopped after sitting idle. Your next message resumes it.",
+      "cleared": "Started a new conversation.",
+      "daily_cap": "Stopped: the key reached its daily cap.",
+      "failed": "The session failed.",
+      "no_profile": "Stopped: the profile is gone.",
+      "not_eligible": "Stopped: the profile can no longer run the assistant.",
+      "admission": "Could not start: no free slot.",
+      "shutdown": "Stopped: Crewyard closed."
+    }
+  },
+  "announce": {
+    "replied_one": "The assistant replied. {{count}} draft is waiting for you.",
+    "replied_other": "The assistant replied. {{count}} drafts are waiting for you."
+  },
+  "drafts": {
+    "label": "Task drafts",
+    "title": "Drafts",
+    "empty": "Drafts the assistant proposes appear here. Nothing starts until you add one and approve its crew.",
+    "proposed": "Proposed draft",
+    "cardLabel": "Draft {{n}}: {{title}}",
+    "fieldTitle": "Title",
+    "fieldKind": "Kind",
+    "fieldSize": "Size",
+    "sizeNone": "Detect",
+    "fieldDescription": "Description",
+    "fieldCriteria": "Acceptance criteria, one per line",
+    "fieldQuestions": "Questions to answer, one per line",
+    "criteriaHint": "One per line",
+    "add": "Add as draft",
+    "adding": "Adding…",
+    "discard": "Discard",
+    "added": "Added to Tasks. Its crew waits for your approval.",
+    "open": "Open task"
+  },
+  "errors": {
+    "assistant_closed": "Crewyard is shutting down.",
+    "assistant_message_empty": "Write a message first.",
+    "assistant_message_too_long": "That message is over 8 KB. Shorten it or split it.",
+    "assistant_profile_in_use": "The assistant is running on another profile. Stop it first to switch.",
+    "assistant_stopping": "The assistant is stopping. Send again in a moment.",
+    "assistant_no_profile": "That profile no longer exists.",
+    "assistant_unavailable_not_ready": "That profile is not signed in or has no key.",
+    "assistant_unavailable_no_read_only": "That profile's runner cannot run read-only.",
+    "assistant_unavailable_no_mcp": "That profile's runner cannot take Crewyard's tools, so it could not propose drafts.",
+    "assistant_unavailable_no_adapter": "Crewyard cannot run that profile's runner.",
+    "assistant_daily_cap": "The key reached its daily cap. Raise the cap in Providers or pick another profile.",
+    "admission_global_slots": "Every agent slot is in use. Try again when a run finishes.",
+    "admission_profile_busy": "That profile already runs as many agents as it may.",
+    "admission_memory": "Not enough free memory to start another agent.",
+    "assistant_draft_discarded": "That draft was discarded.",
+    "assistant_draft_added": "That draft is already a task.",
+    "assistant_draft_invalid": "Check the draft: a one-line title of at most 120 bytes, at most 12 short criteria.",
+    "assistant_draft_not_found": "That draft no longer exists.",
+    "project_not_found": "The project is gone.",
+    "other": "Something went wrong: {{message}}"
+  }
+}

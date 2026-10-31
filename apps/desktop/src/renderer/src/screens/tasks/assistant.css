@@ -1,0 +1,59 @@
+/* Task assistant (DESIGN.md TaskAssistant, docs/adr/0014): terminal-style, mono and calm, not a fake shell. */
+.as-panel { margin-top: 16px; padding: 0; }
+.as-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px 10px 16px; border-bottom: 1px solid var(--line); }
+.as-head .end { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.as-run { display: inline-flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.as-run svg { flex: none; color: var(--ink-2); }
+.as-state { display: inline-flex; align-items: center; gap: 6px; font: 500 var(--font-size-label) / 1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+.as-state-working, .as-state-starting { color: var(--accent); }
+.as-state-waiting { color: var(--ink-2); }
+.as-spend { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink); }
+
+/* Conversation | drafts. The drafts column keeps a tile's width; narrow windows stack them. */
+.as-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 36%); min-height: 0; }
+@media (max-width: 1279px) { .as-body { grid-template-columns: minmax(0, 1fr); } .as-drafts { border-left: 0; border-top: 1px solid var(--line); } }
+.as-term { display: grid; grid-template-rows: auto auto auto auto; min-width: 0; }
+.as-log {
+  height: clamp(220px, 42vh, 460px); overflow-y: auto; padding: 12px 16px; background: var(--sunken);
+  font-size: 13px; line-height: 1.55; color: var(--ink); overflow-wrap: anywhere;
+}
+.as-log:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.as-hint { color: var(--ink-2); max-width: var(--layout-measure); }
+.as-hint p { margin: 0 0 6px; }
+.as-line { display: grid; grid-template-columns: 7ch minmax(0, 1fr) auto; column-gap: 10px; align-items: baseline; margin: 0 0 8px; }
+.as-who { color: var(--ink-3); text-transform: uppercase; font-size: var(--font-size-label); letter-spacing: 0.08em; }
+.as-text { white-space: pre-wrap; min-width: 0; }
+.as-user .as-who { color: var(--accent); }
+.as-user .as-text { color: var(--ink); }
+.as-reply .as-text { color: var(--ink); }
+.as-tool { color: var(--ink-3); margin-bottom: 4px; }
+.as-tool .as-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.as-notice { display: block; color: var(--ink-3); border-top: 1px dashed var(--tick); padding-top: 6px; }
+.as-fail .as-who, .as-fail .as-text { color: var(--bad); }
+
+.as-input { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: 8px; padding: 10px 12px 10px 16px; border-top: 1px solid var(--line); background: var(--sunken); }
+.as-prompt { color: var(--accent); font-size: 13px; line-height: 1.55; padding-top: 1px; }
+.as-input textarea { resize: vertical; min-height: 40px; border: 0; background: none; outline: 0; color: var(--ink); font-size: 13px; line-height: 1.55; }
+.as-input textarea::placeholder { color: var(--ink-3); }
+.as-input textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.as-foot { display: flex; gap: 8px 16px; flex-wrap: wrap; justify-content: space-between; padding: 8px 16px 12px; }
+.as-term > .tk-error { margin: 0 16px 12px; }
+
+.as-drafts { border-left: 1px solid var(--line); padding: 12px; display: flex; flex-direction: column; gap: 10px; max-height: calc(clamp(220px, 42vh, 460px) + 120px); overflow-y: auto; min-width: 0; }
+.as-drafts-head { display: flex; align-items: center; gap: 8px; }
+.as-drafts-empty { font-size: 13px; margin: 0; }
+.as-draft { padding: 12px; display: grid; gap: 8px; }
+.as-draft-added { background: var(--canvas); border-style: dashed; }
+.as-draft-top { display: flex; align-items: center; gap: 8px; }
+.as-draft-title { margin: 0; font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+.as-draft-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.as-field { display: grid; gap: 4px; min-width: 0; }
+.as-field input, .as-field select, .as-field textarea {
+  width: 100%; min-width: 0; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink);
+  font-size: 13px; padding: 5px 7px; outline: 0;
+}
+.as-field input, .as-field select { height: 30px; }
+.as-field textarea { resize: vertical; line-height: 1.45; font-family: inherit; }
+.as-field select option { background: var(--surface); color: var(--ink); }
+.as-field :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.as-draft-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }

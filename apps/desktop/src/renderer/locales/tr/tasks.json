@@ -34,6 +34,9 @@
     "budgetNone": "yok",
     "propose": "Ekip öner",
     "proposing": "Öneriliyor…",
+    "assistant": "Asistan",
+    "assistantClose": "Asistanı kapat",
+    "assistantTitle": "Görevleri salt okunur bir ajanla sohbet ederek planla ({{keys}})",
     "note": "Öneri yalnızca bir ekip taslağı çıkarır. Siz onaylamadan hiçbir şey başlamaz."
   },
   "kind": { "auto": "Algıla", "code": "Kod", "research": "Araştırma", "review": "İnceleme", "docs": "Belge" },

@@ -40,6 +40,8 @@ export const SHORTCUTS = [
   { id: "list.next", group: "lists", chords: [{ key: "j" }] },
   { id: "list.prev", group: "lists", chords: [{ key: "k" }] },
   { id: "submit", group: "tasks", chords: [{ key: "Enter", ctrl: true }] },
+  { id: "assistant", group: "tasks", chords: [{ key: "a", ctrl: true, shift: true }] },
+  { id: "assistant.send", group: "tasks", chords: [{ key: "Enter" }] },
   { id: "graph.full", group: "graph", chords: [{ key: "f" }] },
   { id: "graph.menu", group: "graph", chords: [{ key: "F10", shift: true }, { key: "ContextMenu" }] },
   { id: "graph.move", group: "graph", chords: arrows.map((key) => ({ key, alt: true })), display: [["Alt", "←", "↑", "→", "↓"]] },
