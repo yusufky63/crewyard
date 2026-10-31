@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { CircleAlert, CircleHelp, CircleX, FileText, GitBranch, GitMerge, ListChecks, Terminal } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -605,7 +605,16 @@ export function GoalView({ goal, requests, offline = false, keyboard = false, on
     },
     keyboard,
   );
-  const toggle = (s: Exclude<Slot, null>) => setSlot((cur) => (cur === s ? null : s));
+  // Esc or Cancel in a form returns focus to the button that opened it (keyboard pass).
+  const opener = useRef<HTMLElement | null>(null);
+  const toggle = (s: Exclude<Slot, null>, e: MouseEvent<HTMLElement>) => {
+    opener.current = e.currentTarget;
+    setSlot((cur) => (cur === s ? null : s));
+  };
+  const close = () => {
+    setSlot(null);
+    opener.current?.focus();
+  };
   const approved = goal.approvedRevision !== null;
 
   return (
@@ -650,16 +659,16 @@ export function GoalView({ goal, requests, offline = false, keyboard = false, on
             {g.t("action.pause")}
           </Button>
         )}
-        <Button size="sm" aria-expanded={slot === "add"} disabled={locked || !approved} onClick={() => toggle("add")}>
+        <Button size="sm" aria-expanded={slot === "add"} disabled={locked || !approved} onClick={(e) => toggle("add", e)}>
           {g.t("action.addTask")}
         </Button>
-        <Button size="sm" aria-expanded={slot === "replan"} disabled={locked || !approved || goal.replansLeft <= 0} onClick={() => toggle("replan")}>
+        <Button size="sm" aria-expanded={slot === "replan"} disabled={locked || !approved || goal.replansLeft <= 0} onClick={(e) => toggle("replan", e)}>
           {goal.replansLeft > 0 ? g.t("action.replan", { count: goal.replansLeft }) : g.t("action.replanNone")}
         </Button>
-        <Button size="sm" aria-expanded={slot === "limits"} variant="ghost" disabled={locked || !approved} onClick={() => toggle("limits")}>
+        <Button size="sm" aria-expanded={slot === "limits"} variant="ghost" disabled={locked || !approved} onClick={(e) => toggle("limits", e)}>
           {g.t("action.more")}
         </Button>
-        <Button size="sm" variant="danger" aria-expanded={slot === "stop"} disabled={locked} onClick={() => toggle("stop")}>
+        <Button size="sm" variant="danger" aria-expanded={slot === "stop"} disabled={locked} onClick={(e) => toggle("stop", e)}>
           {g.t("action.stop")}
         </Button>
         {goal.status === "ready_for_review" && goal.integration && (
@@ -677,10 +686,10 @@ export function GoalView({ goal, requests, offline = false, keyboard = false, on
         )}
       </div>
       {goal.status === "ready_for_review" && <p className="gv-note st-ok">{g.t("view.readyForPr")}</p>}
-      {slot === "add" && <AddTaskForm goal={goal} apply={apply} onDone={() => setSlot(null)} />}
-      {slot === "replan" && <ReplanForm goal={goal} apply={apply} cost={replanCost} onDone={() => setSlot(null)} />}
-      {slot === "stop" && <StopConfirm goal={goal} apply={apply} onDone={() => setSlot(null)} />}
-      {slot === "limits" && <LimitsForm goal={goal} apply={apply} onDone={() => setSlot(null)} />}
+      {slot === "add" && <AddTaskForm goal={goal} apply={apply} onDone={close} />}
+      {slot === "replan" && <ReplanForm goal={goal} apply={apply} cost={replanCost} onDone={close} />}
+      {slot === "stop" && <StopConfirm goal={goal} apply={apply} onDone={close} />}
+      {slot === "limits" && <LimitsForm goal={goal} apply={apply} onDone={close} />}
       <ErrorLine>{error}</ErrorLine>
 
       {needs.length > 0 && (
