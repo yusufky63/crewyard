@@ -30,7 +30,7 @@ import { compactionOf, errorText, exportSession, importSession, isNotFound, usag
 import { createOpencodeClient, type Event as OpenCodeEvent, type Message, type OpencodeClient, type PermissionRequest, type SessionStatus } from "@opencode-ai/sdk/v2";
 import { openCodeParts } from "./input.ts";
 import { OpenCodeMapper, type EventBody } from "./mapper.ts";
-import { isUserMcpPermission, mcpConfig, mcpPermissionRules, withMcpConfig } from "./mcp.ts";
+import { isUserMcpPermission, mcpConfig, mcpPermissionRules, withInstructions, withMcpConfig } from "./mcp.ts";
 import { mustReject, permissionRules } from "./policy.ts";
 import { EventQueue } from "./queue.ts";
 import { basicAuth, childEnv, launchServer, providerConfigEnv, type OpenCodeServer } from "./server.ts";
@@ -455,7 +455,7 @@ export class OpenCodeAdapter implements AgentAdapter {
     // The run's MCP servers ride in the inline config; it then holds the report ticket and server
     // secrets, so the env guard hides the whole variable from the agent's commands (docs/adr/0007).
     const mcp = mcpConfig(req.mcpServers ?? []);
-    const extraEnv = withMcpConfig(providerEnv(req), mcp);
+    const extraEnv = withInstructions(withMcpConfig(providerEnv(req), mcp), req.instructionFiles);
     const server = await launchServer({ executable, prefixArgs: this.opts.prefixArgs, cwd: req.cwd, configDir: req.profile.configDir, env: req.env, extraEnv, hidden: Object.keys(mcp).length ? ["OPENCODE_CONFIG_CONTENT"] : [], readyTimeoutMs: this.opts.readyTimeoutMs });
     const client = createOpencodeClient({ baseUrl: server.url, directory: req.cwd, headers: { Authorization: basicAuth(server.password) }, throwOnError: true });
     const runId = `opencode-${randomUUID()}`;

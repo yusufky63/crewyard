@@ -5,7 +5,8 @@ import { isAbsolute } from "node:path";
 // A packaged build refuses it: the variables are deleted before the daemon inherits the env, so
 // an installed app can never be started against fake profiles.
 
-export const E2E_VARS = ["CREWYARD_E2E", "CREWYARD_E2E_SCRIPT", "CREWYARD_E2E_PROFILE"] as const;
+// CREWYARD_E2E_HOME stands in for your home folder when discovering agent files (docs/adr/0015).
+export const E2E_VARS = ["CREWYARD_E2E", "CREWYARD_E2E_SCRIPT", "CREWYARD_E2E_PROFILE", "CREWYARD_E2E_HOME"] as const;
 
 export type E2eMode = { enabled: false; refused: boolean } | { enabled: true; refused: false; profile: string };
 

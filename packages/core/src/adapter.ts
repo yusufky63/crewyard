@@ -215,6 +215,12 @@ export interface StartRequest {
    * secrets, passed to the server's process only and never logged.
    */
   mcpServers?: McpServerSpec[];
+  /**
+   * Project instruction files in another tool's format that this run should also follow, relative
+   * to `cwd` and present there (the project bridge, docs/adr/0015). Each adapter hands them over
+   * through its runner's own setting where one exists and ignores the rest; they never widen policy.
+   */
+  instructionFiles?: string[];
 }
 
 export interface OutputSchema {

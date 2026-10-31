@@ -49,6 +49,17 @@ export function mcpPermissionRules(specs: readonly McpServerSpec[], policy: Role
   return rules;
 }
 
+/**
+ * The project bridge for OpenCode (docs/adr/0015): its `instructions` config takes extra instruction
+ * files, relative to the project (opencode.ai/docs/rules), in 1.x and in 2.x. Relative names keep a
+ * project path with spaces or brackets out of OpenCode's glob matching. Merged into the inline config.
+ */
+export function withInstructions(extra: Record<string, string>, files: readonly string[] | undefined): Record<string, string> {
+  if (!files || files.length === 0) return extra;
+  const base = extra.OPENCODE_CONFIG_CONTENT ? (JSON.parse(extra.OPENCODE_CONFIG_CONTENT) as Record<string, unknown>) : {};
+  return { ...extra, OPENCODE_CONFIG_CONTENT: JSON.stringify({ ...base, instructions: files.map((f) => f.split("\\").join("/")) }) };
+}
+
 /** Merges the MCP block into the launch's inline config (OPENCODE_CONFIG_CONTENT), keeping the provider block. */
 export function withMcpConfig(extra: Record<string, string>, block: Record<string, unknown>): Record<string, string> {
   if (Object.keys(block).length === 0) return extra;

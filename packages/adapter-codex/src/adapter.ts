@@ -521,6 +521,8 @@ export class CodexAdapter implements AgentAdapter {
     const mcp = mcpPlan(req.mcpServers ?? [], req.policy);
     params.config = { "agents.enabled": false, ...QUESTIONS_IN_DEFAULT_MODE, ...shellEnvPolicy({ ...req.env, ...mcp.env }), ...mcp.config };
     if (!readOnly && req.policy.network === "allowed") params.config.sandbox_workspace_write = { network_access: true };
+    const fallback = projectDocFallback(req.instructionFiles);
+    if (fallback) params.config.project_doc_fallback_filenames = fallback;
     return params;
   }
 
@@ -852,4 +854,14 @@ export function compareVersions(a: string, b: string): number {
     if (d !== 0) return Math.sign(d);
   }
   return 0;
+}
+
+/**
+ * The project bridge for Codex (docs/adr/0015): `project_doc_fallback_filenames` names files read
+ * in a folder that has no AGENTS.md (learn.chatgpt.com/docs/agent-configuration/agents-md). It takes
+ * file names, never paths, so a bridged path is left out.
+ */
+export function projectDocFallback(files: readonly string[] | undefined): string[] | null {
+  const names = (files ?? []).filter((f) => !/[\\/]/.test(f) && f.toLowerCase() !== "agents.md");
+  return names.length > 0 ? names : null;
 }
