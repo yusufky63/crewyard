@@ -10,6 +10,7 @@ import type { McpIpc } from "./ipc/mcp.ts";
 import type { RolesIpc } from "./ipc/roles.ts";
 import type { PreviewIpc } from "./ipc/preview.ts";
 import type { ActivityIpc } from "./ipc/activity.ts";
+import type { AgentFilesIpc } from "./ipc/agentfiles.ts";
 
 // Typed contract between the renderer and the daemon. The main process only relays messages;
 // it never interprets them. Add a method here first, then implement it in packages/daemon.
@@ -107,7 +108,7 @@ export interface ScanResult {
 }
 
 /** Base methods live here; each area adds its own in src/ipc/<area>.ts so parallel work never edits this list. */
-export interface IpcMethods extends TasksIpc, ProvidersIpc, GithubIpc, SetupIpc, CrewIpc, SettingsIpc, WorktreesIpc, UsageIpc, McpIpc, RolesIpc, PreviewIpc, ActivityIpc {
+export interface IpcMethods extends TasksIpc, ProvidersIpc, GithubIpc, SetupIpc, CrewIpc, SettingsIpc, WorktreesIpc, UsageIpc, McpIpc, RolesIpc, PreviewIpc, ActivityIpc, AgentFilesIpc {
   "daemon.status": { params: void; result: DaemonStatus };
   "machine.check": { params: void; result: MachineReport };
   /** One tool at a time, so slow CLIs (gemini --version takes ~6 s) don't hold up the others. */

@@ -78,6 +78,7 @@ function useCreate(det: FolderDetection | undefined) {
         if (id === "ci") await call("setup.writeCiTemplate", { path: d.path, branch, build: d.build.trim() || null, test: d.test.trim() || null });
         if (id === "config") {
           const { project } = await call("setup.create", { path: d.path, config: buildConfig(d, remote), replaceInvalid });
+          if (d.bridgeInstructions) await call("agentfiles.bridgeSet", { projectId: project.id, enabled: true });
           mark(id, "ok");
           await qc.invalidateQueries({ queryKey: ["projects.list"] });
           await qc.invalidateQueries({ queryKey: ["projects.scan"] });

@@ -122,6 +122,7 @@ Electron, React 19, TypeScript, Vite, TanStack Router and Query, Zustand, `@xyfl
 | `handoffs` | from run, to run, reason, package path, mode (`native_resume` / `new_session`), outcome |
 | `account_switches` | same-provider account switches (§8.3): from run, from and to profile, trigger, the numbers on both sides with provenance, accounts passed over, handoff |
 | `events` | append-only: seq, at, project, task, run, kind, source, redacted payload, dedupe key |
+| `agentfile_shares`, `agentfile_copies`, `agentfile_bridges` | your own agent files shared into profile folders (item, runner, one profile or all, scripts allowed), each copy's source and written hashes, and the per-project instruction bridge (§6.2) |
 
 ## 5. Agent adapters
 
@@ -217,6 +218,7 @@ Open, because it needs the orchestrator: the run view does not carry `capabiliti
   - **Not covered:** a runner process necessarily holds its own key. An agent that can read that process's memory, or that runs a tool which talks to the provider through the runner, is outside what environment rules can stop.
 - **What the UI shows:** alias, runner, plan label, last probe time, never a key or token.
 - **Shared settings across accounts:** copied, not symlinked (symlinks need Developer Mode on Windows).
+- **Your own agent files:** instruction files, skills and commands you wrote for any runner or for Cursor, Windsurf, Copilot or Cline reach a profile only as copies you chose, and a project's instruction file reaches the other runners only through the bridge you turn on (§6.2, [ADR 0015](docs/adr/0015-agent-files-and-skills.md)).
 - **Before sharing the app:** check OpenAI's terms for ChatGPT sign-in through the Codex app-server (its docs describe embedding Codex in other products) and Google's terms for Gemini CLI sign-in in a third-party app. Neither was verified in this plan.
 - **Same-provider account switching** (for example Codex · work → Codex · personal when one hits its limit) works by hand from the Inbox, and automatically once you turn it on: Settings → Fallback, off by default, and turning it on shows the provider-terms note once. The rules are in §8.3 and [ADR 0009](docs/adr/0009-same-provider-auto-switch.md). Auto mode alone never moves to another account of the same provider. Automatic fallback to a *different* agent or provider (§8.1) does not need this setting.
 
@@ -259,6 +261,16 @@ The first snapshot, `catalog/providers.json`, was built on 2026-10-29 from model
   - Google's list still names models it refuses to new API users. For example, gemini-2.5-flash-lite answers 404 "no longer available to new users".
   - So for Gemini, each listed catalog model also gets one `countTokens` call. That call ran with a key that had no credit left, so it is not billed. A 404 leaves the model out of the key's list. `Check speed` is a warm-up plus one timed GET without the key (8 s timeout, slow above 6 s); it is shown only and never feeds handoff or fallback.
 - **Profile presets:** a profile can carry a "when to use" note (80 characters, shown first in the crew proposal's reason, never sent to an agent), an effort level where the runner takes one (Claude Code on Anthropic through `CLAUDE_CODE_EFFORT_LEVEL`, Codex on OpenAI through `model_reasoning_effort`), and a read-only preset that keeps it to roles that never write.
+
+### 6.2 Instructions and skills ([ADR 0015](docs/adr/0015-agent-files-and-skills.md))
+
+Every profile runs in its own config folder (D4), so your personal setup reaches a run only through Settings → Instructions and skills.
+
+- **Discovery** reads an allowlist of locations under your home and in the open project: Claude Code (`CLAUDE.md`, `rules`, `skills`, `commands`, `agents`), Codex (`AGENTS.md`, `skills`, `prompts`, `agents`), Gemini CLI (`GEMINI.md`, `skills`, `commands`, `agents`), OpenCode (`AGENTS.md`, `skills`, `commands`, `agents`), the cross-tool `AGENTS.md` and `.agents/skills`, Cursor, Windsurf, Copilot and Cline rules. It never opens a credential, token, `.env*` or settings file, never follows a link, and caps sizes (256 KB a file; a skill 5 MB, 200 files, 4 levels). It writes nothing.
+- **Sharing** copies an item you choose into the profiles you choose (one, or every profile of a runner), in that runner's own place and format: instruction files joined into the profile's memory file (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`), skills as folders, commands as Markdown or Gemini CLI TOML. Subagents are never shared (runs have none), nor are commands for Codex (deprecated prompts that only its terminal UI expands). A copy loses `allowed-tools`, hooks, a model of its own and similar front matter; a skill with scripts or a command with shell snippets needs an explicit tick. A file Crewyard did not write is never overwritten. Each copy shows Up to date, Changed since the copy, Changed in the profile, Not copied or Original is gone, and only `Sync` copies again.
+- **Bridge**, per project, off by default (Settings, or the New project wizard's Agents step): `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.github/copilot-instructions.md`, `.cursorrules` and `.windsurfrules` reach the runners that do not read them, at each run start: Claude Code in its system prompt, Codex as `project_doc_fallback_filenames` (folders without AGENTS.md only), Gemini CLI as `context.fileName` in a per-run system-defaults file, OpenCode as `instructions` in its inline config. Nothing is written into the project.
+- The crew proposal names, per step, the project files its runner reads, the bridged ones and what is shared into its profile.
+- Found while checking (not fixed): Codex and OpenCode 2.x read `~/.agents/skills` from the real home whatever profile runs them, and Gemini CLI loads a project's `.env` into its own environment.
 
 ## 7. Limits, usage and notifications
 
@@ -391,6 +403,8 @@ command they ran on. Do not change any file.
 
 A run cannot create other runs. If an agent asks for more work, the request becomes an Inbox item.
 
+**Instruction files and skills are not permissions.** What a run reads from CLAUDE.md, AGENTS.md, GEMINI.md, rules, skills and commands, its own or shared or bridged (§6.2), is untrusted instruction text. It never changes a role's policy, the approval layer, the allowlist or the spend caps; copies Crewyard makes lose `allowed-tools`, hooks and a model of their own, and hooks and settings with commands are never imported.
+
 ### 9.2 Crew loops (ADR 0006)
 
 - **Run until green:** before an implementer of a code task finishes, the daemon runs the project's test command in its worktree; a failure goes back to the same session as the next turn.
@@ -467,7 +481,7 @@ A run cannot create other runs. If an agent asks for more work, the request beco
 1. **Folder:** local folder, clone, or empty folder (`git init`).
    - Detection: git state, project type from marker files (for example `project.godot` + `*.csproj`, `package.json` + lockfile, `Cargo.toml`), suggested build and test commands, and the worktree location.
    - Path-length check: the longest worktree path must stay under 260 characters unless long paths are on.
-2. **Agents:** which runners may work in this project. Only runners that passed conformance on this machine can be picked.
+2. **Agents:** which runners may work in this project. Only runners that passed conformance on this machine can be picked. An option, off by default, offers the project's instruction files to every runner (§6.2).
 3. **Accounts and budget:** which profiles crew proposals may use here, plus a daily cap and a per-task cap for API keys.
 4. **Rules:**
    - fallback default (Manual, Ask or Auto) and the number of slots;
@@ -611,6 +625,7 @@ Each milestone ends with: typecheck, lint with `--max-warnings=0`, tests, build,
 - 2026-10-30: signing and auto-update are prepared and tested before any release ([ADR 0011](docs/adr/0011-signing-and-auto-update.md)). The feed is electron-updater's generic HTTPS provider, its URL set at build time, so the host can be any static HTTPS server and the private code repository needs no token in the app. "Check automatically" is off by default; downloading and installing always wait for a click. A signed build refuses any update that is not signed by its publisher. Signing goes through our own hook, because electron-builder 26's signtool route puts the PFX password on a command line.
 - 2026-10-30: the Crew graph hides React Flow's attribution link (`proOptions.hideAttribution`); React Flow is MIT and its licence notice ships with the app.
 - 2026-10-31: `project.json` is read tolerantly and written conservatively (§11.1): unknown values fall back (security fields fail closed), unknown keys survive saves, a newer version is read-only, and an invalid file is replaced only after asking, with a `.bak` copy. omux fixed the same class of bug in 0.6.1.
+- 2026-10-31: your own agent files and other AI tools' rules and skills come into Crewyard (§6.2, [ADR 0015](docs/adr/0015-agent-files-and-skills.md)). In the owner's words: "kullanıcının kendi agent dosyaları, rules veya diğer AI'larda hazırlamış olduğu skills'ler veya benzeri şeyleri de ekle; diğer örnek aldığımız repoları da incele, varsa ekle, nasıl kullanıyorlarsa" (add the user's own agent files, rules and skills prepared in other AI tools, and similar things; look at the reference repos and add it the way they use it). Unlike agent-orchestrator and orca, which link the user's whole folder (hooks included) into every account, Crewyard copies only what you pick, per runner or profile, never links, strips granting front matter, needs a tick for scripts, and syncs only on your click. A project's instruction file reaches the other runners through each runner's own setting, off by default per project.
 - 2026-10-31: role files (§9.1) are loaded from `.crewyard\roles` and the data folder's `roles`. An override may only narrow the role it replaces, a custom role never gets more than the project's rules allow, and custom roles join the crew templates only through `customRoles` in project.json, so a role file added to a repo cannot by itself change who works on a task. A proposal keeps a copy of each file-defined role, so a later edit to the file never changes an approved crew.
 
 **Open**

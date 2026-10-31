@@ -171,13 +171,13 @@ export class OpenCodeV2Runner {
 
   // --- internals -------------------------------------------------------------------------------
 
-  private async launch(req: Pick<StartRequest, "profile" | "env" | "cwd" | "model" | "mcpServers">, opts: Omit<V2LaunchOptions, "reconnectDelayMs" | "cliVersion">): Promise<OpenCodeServer> {
+  private async launch(req: Pick<StartRequest, "profile" | "env" | "cwd" | "model" | "mcpServers" | "instructionFiles">, opts: Omit<V2LaunchOptions, "reconnectDelayMs" | "cliVersion">): Promise<OpenCodeServer> {
     const profile: Profile = req.profile;
     const mcp = req.mcpServers ?? [];
     // The inline config holds MCP secrets when the run has servers, so the guard hides it then.
     const hidden = ["OPENCODE_PASSWORD", ...(mcp.length ? ["OPENCODE_CONFIG_CONTENT"] : [])];
     const guardDir = await writeEnvGuardV2(profile.configDir, req.env, hidden);
-    const extraEnv = inlineConfigV2({ guardDir, providerId: profile.providerId, baseUrl: profile.baseUrl, models: [req.model ?? null, profile.defaultModel], mcp });
+    const extraEnv = inlineConfigV2({ guardDir, providerId: profile.providerId, baseUrl: profile.baseUrl, models: [req.model ?? null, profile.defaultModel], mcp, instructions: req.instructionFiles });
     const server = await launchServer({ executable: opts.executable, prefixArgs: opts.prefixArgs, cwd: req.cwd, configDir: profile.configDir, env: req.env, extraEnv, hidden, readyTimeoutMs: opts.readyTimeoutMs, writeGuard: async () => undefined, passwordVars: ["OPENCODE_PASSWORD"] });
     try {
       await this.checkGuard(new V2Client(server.url, basicAuth(server.password), req.cwd));

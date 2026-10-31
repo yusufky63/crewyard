@@ -5,7 +5,7 @@ describe("e2e mode", () => {
   const profile = process.platform === "win32" ? "C:\\Temp\\crewyard e2e\\profile" : "/tmp/crewyard e2e/profile";
 
   it("is refused in a packaged build and strips the variables before the daemon inherits them", () => {
-    const env: NodeJS.ProcessEnv = { CREWYARD_E2E: "1", CREWYARD_E2E_SCRIPT: "x.json", CREWYARD_E2E_PROFILE: profile, PATH: "p" };
+    const env: NodeJS.ProcessEnv = { CREWYARD_E2E: "1", CREWYARD_E2E_SCRIPT: "x.json", CREWYARD_E2E_PROFILE: profile, CREWYARD_E2E_HOME: profile, PATH: "p" };
     expect(e2eMode(env, true)).toEqual({ enabled: false, refused: true });
     expect(env).toEqual({ PATH: "p" });
   });

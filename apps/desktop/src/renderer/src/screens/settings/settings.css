@@ -121,3 +121,27 @@
 .settings .rl-problems { display: grid; gap: 6px; padding: 10px 0 2px; border-top: 1px solid var(--line); }
 .settings .rl-problem { display: grid; gap: 1px; min-width: 0; overflow-wrap: anywhere; }
 .settings .rl-problem-path { color: var(--ink-2); }
+/* Instructions and skills (docs/adr/0015): found files grouped by tool, shared copies, the project bridge. */
+.settings .af-groups { list-style: none; display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; margin: 8px 0 4px; padding: 0; border: 1px solid var(--line); }
+.settings .af-group { border-top: 1px solid var(--line); min-width: 0; }
+.settings .af-group:first-child { border-top: 0; }
+.settings .af-group-head { display: flex; align-items: center; gap: 8px; width: 100%; min-height: var(--density-control); padding: 6px 12px; text-align: left; color: var(--ink); }
+.settings .af-group-head:hover { background: var(--raised); }
+.settings .af-group-name { font-weight: 500; font-size: 13px; white-space: nowrap; }
+.settings .af-group-counts { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-size-meta); }
+.settings .af-items { margin: 0; border: 0; border-top: 1px dashed var(--line); }
+.settings .af-size { font-size: var(--font-size-meta); white-space: nowrap; }
+.settings .af-desc { font-size: var(--font-size-meta); color: var(--ink-2); max-width: var(--layout-measure); overflow-wrap: anywhere; }
+.settings .af-preview { margin: 0; padding: 10px 12px; max-height: 240px; overflow: auto; background: var(--sunken); border: 1px solid var(--line); font-size: var(--font-size-meta); color: var(--ink-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+.settings .af-share { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; gap: 8px; padding: 12px; margin: 4px 0; }
+.settings .af-tick { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; min-height: 28px; }
+.settings .af-copies { list-style: none; display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; margin: 0; padding: 0; }
+.settings .af-copies li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; padding: 4px 0; border-top: 1px dashed var(--line); font-size: var(--font-size-meta); min-width: 0; }
+.settings .af-copies li:first-child { border-top: 0; }
+.settings .af-dest { flex: 1 1 240px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings .af-shares-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.settings .af-bridge { margin-top: 8px; border-top: 1px solid var(--line); }
+.settings .af-bridge-files { list-style: none; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; margin: 0; padding: 0; }
+.settings .af-bridge-files li { display: grid; gap: 2px; padding: 6px 0; border-top: 1px dashed var(--line); min-width: 0; }
+.settings .af-bridge-files li:first-child { border-top: 0; }
+.settings .af-bridge-how { font-size: var(--font-size-meta); color: var(--ink-3); overflow-wrap: anywhere; }

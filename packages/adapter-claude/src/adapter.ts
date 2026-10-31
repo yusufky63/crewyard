@@ -7,6 +7,7 @@ import { join } from "node:path";
 import type { AgentAdapter, AgentCapabilities, Attachment, AgentEvent, Answer, ForkRequest, ForkResult, ForkUsage, NativeSessionRef, Probe, Profile, RewindRequest, RewindResult, RunHandle, RunOutput, StartRequest, TranscriptRequest, TranscriptSource, UserInput } from "@crewyard/core";
 import { exitCodeWithin, isShutdownExit, killTree, parseVersion, resolveBin, run, start as spawnChild } from "@crewyard/proc";
 import { buildEnv, redact } from "./env.ts";
+import { bridgedSystemPrompt } from "./instructions.ts";
 import { claudeContent } from "./input.ts";
 import { EventMapper, type EventBody, type TurnOutcome } from "./mapper.ts";
 import { AsyncQueue } from "./queue.ts";
@@ -373,9 +374,12 @@ export class ClaudeAdapter implements AgentAdapter {
       outputRetried: false,
     } as Omit<RunCtx, "q" | "done"> as RunCtx;
 
+    // The project bridge (docs/adr/0015); without one the SDK's own empty system prompt stays.
+    const bridged = bridgedSystemPrompt(req.cwd, req.instructionFiles);
     const options: Options = {
       cwd: req.cwd,
       ...(model ? { model } : {}),
+      ...(bridged ? { systemPrompt: { type: "custom", prompt: bridged } } : {}),
       pathToClaudeCodeExecutable: executable,
       env,
       abortController: abort,

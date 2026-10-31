@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import type { Profile } from "@crewyard/core";
 import type { AcpUsage, TokenTotals } from "./mapper.ts";
-import { prepareGeminiProfile, type PreparedProfile } from "./profile.ts";
+import { geminiContextEnv, prepareGeminiProfile, type PreparedProfile } from "./profile.ts";
 
 // What differs between ACP agents: how to start ACP mode, how to keep each profile in its own
 // folder, and how an API-key profile authenticates. The protocol driver itself is shared.
@@ -24,6 +24,11 @@ export interface AgentSpec {
   prepare(profile: Profile): Promise<PreparedProfile>;
   /** Variables that point the agent at the profile folder. */
   env(profile: Profile): Record<string, string>;
+  /**
+   * Variables that hand the run the project's bridged instruction files (StartRequest.instructionFiles,
+   * docs/adr/0015); absent when the agent has no setting for them.
+   */
+  instructionEnv?(profile: Profile, files: readonly string[]): Promise<Record<string, string>>;
   /** Why this CLI version cannot be kept inside the profile folder, or null when it can. */
   isolationProblem(version: string | null): string | null;
   /** ACP auth method for a profile that brings an API key; null leaves sign-in to the CLI's own login. */
@@ -92,6 +97,7 @@ export const gemini: AgentSpec = {
   },
   prepare: (profile) => prepareGeminiProfile(profile.configDir),
   env: (profile) => ({ GEMINI_CLI_HOME: profile.configDir, GEMINI_FORCE_FILE_STORAGE: "true" }),
+  instructionEnv: (profile, files) => geminiContextEnv(profile.configDir, files),
   isolationProblem(version) {
     if (version && versionAtLeast(version, GEMINI_ISOLATION_MIN)) return null;
     return `Gemini CLI ${version ?? "(unknown version)"} ignores GEMINI_CLI_HOME and would use your own ~/.gemini; update it to ${GEMINI_ISOLATION_MIN} or newer`;

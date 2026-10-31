@@ -29,3 +29,5 @@ export * from "./ipc/preview.ts";
 export * from "./preview.ts";
 export * from "./ipc/activity.ts";
 export * from "./redact.ts";
+export * from "./agentfiles.ts";
+export * from "./ipc/agentfiles.ts";

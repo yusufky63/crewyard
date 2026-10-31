@@ -112,6 +112,8 @@
     "installed": "kurulu",
     "noConformance": "uyumluluk testi henüz çalışmadı",
     "notInstalled": "kurulu değil",
+    "bridge": "Talimat dosyalarını tüm çalıştırıcılara sun",
+    "bridgeHint": "Bu klasördeki AGENTS.md, CLAUDE.md, GEMINI.md ile Copilot, Cursor ve Windsurf kuralları, onları kendiliğinden okumayan çalıştırıcılara her birinin kendi ayarıyla ulaşır. Varsayılan olarak kapalı; daha sonra Ayarlar'dan değiştirilebilir.",
     "names": { "claude-code": "Claude Code", "codex": "Codex", "opencode": "OpenCode", "gemini-cli": "Gemini CLI" }
   },
   "budget": {

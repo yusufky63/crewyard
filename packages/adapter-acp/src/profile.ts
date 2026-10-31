@@ -1,6 +1,8 @@
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { geminiContextFileNames } from "@crewyard/core";
 
 // Settings Crewyard keeps in a Gemini profile folder (GEMINI_CLI_HOME, so <configDir>/.gemini).
 // The folder belongs to the Crewyard profile, never to your own ~/.gemini; we change only the keys
@@ -63,6 +65,25 @@ export async function prepareGeminiProfile(configDir: string): Promise<PreparedP
   const current = existsSync(policyFile) ? await readFile(policyFile, "utf8").catch(() => "") : "";
   if (current !== GEMINI_POLICY) await writeAtomic(policyFile, GEMINI_POLICY);
   return { problems };
+}
+
+/**
+ * The project bridge for Gemini CLI (docs/adr/0015): `context.fileName` lists the instruction file
+ * names it reads, GEMINI.md kept first. It goes in a system-defaults file named by
+ * GEMINI_CLI_SYSTEM_DEFAULTS_PATH, the lowest settings layer (packages/cli/src/config/settings.ts at
+ * v0.66.0: schema defaults, system defaults, user, workspace, system), so the profile's and the
+ * project's own settings still win, and two runs of one profile in different projects never share
+ * a file: the name is the hash of its content. The machine's own system-defaults.json, if there is
+ * one, is not read for this run.
+ */
+export async function geminiContextEnv(configDir: string, files: readonly string[]): Promise<Record<string, string>> {
+  const names = geminiContextFileNames(files);
+  if (names.length <= 1) return {};
+  const content = `${JSON.stringify({ context: { fileName: names } }, null, 2)}\n`;
+  const file = join(configDir, ".gemini", "crewyard", `context-${createHash("sha256").update(content).digest("hex").slice(0, 12)}.json`);
+  const current = existsSync(file) ? await readFile(file, "utf8").catch(() => "") : "";
+  if (current !== content) await writeAtomic(file, content);
+  return { GEMINI_CLI_SYSTEM_DEFAULTS_PATH: file };
 }
 
 /** `security` with redaction on and the key names blocked; an `allowed` entry for a key name is removed. */

@@ -183,3 +183,7 @@
 .tk-switch input { margin-top: 3px; accent-color: var(--ink); }
 .tk-switch > span { display: grid; gap: 2px; min-width: 0; }
 .tk-switch-hint { font-size: 12px; }
+/* What each proposed step reads besides the task (docs/adr/0015). */
+.tk-agentfiles { display: grid; gap: 4px; margin-top: 12px; min-width: 0; }
+.tk-agentfiles ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.tk-agentfiles li { overflow-wrap: anywhere; }

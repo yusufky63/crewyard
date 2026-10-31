@@ -828,6 +828,40 @@ export const MIGRATIONS: Migration[] = [
     id: "events-project",
     sql: `create index if not exists events_project on events(project_id, seq);`,
   },
+  // Your own agent files shared into profile folders, the copies made, and the per-project bridge
+  // (docs/adr/0015). `profile_id` null in a share means every profile of `runner`.
+  {
+    id: "agent-files",
+    sql: `create table if not exists agentfile_shares (
+     id text primary key,
+     item_id text not null,
+     tool text not null,
+     kind text not null,
+     name text not null,
+     source text not null,
+     runner text not null,
+     profile_id text,
+     allow_scripts integer not null default 0,
+     created_at text not null
+   );
+   create unique index if not exists agentfile_shares_target on agentfile_shares(item_id, runner, coalesce(profile_id, ''));
+   create table if not exists agentfile_copies (
+     share_id text not null,
+     profile_id text not null,
+     dest text not null,
+     source_hash text,
+     dest_hash text,
+     copied_at text,
+     error text,
+     primary key (share_id, profile_id)
+   );
+   create table if not exists agentfile_bridges (
+     project_id text primary key,
+     enabled integer not null,
+     chosen text not null default '[]',
+     updated_at text not null
+   );`,
+  },
 ];
 
 /** What the positional scheme applied: a database at `user_version` N has the first N of these. */

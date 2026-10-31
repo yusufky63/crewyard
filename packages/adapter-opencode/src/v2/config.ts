@@ -67,12 +67,14 @@ export function providerBlockV2(providerId: string, baseUrl: string | null, mode
  * The launch's inline config (OPENCODE_CONFIG_CONTENT): the guard plugin, no update checks, the
  * provider block and the run's MCP servers. Nothing goes into the profile's or the repo's files.
  */
-export function inlineConfigV2(opts: { guardDir: string; providerId: string; baseUrl: string | null; models: ReadonlyArray<string | null>; mcp: readonly McpServerSpec[] }): Record<string, string> {
+export function inlineConfigV2(opts: { guardDir: string; providerId: string; baseUrl: string | null; models: ReadonlyArray<string | null>; mcp: readonly McpServerSpec[]; instructions?: readonly string[] }): Record<string, string> {
   const config = {
     plugins: [{ package: opts.guardDir }],
     update: "disable",
     ...providerBlockV2(opts.providerId, opts.baseUrl, opts.models),
     ...mcpConfig(opts.mcp, 2),
+    // The project bridge (docs/adr/0015), relative to the project like OpenCode's own `instructions`.
+    ...(opts.instructions?.length ? { instructions: opts.instructions.map((f) => f.split("\\").join("/")) } : {}),
   };
   return { OPENCODE_CONFIG_CONTENT: JSON.stringify(config) };
 }

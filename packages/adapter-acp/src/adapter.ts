@@ -326,11 +326,12 @@ export class AcpAdapter implements AgentAdapter {
     if (!cli.acpArgs) throw new Error(`${spec.label} ${cli.version ?? ""} has no ACP mode`);
     const prepared = await spec.prepare(req.profile);
     const readOnly = req.policy.writes === "none";
+    const bridged = req.instructionFiles?.length && spec.instructionEnv ? await spec.instructionEnv(req.profile, req.instructionFiles) : {};
 
     const runId = `acp-${randomUUID()}`;
     // Handlers are registered before the run exists; they see it once the handshake starts.
     const box: { run?: Run } = {};
-    const opened = await this.spawn(spec, executable, cli, { profile: req.profile, cwd: req.cwd, env: req.env, model: req.model ?? req.profile.defaultModel, readOnly }, {
+    const opened = await this.spawn(spec, executable, cli, { profile: req.profile, cwd: req.cwd, env: { ...req.env, ...bridged }, model: req.model ?? req.profile.defaultModel, readOnly }, {
       update: (n) => {
         const run = box.run;
         if (!run || run.ended || run.loading || n.sessionId !== run.sessionId) return;

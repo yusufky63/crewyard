@@ -8,6 +8,7 @@ import { call, useDaemon } from "../../ipc.ts";
 import { useNav } from "../../nav.ts";
 import { usePrefs, type Density, type ThemePref } from "../../prefs.ts";
 import { AccountSwitchRows } from "./AccountSwitch.tsx";
+import { AgentFilesSection } from "./AgentFilesSection.tsx";
 import { ConfigNotices } from "./ConfigNotices.tsx";
 import { AboutSection, DataSection } from "./DataSection.tsx";
 import { HibernationRows } from "./Hibernation.tsx";
@@ -306,8 +307,9 @@ export function SettingsScreen() {
           <Fallback />
           <McpSection index={6} />
           <RolesSection index={7} />
+          <AgentFilesSection index={SECTIONS.indexOf("agentfiles") + 1} />
           <DataSection />
-          <UpdatesSection index={9} />
+          <UpdatesSection index={SECTIONS.indexOf("updates") + 1} />
           <AboutSection />
         </div>
       </div>
