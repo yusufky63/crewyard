@@ -103,3 +103,21 @@ tr.dim .prov-name { color: var(--ink-2); }
 .pv-ro input { accent-color: var(--accent); }
 .pv-slots { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; }
 .pv-slots .pv-input { max-width: 100%; }
+
+/* Catalog versions and the LiteLLM price check */
+.pv-cat-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.pv-cat { min-width: 0; }
+.pv-cat-wrap { overflow-x: auto; }
+.pv-cat-table th { font: 500 11px / 1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); text-align: left; padding: 8px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.pv-cat-table td { padding: 8px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.pv-cat-table tr:last-child td { border-bottom: 0; }
+.pv-cat-table .num { text-align: right; white-space: nowrap; }
+.pv-cat-scroll { max-height: 280px; overflow-y: auto; border: 1px solid var(--line); }
+/* Fixed columns so long model keys wrap instead of scrolling sideways (Turkish labels are wider). */
+.pv-cat-table.diffs { table-layout: fixed; }
+.pv-cat-table.diffs td:first-child { overflow-wrap: anywhere; }
+.pv-cat-table.diffs th:nth-child(1) { width: 38%; }
+.pv-cat-table.diffs th:nth-child(2) { width: 16%; }
+.pv-cat-table.diffs th:nth-child(3), .pv-cat-table.diffs th:nth-child(4) { width: 14%; }
+.pv-cat-table.diffs td:last-child { white-space: normal; }
+.pv-cat-scroll th { position: sticky; top: 0; background: var(--surface); }

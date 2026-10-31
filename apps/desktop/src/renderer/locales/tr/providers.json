@@ -177,5 +177,35 @@
     "slotDefault": "Çalışmanın modeli",
     "fill": "Listeden doldur",
     "fillHint": "Her yuva için katalogdan ve sağlayıcının listesinden bir model seçer. Çalıştırmadan önce seçimi gözden geçirin."
+  },
+  "catalog": {
+    "open": "Sürümler",
+    "title": "Katalog sürümleri",
+    "versions": "Saklanan sürümler",
+    "pinAbout": "Bir sürümü sabitlerseniz tahminler o sürümle yapılır. Arka plandaki yenileme yeni fiyatları yine indirir, ancak sabitlemeyi kaldırana kadar geçiş yapmaz. Her harcama kaydı, fiyatının geldiği sürümü saklar.",
+    "cols": { "version": "Sürüm", "generated": "Oluşturulma", "source": "models.dev", "origin": "Kaynak", "state": "Durum" },
+    "active": "Kullanımda",
+    "pinned": "Sabitlendi",
+    "pinnedNewer": "Sabitlendi · daha yeni sürüm indirildi",
+    "pinnedHint": "Sürümler bölümünden sabitlemeyi kaldırana kadar tahminler bu katalog sürümüyle yapılır.",
+    "newest": "En yeni",
+    "pin": "Sabitle",
+    "unpin": "Sabitlemeyi kaldır",
+    "pinNamed": "{{hash}} katalog sürümünü sabitle",
+    "unpinNamed": "{{hash}} katalog sürümünün sabitlemesini kaldır",
+    "check": {
+      "title": "LiteLLM ile fiyat karşılaştırması",
+      "about": "Girdi, çıktı ya da önbellek okuma fiyatı LiteLLM'in topluluk fiyat tablosundan %{{pct}}'dan fazla ayrılan katalog fiyatları. Yalnızca gösterilir; hiçbir fiyatı değiştirmez.",
+      "run": "Şimdi karşılaştır",
+      "running": "Karşılaştırılıyor",
+      "never": "Henüz karşılaştırılmadı. Katalog yenilenirken ya da Şimdi karşılaştır ile çalışır.",
+      "failed": "LiteLLM'in tablosu okunamadı; farklar bilinmiyor. {{error}}",
+      "summary_one": "{{time}}, {{hash}} sürümüyle karşılaştırıldı · {{matched}} model eşleşti · %{{pct}}'dan fazla ayrılan {{count}} fiyat",
+      "summary_other": "{{time}}, {{hash}} sürümüyle karşılaştırıldı · {{matched}} model eşleşti · %{{pct}}'dan fazla ayrılan {{count}} fiyat",
+      "cols": { "model": "Model", "price": "Fiyat", "ours": "Katalog", "theirs": "LiteLLM", "delta": "Fark" },
+      "field": { "input": "Girdi", "output": "Çıktı", "cacheRead": "Önbellek okuma" },
+      "theirsZero": "LiteLLM'de 0",
+      "source": "Kaynak: BerriAI/litellm model_prices_and_context_window.json (MIT). Fiyatlar 1M token başına USD. {{providers}} katalog sağlayıcısı sabit bir eşleme tablosuyla eşleştirilir; Çin uç noktaları ve kodlama planları farklı fiyatlandığı için dışarıda bırakılır."
+    }
   }
 }

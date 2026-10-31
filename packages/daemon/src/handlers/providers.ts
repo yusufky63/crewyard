@@ -188,8 +188,22 @@ export function createProvidersHandlers(ctx: HandlerContext, service?: Providers
     "providers.catalogRefresh": withTouch(async ({ force }) => {
       const before = svc.catalog.info().hash;
       const info = await svc.catalog.refresh(force ?? false);
+      // The cross-check rides along with a refresh by hand; ETag keeps it cheap when nothing moved.
+      await svc.priceCheck.run(force ?? false);
       changed(info.hash === before ? "catalog-checked" : "catalog");
       return info;
+    }),
+    "providers.catalogSnapshots": withTouch(() => svc.catalog.snapshots()),
+    "providers.catalogPin": withTouch(({ hash }) => {
+      const info = svc.catalog.pin(hash);
+      changed("catalog");
+      return info;
+    }),
+    "providers.priceCheck": withTouch(() => svc.priceCheck.view()),
+    "providers.priceCheckRun": withTouch(async () => {
+      const view = await svc.priceCheck.run(true);
+      changed("price-check");
+      return view;
     }),
     "providers.credentials": withTouch(() => svc.listCredentials()),
     "providers.credentialAdd": withTouch(async ({ alias, providerId, secret }) => {

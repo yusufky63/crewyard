@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
-import { Catalog, PeakPricing, RequestPricing, type CatalogInfo, type CatalogModel, type CatalogProvider, type RunnerSupport } from "@crewyard/core";
+import { Catalog, PeakPricing, RequestPricing, type CatalogInfo, type CatalogModel, type CatalogProvider, type CatalogSnapshotView, type RunnerSupport } from "@crewyard/core";
 import bundledJson from "../../../../catalog/providers.json" with { type: "json" };
 import curatedJson from "../../../../catalog/curated.json" with { type: "json" };
 
@@ -158,6 +158,8 @@ const setSetting = (db: DatabaseSync, key: string, value: string | null) => {
 /**
  * Serves the newest good snapshot. The bundled one is seeded on first use; refreshes ask models.dev
  * at most every 24 h with If-None-Match, and any failure keeps the last good snapshot in service.
+ * A pinned snapshot stays in service: refreshes still download and store (`catalog.latest`) so
+ * unpinning switches to the newest data without another round trip.
  */
 export class CatalogService {
   private cache: { hash: string; catalog: Catalog; origin: SnapshotRow["origin"] } | null = null;
@@ -185,6 +187,7 @@ export class CatalogService {
 
   info(): CatalogInfo {
     const { hash, catalog, origin } = this.current();
+    const pinned = setting(this.db, "catalog.pinned");
     return {
       hash,
       generatedAt: catalog.generatedAt,
@@ -194,7 +197,46 @@ export class CatalogService {
       modelCount: catalog.providers.reduce((n, p) => n + p.modelCount, 0),
       checkedAt: setting(this.db, "catalog.checkedAt"),
       lastError: setting(this.db, "catalog.lastError"),
+      pinned: pinned === hash,
+      latestHash: setting(this.db, "catalog.latest") ?? hash,
     };
+  }
+
+  snapshots(): CatalogSnapshotView[] {
+    const { hash: active } = this.current();
+    const pinned = setting(this.db, "catalog.pinned");
+    const latest = setting(this.db, "catalog.latest") ?? active;
+    const rows = this.db
+      .prepare("select hash, origin, generated_at, source_sha, created_at from catalog_snapshots order by created_at desc, rowid desc")
+      .all() as Array<{ hash: string; origin: SnapshotRow["origin"]; generated_at: string; source_sha: string; created_at: string }>;
+    return rows.map((r) => ({
+      hash: r.hash,
+      origin: r.origin,
+      generatedAt: r.generated_at,
+      sourceSha: r.source_sha,
+      storedAt: r.created_at,
+      active: r.hash === active,
+      pinned: r.hash === pinned,
+      latest: r.hash === latest,
+    }));
+  }
+
+  /** Pins a stored snapshot and serves it, or with `null` unpins and serves the newest download. */
+  pin(hash: string | null): CatalogInfo {
+    if (hash === null) {
+      setSetting(this.db, "catalog.pinned", null);
+      const latest = setting(this.db, "catalog.latest");
+      if (latest && this.has(latest)) setSetting(this.db, "catalog.current", latest);
+      return this.info();
+    }
+    if (!this.has(hash)) throw new Error(`Unknown catalog version: ${hash}`);
+    setSetting(this.db, "catalog.pinned", hash);
+    setSetting(this.db, "catalog.current", hash);
+    return this.info();
+  }
+
+  private has(hash: string): boolean {
+    return this.db.prepare("select 1 from catalog_snapshots where hash = ?").get(hash) !== undefined;
   }
 
   provider(id: string): CatalogProvider | undefined {
@@ -227,7 +269,8 @@ export class CatalogService {
       // A provider vanishing upstream would silently drop its models; keep the last good snapshot.
       if (missing.length) throw new Error(`models.dev no longer lists: ${missing.join(", ")}`);
       const hash = this.save(catalog, "models.dev");
-      setSetting(this.db, "catalog.current", hash);
+      setSetting(this.db, "catalog.latest", hash);
+      if (!setting(this.db, "catalog.pinned")) setSetting(this.db, "catalog.current", hash);
       this.markChecked(res.headers.get("etag"));
       return this.info();
     } catch (err) {
@@ -250,10 +293,11 @@ export class CatalogService {
       .run(hash, origin, catalog.generatedAt, catalog.source.sha256, this.now().toISOString(), JSON.stringify(catalog));
     if (!setting(this.db, "catalog.current")) setSetting(this.db, "catalog.current", hash);
     // Spend rows keep the hash as their price version; the newest few bodies are enough to show them.
+    // The served, pinned and newest snapshots are never pruned, however old.
     this.db
       .prepare(
         `delete from catalog_snapshots where hash not in (select hash from catalog_snapshots order by created_at desc limit ?)
-           and hash <> coalesce((select value from settings where key = 'catalog.current'), '')`,
+           and hash not in (select value from settings where key in ('catalog.current', 'catalog.pinned', 'catalog.latest'))`,
       )
       .run(KEEP_SNAPSHOTS);
     return hash;

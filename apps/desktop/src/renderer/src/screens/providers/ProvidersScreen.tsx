@@ -1,12 +1,13 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, RefreshCw } from "lucide-react";
+import { History, Plus, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { BrandIcon, Button, Label, Panel } from "@crewyard/ui";
 import { PROFILE_RUNNERS, runnerSupport, type BalanceView, type CatalogProvider, type CredentialSummary, type KeyCheckView, type ProfileSummary, type SignInStatus, type SpendSlice } from "@crewyard/core";
 import { call } from "../../ipc.ts";
 import { useProvidersQuery as useDaemon } from "./data.ts";
 import { FIXTURE } from "./fixture.ts";
+import { CatalogDialog, PinNote } from "./Catalog.tsx";
 import { AddProviderDialog, ManageDialog } from "./Dialogs.tsx";
 import { KeyStateNote, useKeyChecks } from "./KeyCheck.tsx";
 import { newestModels, ProvBadge, useMoney, usePrice, useProvidersLive, useWhen } from "./shared.tsx";
@@ -145,10 +146,12 @@ export function ProvidersScreen() {
   const [adding, setAdding] = useState<{ id: string | null } | null>(null);
   // Screenshot mode can open one provider's dialog with `manage=<id>`.
   const [managing, setManaging] = useState<string | null>(() => (FIXTURE ? new URLSearchParams(location.search).get("manage") : null));
+  // ...and the catalog versions dialog with `versions`.
+  const [versions, setVersions] = useState(() => FIXTURE && new URLSearchParams(location.search).has("versions"));
 
   const refresh = useMutation({
     mutationFn: () => call("providers.catalogRefresh", { force: true }),
-    onSettled: () => qc.invalidateQueries({ queryKey: ["providers.catalog"] }),
+    onSettled: () => qc.invalidateQueries({ predicate: (q) => ["providers.catalog", "providers.catalogSnapshots", "providers.priceCheck"].includes(String(q.queryKey[0])) }),
   });
 
   const providers = useMemo(() => catalog.data?.providers ?? [], [catalog.data]);
@@ -198,10 +201,15 @@ export function ProvidersScreen() {
               <span className="muted">
                 {t(`origin.${info.origin}`)} · {info.checkedAt ? t("checked", { time: when.ago(info.checkedAt) }) : t("neverChecked")}
               </span>
+              <PinNote info={info} />
             </div>
           )}
         </div>
         <div className="right">
+          <Button size="sm" variant="ghost" onClick={() => setVersions(true)}>
+            <History size={14} strokeWidth={1.75} />
+            {t("catalog.open")}
+          </Button>
           <Button size="sm" variant="ghost" disabled={refresh.isPending} onClick={() => refresh.mutate()}>
             <RefreshCw size={14} strokeWidth={1.75} />
             {refresh.isPending ? t("refreshing") : t("refresh")}
@@ -308,6 +316,7 @@ export function ProvidersScreen() {
         </div>
       </Panel>
 
+      {versions && <CatalogDialog onClose={() => setVersions(false)} />}
       {adding && <AddProviderDialog providers={providers} credentials={credList} initialId={adding.id} onClose={() => setAdding(null)} />}
       {managed && (
         <ManageDialog

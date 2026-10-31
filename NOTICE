@@ -10,6 +10,10 @@ Third-party material used by this project:
   https://github.com/anomalyco/models.dev). Anthropic-compatible endpoints and balance endpoints
   in catalog/curated.json come from cc-switch (MIT, https://github.com/farion1231/cc-switch);
   every entry cites its file and line.
+- LiteLLM price cross-check (packages/daemon/src/providers/litellm.ts): prices from BerriAI/litellm's
+  model_prices_and_context_window.json (MIT, Copyright (c) 2023 Berri AI,
+  https://github.com/BerriAI/litellm). A slice of it (mapped providers' chat prices) is stored in the
+  local database to show differences in diagnostics; it never sets a price.
 - Geist and Geist Mono fonts (SIL Open Font License 1.1), bundled through @fontsource.
 - @xyflow/react and @xyflow/system (React Flow), MIT, Copyright (c) 2019-2025 webkid GmbH
   (https://github.com/xyflow/xyflow). The Crew graph hides React Flow's attribution link

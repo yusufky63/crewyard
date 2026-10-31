@@ -112,6 +112,8 @@ Live tests with real runners and keys cost a few cents and run only when asked. 
 node catalog/sync-catalog.mjs
 ```
 
+The running app also refreshes it from models.dev once a day. Providers → Versions lists the stored versions, lets you pin one so estimates stay on it, and compares catalog prices with LiteLLM's price table (differences above 10% are shown, never applied).
+
 ## Viewing the prototype
 
 `design/prototype.html` is the clickable prototype the app was built from, with sample data. Open it in a browser. Query parameters set the start state, for example `?theme=light&screen=limits`:
