@@ -11,6 +11,8 @@
 //   - CREWYARD_UPDATE_URL turns on update checks against that feed (electron-updater's generic
 //     provider). An https feed needs a signed build. Nothing is uploaded: `--publish never`.
 const { releaseOptions } = require("./scripts/release.cjs");
+const { dirname } = require("node:path");
+const { realpathSync } = require("node:fs");
 
 const release = releaseOptions(process.env);
 
@@ -26,6 +28,18 @@ module.exports = {
   // The licences of everything bundled (scripts/third-party-licenses.mjs) and NOTICE, next to
   // Electron's own LICENSE.electron.txt and LICENSES.chromium.html in the install folder.
   extraFiles: [{ from: "out/third-party", to: ".", filter: ["NOTICE.txt", "THIRD-PARTY-LICENSES.txt"] }],
+  // node-pty, the terminal's one native module (docs/adr/0016-terminal.md), cannot load from inside
+  // app.asar: its runtime files go next to the archive in resources
+ative
+ode-pty, which the pty
+  // host loads by path. Only this platform's prebuilt binaries, without debug symbols.
+  extraResources: [
+    {
+      from: dirname(realpathSync(require.resolve("node-pty/package.json"))),
+      to: "native/node-pty",
+      filter: ["package.json", "LICENSE", "lib/**/*.js", "!lib/**/*.test.js", "!lib/testUtils*", "prebuilds/${platform}-${arch}/**", "build/Release/*.node", "!**/*.pdb"],
+    },
+  ],
   // The packaged app reads its name from here: app.getName() and the profile folder become
   // %APPDATA%\Crewyard, and the description is what Windows shows as the file description.
   extraMetadata: { name: "crewyard", productName: "Crewyard", description: "Crewyard", author: "Crewyard contributors", ...release.metadata },

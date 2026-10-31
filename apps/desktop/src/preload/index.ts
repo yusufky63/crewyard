@@ -42,6 +42,11 @@ const api: CrewyardApi = {
   previewState: () => ipcRenderer.invoke("crewyard:preview-state"),
   previewPick: (color) => ipcRenderer.invoke("crewyard:preview-pick", color),
   previewCancelPick: () => ipcRenderer.send("crewyard:preview", "cancel-pick"),
+  terminalShells: () => ipcRenderer.invoke("crewyard:terminal-shells"),
+  terminalOpen: (req) => ipcRenderer.invoke("crewyard:terminal-open", req),
+  terminalWrite: (id, data) => ipcRenderer.send("crewyard:terminal", "write", id, data),
+  terminalResize: (id, cols, rows) => ipcRenderer.send("crewyard:terminal", "resize", id, cols, rows),
+  terminalClose: (id) => ipcRenderer.send("crewyard:terminal", "close", id),
 };
 
 contextBridge.exposeInMainWorld("crewyard", api);
