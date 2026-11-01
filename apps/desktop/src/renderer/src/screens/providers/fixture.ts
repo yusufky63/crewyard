@@ -68,8 +68,8 @@ const STATUS: SignInStatus[] = [
 
 const SESSIONS: SignInSession[] = [
   { profileId: "p-personal", kind: "chatgpt", state: "waiting", url: "https://auth.openai.com/oauth/authorize", userCode: null, browserOpened: false, startedAt: ago(1), error: null, reason: null },
-  // A personal Google account after the browser login: Gemini CLI refuses it (since 2026-06-18). Sample wording, not Google's.
-  { profileId: "p-assist", kind: "google", state: "failed", url: null, userCode: null, browserOpened: true, startedAt: ago(3), error: "account is not eligible for this service", reason: "account_refused" },
+  // Gemini CLI stopping after the browser login, as it does for a personal Google account since 2026-06-18. Sample wording, not Google's.
+  { profileId: "p-assist", kind: "google", state: "failed", url: null, userCode: null, browserOpened: true, startedAt: ago(3), error: "account is not eligible for this service", reason: "after_login" },
 ];
 
 const LIMITS: LimitsOverview = {

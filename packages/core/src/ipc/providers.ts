@@ -413,14 +413,16 @@ export interface SignInSession {
   startedAt: string;
   error: string | null;
   /**
-   * Why it failed, where the runner lets us tell; null otherwise. "account_refused": the browser
-   * login went through but the CLI refused the account. For Gemini CLI that is a personal Google
-   * account (free, AI Pro, Ultra), which it no longer serves since 2026-06-18.
+   * Why it failed, where the runner lets us tell; null otherwise. Both values mean the browser login
+   * went through and the CLI then failed to set the account up. "project_required": it asked for a
+   * Google Cloud project (some Gemini Code Assist Standard or Enterprise accounts). "after_login":
+   * anything else, most often Gemini CLI refusing a personal Google account (free, AI Pro, Ultra)
+   * since 2026-06-18, but the CLI does not let us tell that from a network or onboarding error.
    */
   reason: SignInFailure | null;
 }
 
-export type SignInFailure = "account_refused";
+export type SignInFailure = "project_required" | "after_login";
 
 export interface ProvidersIpc {
   "providers.catalog": { params: void; result: CatalogView };

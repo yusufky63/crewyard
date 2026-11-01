@@ -35,11 +35,24 @@ export interface AcpSignInState {
 }
 
 /**
- * Why a sign-in failed, where the adapter can tell. "account_refused": the browser login finished
- * (the agent stored tokens) but the agent then refused the account, which for Gemini CLI is the
- * account-tier check that personal Google accounts fail since 2026-06-18.
+ * Why a sign-in failed, where the adapter can tell. Both mean the browser login went through (the
+ * agent stored tokens) and the agent then failed while setting the account up.
+ * - "project_required": the agent asked for a Google Cloud project (GOOGLE_CLOUD_PROJECT), which
+ *   Gemini CLI does for some Gemini Code Assist Standard and Enterprise accounts.
+ * - "after_login": any other failure at that point. For Gemini CLI that is most often the tier
+ *   check personal Google accounts fail since 2026-06-18, but a network or onboarding error looks
+ *   the same over ACP, so this is never shown as "your account is personal".
  */
-export type AcpSignInFailure = "account_refused";
+export type AcpSignInFailure = "project_required" | "after_login";
+
+/**
+ * Gemini CLI 0.66.0 (setupUser in its bundle) throws ProjectIdRequiredError and
+ * InvalidNumericProjectIdError for project setup, and both messages name GOOGLE_CLOUD_PROJECT; its
+ * ACP authenticate handler wraps every setup error in the same code, so the text is all we have.
+ */
+export function signInFailureAfterLogin(errorMessage: string): AcpSignInFailure {
+  return /GOOGLE_CLOUD_PROJECT/.test(errorMessage) ? "project_required" : "after_login";
+}
 
 export interface AcpLoginResult {
   success: boolean;
@@ -215,12 +228,16 @@ export class AcpAdapter implements AgentAdapter {
         await opened.conn.agent.request(acp.methods.agent.authenticate, { methodId });
         finish(existsSync(credentials) ? { success: true, error: null, reason: null } : fail(`${spec.label} finished without storing a sign-in`));
       } catch (err) {
+        // Cancel, timeout and the agent exiting close the connection, which rejects authenticate
+        // too. The attempt has already settled then and we never saw the agent's verdict on the
+        // account, so the file is left alone and the next probe reports what is on disk.
+        if (finished) return;
         if (!hadCredentials && existsSync(credentials)) {
-          // The browser login went through and the agent stored tokens, then refused the account.
-          // Removing the file (never opening it) keeps the profile from reading as signed in with
-          // an account the agent will not serve.
+          // The browser login went through and the agent stored tokens, then failed to set the
+          // account up. The sign-in did not finish, so the file (never opened) is removed and the
+          // profile does not read as signed in with an account the agent will not serve yet.
           await rm(credentials, { force: true }).catch(() => undefined);
-          finish({ success: false, error: message(err), reason: "account_refused" });
+          finish({ success: false, error: message(err), reason: signInFailureAfterLogin(message(err)) });
           return;
         }
         finish(fail(message(err)));

@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type { LimitSample, Profile, SignInKind } from "@crewyard/core";
+import type { LimitSample, Profile, SignInFailure, SignInKind } from "@crewyard/core";
 import { profilesInUse } from "../handlers/providers.ts";
 import { Store } from "../store.ts";
 import type { Protector } from "./dpapi.ts";
@@ -134,9 +134,9 @@ describe("sign-in per profile", () => {
     expect(candidates.find((c) => c.profile.id === p.id)?.ready).toBe(false);
   });
 
-  it("keeps why Gemini CLI refused the account, so the UI can say it plainly", async () => {
-    let finish!: (r: { success: boolean; error: string | null; reason: "account_refused" | null }) => void;
-    const completed = new Promise<{ success: boolean; error: string | null; reason: "account_refused" | null }>((r) => (finish = r));
+  it("keeps why Gemini CLI stopped after the browser login, so the UI can say it plainly", async () => {
+    let finish!: (r: { success: boolean; error: string | null; reason: SignInFailure | null }) => void;
+    const completed = new Promise<{ success: boolean; error: string | null; reason: SignInFailure | null }>((r) => (finish = r));
     const gemini: SignInDriver = {
       probe: async () => ({ state: "signed_out", plan: null, cliVersion: "0.66.0", update: null, problem: null }),
       start: async () => ({ url: () => null, userCode: null, browserOpened: true, completed, cancel: async () => undefined }),
@@ -145,9 +145,9 @@ describe("sign-in per profile", () => {
     const { svc, signIn, signedIn } = setup({ google: gemini });
     const p = svc.createProfile({ alias: "me", runner: "gemini-cli", providerId: "google", credentialId: null, defaultModel: null });
     expect(await signIn.start(p.id)).toMatchObject({ state: "waiting", reason: null });
-    finish({ success: false, error: "not eligible", reason: "account_refused" });
+    finish({ success: false, error: "not eligible", reason: "after_login" });
     await tick();
-    expect(signIn.sessions()[0]).toMatchObject({ state: "failed", error: "not eligible", reason: "account_refused" });
+    expect(signIn.sessions()[0]).toMatchObject({ state: "failed", error: "not eligible", reason: "after_login" });
     expect(svc.signInStatus(p.id)).toMatchObject({ state: "signed_out" });
     expect(signedIn).toEqual([]);
   });

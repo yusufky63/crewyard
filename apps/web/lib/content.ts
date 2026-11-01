@@ -208,7 +208,7 @@ export const FAQ: Array<{ q: string; a: string[] }> = [
     q: "Can Gemini CLI run on my Google AI Pro or Ultra plan?",
     a: [
       "No. Since 18 June 2026 Gemini CLI no longer serves free, AI Pro or Ultra Google accounts, and its Google sign-in does not work for them. Crewyard keeps that sign-in for Gemini Code Assist Standard or Enterprise accounts only.",
-      "With a personal plan, add a Gemini API key: Gemini CLI and OpenCode profiles then run models such as Gemini 4 Argon and Gemini 3.8 Flash, billed per use.",
+      "With a personal plan, add a paid Gemini API key: Gemini CLI and OpenCode profiles then run models such as Gemini 4 Argon and Gemini 3.8 Flash, billed per use.",
     ],
   },
   {

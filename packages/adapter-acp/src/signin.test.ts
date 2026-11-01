@@ -63,15 +63,36 @@ describe("Gemini sign-in through ACP", () => {
     await expect(session.completed).resolves.toMatchObject({ success: false, error: expect.stringMatching(/Failed to authenticate/), reason: null });
   });
 
-  it("tells a refused account apart and does not leave it reading as signed in", async () => {
+  it("removes a sign-in the agent stored and then failed to set up, without calling it a personal account", async () => {
     // Personal Google accounts pass the browser login, then Gemini CLI refuses them (since 2026-06-18).
     process.env.FAKE_ACP_LOGIN = "refused";
     const p = profile("refused");
     const a = adapter();
     const session = await a.signIn(p);
-    await expect(session.completed).resolves.toEqual({ success: false, error: "fake: this account is not eligible", reason: "account_refused" });
+    await expect(session.completed).resolves.toEqual({ success: false, error: "fake: this account is not eligible", reason: "after_login" });
     expect(existsSync(join(p.configDir, ".gemini", "oauth_creds.json"))).toBe(false);
     await expect(a.signInState(p)).resolves.toMatchObject({ state: "signed_out" });
+  });
+
+  it("tells a Code Assist account that needs a Google Cloud project apart from a refused one", async () => {
+    process.env.FAKE_ACP_LOGIN = "project";
+    const p = profile("project");
+    const session = await adapter().signIn(p);
+    await expect(session.completed).resolves.toMatchObject({ success: false, error: expect.stringMatching(/GOOGLE_CLOUD_PROJECT/), reason: "project_required" });
+    expect(existsSync(join(p.configDir, ".gemini", "oauth_creds.json"))).toBe(false);
+  });
+
+  it("leaves a cancel during the account check as a plain cancel and does not touch the stored file", async () => {
+    process.env.FAKE_ACP_LOGIN = "tiercheck";
+    const p = profile("tiercheck");
+    const creds = join(p.configDir, ".gemini", "oauth_creds.json");
+    const session = await adapter().signIn(p);
+    for (let i = 0; i < 100 && !existsSync(creds); i++) await new Promise((r) => setTimeout(r, 50));
+    expect(existsSync(creds)).toBe(true);
+    await session.cancel();
+    await expect(session.completed).resolves.toEqual({ success: false, error: "cancelled", reason: null });
+    await new Promise((r) => setTimeout(r, 200));
+    expect(existsSync(creds)).toBe(true);
   });
 
   it("refuses an old Gemini CLI and offers the update instead of using ~/.gemini", async () => {

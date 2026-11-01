@@ -33,5 +33,5 @@ export function createAdapter(opts: AcpAdapterOptions = {}): AgentAdapter {
   return new AcpAdapter(capabilities, opts);
 }
 
-export { AcpAdapter, type AcpAdapterOptions, type AcpLoginResult, type AcpLoginSession, type AcpSignInFailure, type AcpSignInState } from "./adapter.ts";
+export { AcpAdapter, type AcpAdapterOptions, type AcpLoginResult, type AcpLoginSession, type AcpSignInFailure, type AcpSignInState, signInFailureAfterLogin } from "./adapter.ts";
 export { AGENTS, gemini, GEMINI_ISOLATION_MIN, versionAtLeast, type AgentSpec, type SignInSpec } from "./agents.ts";

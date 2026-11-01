@@ -18,6 +18,8 @@ const RANGES = [1, 7, 30] as const;
 const VIEWS = ["limits", "usage"] as const;
 /** Screenshot mode only (`fixture&view=usage`). */
 const SHOT_VIEW = FIXTURE ? new URLSearchParams(location.search).get("view") : null;
+/** Screenshot mode only (`fixture&row=<profile id>`): screenshots cannot scroll, so this brings a lower plan row into view. */
+const SHOT_ROW = FIXTURE ? new URLSearchParams(location.search).get("row") : null;
 // Plan windows, shortest first; context and budget windows belong to runs and tasks.
 const WINDOW_ORDER: string[] = ["5h", "daily", "weekly", "monthly"];
 
@@ -49,7 +51,7 @@ function PlanAccount({
   const mine = windows.filter((w) => w.profileId === profile.id);
   const name = `${t(`providers:runner.${profile.runner}`)} · ${profile.alias}`;
   return (
-    <div className="lim">
+    <div className="lim" ref={SHOT_ROW === profile.id ? (el) => el?.scrollIntoView({ block: "start" }) : undefined}>
       <div className="lim-top">
         <BrandIcon id={profile.runner} />
         <span className="name">{name}</span>
