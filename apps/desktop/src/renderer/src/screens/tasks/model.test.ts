@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NO_RUN_CONTROLS, type CandidateView, type CrewMemberView, type GoalSummary, type LimitNoticePayload, type RequestView, type RunView, type TaskDetail, type TaskGoalRef } from "@crewyard/core";
+import { NO_RUN_CONTROLS, type CandidateView, type CrewMemberView, type GoalSummary, type LimitNoticePayload, type RequestView, type RunView, type TaskDetail, type TaskGoalRef, type TaskSummary } from "@crewyard/core";
 import { approvalRequest, cost, decision, goalDetail, goalTask, revision } from "./goalTestData.ts";
 import {
   awaitingApproval,

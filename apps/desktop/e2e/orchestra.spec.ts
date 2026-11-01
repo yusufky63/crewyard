@@ -115,7 +115,7 @@ interface RunRead {
   tokensOut: number;
   cost: { usd: number | null; provenance: string };
 }
-const taskDetail = (page: Page, taskId: string) => daemon<{ id: string; title: string; status: string; goal: unknown; crew: { members: Array<{ role: string }> } | null; runs: RunRead[] }>(page, "tasks.get", { taskId });
+const taskDetail = (page: Page, taskId: string) => daemon<{ id: string; title: string; status: string; goal: unknown; crew: { members: Array<{ role: string }> } | null; runs: RunRead[]; worktree: { path: string } | null }>(page, "tasks.get", { taskId });
 
 /** The prompts of the runs started for a script key, oldest first. */
 const promptsOf = (key: string) =>
@@ -339,6 +339,21 @@ test("tasks merge into the goal branch in order, and a conflicting merge asks yo
 
   // The three ways design §4.9 offers, each naming the task it acts on.
   await expect(view.getByRole("button", { name: "I will merge it myself", exact: true })).toBeEnabled();
+  // "I'll merge it" opens the task's own worktree folder and keeps the decision open for Check again.
+  // Explorer is stubbed: the test records the folder instead of opening a window on the desktop.
+  await h.app.evaluate(({ shell }) => {
+    const opened: string[] = [];
+    (globalThis as unknown as { openedFolders: string[] }).openedFolders = opened;
+    shell.openPath = (async (path: string) => {
+      opened.push(path);
+      return "";
+    }) as typeof shell.openPath;
+  });
+  await view.getByRole("button", { name: "I will merge it myself", exact: true }).click();
+  await expect(view.getByText(/^The task's worktree is open in Explorer\./)).toBeVisible();
+  const serverWorktree = (await taskDetail(page, id("server"))).worktree!.path;
+  await expect.poll(() => h.app.evaluate(() => (globalThis as unknown as { openedFolders?: string[] }).openedFolders ?? [])).toEqual([serverWorktree]);
+  expect((await goalByText(page, GOAL))!.decisions.find((d) => d.kind === "conflict")!.answeredAt).toBeNull();
   await expect(view.getByRole("button", { name: "Check again", exact: true })).toBeEnabled();
   await expect(view.getByRole("button", { name: "Leave 02 out of the goal", exact: true })).toBeEnabled();
   // Your answer: one more run of the server's implementer in its own session; Review runs again.
@@ -465,7 +480,8 @@ test("a plan the checks refuse twice fails with the parser's words, and Run as o
   await composer(page).getByRole("button", { name: /^Plan goal · ~\$\d+\.\d+ Estimated$/ }).click();
   const review = await planReview(page);
   await expect(review.getByText("Planning failed")).toBeVisible({ timeout: 20_000 });
-  await expect(review.getByText("the plan has 15 tasks; the limit is 8")).toBeVisible();
+  // The parser's refusal is said in the app's words; the stored error keeps the parser's text.
+  await expect(review.getByText("The planner returned 15 tasks; a goal holds at most 8.")).toBeVisible();
   // Exactly one corrective turn, carrying the parser's words; no third planning run on its own.
   const corrective = h.runs().filter((r) => r.prompt.includes("Your plan was refused"));
   expect(corrective).toHaveLength(1);
@@ -487,4 +503,57 @@ test("a plan the checks refuse twice fails with the parser's words, and Run as o
   expect(one.crew!.members.length).toBeGreaterThan(0);
   expect(one.runs).toEqual([]);
   await expect(page.getByRole("region", { name: /Suggested crew for/ })).toBeVisible();
+});
+
+const HALT_GOAL = "Giriş sayfası için iki ayrı araştırma yap";
+const HALT_PLAN = {
+  summary: "Two separate research tasks.",
+  tasks: [
+    task({ key: "ra", title: "Araştırma A: mevcut giriş", kind: "research", mode: "solo", basis: "iki ayrı araştırma" }),
+    task({ key: "rb", title: "Araştırma B: rakipler", kind: "research", mode: "solo", basis: "iki ayrı araştırma" }),
+  ],
+};
+// A request every provider refuses: no same-profile retry, so both tasks fail at once with the same key.
+const refused: FakeStep = { emit: { type: "run.ended", reason: "failed", detail: "HTTP 400: invalid tool schema" } };
+
+test("a decision's Replan opens the form with its cost, and its planning run answers the decision", async () => {
+  const { page } = h;
+  h.setScripts({
+    "goal-planner": [[running, say("read src"), plannerUsage(0.02), result(HALT_PLAN)]],
+    "researcher@Araştırma A: mevcut giriş": [[running, refused]],
+    "researcher@Araştırma B: rakipler": [[running, refused]],
+  });
+  await page.getByRole("button", { name: "Close" }).first().click().catch(() => undefined);
+  await composerMode(page, "Orchestra");
+  await page.getByLabel("New goal").fill(HALT_GOAL);
+  await composer(page).getByRole("button", { name: /^Plan goal · ~\$\d+\.\d+ Estimated$/ }).click();
+  const review = await planReview(page);
+  const approve = review.getByRole("button", { name: /^Approve and start 2 tasks · / });
+  await expect(approve).toBeEnabled({ timeout: 20_000 });
+  await approve.click();
+
+  // Two tasks failed the same way: the stop rule halts the goal and asks you.
+  const view = goalView(page);
+  const halt = view.locator(".gv-need", { hasText: "Halted: two tasks failed the same way" });
+  await expect(halt).toBeVisible({ timeout: 30_000 });
+  const before = (await goalByText(page, HALT_GOAL))!;
+  const plannerRuns = () => h.runs().filter((r) => r.role === "goal-planner" && r.prompt.includes(HALT_GOAL)).length;
+  expect(plannerRuns()).toBe(1);
+
+  // The decision's Replan opens the form that states the cost; the click alone starts nothing.
+  const open = halt.getByRole("button", { name: /^Replan · ~\$\d+\.\d+ Estimated/ });
+  await expect(open).toHaveAttribute("aria-expanded", "false");
+  await open.click();
+  const form = halt.locator("form");
+  await expect(form.getByLabel("Note to the planner (optional)")).toBeVisible();
+  expect(plannerRuns()).toBe(1);
+  expect((await goalByText(page, HALT_GOAL))!.decisions.find((d) => d.kind === "stop_rule")!.answeredAt).toBeNull();
+
+  await form.getByLabel("Note to the planner (optional)").fill("Araştırmaları tek göreve indir.");
+  await form.getByRole("button", { name: /^Replan · ~\$\d+\.\d+ Estimated/ }).click();
+  // One planning run started, and it answered the decision.
+  await expect.poll(plannerRuns, { timeout: 20_000 }).toBe(2);
+  const after = (await goalByText(page, HALT_GOAL))!;
+  expect(after.revisions.length).toBe(before.revisions.length + 1);
+  expect(after.decisions.find((d) => d.kind === "stop_rule")!.answeredAt).not.toBeNull();
 });
