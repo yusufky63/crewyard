@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { defaultProjectConfig, ReviewVerdict, type ProfileInput, type RequestView, type RunView, type TaskDetail } from "@crewyard/core";
+import { defaultProjectConfig, GOAL_LIMITS, ReviewVerdict, type ProfileInput, type RequestView, type RunView, type TaskDetail } from "@crewyard/core";
 import { commandLineLeaks, defaultDecide, describeRequest, hasKey, keyFor, killTree, LiveDaemon, processTable, scanFiles, type Decide, type KeyVar } from "./harness.ts";
 
 // `pnpm --filter @crewyard/daemon live` under env-vault `run` (see vitest.live.config.ts). Every
@@ -14,7 +14,8 @@ import { commandLineLeaks, defaultDecide, describeRequest, hasKey, keyFor, killT
 //                                   and the GitHub flow only reads what the app says about it.
 // CREWYARD_LIVE_GEMINI_BIN=<folder> a current Gemini CLI, put first on PATH for the daemon.
 // CREWYARD_LIVE_FLOWS=a,b           run only these flows (setup always runs): crew, github, fallback,
-//                                   research, keyenv, turns, stall.
+//                                   research, keyenv, turns, stall, goal.
+// CREWYARD_LIVE_PLANNERS=cx-dsp,cc-ds planner profiles for the goal flow (default: these two).
 // CREWYARD_LIVE_KEYENV=impl:rev,...  implementer:reviewer pairs for the key exposure probe.
 // CREWYARD_LIVE_RESEARCH=gm,cx-ds   only these profiles in the research flows.
 // CREWYARD_LIVE_KEEP=1              keep the temp folder for the Electron capture.
@@ -902,6 +903,57 @@ Then create a new file ENV_CHECK.md that holds its single output line, and commi
     const src = file && existsSync(file) ? readFileSync(file, "utf8") : "";
     const pass = end.worktree ? testsPass(end.worktree.path) : false;
     d.row({ flow: "steer now", runner: "cx-ds", result: steer.startsWith("ok") && /range/.test(src) ? "pass" : "fail", costUsd: end.spend.usd, notes: `${steer}; range in stats.js ${/range/.test(src)}; tests ${pass}; task ${end.status}` });
+  });
+
+  // Orchestra's planning run on real runners (design §4.4, §7.1 item 10): what one read-only plan
+  // really costs, next to the fixed 80k in / 8k out heuristic the Plan goal button estimates from.
+  // Nothing is approved, so no goal task runs; the goal is stopped afterwards.
+  it("goal: planning runs measured against the planning estimate", { timeout: 25 * MIN }, async () => {
+    if (!want("goal") || (await overBudget("goal planning"))) return;
+    const keys = process.env.CREWYARD_LIVE_PLANNERS?.split(",").map((s) => s.trim()) ?? ["cx-dsp", "cc-ds"];
+    const text = "src/math.js dosyasına bölme fonksiyonu ve testini ekle, sonra README'de matematik yardımcılarını belgele";
+    const heuristic = `${GOAL_LIMITS.plannerTokensIn} in / ${GOAL_LIMITS.plannerTokensOut} out`;
+    for (const key of keys) {
+      const plannerProfileId = profiles[key];
+      if (!plannerProfileId) {
+        d.row({ flow: `goal planning (${key})`, runner: "-", result: "skipped", costUsd: null, notes: "no such profile in this run" });
+        continue;
+      }
+      if (await overBudget(`goal planning (${key})`)) return;
+      const preview = await d.call("goals.preview", { projectId, text, plannerProfileId });
+      d.log("goal preview", key, JSON.stringify({ canPlan: preview.canPlan, reason: preview.reason, estimate: preview.estimate, ceilingUsd: preview.ceilingUsd, billing: preview.billing }));
+      if (!preview.canPlan) {
+        d.row({ flow: `goal planning (${key})`, runner: "-", result: "skipped", costUsd: null, notes: `cannot plan: ${preview.reason?.code ?? "?"}` });
+        continue;
+      }
+      const created = await d.call("goals.create", { projectId, text, plannerProfileId });
+      const goal = await d.waitFor(
+        `goal ${created.id} planned`,
+        async () => {
+          const g = await d.call("goals.get", { goalId: created.id });
+          const state = g.revisions.at(-1)?.state;
+          return state === "ready" || state === "failed" ? g : null;
+        },
+        20 * MIN,
+        5_000,
+      );
+      const rev = goal.revisions.at(-1)!;
+      // Every run of the planning task counts: a corrective turn is part of what one plan costs.
+      const runs = rev.planTaskId ? (await d.call("tasks.get", { taskId: rev.planTaskId })).runs : [];
+      const tokensIn = runs.reduce((n, r) => n + r.tokensIn, 0);
+      const tokensOut = runs.reduce((n, r) => n + r.tokensOut, 0);
+      const runner = runs.map((r) => `${r.runner}/${r.model ?? "-"}`).join(", ") || "-";
+      d.log("goal planned", key, rev.state, rev.error ?? "", `${goal.tasks.length} tasks:`, goal.tasks.map((t) => `${t.key} ${t.kind} ${t.mode} [${t.paths.join(", ")}]`).join(" | "));
+      d.row({
+        flow: `goal planning (${key})`,
+        runner,
+        result: rev.state === "ready" ? "pass" : "fail",
+        costUsd: rev.planningSpend.usd,
+        notes: `${rev.state}${rev.error ? ` (${rev.error})` : ""}; ${runs.length} runs; measured ${tokensIn} in / ${tokensOut} out vs heuristic ${heuristic}; spend ${rev.planningSpend.usd ?? "?"} ${rev.planningSpend.provenance} vs estimate ${preview.estimate.usd ?? "?"} ${preview.estimate.provenance}, ceiling ${preview.ceilingUsd ?? "?"}; ${goal.tasks.length} tasks`,
+      });
+      const stopped = await d.attempt("goals.stop", { goalId: goal.id });
+      if (!stopped.ok) d.log("goal stop", key, stopped.error);
+    }
   });
 
   // One stall alert: the no-events rule at its lowest setting, and a command that stays quiet longer.

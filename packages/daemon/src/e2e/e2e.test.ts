@@ -16,7 +16,7 @@ function scriptFile(script: E2eScript): string {
   return file;
 }
 
-const req = (prompt: string, writes: StartRequest["policy"]["writes"] = "worktree") => ({ prompt, policy: { writes, allowCommands: [], network: "ask" } }) as StartRequest;
+const req = (prompt: string) => ({ prompt, policy: { writes: "worktree", allowCommands: [], network: "ask" } }) as unknown as StartRequest;
 const say = (text: string) => ({ emit: { type: "message.delta" as const, text } });
 
 async function texts(adapter: E2eAdapter, prompt: string, resume = false): Promise<string[]> {
