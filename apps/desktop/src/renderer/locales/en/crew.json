@@ -30,12 +30,13 @@
     "fact": "Detail"
   },
   "canvas": {
-    "hint": "Task → crew → fallback"
+    "hint": "Task → crew · standby on each step"
   },
   "legend": {
     "reports": "Reports to",
     "depends": "Depends on",
-    "fallback": "Fallback",
+    "fallback": "Handed off",
+    "standby": "Standby",
     "help": "Drag to arrange · Alt+arrows move · right-click or Shift+F10 for actions · F full screen",
     "helpEdit": "Click a step to edit it · drag from a step's right edge to another step to make it wait · right-click or Shift+F10 for actions"
   },
@@ -49,10 +50,10 @@
   },
   "edge": {
     "fallback": {
-      "manual": "fallback · you choose",
-      "ask": "fallback · asks first",
-      "auto": "fallback · automatic",
-      "wait_for_reset": "fallback · after reset wait"
+      "manual": "handed off · you choose",
+      "ask": "handed off · asks first",
+      "auto": "handed off · automatic",
+      "wait_for_reset": "handed off · after reset wait"
     },
     "remove": "Remove dependency: {{to}} waits for {{from}}"
   },
@@ -64,7 +65,8 @@
     "task": "Task",
     "taskTitle": "Task · {{title}}",
     "memberHead": "{{step}} {{role}}",
-    "standbyHead": "{{step}} standby · {{role}}",
+    "standbyHead": "{{step}} standby {{place}} · {{role}}",
+    "takeoverHead": "{{step}} {{role}} · took over",
     "defaultModel": "default model",
     "noAccount": "no account"
   },
@@ -133,9 +135,8 @@
     "estimate": "forecast {{cost}}",
     "after": "waits for {{steps}}",
     "noCandidate": "no account fits; edit the crew",
-    "standby": "takes over {{step}}",
-    "standbyMore_one": "takes over {{step}} · {{count}} more",
-    "standbyMore_other": "takes over {{step}} · {{count}} more",
+    "standby": "takes over {{step}} first",
+    "standbyOrder": "number {{place}} in line for {{step}}",
     "branch": "{{base}} → {{branch}}",
     "kind": "{{kind}} · size {{size}}",
     "queuedMessages_one": "{{count}} message waiting",
@@ -182,8 +183,21 @@
       "last_step": "A crew keeps at least one step",
       "skipped": "This step is already skipped",
       "nothing_live": "No step is running",
-      "nothing_paused": "No step is paused"
+      "nothing_paused": "No step is paused",
+      "none_failed": "No step has failed",
+      "nothing_finished": "No step has finished yet; a follow-up goes after a finished one",
+      "task_finished": "The task is finished; there is nothing left to cancel",
+      "crew_problem": "Before approving: {{problem}}",
+      "no_worktree": "No changes yet: the task has no worktree"
     },
+    "open_details": "Open details",
+    "retry_failed_steps": "Retry failed steps",
+    "approve_crew": "Approve and start",
+    "change_ai_all": "Change AI for every step…",
+    "follow_up_task": "Add a follow-up step…",
+    "rerun_other": "Run again with another AI…",
+    "cancel_task": "Cancel task…",
+    "change_ai_before": "Change AI before it starts…",
     "open_changes": "Open changes",
     "open_files": "Open files",
     "retry_failed": "Retry step",
@@ -233,7 +247,16 @@
     "pauseAll_other": "Pausing {{count}} steps",
     "resumeAll_one": "Resuming {{count}} step",
     "resumeAll_other": "Resuming {{count}} steps",
-    "waitReset": "{{target}} waits for its limit to reset"
+    "waitReset": "{{target}} waits for its limit to reset",
+    "changeProfile": "{{target}} will start on the AI you picked",
+    "rerun": "Added a run of {{target}} on another AI. It runs after you approve it",
+    "changeAll_one": "AI changed on {{count}} step",
+    "changeAll_other": "AI changed on {{count}} steps",
+    "changeAllKept_one": "AI changed on {{count}} step; the rules kept {{kept}} as before",
+    "changeAllKept_other": "AI changed on {{count}} steps; the rules kept {{kept}} as before",
+    "retryFailed_one": "Retrying {{count}} failed step",
+    "retryFailed_other": "Retrying {{count}} failed steps",
+    "cancelTask": "Task cancelled"
   },
   "error": {
     "generic": "The action failed ({{code}})",
@@ -356,6 +379,7 @@
   "addStep": {
     "title": "Add a step",
     "followTitle": "Add a follow-up after {{target}}",
+    "followAnyTitle": "Add a follow-up step",
     "role": "Role",
     "after": "Starts after",
     "afterNone": "Right away, with no dependency",
@@ -370,6 +394,58 @@
     "confirm": "Skip step",
     "dependents_one": "{{steps}} waits for it and will start without its result.",
     "dependents_other": "{{steps}} wait for it and will start without its result."
+  },
+  "pickAi": {
+    "title": "Change the AI for {{target}}",
+    "label": "Start it on",
+    "body": "The step has not started, so nothing is handed off: it starts on the AI you pick when its turn comes. Nothing starts now.",
+    "confirm": "Use this AI"
+  },
+  "rerun": {
+    "title": "Run {{target}} again with another AI",
+    "label": "Run it on",
+    "body": "A follow-up step of the same role goes after this one, on the AI you pick. It waits for your approval like any new step.",
+    "confirm": "Add follow-up"
+  },
+  "changeAll": {
+    "title": "Change the AI for every step",
+    "label": "Use for every step it fits",
+    "body": "Each step this AI is scored for switches to it; a step the independence rule keeps off its model stays as it is. Nothing starts until you approve.",
+    "confirm": "Change AI",
+    "fits": "fits {{n}} of {{total}} steps",
+    "already": "Every step it fits already uses it"
+  },
+  "pick": {
+    "error": "The candidates could not be read",
+    "none": "No other account fits. Add one in Providers."
+  },
+  "cancelTask": {
+    "title": "Cancel {{title}}?",
+    "body_one": "This stops {{count}} open agent run and closes its questions in the Inbox.",
+    "body_other": "This stops {{count}} open agent runs and closes their questions in the Inbox.",
+    "bodyIdle": "No agent is running. The task is marked as stopped and its open questions close.",
+    "keeps": "The worktree stays on disk. Closing a panel never does this; only this button does.",
+    "confirm": "Cancel task",
+    "keep": "Keep the task"
+  },
+  "standby": {
+    "badge": "Standby: {{runner}}",
+    "more_one": "+{{count}}",
+    "more_other": "+{{count}}",
+    "badgeLabel": "{{target}}: {{runner}} stands by. Show the standby order",
+    "badgeLabelMore_one": "{{target}}: {{runner}} and {{count}} more stand by. Show the standby order",
+    "badgeLabelMore_other": "{{target}}: {{runner}} and {{count}} more stand by. Show the standby order",
+    "title": "Standby for {{target}}",
+    "close": "Close the standby order",
+    "order": "Takes over in this order when the step hits a limit ({{mode}}).",
+    "reorderHint": "Alt+Up and Alt+Down move the focused one.",
+    "locked": "This step has started, so its standby order is fixed. A handoff still picks from it.",
+    "mode": {
+      "manual": "you choose",
+      "ask": "asks first",
+      "auto": "automatic",
+      "wait_for_reset": "after a reset wait"
+    }
   },
   "handoffNow": {
     "title": "Hand off {{target}} now",

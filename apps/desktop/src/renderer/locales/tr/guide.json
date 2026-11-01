@@ -235,8 +235,8 @@
       "body": "Ekip grafiğinde her değişiklik ayrı bir işlemdir; bir düğümü taşımak yalnızca yerleşimi değiştirir.",
       "points": {
         "a": "Öneri aşamasında: adım ekle ya da çıkar, rolünü, profilini ya da modelini değiştir, bağımlılık çiz ve yedeklerin sırasını belirle.",
-        "b": "Çalışırken: başarısız bir adımı yeniden dene, başlamamış birini atla, hepsini duraklat ya da sürdür, onayını bekleyen bir ek adım ekle.",
-        "c": "Bir düğüme sağ tıkla ya da Shift F10'a bas; tüm işlemler orada, kapalı olanların nedeniyle birlikte."
+        "b": "Çalışırken: başarısız adımları yeniden dene, başlamamış bir adımı atla ya da yapay zekasını değiştir, hepsini duraklat ya da sürdür; onayını bekleyen bir ek adım ekle ya da biten bir adımı başka bir yapay zekayla yeniden çalıştır.",
+        "c": "Bir adıma ya da göreve sağ tıkla veya Shift F10'a bas; tüm işlemler orada, kapalı olanların nedeniyle birlikte. Bir adımın yedekleri, kutucuğundaki rozettir."
       },
       "go": "Ekip grafiğini aç"
     },

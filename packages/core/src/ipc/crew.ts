@@ -55,6 +55,15 @@ export interface CrewManageIpc {
   "crew.candidates": { params: { taskId: string; role: RoleId }; result: CandidateView[] };
   /** Applies one edit to the draft crew, or to a follow-up step still waiting for approval. */
   "crew.edit": { params: { taskId: string; edit: CrewProposalEdit }; result: TaskDetail };
+  /**
+   * Changes the AI of a step that has not started yet: a proposal step, a follow-up waiting for
+   * approval, or a step of the approved crew still waiting for its turn. The profile must be one
+   * `crew.candidates` scores for the step's role; the independence rule, the read-only check and
+   * the standby shuffle are those of `crew.edit`'s set_candidate. Refused with `crew.started`
+   * once the step has a run, and with `crew.skipped` or `crew.best_of` where set_candidate would
+   * not apply. Nothing starts: the step keeps its place and waits for the scheduler as before.
+   */
+  "crew.changeProfile": { params: { taskId: string; memberId: string; profileId: string }; result: TaskDetail };
   /** Approves every follow-up step of a running crew; they start under admission control. */
   "crew.approveSteps": { params: { taskId: string }; result: TaskDetail };
   /** Skips a step that has not started; the steps that wait for it go on without its result. */

@@ -201,6 +201,7 @@ export function AddStepDialog({
   steps,
   after,
   fixedAfter,
+  requireAfter = false,
   note,
   onConfirm,
   onClose,
@@ -210,13 +211,15 @@ export function AddStepDialog({
   steps: StepOption[];
   after: string | null;
   fixedAfter: boolean;
+  /** A follow-up from the task node: it must go after one of `steps`, but you pick which. */
+  requireAfter?: boolean;
   note: string;
   onConfirm: (role: string, after: string[]) => Promise<void>;
   onClose: () => void;
 }) {
   const { t } = useTranslation("crew");
   const [role, setRole] = useState(roles[0]?.id ?? "");
-  const [dep, setDep] = useState(after ?? "");
+  const [dep, setDep] = useState(after ?? (requireAfter ? (steps[0]?.step ?? "") : ""));
   const [busy, setBusy] = useState(false);
   return (
     <Dialog
@@ -253,7 +256,7 @@ export function AddStepDialog({
       <label className="crew-field">
         <span className="lbl">{t("addStep.after")}</span>
         <select value={dep} onChange={(e) => setDep(e.target.value)} disabled={fixedAfter}>
-          {!fixedAfter && <option value="">{t("addStep.afterNone")}</option>}
+          {!fixedAfter && !requireAfter && <option value="">{t("addStep.afterNone")}</option>}
           {steps.map((s) => (
             <option key={s.step} value={s.step}>
               {s.label}
@@ -295,6 +298,142 @@ export function SkipDialog({ target, dependents, onConfirm, onClose }: { target:
     >
       <p>{t("skip.body", { target })}</p>
       <p className={dependents.length > 0 ? "crew-why" : "muted"}>{dependents.length > 0 ? t("skip.dependents", { steps: dependents.join(", "), count: dependents.length }) : t("skip.noDependents")}</p>
+    </Dialog>
+  );
+}
+
+export interface PickRow {
+  candidate: CandidateView;
+  /** A second line under the name, e.g. how many steps the profile fits. */
+  note?: string | null;
+  /** Why it cannot be picked; the row stays listed, disabled, with this text. */
+  why?: string | null;
+}
+
+/**
+ * Pick one profile from a scored list, for the Change AI paths that start nothing: a step before
+ * its run, every step of a proposal, or a follow-up that runs a finished step again. The rows
+ * come from crew.candidates, so the dialog can open before they arrive.
+ */
+export function PickProfileDialog({
+  title,
+  label,
+  body,
+  confirm,
+  state,
+  rows,
+  runnerLabel,
+  onConfirm,
+  onClose,
+}: {
+  title: string;
+  label: string;
+  body: string;
+  confirm: string;
+  state: "loading" | "error" | "ready";
+  rows: PickRow[];
+  runnerLabel: (runner: CandidateView["runner"]) => string;
+  onConfirm: (profileId: string) => Promise<void>;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation("crew");
+  const first = rows.find((r) => !r.why)?.candidate.profileId ?? "";
+  const [chosen, setChosen] = useState("");
+  const [busy, setBusy] = useState(false);
+  // The rows may arrive after the dialog opens; until you pick, the first open one is selected.
+  const pick = chosen || first;
+  return (
+    <Dialog
+      title={title}
+      onClose={onClose}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            {t("dialog.cancel")}
+          </Button>
+          <Button
+            variant="primary"
+            disabled={!pick || busy || state !== "ready"}
+            onClick={() => {
+              setBusy(true);
+              void onConfirm(pick).finally(() => setBusy(false));
+            }}
+          >
+            {confirm}
+          </Button>
+        </>
+      }
+    >
+      <fieldset className="crew-pick" aria-busy={state === "loading"}>
+        <legend className="lbl">{label}</legend>
+        {state === "loading" && <p className="muted">{t("panel.loading")}</p>}
+        {state === "error" && <p className="crew-notice bad">{t("pick.error")}</p>}
+        {state === "ready" && rows.length === 0 && <p className="muted">{t("pick.none")}</p>}
+        {rows.map((r) => {
+          const c = r.candidate;
+          const id = `pick-why-${c.profileId}`;
+          return (
+            <label key={c.profileId} className={r.why ? "crew-pick-row off" : "crew-pick-row"}>
+              <input
+                type="radio"
+                name="crew-pick-profile"
+                value={c.profileId}
+                checked={pick === c.profileId}
+                disabled={!!r.why}
+                aria-describedby={r.why ? id : undefined}
+                onChange={() => setChosen(c.profileId)}
+                data-autofocus={c.profileId === first ? true : undefined}
+              />
+              <BrandIcon id={c.runner} />
+              <span className="crew-cand-name">
+                <span>{`${runnerLabel(c.runner)} · ${c.alias}`}</span>
+                {r.why ? (
+                  <span id={id} className="crew-why">
+                    {r.why}
+                  </span>
+                ) : (
+                  r.note && <span className="mono muted">{r.note}</span>
+                )}
+              </span>
+              <span className="mono muted">{c.model ?? t("node.defaultModel")}</span>
+            </label>
+          );
+        })}
+      </fieldset>
+      <p className="muted">{body}</p>
+    </Dialog>
+  );
+}
+
+/** Cancel task confirms and says what it stops, as the task row does; the worktree stays. */
+export function CancelTaskDialog({ title, running, onConfirm, onClose }: { title: string; running: number; onConfirm: () => Promise<void>; onClose: () => void }) {
+  const { t } = useTranslation("crew");
+  const [busy, setBusy] = useState(false);
+  return (
+    <Dialog
+      title={t("cancelTask.title", { title })}
+      onClose={onClose}
+      footer={
+        <>
+          {/* "Cancel" beside "Cancel task" would read as the same thing; this one keeps the task. */}
+          <Button variant="ghost" onClick={onClose} data-autofocus>
+            {t("cancelTask.keep")}
+          </Button>
+          <Button
+            variant="danger"
+            disabled={busy}
+            onClick={() => {
+              setBusy(true);
+              void onConfirm().finally(() => setBusy(false));
+            }}
+          >
+            {t("cancelTask.confirm")}
+          </Button>
+        </>
+      }
+    >
+      <p>{running > 0 ? t("cancelTask.body", { count: running }) : t("cancelTask.bodyIdle")}</p>
+      <p className="muted">{t("cancelTask.keeps")}</p>
     </Dialog>
   );
 }

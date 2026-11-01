@@ -95,6 +95,51 @@ export class CrewManager extends Part {
     return this.deps.get(c.task.id);
   }
 
+  /**
+   * Another AI for a step that has not started. crew.edit locks the approved crew's steps, so this
+   * is the one way to change who runs a queued step before its turn; it stops at the first run,
+   * after which a change is a handoff (runs.handoff). It never ticks the scheduler: the step was
+   * already approved and starts when admitted, on the profile written here.
+   */
+  async changeProfile(taskId: string, memberId: string, profileId: string): Promise<TaskDetail> {
+    const c = this.load(taskId);
+    this.refuseUnreleasedGoalTask(c);
+    if (c.task.cancelled_at) throw new OrchestratorError("task.cancelled");
+    const m = c.views.find((x) => x.id === memberId);
+    if (!m) throw new CrewEditError("unknown_step", { memberId });
+    if (m.skippedAt) throw new CrewEditError("skipped");
+    if (memberId === (this.bestOf.group(c.task.id)?.member_id ?? null)) throw new CrewEditError("best_of");
+    const hasRun = (runs: RunRow[]) => runs.some((r) => r.member_id === memberId);
+    if (hasRun(c.runs)) throw new CrewEditError("started");
+    const candidates = await this.candidates(c.project);
+    const rank = this.ranker(c, candidates);
+    const env: EditEnv = {
+      rules: this.rules(c),
+      rank: (role) => rank(this.templateFor(c, role, memberId)),
+      newId: randomUUID,
+      started: new Set(),
+      finished: new Set(),
+      // The started check above is this call's lock; the approved crew's lock is what it lifts.
+      approved: false,
+    };
+    const edit: CrewProposalEdit = { kind: "set_candidate", memberId, profileId };
+    const next = applyCrewEdit(c.views, edit, env);
+    // An approved step has no approval left to catch a read-only profile on a writing role.
+    const cand = candidates.find((x) => x.profile.id === profileId);
+    if (!cand) throw new OrchestratorError("crew.unknown_profile", { profileId });
+    if (readOnlyConflict(cand, this.templateFor(c, m.role, m.id))) throw new OrchestratorError("crew.read_only_profile", { profileId, role: m.role });
+    // The directory was awaited: the scheduler may have started the step, or a goal claimed the
+    // task, meanwhile. Nothing awaits between these checks and the write.
+    const fresh = this.load(taskId);
+    this.refuseUnreleasedGoalTask(fresh);
+    if (fresh.task.cancelled_at) throw new OrchestratorError("task.cancelled");
+    if (hasRun(fresh.runs)) throw new CrewEditError("started");
+    this.write(c, next, edit);
+    this.audit(c.task.id, null, "crew.profile_changed", { memberId, profileId, approved: c.approved });
+    this.emitTask(c.task.id, "crew_edited");
+    return this.deps.get(c.task.id);
+  }
+
   /** Approves every follow-up that waits; they start under admission control like any step. */
   async approveSteps(taskId: string): Promise<TaskDetail> {
     const c = this.load(taskId);

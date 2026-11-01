@@ -30,12 +30,13 @@
     "fact": "Ayrıntı"
   },
   "canvas": {
-    "hint": "Görev → ekip → yedek"
+    "hint": "Görev → ekip · yedekler her adımın üstünde"
   },
   "legend": {
     "reports": "Sonucu iletir",
     "depends": "Bekler",
-    "fallback": "Yedek",
+    "fallback": "Devredildi",
+    "standby": "Yedek",
     "help": "Sürükleyip yerleştir · Alt+oklar taşır · işlemler için sağ tık ya da Shift+F10 · F tam ekran",
     "helpEdit": "Düzenlemek için adıma tıkla · bir adımı bekletmek için başka bir adımın sağ kenarından ona sürükle · işlemler için sağ tık ya da Shift+F10"
   },
@@ -49,10 +50,10 @@
   },
   "edge": {
     "fallback": {
-      "manual": "yedek · sen seçersin",
-      "ask": "yedek · önce sorar",
-      "auto": "yedek · kendiliğinden",
-      "wait_for_reset": "yedek · sıfırlanmayı bekledikten sonra"
+      "manual": "devredildi · sen seçersin",
+      "ask": "devredildi · önce sorar",
+      "auto": "devredildi · kendiliğinden",
+      "wait_for_reset": "devredildi · sıfırlanma beklendikten sonra"
     },
     "remove": "Bağımlılığı kaldır: {{to}}, {{from}} adımını bekliyor"
   },
@@ -64,7 +65,8 @@
     "task": "Görev",
     "taskTitle": "Görev · {{title}}",
     "memberHead": "{{step}} {{role}}",
-    "standbyHead": "{{step}} yedek · {{role}}",
+    "standbyHead": "{{step}} {{place}}. yedek · {{role}}",
+    "takeoverHead": "{{step}} {{role}} · devraldı",
     "defaultModel": "varsayılan model",
     "noAccount": "hesap yok"
   },
@@ -133,9 +135,8 @@
     "estimate": "öngörü {{cost}}",
     "after": "{{steps}} bitince başlar",
     "noCandidate": "uygun hesap yok; ekibi düzenle",
-    "standby": "{{step}} adımını devralır",
-    "standbyMore_one": "{{step}} adımını devralır · {{count}} yedek daha",
-    "standbyMore_other": "{{step}} adımını devralır · {{count}} yedek daha",
+    "standby": "{{step}} adımını ilk o devralır",
+    "standbyOrder": "{{step}} için sırada {{place}}.",
     "branch": "{{base}} → {{branch}}",
     "kind": "{{kind}} · boyut {{size}}",
     "queuedMessages_one": "{{count}} mesaj bekliyor",
@@ -182,8 +183,21 @@
       "last_step": "Ekipte en az bir adım kalmalı",
       "skipped": "Bu adım zaten atlandı",
       "nothing_live": "Çalışan adım yok",
-      "nothing_paused": "Duraklatılmış adım yok"
+      "nothing_paused": "Duraklatılmış adım yok",
+      "none_failed": "Başarısız olan adım yok",
+      "nothing_finished": "Henüz biten adım yok; devam adımı bitmiş bir adımın ardından gelir",
+      "task_finished": "Görev bitti; iptal edilecek bir şey kalmadı",
+      "crew_problem": "Onaylamadan önce: {{problem}}",
+      "no_worktree": "Henüz değişiklik yok: görevin çalışma ağacı yok"
     },
+    "open_details": "Ayrıntıları aç",
+    "retry_failed_steps": "Başarısız adımları yeniden dene",
+    "approve_crew": "Onayla ve başlat",
+    "change_ai_all": "Tüm adımların yapay zekasını değiştir…",
+    "follow_up_task": "Devam adımı ekle…",
+    "rerun_other": "Başka bir yapay zekayla yeniden çalıştır…",
+    "cancel_task": "Görevi iptal et…",
+    "change_ai_before": "Başlamadan yapay zekayı değiştir…",
     "open_changes": "Değişiklikleri aç",
     "open_files": "Dosyaları aç",
     "retry_failed": "Adımı yeniden dene",
@@ -233,7 +247,16 @@
     "pauseAll_other": "{{count}} adım duraklatılıyor",
     "resumeAll_one": "{{count}} adım sürdürülüyor",
     "resumeAll_other": "{{count}} adım sürdürülüyor",
-    "waitReset": "{{target}} limitinin sıfırlanmasını bekliyor"
+    "waitReset": "{{target}} limitinin sıfırlanmasını bekliyor",
+    "changeProfile": "{{target}} seçtiğin yapay zekayla başlayacak",
+    "rerun": "{{target}} başka bir yapay zekayla yeniden çalışmak üzere eklendi. Sen onaylayınca çalışır",
+    "changeAll_one": "{{count}} adımın yapay zekası değişti",
+    "changeAll_other": "{{count}} adımın yapay zekası değişti",
+    "changeAllKept_one": "{{count}} adımın yapay zekası değişti; kurallar {{kept}} adımı olduğu gibi bıraktı",
+    "changeAllKept_other": "{{count}} adımın yapay zekası değişti; kurallar {{kept}} adımı olduğu gibi bıraktı",
+    "retryFailed_one": "Başarısız {{count}} adım yeniden deneniyor",
+    "retryFailed_other": "Başarısız {{count}} adım yeniden deneniyor",
+    "cancelTask": "Görev iptal edildi"
   },
   "error": {
     "generic": "İşlem başarısız oldu ({{code}})",
@@ -356,6 +379,7 @@
   "addStep": {
     "title": "Adım ekle",
     "followTitle": "{{target}} sonrasına devam adımı ekle",
+    "followAnyTitle": "Devam adımı ekle",
     "role": "Rol",
     "after": "Ne zaman başlasın",
     "afterNone": "Hemen, hiçbir adımı beklemeden",
@@ -370,6 +394,58 @@
     "confirm": "Adımı atla",
     "dependents_one": "{{steps}} bu adımı bekliyor; onun sonucu olmadan başlayacak.",
     "dependents_other": "{{steps}} bu adımı bekliyor; onun sonucu olmadan başlayacaklar."
+  },
+  "pickAi": {
+    "title": "{{target}} için yapay zekayı değiştir",
+    "label": "Hangi yapay zekayla başlasın",
+    "body": "Adım henüz başlamadı, bu yüzden devir yapılmaz: sırası gelince seçtiğin yapay zekayla başlar. Şimdi hiçbir şey başlamaz.",
+    "confirm": "Bu yapay zekayı kullan"
+  },
+  "rerun": {
+    "title": "{{target}} başka bir yapay zekayla yeniden çalışsın",
+    "label": "Hangi yapay zekayla çalışsın",
+    "body": "Bu adımın ardından aynı rolde bir devam adımı eklenir ve seçtiğin yapay zekayla çalışır. Her yeni adım gibi önce onayını bekler.",
+    "confirm": "Devam adımı ekle"
+  },
+  "changeAll": {
+    "title": "Tüm adımların yapay zekasını değiştir",
+    "label": "Uyduğu her adımda kullan",
+    "body": "Bu yapay zekanın puanlandığı her adım ona geçer; bağımsızlık kuralı gereği bu modeli kullanamayan adım olduğu gibi kalır. Sen onaylamadan hiçbir şey başlamaz.",
+    "confirm": "Yapay zekayı değiştir",
+    "fits": "{{total}} adımın {{n}} tanesine uyar",
+    "already": "Uyduğu her adım zaten bunu kullanıyor"
+  },
+  "pick": {
+    "error": "Adaylar okunamadı",
+    "none": "Uyan başka hesap yok. Sağlayıcılar'dan bir hesap ekle."
+  },
+  "cancelTask": {
+    "title": "{{title}} iptal edilsin mi?",
+    "body_one": "Açık {{count}} ajan çalıştırması durur ve Gelen kutusundaki soruları kapanır.",
+    "body_other": "Açık {{count}} ajan çalıştırması durur ve Gelen kutusundaki soruları kapanır.",
+    "bodyIdle": "Çalışan ajan yok. Görev durduruldu olarak işaretlenir ve açık soruları kapanır.",
+    "keeps": "Çalışma ağacı diskte kalır. Bir paneli kapatmak bunu asla yapmaz; yalnızca bu düğme yapar.",
+    "confirm": "Görevi iptal et",
+    "keep": "Görev kalsın"
+  },
+  "standby": {
+    "badge": "Yedek: {{runner}}",
+    "more_one": "+{{count}}",
+    "more_other": "+{{count}}",
+    "badgeLabel": "{{target}}: yedekte {{runner}} var. Yedek sırasını göster",
+    "badgeLabelMore_one": "{{target}}: yedekte {{runner}} ve {{count}} hesap daha var. Yedek sırasını göster",
+    "badgeLabelMore_other": "{{target}}: yedekte {{runner}} ve {{count}} hesap daha var. Yedek sırasını göster",
+    "title": "{{target}} için yedekler",
+    "close": "Yedek sırasını kapat",
+    "order": "Adım limite takılırsa bu sırayla devralırlar ({{mode}}).",
+    "reorderHint": "Alt+Yukarı ve Alt+Aşağı odaktakini taşır.",
+    "locked": "Bu adım başladı, yedek sırası artık değişmez. Bir devir yine bu sıradan seçer.",
+    "mode": {
+      "manual": "sen seçersin",
+      "ask": "önce sorar",
+      "auto": "kendiliğinden",
+      "wait_for_reset": "sıfırlanma beklendikten sonra"
+    }
   },
   "handoffNow": {
     "title": "{{target}} şimdi devredilsin",

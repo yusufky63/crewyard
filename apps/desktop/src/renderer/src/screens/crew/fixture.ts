@@ -79,13 +79,46 @@ const TESTS_FAILED = { code: "loop.tests_failed" as const, params: { command: "p
  * for changes at a commit the implementer has moved on from (a stale verdict), and the implementer
  * is on its second fix attempt. The default variant is a crew mid-way with one step on a limit.
  */
-export type CrewFixture = "default" | "loop" | "proposal" | "manage";
+export type CrewFixture = "default" | "loop" | "proposal" | "manage" | "handoff";
 
 export function crewFixture(variant: CrewFixture = "default"): TaskDetail {
   if (variant === "loop") return loopVariant(base());
   if (variant === "proposal") return proposalVariant(base());
   if (variant === "manage") return manageVariant(base());
+  if (variant === "handoff") return handoffVariant(base());
   return base();
+}
+
+/** The implementer hit its limit on Codex and its first standby (Claude Code, Sonnet) took over. */
+function handoffVariant(t: TaskDetail): TaskDetail {
+  const [planRun, impl, tester] = t.runs as [RunView, RunView, RunView];
+  const replaced = { ...impl, state: "ended" as const, endedAt: at(12), endReason: "limit" as const, limitReached: true };
+  const took = run("r-impl-2", "m-impl", "implementer", sonnet, { startedAt: at(13), resumedFrom: impl.id, handoffId: "h-impl", tokensIn: 12_400, tokensOut: 2_100, cost: { usd: 0.06, provenance: "estimated" } });
+  return {
+    ...t,
+    status: "running",
+    runs: [planRun, replaced, took, tester],
+    worktree: { ...t.worktree!, ownerRunId: took.id },
+    handoffs: [
+      {
+        id: "h-impl",
+        fromRunId: impl.id,
+        toRunId: took.id,
+        targetProfileId: sonnet.profileId,
+        mode: "ask",
+        kind: "new_session",
+        stop: "interrupt",
+        trigger: "limit",
+        phase: "closed",
+        packagePath: null,
+        checkpointSha: "4f1c2aa",
+        openedAt: at(12),
+        closedAt: at(13),
+        outcome: "completed",
+        detail: null,
+      },
+    ],
+  };
 }
 
 /** What the daemon would rank for each role in the proposal fixture, best first (crew.candidates). */

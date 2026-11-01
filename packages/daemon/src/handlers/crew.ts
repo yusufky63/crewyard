@@ -65,6 +65,7 @@ export function createCrewHandlers(ctx: HandlerContext): HandlerMap<CrewIpc> {
     },
     "crew.candidates": ({ taskId, role }) => orchestratorFor(ctx).crew.rankCandidates(taskId, role),
     "crew.edit": ({ taskId, edit }) => orchestratorFor(ctx).crew.edit(taskId, edit),
+    "crew.changeProfile": ({ taskId, memberId, profileId }) => orchestratorFor(ctx).crew.changeProfile(taskId, memberId, profileId),
     "crew.approveSteps": ({ taskId }) => orchestratorFor(ctx).crew.approveSteps(taskId),
     "crew.skip": ({ taskId, memberId }) => orchestratorFor(ctx).crew.skip(taskId, memberId),
     "crew.pauseAll": ({ taskId }) => orchestratorFor(ctx).crew.pauseAll(taskId),

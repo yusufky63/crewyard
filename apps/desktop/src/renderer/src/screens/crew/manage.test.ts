@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { RequestView } from "@crewyard/core";
 import { crewFixture, fixtureCandidates, fixtureRoles } from "./fixture.ts";
 import { buildGraph } from "./model.ts";
-import { bulkCounts, candidateRows, checkEnv, dependencyOptions, handoffAsks, insertInChain, moveInChain, pendingSteps, progress, rulesFromRoles, skipDependents } from "./manage.ts";
+import { bulkCounts, candidateRows, changeChoices, checkEnv, dependencyOptions, everyStepChoices, everyStepPlan, handoffAsks, insertInChain, moveInChain, pendingSteps, progress, rerunChoices, rulesFromRoles, skipDependents } from "./manage.ts";
 
 const rules = rulesFromRoles(fixtureRoles());
 
@@ -98,5 +98,35 @@ describe("running crew", () => {
     const asks = handoffAsks(requests);
     expect([...asks.keys()]).toEqual(["r-test"]);
     expect(asks.get("r-test")).toMatchObject({ requestId: "q1", resetsAt: "2026-10-30T14:00:00Z" });
+  });
+});
+
+describe("profile pickers", () => {
+  const members = crewFixture().crew!.members;
+  const review = members.find((m) => m.id === "m-review")!;
+  const plan = members.find((m) => m.id === "m-plan")!;
+
+  it("offers a waiting step every other scored profile, off where it breaks independence", () => {
+    const rows = changeChoices(members, review, fixtureCandidates("reviewer"), rules);
+    expect(rows.map((r) => r.candidate.profileId)).not.toContain(review.chosen!.profileId);
+    expect(rows.find((r) => r.candidate.profileId === "p-codex")?.conflict).toBe("implementer");
+    expect(rows.find((r) => r.candidate.profileId === "p-anthropic-2")?.conflict).toBeNull();
+  });
+
+  it("runs a finished step again on any profile but the one that ran it", () => {
+    const rows = rerunChoices(members, plan, fixtureCandidates("planner"), rules, "p-anthropic");
+    expect(rows.map((r) => r.candidate.profileId)).not.toContain("p-anthropic");
+    expect(rows.every((r) => r.conflict === null)).toBe(true);
+    // A reviewer run again is still held to the implementer's model.
+    expect(rerunChoices(members, review, fixtureCandidates("reviewer"), rules, "p-zai").find((r) => r.candidate.profileId === "p-codex")?.conflict).toBe("implementer");
+  });
+
+  it("lists every profile for Change AI for every step, the widest fit first, and skips steps already on it", () => {
+    const choices = everyStepChoices(members, fixtureCandidates);
+    // Codex is scored for all four roles; Opus only for the planner and the reviewer.
+    expect(choices[0]).toMatchObject({ candidate: { profileId: "p-codex" }, fits: ["m-plan", "m-impl", "m-test", "m-review"] });
+    expect(choices.find((c) => c.candidate.profileId === "p-anthropic")!.fits).toEqual(["m-plan", "m-review"]);
+    // The implementer already runs on Codex.
+    expect(everyStepPlan(members, choices[0]!)).toEqual(["m-plan", "m-test", "m-review"]);
   });
 });

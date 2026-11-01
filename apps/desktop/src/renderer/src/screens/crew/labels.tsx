@@ -96,8 +96,8 @@ export function useFormatters() {
         return t("fact.after", { steps: f.steps });
       case "no_candidate":
         return t("fact.noCandidate");
-      case "standby_for":
-        return f.more > 0 ? t("fact.standbyMore", { step: f.step, count: f.more }) : t("fact.standby", { step: f.step });
+      case "standby_order":
+        return f.place === 1 ? t("fact.standby", { step: f.step }) : t("fact.standbyOrder", { step: f.step, place: f.place });
       case "branch":
         return f.base ? t("fact.branch", { base: f.base, branch: f.branch }) : f.branch;
       case "kind":
