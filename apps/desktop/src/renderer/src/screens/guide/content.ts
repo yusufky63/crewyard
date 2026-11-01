@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { Bot, Eye, FolderOpen, GitBranch, GitPullRequest, Inbox, Keyboard, ListChecks, PanelBottom, Repeat, SquarePen, Gauge, FileText, ShieldCheck, Workflow, Users } from "lucide-react";
+import { Bot, Eye, FolderOpen, GitBranch, GitPullRequest, Inbox, Keyboard, ListChecks, PanelBottom, Repeat, SquarePen, Gauge, FileText, ShieldCheck, Target, User, Workflow, Users } from "lucide-react";
 import type { DrawerTab } from "../../prefs.ts";
 import type { SectionId } from "../settings/model.ts";
 
@@ -22,6 +22,25 @@ export interface FlowStep {
   icon: LucideIcon;
   action: GuideAction;
 }
+
+export interface Mode {
+  id: "orchestra" | "crew" | "solo";
+  icon: LucideIcon;
+  action: GuideAction;
+}
+
+/**
+ * The composer's three modes (docs/adr/0019), in the order its How to run control shows them.
+ * Orchestra comes first because it is the default; the Guide marks it so.
+ */
+export const MODES: Mode[] = [
+  { id: "orchestra", icon: Target, action: { kind: "newTask" } },
+  { id: "crew", icon: Users, action: { kind: "screen", screen: "crew" } },
+  { id: "solo", icon: User, action: { kind: "newTask" } },
+];
+
+/** The mode the composer opens on when a profile can plan read-only (design §1.2). */
+export const DEFAULT_MODE: Mode["id"] = "orchestra";
 
 /** project → task → crew proposal → approve → worktrees → Inbox → review → push, PR and merge. */
 export const FLOW: FlowStep[] = [
@@ -52,7 +71,7 @@ export const FEATURES: Feature[] = [
   { id: "keyboard", icon: Keyboard, action: { kind: "keys" } },
 ];
 
-export const FAQ = ["keys", "nothingStarts", "closePanel", "estimated", "subscriptions", "release"] as const;
+export const FAQ = ["keys", "nothingStarts", "whichMode", "planningCost", "goalBranch", "closePanel", "estimated", "subscriptions", "release"] as const;
 
 /** An action that only makes sense inside a project. */
 export const needsProject = (a: GuideAction): boolean => a.kind === "newTask" || a.kind === "panel" || (a.kind === "screen" && a.screen !== "providers");

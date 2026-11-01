@@ -18,16 +18,16 @@ import { useUpdates } from "../settings/Updates.tsx";
 import { openSetup } from "../setup/draft.ts";
 import { MACHINE_PANEL_ID } from "../start/Machine.tsx";
 import { defenderItem, longPathsItem, summarize, TOOL_ORDER, toolItem } from "../start/machine.ts";
-import { FAQ, FEATURES, FLOW, needsProject, type GuideAction } from "./content.ts";
+import { DEFAULT_MODE, FAQ, FEATURES, FLOW, MODES, needsProject, type GuideAction } from "./content.ts";
 import { guideChecklist, machineProblem, releaseFacts, STATE_BADGE, type GuideRowId, type GuideState, type Read } from "./model.ts";
 import "./guide.css";
 
-// The Guide (How it works): the task flow as numbered spec tiles, a Getting started list read from
-// real state, the main features and a short FAQ. Every button goes to the screen it talks about;
+// The Guide (How it works): the composer's three modes, the task flow as numbered spec tiles, a
+// Getting started list read from real state, the main features and a short FAQ. Every button goes to the screen it talks about;
 // project screens open the open project, else the most recent one, else say a project is needed.
 
 const STALE = 5 * 60_000;
-const SECTIONS = ["flow", "checklist", "features", "faq"] as const;
+const SECTIONS = ["modes", "flow", "checklist", "features", "faq"] as const;
 const pad = (n: number) => String(n).padStart(2, "0");
 const sectionId = (id: string) => `guide-${id}`;
 
@@ -131,11 +131,48 @@ function SectionHead({ id, index, children }: { id: string; index: number; child
   );
 }
 
+/** Orchestra, Crew and Solo, as the composer's How to run control offers them; Orchestra is marked as the default. */
+function Modes({ actions }: { actions: Actions }) {
+  const { t } = useTranslation("guide");
+  return (
+    <section id={sectionId("modes")} className="gd-section" aria-labelledby={`${sectionId("modes")}-title`}>
+      <SectionHead id="modes" index={SECTIONS.indexOf("modes") + 1}>
+        <p className="sec">{t("modes.lead")}</p>
+      </SectionHead>
+      <div className="gd-modes">
+        {MODES.map((m, i) => {
+          const Icon = m.icon;
+          const points = t(`modes.${m.id}.points`, { returnObjects: true }) as Record<string, string>;
+          return (
+            <article key={m.id} className="spec gd-feature gd-mode" aria-labelledby={`gd-m-${m.id}`}>
+              <div className="gd-step-top">
+                <span className="lbl">{pad(i + 1)}</span>
+                <Icon className="gd-icon" size={16} strokeWidth={1.5} aria-hidden="true" />
+                <h3 id={`gd-m-${m.id}`} className="gd-title">
+                  {t(`modes.${m.id}.title`)}
+                </h3>
+                {m.id === DEFAULT_MODE && <span className="badge badge-info gd-default">{t("modes.default")}</span>}
+              </div>
+              <p className="sec gd-body">{t(`modes.${m.id}.body`)}</p>
+              <ul className="gd-points">
+                {Object.entries(points).map(([k, v]) => (
+                  <li key={k}>{v}</li>
+                ))}
+              </ul>
+              <GoButton action={m.action} label={t(`modes.${m.id}.go`)} actions={actions} />
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function Flow({ actions }: { actions: Actions }) {
   const { t } = useTranslation("guide");
   return (
     <section id={sectionId("flow")} className="gd-section" aria-labelledby={`${sectionId("flow")}-title`}>
-      <SectionHead id="flow" index={1}>
+      <SectionHead id="flow" index={SECTIONS.indexOf("flow") + 1}>
         <p className="sec">{t("flow.lead")}</p>
       </SectionHead>
       <ol className="gd-flow">
@@ -256,7 +293,7 @@ function Checklist({ actions }: { actions: Actions }) {
 
   return (
     <section id={sectionId("checklist")} className="gd-section" aria-labelledby={`${sectionId("checklist")}-title`}>
-      <SectionHead id="checklist" index={2}>
+      <SectionHead id="checklist" index={SECTIONS.indexOf("checklist") + 1}>
         <p className="sec">{t("checklist.lead")}</p>
       </SectionHead>
       <Panel className="gd-check">
@@ -331,7 +368,7 @@ function Features({ actions }: { actions: Actions }) {
   const { t } = useTranslation("guide");
   return (
     <section id={sectionId("features")} className="gd-section" aria-labelledby={`${sectionId("features")}-title`}>
-      <SectionHead id="features" index={3} />
+      <SectionHead id="features" index={SECTIONS.indexOf("features") + 1} />
       <div className="gd-features">
         {FEATURES.map((f) => {
           const Icon = f.icon;
@@ -389,7 +426,7 @@ function Faq() {
   const shotOpen = new URLSearchParams(window.location.search).get("faq");
   return (
     <section id={sectionId("faq")} className="gd-section" aria-labelledby={`${sectionId("faq")}-title`}>
-      <SectionHead id="faq" index={4} />
+      <SectionHead id="faq" index={SECTIONS.indexOf("faq") + 1} />
       <div className="gd-faq">
         {FAQ.map((id) => (
           <details key={id} className="frame gd-faq-item" open={shotOpen === id ? true : undefined}>
@@ -454,6 +491,7 @@ export function GuideScreen() {
           </Button>
         </div>
       )}
+      <Modes actions={actions} />
       <Flow actions={actions} />
       <Checklist actions={actions} />
       <Features actions={actions} />

@@ -75,3 +75,6 @@
   .guide .gd-row-go { grid-column: 3 / -1; justify-content: flex-start; }
   .guide .gd-faq { grid-template-columns: minmax(0, 1fr); }
 }
+/* The three modes side by side when they fit; Orchestra's Default badge sits at the end of its head. */
+.guide .gd-modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: var(--space-3); }
+.guide .gd-mode .gd-default { margin-left: auto; flex: none; }
