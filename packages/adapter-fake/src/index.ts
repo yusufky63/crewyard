@@ -1,4 +1,6 @@
-import { toUserInput, type AgentAdapter, type AgentCapabilities, type AgentEvent, type Answer, type Attachment, type NativeSessionRef, type Probe, type RunHandle, type StartRequest, type UserInput } from "@crewyard/core";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { checkOutput, toUserInput, type AgentAdapter, type AgentCapabilities, type AgentEvent, type Answer, type Attachment, type NativeSessionRef, type Probe, type RunHandle, type RunOutput, type StartRequest, type UserInput } from "@crewyard/core";
 import { callMcpTool } from "./mcp-call.ts";
 
 // A scripted runner for tests and UI work. A script is a list of steps; a step either emits an
@@ -15,7 +17,19 @@ export type FakeStep =
    */
   | { mcp: { tool: string; arguments: unknown } }
   /** Ends the turn here and waits for the next input (nextTurn), then goes on with the script; null ends the run. */
-  | { awaitTurn: true };
+  | { awaitTurn: true }
+  /**
+   * Writes a UTF-8 file at `path`, relative to the run's working folder, as an agent editing its
+   * worktree would; folders are created. A path that leaves the folder fails the step, so a script
+   * can never touch anything outside the run's own worktree.
+   */
+  | { write: { path: string; text: string } }
+  /**
+   * The structured result the run ends with (`run.ended.output`). Checked against the run's
+   * `outputSchema` the way the real adapters check a runner's answer, so a value that does not fit
+   * ends the run with the same `{ ok: false, error }` they would report.
+   */
+  | { result: unknown };
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 
@@ -50,6 +64,11 @@ interface RunState {
   mcpServers: StartRequest["mcpServers"];
   /** What each mcp step's tool call returned. */
   mcpResults: Array<{ isError: boolean; text: string }>;
+  /** The run's working folder; `write` steps resolve against it. */
+  cwd: string;
+  outputSchema: StartRequest["outputSchema"];
+  /** Set by a `result` step; carried by the final run.ended. */
+  output: RunOutput | undefined;
   interrupted: boolean;
 }
 
@@ -67,7 +86,7 @@ export class FakeAdapter implements AgentAdapter {
 
   async start(req: StartRequest): Promise<RunHandle> {
     const runId = `fake-${++this.counter}`;
-    this.runs.set(runId, { script: [...this.script], answers: new Map(), early: new Map(), received: [], inputs: [], started: { prompt: req.prompt, attachments: req.attachments ?? [] }, steered: [], nextTurn: req.nextTurn, mcpServers: req.mcpServers, mcpResults: [], interrupted: false });
+    this.runs.set(runId, { script: [...this.script], answers: new Map(), early: new Map(), received: [], inputs: [], started: { prompt: req.prompt, attachments: req.attachments ?? [] }, steered: [], nextTurn: req.nextTurn, mcpServers: req.mcpServers, mcpResults: [], cwd: req.cwd, outputSchema: req.outputSchema, output: undefined, interrupted: false });
     return { runId, runner: "fake", pid: null, nativeSession: { runner: "fake", sessionId: runId } };
   }
 
@@ -84,6 +103,10 @@ export class FakeAdapter implements AgentAdapter {
       else if ("mcp" in step) {
         const spec = state.mcpServers?.find((m) => m.builtin);
         state.mcpResults.push(spec ? await callMcpTool(spec, step.mcp.tool, resolveRefs(step.mcp.arguments, state.mcpResults)) : { isError: true, text: "no report server in this run" });
+      } else if ("write" in step) {
+        writeInside(state.cwd, step.write.path, step.write.text);
+      } else if ("result" in step) {
+        state.output = state.outputSchema ? checkOutput(state.outputSchema, step.result) : { ok: true, value: step.result };
       } else if ("awaitTurn" in step) {
         const next = state.nextTurn ? await state.nextTurn() : null;
         if (!next) break;
@@ -96,7 +119,8 @@ export class FakeAdapter implements AgentAdapter {
       if (!next) break;
       state.inputs.push(toUserInput(next));
     }
-    yield { type: "run.ended", reason: state.interrupted ? "stopped" : "completed", runId: run.runId, seq, at: new Date().toISOString(), source: { adapter: "fake", cliVersion: null } };
+    const reason = state.interrupted ? "stopped" : "completed";
+    yield { type: "run.ended", reason, ...(state.output && reason === "completed" ? { output: state.output } : {}), runId: run.runId, seq, at: new Date().toISOString(), source: { adapter: "fake", cliVersion: null } };
   }
 
   async send(run: RunHandle, input: UserInput): Promise<void> {
@@ -146,6 +170,16 @@ export class FakeAdapter implements AgentAdapter {
     if (!state) throw new Error(`Unknown run ${run.runId}`);
     return state;
   }
+}
+
+/** Writes `text` at `path` under `cwd`; refuses an absolute path or one that climbs out of `cwd`. */
+function writeInside(cwd: string, path: string, text: string): void {
+  const root = resolve(cwd);
+  const target = resolve(root, path);
+  const rel = relative(root, target);
+  if (isAbsolute(path) || rel === "" || rel.startsWith("..") || isAbsolute(rel)) throw new Error(`fake write outside the run's folder: ${path}`);
+  mkdirSync(dirname(target), { recursive: true });
+  writeFileSync(target, text, "utf8");
 }
 
 const REF = /^\{\{mcp\.(\d+)\.(\w+)\}\}$/;

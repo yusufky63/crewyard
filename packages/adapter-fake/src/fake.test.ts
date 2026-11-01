@@ -1,5 +1,8 @@
-import { AgentEvent, type Profile, type StartRequest } from "@crewyard/core";
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, readFileSync, existsSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { AgentEvent, GOAL_PLAN_OUTPUT, REVIEW_VERDICT_OUTPUT, type Profile, type StartRequest } from "@crewyard/core";
+import { afterEach, describe, expect, it } from "vitest";
 import { FakeAdapter } from "./index.ts";
 
 const profile: Profile = { id: "p", alias: "fake", runner: "fake", providerId: "none", credential: { kind: "local", secretRef: null }, defaultModel: null, configDir: ".", baseUrl: null };
@@ -42,5 +45,71 @@ describe("FakeAdapter", () => {
     for await (const ev of adapter.events(run)) if (ev.type === "message.delta") texts.push(ev.text);
     expect(texts).toEqual(["a", "b"]);
     expect(adapter.inspect(run).inputs).toHaveLength(1);
+  });
+
+  describe("write steps", () => {
+    const dirs: string[] = [];
+    afterEach(() => dirs.splice(0).forEach((d) => rmSync(d, { recursive: true, force: true })));
+    const folder = () => {
+      const d = mkdtempSync(join(tmpdir(), "crewyard fake write "));
+      dirs.push(d);
+      return join(d, "work tree");
+    };
+    const drain = async (adapter: FakeAdapter, cwd: string) => {
+      const run = await adapter.start({ ...req, cwd });
+      const types: string[] = [];
+      for await (const ev of adapter.events(run)) types.push(ev.type);
+      return types;
+    };
+
+    it("writes UTF-8 files inside the run's folder, creating folders, in script order", async () => {
+      const cwd = folder();
+      const adapter = new FakeAdapter([{ write: { path: "docs/giriş kılavuzu.md", text: "# İki adımlı doğrulama\n" } }, { emit: { type: "message.delta", text: "yazdım" } }]);
+      expect(await drain(adapter, cwd)).toEqual(["message.delta", "run.ended"]);
+      expect(readFileSync(join(cwd, "docs", "giriş kılavuzu.md"), "utf8")).toBe("# İki adımlı doğrulama\n");
+    });
+
+    it("refuses a path that leaves the run's folder or is absolute", async () => {
+      const cwd = folder();
+      for (const path of ["../outside.txt", "docs/../../outside.txt", join(cwd, "..", "abs.txt"), "."]) {
+        await expect(drain(new FakeAdapter([{ write: { path, text: "x" } }]), cwd)).rejects.toThrow(/outside the run's folder/);
+      }
+      expect(existsSync(join(cwd, "..", "outside.txt"))).toBe(false);
+      expect(existsSync(join(cwd, "..", "abs.txt"))).toBe(false);
+    });
+  });
+
+  describe("result steps", () => {
+    const ended = async (adapter: FakeAdapter, r: StartRequest) => {
+      const run = await adapter.start(r);
+      let last: AgentEvent | null = null;
+      for await (const ev of adapter.events(run)) last = ev;
+      return last as Extract<AgentEvent, { type: "run.ended" }>;
+    };
+    const plan = { summary: "Önce araştır.", tasks: [{ key: "r", title: "Kütüphaneleri karşılaştır", kind: "research", mode: "solo", size: "S", description: "Karşılaştır.", acceptance: ["Bir öneri"], basis: "passkey", dependsOn: [], paths: [], reason: "Önce bilgi gerek.", priority: "high" }] };
+
+    it("ends the run with a result that fits the run's schema", async () => {
+      const ev = await ended(new FakeAdapter([{ result: plan }]), { ...req, outputSchema: GOAL_PLAN_OUTPUT });
+      expect(AgentEvent.safeParse(ev).success).toBe(true);
+      expect(ev).toMatchObject({ type: "run.ended", reason: "completed", output: { ok: true, value: plan } });
+    });
+
+    it("reports a result that does not fit the schema as the real adapters do", async () => {
+      const ev = await ended(new FakeAdapter([{ result: { verdict: "maybe" } }]), { ...req, outputSchema: REVIEW_VERDICT_OUTPUT });
+      expect(ev.output).toMatchObject({ ok: false });
+      expect((ev.output as { error: string }).error.length).toBeGreaterThan(0);
+    });
+
+    it("carries no output when the script gives none, and none when the run was stopped", async () => {
+      expect((await ended(new FakeAdapter([{ emit: { type: "message.delta", text: "a" } }]), req)).output).toBeUndefined();
+      const adapter = new FakeAdapter([{ result: plan }, { awaitAnswer: "never" }]);
+      const run = await adapter.start({ ...req, outputSchema: GOAL_PLAN_OUTPUT });
+      const it = adapter.events(run)[Symbol.asyncIterator]();
+      const pending = it.next();
+      await adapter.interrupt(run);
+      const first = (await pending).value as Extract<AgentEvent, { type: "run.ended" }>;
+      expect(first).toMatchObject({ type: "run.ended", reason: "stopped" });
+      expect(first.output).toBeUndefined();
+    });
   });
 });

@@ -6,6 +6,7 @@ import { AdapterRegistry } from "../orchestrator/adapters.ts";
 import type { Candidate, ProfileDirectory } from "../orchestrator/directory.ts";
 import { orchestratorFor, type OrchestratorOptions } from "../orchestrator/index.ts";
 import type { HandlerContext } from "../handlers/types.ts";
+import { GOAL_PLANNER } from "../orchestrator/roles.ts";
 
 // App-level end-to-end tests (PLAN.md §15) run the real daemon with scripted runners. With
 // CREWYARD_E2E=1 and CREWYARD_E2E_SCRIPT=<absolute json path>, the orchestrator gets only the
@@ -21,8 +22,13 @@ export interface E2eProfile {
 
 /**
  * What the test writes. `scripts[key][n]` is the n-th run started for that key, the last one
- * repeating; the key is the role id ("researcher", "implementer"), "resume" for a native resume
- * of a stopped or paused session, and "*" for any role without its own entry.
+ * repeating; the key is the role id ("researcher", "implementer", "goal-planner"), "resume" for a
+ * native resume of a stopped or paused session, and "*" for any role without its own entry.
+ *
+ * A key `<role>@<words>` (or `resume@<words>`) is tried first and wins over the plain key: it
+ * matches when the run's task title contains the words, or, for a prompt with no task section (the
+ * goal planner's brief, a follow-up resume), when the prompt does. That is how one flow scripts two
+ * implementers of two goal tasks differently, or a planner per goal.
  */
 export interface E2eScript {
   profiles?: E2eProfile[];
@@ -48,8 +54,35 @@ export const DEFAULT_PROFILES: E2eProfile[] = [
   { id: "e2e-gamma", alias: "Fake Gamma", providerId: "deepseek", model: priced("fake-gamma", 0.27, 1.1) },
 ];
 
-/** The role a run was started for, from the first line of its prompt ("Role: Implementer"). */
-const roleOf = (req: StartRequest) => req.prompt.match(/^Role: (\w+)/)?.[1]?.toLowerCase() ?? null;
+/**
+ * The role a run was started for, from the first line of its prompt ("Role: Implementer"). The
+ * goal planner's title is two words, so it is named by its id rather than its first word.
+ */
+export function roleOf(req: Pick<StartRequest, "prompt">): string | null {
+  const title = req.prompt.match(/^Role: ([^\n]+)/)?.[1]?.trim();
+  if (!title) return null;
+  if (title === GOAL_PLANNER.title) return GOAL_PLANNER.id;
+  return title.match(/^\w+/)?.[0]?.toLowerCase() ?? null;
+}
+
+/** The task title a role prompt quotes ("Task:\n<<<\n<title>"), or null for a prompt with none. */
+const titleOf = (prompt: string): string | null => prompt.split("Task:\n<<<\n")[1]?.split("\n")[0] ?? null;
+
+/**
+ * The script key for a run: a `<base>@<words>` key whose words appear in the task title (or the
+ * prompt, when it quotes no task), then the plain key, then "*". `base` is the role, or "resume".
+ */
+export function scriptKey(scripts: E2eScript["scripts"], req: Pick<StartRequest, "prompt">, resumed: boolean): string {
+  const role = roleOf(req);
+  const base = role ?? (resumed ? "resume" : null);
+  if (base) {
+    const haystack = titleOf(req.prompt) ?? req.prompt;
+    const keyed = Object.keys(scripts).find((k) => k.startsWith(`${base}@`) && haystack.includes(k.slice(base.length + 1)));
+    if (keyed) return keyed;
+    if (scripts[base]) return base;
+  }
+  return "*";
+}
 
 /**
  * Reads the script file on every start, so a test can rewrite it between flows. Counters reset
@@ -88,8 +121,7 @@ export class E2eAdapter implements AgentAdapter {
 
   private async open(req: StartRequest, ref: NativeSessionRef | null): Promise<RunHandle> {
     const { scripts } = this.read();
-    const role = roleOf(req);
-    const key = role && scripts[role] ? role : !role && ref && scripts.resume ? "resume" : "*";
+    const key = scriptKey(scripts, req, ref !== null);
     const list = scripts[key] ?? [];
     const n = this.counts.get(key) ?? 0;
     this.counts.set(key, n + 1);

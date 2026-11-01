@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentEvent, StartRequest } from "@crewyard/core";
 import { afterEach, describe, expect, it } from "vitest";
-import { DEFAULT_PROFILES, E2eAdapter, e2eDirectory, e2eHook, type E2eScript } from "./index.ts";
+import { DEFAULT_PROFILES, E2eAdapter, e2eDirectory, e2eHook, roleOf, scriptKey, type E2eScript } from "./index.ts";
 
 const dirs: string[] = [];
 afterEach(() => dirs.splice(0).forEach((d) => rmSync(d, { recursive: true, force: true })));
@@ -49,6 +49,37 @@ describe("e2e hook", () => {
     expect(await texts(adapter, "Role: Researcher")).toEqual(["a1"]);
     writeFileSync(file, JSON.stringify({ scripts: { researcher: [[say("b1")], [say("b2")]] } }));
     expect(await texts(adapter, "Role: Researcher")).toEqual(["b1"]);
+  });
+
+  it("names the goal planner by its id, other roles by their first word", () => {
+    expect(roleOf({ prompt: "Role: Goal planner\n\nYou are the Goal planner." })).toBe("goal-planner");
+    expect(roleOf({ prompt: "Role: Docs writer\n..." })).toBe("docs");
+    expect(roleOf({ prompt: "Role: Implementer" })).toBe("implementer");
+    expect(roleOf({ prompt: "Continue where you stopped." })).toBeNull();
+  });
+
+  it("prefers a key naming words of the task title, then the role, then *", () => {
+    const scripts = { "implementer@Sunucu: passkey": [[]], "implementer@İstemci": [[]], implementer: [[]], "goal-planner@tek görev": [[]], "goal-planner": [[]], "resume@conflicts with the goal branch": [[]], "*": [[]] };
+    const role = (r: string, title: string, extra = "") => ({ prompt: `Role: ${r}\n\nYou are the ${r}.\n\nTask:\n<<<\n${title}\nayrıntı\n>>>${extra}` });
+    expect(scriptKey(scripts, role("Implementer", "Sunucu: passkey kaydı"), false)).toBe("implementer@Sunucu: passkey");
+    expect(scriptKey(scripts, role("Implementer", "İstemci: passkey düğmesi"), false)).toBe("implementer@İstemci");
+    // Only the title counts when the prompt quotes a task: a sibling named further down does not match.
+    expect(scriptKey(scripts, role("Implementer", "Belgeler", "\nTask 02 (Sunucu: passkey kaydı) is merged"), false)).toBe("implementer");
+    expect(scriptKey(scripts, role("Reviewer", "Sunucu: passkey kaydı"), false)).toBe("*");
+    // The planner's brief quotes no task section, so its words are looked for in the whole prompt.
+    expect(scriptKey(scripts, { prompt: "Role: Goal planner\n\nGoal:\n<<<\nREADME'ye tek görev yeter\n>>>" }, false)).toBe("goal-planner@tek görev");
+    expect(scriptKey(scripts, { prompt: "Role: Goal planner\n\nGoal:\n<<<\nbaşka bir hedef\n>>>" }, false)).toBe("goal-planner");
+    expect(scriptKey(scripts, { prompt: "Merging task 02 conflicts with the goal branch: CHANGELOG.md" }, true)).toBe("resume@conflicts with the goal branch");
+    expect(scriptKey(scripts, { prompt: "Merging task 02 conflicts with the goal branch" }, false)).toBe("*");
+  });
+
+  it("counts each keyed script on its own", async () => {
+    const file = scriptFile({ scripts: { "implementer@Sunucu": [[say("s1")], [say("s2")]], implementer: [[say("plain")]] } });
+    const adapter = new E2eAdapter(file);
+    const prompt = (title: string) => `Role: Implementer\n\nTask:\n<<<\n${title}\n>>>`;
+    expect(await texts(adapter, prompt("Sunucu tarafı"))).toEqual(["s1"]);
+    expect(await texts(adapter, prompt("İstemci tarafı"))).toEqual(["plain"]);
+    expect(await texts(adapter, prompt("Sunucu tarafı"))).toEqual(["s2"]);
   });
 
   it("offers the default fake profiles as ready candidates on the fake runner", async () => {
