@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentEvent, StartRequest } from "@crewyard/core";
 import { afterEach, describe, expect, it } from "vitest";
-import { DEFAULT_PROFILES, E2eAdapter, e2eDirectory, e2eHook, roleOf, scriptKey, type E2eScript } from "./index.ts";
+import { DEFAULT_PROFILES, E2eAdapter, e2eDirectory, e2eHook, readRunLog, roleOf, runLogPath, scriptKey, type E2eScript } from "./index.ts";
 
 const dirs: string[] = [];
 afterEach(() => dirs.splice(0).forEach((d) => rmSync(d, { recursive: true, force: true })));
@@ -16,7 +16,7 @@ function scriptFile(script: E2eScript): string {
   return file;
 }
 
-const req = (prompt: string) => ({ prompt }) as StartRequest;
+const req = (prompt: string, writes: StartRequest["policy"]["writes"] = "worktree") => ({ prompt, policy: { writes, allowCommands: [], network: "ask" } }) as StartRequest;
 const say = (text: string) => ({ emit: { type: "message.delta" as const, text } });
 
 async function texts(adapter: E2eAdapter, prompt: string, resume = false): Promise<string[]> {
@@ -41,6 +41,20 @@ describe("e2e hook", () => {
     expect(await texts(adapter, "Role: Researcher\n...")).toEqual(["r2"]);
     expect(await texts(adapter, "Continue the task where you stopped.", true)).toEqual(["again"]);
     expect(await texts(adapter, "Role: Reviewer\n...")).toEqual(["any"]);
+  });
+
+  it("logs every run it starts next to the script, in order, with its key, policy and prompt", async () => {
+    const file = scriptFile({ scripts: { "implementer@Sunucu": [[say("s")]], resume: [[say("again")]] } });
+    expect(readRunLog(file)).toEqual([]);
+    const adapter = new E2eAdapter(file);
+    const PROMPT = "Role: Implementer\n\nTask:\n<<<\nSunucu: passkey kaydı\n>>>\nbüyük İ harfi";
+    await texts(adapter, PROMPT);
+    await texts(adapter, "Continue where you stopped.", true);
+    expect(runLogPath(file)).toBe(file.replace(/script\.json$/, "script.runs.jsonl"));
+    expect(readRunLog(file)).toEqual([
+      { key: "implementer@Sunucu", role: "implementer", resumed: false, writes: "worktree", prompt: PROMPT },
+      { key: "resume", role: null, resumed: true, writes: "worktree", prompt: "Continue where you stopped." },
+    ]);
   });
 
   it("restarts the numbering when the test rewrites the script", async () => {

@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { appendFileSync, readFileSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import { capabilities, FakeAdapter, type FakeStep } from "@crewyard/adapter-fake";
 import type { AgentAdapter, AgentEvent, Answer, CatalogModel, NativeSessionRef, Probe, RunHandle, StartRequest, UserInput } from "@crewyard/core";
@@ -84,6 +84,36 @@ export function scriptKey(scripts: E2eScript["scripts"], req: Pick<StartRequest,
   return "*";
 }
 
+/** One line of the run log: what a scripted run was started with, in start order. */
+export interface E2eRunRecord {
+  key: string;
+  role: string | null;
+  resumed: boolean;
+  writes: StartRequest["policy"]["writes"];
+  prompt: string;
+}
+
+/**
+ * Where the adapter logs every run it starts, next to the script: one JSON line per run. A test
+ * reads it to check what the daemon told each agent (the accepted report in a writing task's
+ * prompt, the goal quoted) and that no writing run started before a click.
+ */
+export const runLogPath = (scriptFile: string) => `${scriptFile.replace(/\.json$/i, "")}.runs.jsonl`;
+
+/** The run log as written so far; empty before the first run. */
+export function readRunLog(scriptFile: string): E2eRunRecord[] {
+  let text: string;
+  try {
+    text = readFileSync(runLogPath(scriptFile), "utf8");
+  } catch {
+    return [];
+  }
+  return text
+    .split("\n")
+    .filter((l) => l.trim())
+    .map((l) => JSON.parse(l) as E2eRunRecord);
+}
+
 /**
  * Reads the script file on every start, so a test can rewrite it between flows. Counters reset
  * when the file content changes, which keeps each flow's numbering independent of the last one.
@@ -122,6 +152,8 @@ export class E2eAdapter implements AgentAdapter {
   private async open(req: StartRequest, ref: NativeSessionRef | null): Promise<RunHandle> {
     const { scripts } = this.read();
     const key = scriptKey(scripts, req, ref !== null);
+    const record: E2eRunRecord = { key, role: roleOf(req), resumed: ref !== null, writes: req.policy.writes, prompt: req.prompt };
+    appendFileSync(runLogPath(this.file), `${JSON.stringify(record)}\n`, "utf8");
     const list = scripts[key] ?? [];
     const n = this.counts.get(key) ?? 0;
     this.counts.set(key, n + 1);
