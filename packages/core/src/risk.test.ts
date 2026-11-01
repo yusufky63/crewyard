@@ -61,3 +61,48 @@ describe("classifyRisk", () => {
     expect(classifyRisk({ ...base, cwd: "c:/projeler/.mc/worktrees/new-rts/seams" })).toBe("low");
   });
 });
+
+// Commands as Codex sent them on 2026-11-01: its whole argv, shlex-quoted, around PowerShell.
+const POWERSHELL = String.raw`"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"`;
+const wrap = (script: string) => `${POWERSHELL} -Command '${script.replace(/'/g, `'"'"'`)}'`;
+
+describe("classifyRisk with a runner's shell wrapper", () => {
+  const codex = { ...base, allowlist: ["git status", "git diff", "npm test"] };
+  const risk = (script: string, extra: Partial<RiskInput> = {}) => classifyRisk({ ...codex, command: wrap(script), ...extra });
+
+  it("looks inside the wrapper, so plain reads and local git in the worktree are low", () => {
+    for (const script of [
+      "git status --short --branch; git log --oneline -5",
+      "Get-Content src/index.js",
+      "Get-Content test/index.test.js; Get-Content package.json",
+      "npm test",
+      "git diff --check; git diff --stat",
+      "git show --stat --oneline HEAD",
+      'rg --files -g "AGENTS.md" -g "!node_modules"',
+      "git add src/index.js test/index.test.js && git commit -m 'Harden helpers'",
+      String.raw`Get-Content C:\Projeler\.mc\worktrees\new-rts\seams\src\a.js`,
+    ]) {
+      expect(risk(script), script).toBe("low");
+    }
+  });
+
+  it("keeps a statement with any other shell syntax, an unknown command or a write by script at medium", () => {
+    for (const script of ["Get-Content src/index.js | Out-File x.txt", "git status; python tools/gen.py", "$src = 1; Set-Content src/index.js $src", "Get-Content $(Get-Location)", "git status & calc"]) {
+      expect(risk(script), script).toBe("medium");
+    }
+  });
+
+  it("never lets a built-in read point outside the worktree or at a secret", () => {
+    for (const script of [String.raw`Get-Content C:\Users\me\notes.txt`, String.raw`Get-Content ..\other\file.js`, "Get-Content ~/.gitconfig", "Get-Content .env", String.raw`Get-Content \\server\share\x.txt`]) {
+      expect(risk(script), script).toBe("medium");
+    }
+  });
+
+  it("keeps pushes, resets and installs high, wrapped or not, and work outside the worktree medium", () => {
+    expect(risk("git status; git push origin main")).toBe("high");
+    expect(risk("git reset --hard HEAD~1")).toBe("high");
+    expect(risk("npm install left-pad")).toBe("high");
+    expect(risk("git status", { cwd: base.projectRoot })).toBe("medium");
+  });
+});
+

@@ -1,3 +1,4 @@
+import { commandStatements } from "./command-shape.ts";
 import type { RiskLevel } from "./events.ts";
 
 // Risk classes for approvals (PLAN.md §11). The agent's own description of a command is never
@@ -60,6 +61,57 @@ const inside = (path: string, root: string) => {
   return p === r || p.startsWith(r + "\\");
 };
 
+/**
+ * Reads and local git a step needs all the time, low risk inside its own worktree without an
+ * allowlist entry. Before, Codex's wrapper (`powershell.exe -Command '…'`) and its habit of joining
+ * two reads with `;` made every one of these an approval (owner, 2026-11-01: "codex bağladım ama
+ * sürekli approve istiyor", Codex keeps asking for approval). Pushing, resetting, cleaning and
+ * installing stay high through HIGH_PATTERNS, which see the whole command first.
+ */
+export const WORKTREE_READ_COMMANDS: readonly string[] = [
+  "git status",
+  "git diff",
+  "git log",
+  "git show",
+  "git rev-parse",
+  "git ls-files",
+  "git branch --show-current",
+  "git add",
+  "git commit",
+  "Get-Content",
+  "Get-ChildItem",
+  "Select-String",
+  "Get-Location",
+  "Test-Path",
+  "rg",
+  "ls",
+  "dir",
+  "cat",
+  "type",
+  "pwd",
+];
+
+/**
+ * An argument that names a place outside the worktree: an absolute path elsewhere, a `..` step, a
+ * home shortcut or a secret file. A built-in read with one of these is not low risk.
+ */
+function leavesWorktree(statement: string, worktreeRoot: string): boolean {
+  const words = statement.split(/\s+/).slice(1).map((w) => w.replace(/^["']|["']$/g, ""));
+  return words.some((w) => {
+    if (SECRET_PATH.test(w) || /(^|[\\/])\.\.([\\/]|$)/.test(w) || w.startsWith("~")) return true;
+    const absolute = /^[a-z]:[\\/]/i.test(w) || /^[\\/]{1,2}[^\\/]/.test(w);
+    return absolute && !inside(w, worktreeRoot);
+  });
+}
+
+/** True when every statement of the command is an allowed one with plain arguments (see commandStatements). */
+function allStatementsAllowed(command: string, allowlist: readonly string[], worktreeRoot: string): boolean {
+  if (matchesAllowlist(command, allowlist)) return true;
+  const statements = commandStatements(command);
+  if (!statements || statements.length === 0) return false;
+  return statements.every((s) => matchesAllowlist(s, allowlist) || (matchesAllowlist(s, WORKTREE_READ_COMMANDS) && !leavesWorktree(s, worktreeRoot)));
+}
+
 export function classifyRisk(input: RiskInput): RiskLevel {
   const cmd = input.command?.trim() ?? "";
   const touched = [...input.paths, ...(input.cwd ? [input.cwd] : [])];
@@ -71,6 +123,6 @@ export function classifyRisk(input: RiskInput): RiskLevel {
   if (input.network) return "medium";
   if (touched.some((p) => !inside(p, input.worktreeRoot))) return "medium";
 
-  const allowed = cmd === "" || matchesAllowlist(cmd, input.allowlist);
+  const allowed = cmd === "" || allStatementsAllowed(cmd, input.allowlist, input.worktreeRoot);
   return allowed ? "low" : "medium";
 }

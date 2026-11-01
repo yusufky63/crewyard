@@ -534,10 +534,10 @@ The owner asked for it on 2026-10-31: "orkestra olsun default ve kullanımı di�
 
 - Every question and approval becomes a persisted `request` with source run, kind, payload, risk and timestamps. Answering from the Inbox, the inspector or a toast resolves the same record.
 - **Risk classes:**
-  - Low: read-only commands and allowlisted build/test commands inside the worktree.
+  - Low: read-only commands and allowlisted build/test commands inside the worktree. The project's own test and build commands count as allowlisted, and so do the reads and local git a step runs all the time (`WORKTREE_READ_COMMANDS`: `git status/diff/log/show`, `git add`, `git commit`, `Get-Content`, `Get-ChildItem`, `Select-String`, `rg` and a few more), as long as no argument points outside the worktree, takes a `..` step, starts with `~` or names a secret file. A runner's shell wrapper (`powershell.exe -Command '…'`, `bash -lc`, `cmd /c`) is opened first and its statements split on `;`, `&&` and line breaks, each checked on its own (`commandStatements` in `packages/core/src/command-shape.ts`). Before 2026-11-01 every Codex call on Windows arrived wrapped and asked (owner: "codex bağladım ama sürekli approve istiyor", Codex keeps asking for approval).
   - Medium: network access, writes outside the worktree but inside the project.
   - High: destructive git (`reset --hard`, `push --force`, branch delete), anything outside the project, credential or `.env` paths, package installs.
-- Toasts offer `Approve once` only for Low. Medium and High open the Inbox. `Always allow in this project` adds a scoped allowlist entry and is never the default button.
+- Toasts offer `Approve once` only for Low. Medium and High open the Inbox. `Always allow in this project` adds a scoped allowlist entry for each plain command that ran, never the shell wrapper around it, and is never the default button.
 - An allowlist entry matches one command with plain arguments only. Anything with shell syntax (chaining, pipes, redirection, substitution, `%VAR%`, a newline) never matches, in the daemon's risk classes and in every runner's own rules (`matchesAllowlist`, `SHELL_SYNTAX` in `packages/core/src/risk.ts`), so `pnpm test && curl …` is never approved on `pnpm test`.
 - Unanswered requests keep the run paused, never time out into an approval.
 - **Turn control** ([ADR 0005](docs/adr/0005-turn-control.md)):

@@ -5,6 +5,7 @@ export * from "./attachments.ts";
 export * from "./results.ts";
 export * from "./state.ts";
 export * from "./limits.ts";
+export * from "./command-shape.ts";
 export * from "./risk.ts";
 export * from "./catalog.ts";
 export * from "./project.ts";

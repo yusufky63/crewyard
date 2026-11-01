@@ -258,6 +258,30 @@ describe("risk routing", () => {
       ["policy.role_read_only", "high"],
     ]);
   });
+
+  it("reads inside a runner's shell wrapper, and Allow always keeps the command, not the wrapper", async () => {
+    const ps = (script: string) => String.raw`"C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -Command '${script}'`;
+    const pick: Picker = (role) =>
+      role === "implementer"
+        ? [running, ...approval("a1", ps("git status --short; Get-Content src/login.ts")), ...approval("a2", ps("python tools/gen.py")), ...approval("a3", ps("python tools/gen.py --fast")), say("done")]
+        : [running, say("reviewed")];
+    const { o, project } = await setup({ pick });
+    const t = await o.propose({ projectId: project.id, ...CODE_S });
+    await o.approve({ taskId: t.id });
+
+    // The two reads went through by policy; the script runs an unknown program, so it asks.
+    const asked = await waitFor(() => o.requests({ taskId: t.id })[0]);
+    expect(asked.risk).toBe("medium");
+    await o.answer(asked.id, { kind: "approval", decision: "allow_always" });
+    await waitFor(() => o.get(t.id).status === "review");
+
+    const all = o.requests({ taskId: t.id, includeAnswered: true });
+    expect(all.map((q) => [q.risk, q.answeredBy])).toEqual([
+      ["low", "policy"],
+      ["medium", "user"],
+      ["low", "policy"],
+    ]);
+  });
 });
 
 describe("handoff", () => {

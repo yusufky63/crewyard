@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import {
   classifyRisk,
+  commandStatements,
+  SHELL_SYNTAX,
   type AgentEvent,
   type Answer,
   type CandidateView,
@@ -81,8 +83,12 @@ export class Inbox extends Part {
       await this.safe(() => live.adapter.answer(live.handle, q.native_id!, toCoreAnswer(answer)));
     }
     if (answer.kind === "approval" && answer.decision === "allow_always" && payload.kind === "approval" && payload.command) {
+      // Allow the commands that ran, not the shell wrapper around them: `powershell.exe -Command
+      // 'npm test'` is stored as `npm test`, so the next call with another wrapper still matches. A
+      // statement with shell syntax is never stored, since the allowlist would refuse it anyway.
       const task = this.db.task(q.task_id);
-      this.db.exec("insert or ignore into allow_rules (project_id, command, added_at) values (?, ?, ?)", task.project_id, payload.command.trim(), this.iso());
+      const plain = (commandStatements(payload.command) ?? [payload.command.trim()]).filter((c) => c && !SHELL_SYNTAX.test(c));
+      for (const command of plain) this.db.exec("insert or ignore into allow_rules (project_id, command, added_at) values (?, ?, ?)", task.project_id, command, this.iso());
     }
     if (boot && (answer.kind === "approval" || answer.kind === "cancel")) {
       const next = this.bootstrap.answered(q.id, answer.kind === "approval" ? answer.decision : "cancel");
@@ -114,7 +120,9 @@ export class Inbox extends Part {
     const project = this.db.project(task.project_id);
     const { config } = this.config(project);
     const policy = this.policyFor(this.tpl(run), config);
-    const allowlist = [...policy.allowCommands, ...this.db.allowRules(project.id)];
+    // The project's own test and build commands are what its steps run most; they need no entry.
+    const projectCommands = [config.commands.test, config.commands.build].filter((c): c is string => Boolean(c?.trim()));
+    const allowlist = [...policy.allowCommands, ...projectCommands, ...this.db.allowRules(project.id)];
     const risk = classifyRisk({ command: ev.command, cwd: ev.cwd, paths: ev.paths, network: ev.network, worktreeRoot: run.cwd, projectRoot: project.path, allowlist });
 
     let rule: string | null = null;
