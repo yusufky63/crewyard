@@ -54,7 +54,11 @@ export interface McpIpc {
    * Turns a follow-up proposal into a draft task (tasks.propose: classified, crew proposed, nothing
    * started). Its crew still needs your approval on the Tasks screen.
    */
-  "mcp.followups.accept": { params: { reportId: string }; result: { report: CrewReportView; taskId: string } };
+  /**
+   * `taskId` is the draft, or for a follow-up from an Orchestra goal task, the task added to that
+   * goal (`goalId`), which waits for the goal's approval.
+   */
+  "mcp.followups.accept": { params: { reportId: string }; result: { report: CrewReportView; taskId: string; goalId: string | null } };
 }
 
 export interface McpTopics {

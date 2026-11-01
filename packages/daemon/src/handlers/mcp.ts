@@ -43,6 +43,7 @@ export function mcpServiceFor(ctx: HandlerContext, opts: McpHandlerOptions = {})
       run: (id) => orNull(() => o.db.run(id)),
       task: (id) => orNull(() => o.db.task(id)),
       propose: (p) => o.propose(p),
+      goalFollowup: (fromTaskId, title, text) => o.goalFollowup(fromTaskId, title, text),
       message: (runId, text, seen) => o.message(runId, text, seen),
     },
   });

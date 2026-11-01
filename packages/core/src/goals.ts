@@ -262,6 +262,27 @@ export function parseGoalPlan(value: unknown, opts: { maxTasks?: number | null }
   return { ok: true, value: { summary: summary.value, tasks } };
 }
 
+/** Why a plan revision failed, in words the UI translates; `invalid` keeps the parser's text for Details. */
+export type PlanErrorCode = "too_many_tasks" | "no_tasks" | "no_result" | "frozen_changed" | "frozen_removed" | "kept_changing" | "not_created" | "invalid";
+
+/**
+ * The stored failure text of a revision (goal_plans.error, or a run's end detail) read back as a
+ * code and its params. Only the messages this file and the planner write are recognised; anything
+ * else, a provider error included, is `invalid`, and the UI shows the raw text only in a fold.
+ */
+export function planErrorCode(error: string | null): { code: PlanErrorCode; params: Record<string, string | number> } {
+  const e = (error ?? "").trim();
+  let m = /^the plan has (\d+) tasks; the limit is (\d+)$/.exec(e);
+  if (m) return { code: "too_many_tasks", params: { count: Number(m[1]), max: Number(m[2]) } };
+  if (e.startsWith("the plan has no tasks")) return { code: "no_tasks", params: {} };
+  if (e === "the runner returned no result") return { code: "no_result", params: {} };
+  m = /^task "([a-z0-9-]{1,16})" is frozen \(([a-z_]+)\) and cannot (change|be removed)$/.exec(e);
+  if (m) return { code: m[3] === "change" ? "frozen_changed" : "frozen_removed", params: { key: m[1]!, because: m[2]! } };
+  if (e === "the goal's tasks kept changing while the plan's tasks were created") return { code: "kept_changing", params: {} };
+  if (e.startsWith("the plan's tasks could not be created")) return { code: "not_created", params: {} };
+  return { code: "invalid", params: {} };
+}
+
 /**
  * Who wrote a task: the planner (every field required, as GOAL_PLAN_OUTPUT asks) or you, through
  * `Add task` or a tile edit. Your own task may leave out size and priority (M, medium), description,

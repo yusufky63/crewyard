@@ -587,6 +587,11 @@ export class Orchestrator {
     return this.goalPlanner.addTask(goalId, draft, dependsOn);
   }
 
+  /** A goal task's accepted follow-up: a revision of its goal that needs approval, or null outside a goal. */
+  goalFollowup(fromTaskId: string, title: string, text: string): Promise<GoalPlanStart | null> {
+    return this.goalPlanner.addFollowup(fromTaskId, title, text);
+  }
+
   /** `Run as one task`, before approval. */
   collapseGoal(goalId: string): Promise<GoalPlanStart> {
     return this.goalPlanner.collapse(goalId);

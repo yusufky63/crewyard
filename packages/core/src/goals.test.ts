@@ -20,6 +20,7 @@ import {
   parseGoalNote,
   parseGoalPlan,
   parseGoalTask,
+  planErrorCode,
   parseGoalText,
   pathsOverlap,
   planRevisionRefusal,
@@ -194,6 +195,23 @@ describe("parseGoalPlan (design §4.3)", () => {
     expect(item.additionalProperties).toBe(false);
     const json = JSON.stringify(GOAL_PLAN_OUTPUT.jsonSchema);
     for (const bound of ["maxItems", "minItems", "maxLength", "minLength", "pattern", "minimum", "maximum"]) expect(json).not.toContain(bound);
+  });
+});
+
+describe("planErrorCode", () => {
+  it("reads back the failures the parser and the planner write, and calls anything else invalid", () => {
+    const tooMany = parseGoalPlan({ summary: "", tasks: Array.from({ length: 15 }, (_, i) => ({ key: `t${i}` })) });
+    expect(tooMany.ok).toBe(false);
+    expect(planErrorCode(tooMany.ok ? null : tooMany.error)).toEqual({ code: "too_many_tasks", params: { count: 15, max: 8 } });
+    const none = parseGoalPlan({ summary: "", tasks: [] });
+    expect(planErrorCode(none.ok ? null : none.error).code).toBe("no_tasks");
+    expect(planErrorCode("the runner returned no result").code).toBe("no_result");
+    expect(planErrorCode('task "api" is frozen (released) and cannot change')).toEqual({ code: "frozen_changed", params: { key: "api", because: "released" } });
+    expect(planErrorCode('task "api" is frozen (joined) and cannot be removed').code).toBe("frozen_removed");
+    expect(planErrorCode("the goal's tasks kept changing while the plan's tasks were created").code).toBe("kept_changing");
+    expect(planErrorCode("the plan's tasks could not be created (adapter.failed)").code).toBe("not_created");
+    expect(planErrorCode("503 overloaded_error: Sunucu meşgul").code).toBe("invalid");
+    expect(planErrorCode(null).code).toBe("invalid");
   });
 });
 

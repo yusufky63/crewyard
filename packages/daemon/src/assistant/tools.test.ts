@@ -89,6 +89,24 @@ async function live(s: Awaited<ReturnType<typeof setup>>) {
 const assistantScript = (role: string): FakeStep[] => (role === "assistant" ? [say("Looking."), { awaitTurn: true }, say("Again.")] : [running, say("Findings: Defender scans the output folder.")]);
 
 describe("assistant read tools with Autopilot off", () => {
+  it("marks an Orchestra goal's tasks with their goal and leaves its hidden tasks out of list_tasks", async () => {
+    const s = await setup(assistantScript);
+    const { call } = await live(s);
+    const plain = await s.o.propose({ projectId: s.project.id, title: "Ayrı bir görev", kind: "code" });
+    const planned = await s.o.propose({ projectId: s.project.id, title: "Hedefin görevi", kind: "code" });
+    const review = await s.o.propose({ projectId: s.project.id, title: "Tüm değişiklikleri incele", kind: "review" });
+    const now = new Date().toISOString();
+    const db = s.store.db;
+    db.prepare("insert into goals (id, project_id, text, title, base_branch, created_at, integration_task_id) values ('g1', ?, 'Hedef metni', 'Hedef', 'main', ?, ?)").run(s.project.id, now, review.id);
+    db.prepare("insert into goal_plans (id, goal_id, revision, cause, plan, created_at, approved_at) values ('p1', 'g1', 1, 'initial', '{}', ?, ?)").run(now, now);
+    db.prepare("insert into goal_tasks (task_id, goal_id, plan_id, key, position, mode, priority, basis, basis_matched, reason, paths, writes, accepted) values (?, 'g1', 'p1', 'a', 1, 'solo', 'medium', '', 1, '', '[]', 1, 1)").run(planned.id);
+    const listed = await call("list_tasks");
+    const tasks = listed.tasks as Array<{ task_id: string; goal: { goal_id: string; number: number; waiting: boolean } | null }>;
+    expect(tasks.map((t) => t.task_id).sort()).toEqual([plain.id, planned.id].sort());
+    expect(tasks.find((t) => t.task_id === planned.id)!.goal).toEqual({ goal_id: "g1", number: 2, waiting: true });
+    expect(tasks.find((t) => t.task_id === plain.id)!.goal).toBeNull();
+  });
+
   it("reads tasks, a crew, a finished report, events and drafts without changing anything", async () => {
     const s = await setup(assistantScript);
     const { call, conversationId } = await live(s);

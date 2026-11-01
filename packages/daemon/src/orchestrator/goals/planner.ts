@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import {
   ancestorsOf,
+  capText,
+  cleanText,
   applyPlanRevision,
   deriveGoalStatus,
   derivePlanState,
@@ -1227,6 +1229,27 @@ export class GoalPlanner extends Part {
 
   private goalRows(goalId: string): GoalTaskRow[] {
     return this.opts.store.db.prepare("select * from goal_tasks where goal_id = ? order by position, task_id").all(goalId) as unknown as GoalTaskRow[];
+  }
+
+  /**
+   * A follow-up a goal task proposed, accepted in the Inbox (design §5.3): it becomes an added task
+   * of its goal, a one-task revision that waits for the proposing task and for your approval, never
+   * a task that starts. Null when the task belongs to no goal that still takes tasks (none, stopped,
+   * or a plan of one task that became an ordinary task): it is then an ordinary draft, as before.
+   * The agent's words are untrusted: cleaned and cut to the plan's own caps.
+   */
+  async addFollowup(fromTaskId: string, title: string, text: string): Promise<GoalPlanStart | null> {
+    const row = this.goalTaskRowOrNull(fromTaskId);
+    if (!row) return null;
+    const goal = this.goal(row.goal_id);
+    if (goal.stopped_at || goal.collapsed_task_id) return null;
+    const from = this.db.task(fromTaskId);
+    const firstLine = (s: string) => cleanText(s).replace(/\s+/g, " ").trim();
+    const name = capText(firstLine(title) || firstLine(text), GOAL_LIMITS.titleBytes).text;
+    const description = capText(cleanText(text), GOAL_LIMITS.descriptionBytes).text;
+    // It builds on what the proposing task did, so it waits for it while that task still counts.
+    const waits = row.accepted !== 0 && row.discarded_at === null && !from.cancelled_at ? [fromTaskId] : [];
+    return this.addTask(goal.id, { title: name, kind: from.kind, mode: "crew", ...(description ? { description } : {}) }, waits);
   }
 
   private liveRows(goalId: string): GoalTaskRow[] {

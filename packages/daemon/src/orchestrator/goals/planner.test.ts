@@ -164,6 +164,21 @@ function onPropose(o: Orchestrator, before: (n: number) => void): void {
 }
 
 describe("planning a goal", () => {
+  it("hands the goal's attachments to the planning task and lists their paths in the planner's prompt", async () => {
+    const env = await setup();
+    const { o, store, project, adapter } = env;
+    const att = o.attachments.add("kılavuz notları.md", Buffer.from(["# Notlar", "İki adımlı doğrulama için kılavuz."].join("\n")).toString("base64"));
+    const start = await o.createGoal({ projectId: project.id, text: GOAL, attachments: [att.id] });
+    await o.settle();
+    const claimed = row<{ task_id: string | null; file: string }>(store, "select task_id, file from attachments where id = ?", att.id);
+    expect(claimed.task_id).toBe(start.planTaskId);
+    const prompt = plannerRuns(adapter)[0]!.req.prompt;
+    expect(prompt).toContain("Files attached to the goal");
+    expect(prompt).toContain("kılavuz notları.md");
+    // An attachment belongs to one goal: a second goal cannot claim it again.
+    expect(await refusal(o.createGoal({ projectId: project.id, text: "Başka bir hedef: ayarlar sayfasını düzenle", attachments: [att.id] }))).toBe("attachment.claimed");
+  });
+
   it("runs one read-only planning step and turns its plan into proposed tasks with their order", async () => {
     const env = await setup();
     const { o, store, project, adapter } = env;

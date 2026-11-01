@@ -18,6 +18,7 @@ import { GoalError } from "./events.ts";
 import { goalTaskBranches } from "../../handlers/github.ts";
 import { GoalJoin } from "./join.ts";
 import { commitLine, verdictText } from "./runner.ts";
+import { ReportService } from "../../mcp/reports.ts";
 
 // The goal scheduler end to end (docs/adr/0019, design §4.5 to §4.9 and §5): a real store, a repo
 // whose path has spaces, real git merges into the goal branch, and scripted runners. Goals and
@@ -343,6 +344,11 @@ describe("pause", () => {
     expect(adapter.started).toEqual([]);
     await o.goals.pauseAll(false);
     await waitFor(() => o.goals.state(goalId).status === "finished", 20_000);
+    const kinds = (kind: string) => rows<{ payload: string }>(store, "select payload from events where kind = ?", kind).map((e) => JSON.parse(e.payload) as Record<string, unknown>);
+    // Each release and the last pass are audited goal events.
+    expect(kinds("goal.task_released")).toEqual([expect.objectContaining({ goalId, taskId: ids.r, key: "r" })]);
+    expect(kinds("goal.finished")).toEqual([expect.objectContaining({ goalId, state: expect.stringMatching(/^finished:/) })]);
+    expect(kinds("goal.paused_all").map((e) => e.on)).toEqual([true, false]);
   });
 
   it("pauses running steps of the goal at their turn boundary", async () => {
@@ -509,6 +515,62 @@ describe("answers to a stuck goal", () => {
     await o.goals.decide(goalId, stuck, "run_without");
     await waitFor(() => o.get(ids.b!).status === "done", 20_000);
     expect(rows(store, "select 1 from goal_task_deps where task_id = ?", ids.b!)).toEqual([]);
+  });
+});
+
+describe("a follow-up a goal task proposes", () => {
+  it("becomes an added task of its goal that waits for approval, never a task outside the goal", async () => {
+    const { o, store, project, adapter } = await setup();
+    const { goalId, ids } = await seedGoal(o, store, project.id, [{ key: "r", title: "[R] Araştır", kind: "research" }]);
+    await approve(o, goalId, ["r"]);
+    await waitFor(() => o.get(ids.r!).status === "done", 20_000);
+    const run = o.get(ids.r!).runs[0]!;
+    const reportId = randomUUID();
+    q(
+      store,
+      "insert into crew_reports (id, project_id, task_id, run_id, member_id, type, text, title, artifacts, created_at) values (?, ?, ?, ?, ?, 'followup', ?, ?, '[]', ?)",
+      reportId,
+      project.id,
+      ids.r!,
+      run.id,
+      run.memberId,
+      "Oturum aramaları istek başına iki kez çalışıyor.\u0007",
+      "Oturum aramalarını önbelleğe al",
+      new Date().toISOString(),
+    );
+    const reports = new ReportService({
+      store,
+      emit: () => undefined,
+      host: {
+        run: (id) => o.db.run(id),
+        task: (id) => o.db.task(id),
+        propose: (p) => o.propose(p),
+        goalFollowup: (fromTaskId, title, text) => o.goalFollowup(fromTaskId, title, text),
+        message: (runId, text, seen) => o.message(runId, text, seen),
+      },
+    });
+    const tasksBefore = rows(store, "select id from tasks").length;
+    const started = adapter.started.length;
+    const accepted = await reports.accept(reportId);
+    expect(accepted.goalId).toBe(goalId);
+    const gt = row<{ goal_id: string; key: string; accepted: number | null; released_at: string | null }>(store, "select * from goal_tasks where task_id = ?", accepted.taskId);
+    expect(gt).toMatchObject({ goal_id: goalId, released_at: null });
+    // A one-task revision with cause add, waiting for the goal's approval; it depends on the proposing task.
+    const plan = row<{ cause: string; approved_at: string | null }>(store, "select p.cause, p.approved_at from goal_plans p join goal_tasks gt on gt.plan_id = p.id where gt.task_id = ?", accepted.taskId);
+    expect(plan).toEqual({ cause: "add", approved_at: null });
+    expect(rows<{ depends_on: string }>(store, "select depends_on from goal_task_deps where task_id = ?", accepted.taskId).map((d) => d.depends_on)).toEqual([ids.r]);
+    // The agent's words are cleaned: the control character is gone.
+    expect(o.get(accepted.taskId).description).not.toContain("\u0007");
+    expect(o.get(accepted.taskId).title).toBe("Oturum aramalarını önbelleğe al");
+    expect(rows(store, "select id from tasks").length).toBe(tasksBefore + 1);
+    await o.tick();
+    await o.settle();
+    expect(adapter.started).toHaveLength(started);
+    expect(o.get(accepted.taskId).crew?.approvedAt).toBeNull();
+    // Accepting twice returns the same added task.
+    expect(await reports.accept(reportId)).toMatchObject({ taskId: accepted.taskId, goalId });
+    const revised = rows<{ payload: string }>(store, "select payload from events where kind = 'goal.revised'").map((e) => JSON.parse(e.payload));
+    expect(revised).toEqual([expect.objectContaining({ cause: "add", taskId: accepted.taskId, dependsOn: [ids.r] })]);
   });
 });
 
@@ -849,6 +911,17 @@ describe("the goal branch and its last review", () => {
       [ids.y, "joined"],
     ]);
     expect(decisions(store, goalId).find((d) => d.id === conflict.id)!.answer).toBe("send_to_implementer");
+    const kinds = (kind: string) => rows<{ payload: string }>(store, "select payload from events where kind = ?", kind).map((e) => JSON.parse(e.payload) as Record<string, unknown>);
+    // Every merge and conflict is audited with the shas and the conflicted paths.
+    const joined = kinds("goal.joined");
+    expect(joined.map((e) => e.taskId)).toEqual([ids.x, ids.y]);
+    for (const e of joined) expect(e).toMatchObject({ goalId, before: expect.stringMatching(/^[0-9a-f]{40}$/), after: expect.stringMatching(/^[0-9a-f]{40}$/) });
+    expect(joined[1]!.before).toBe(joined[0]!.after);
+    expect(kinds("goal.join_conflict")).toEqual([expect.objectContaining({ goalId, taskId: ids.y, paths: ["README.md"] })]);
+    expect(kinds("goal.decided").map((e) => [e.action, e.closed])).toEqual([
+      ["merge_myself", false],
+      ["send_to_implementer", true],
+    ]);
   });
 
   it("asks you when the last review wants changes, and never replans by itself", async () => {
