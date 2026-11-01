@@ -126,8 +126,12 @@ export function ProvidersScreen() {
   const checks = useKeyChecks();
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
-  const [adding, setAdding] = useState<{ id: string | null } | null>(null);
-  // Screenshot mode can open one provider's dialog with `manage=<id>`.
+  // Screenshot mode can open the Connect dialog for a provider with `add=<id>`...
+  const [adding, setAdding] = useState<{ id: string | null } | null>(() => {
+    const id = FIXTURE ? new URLSearchParams(location.search).get("add") : null;
+    return id ? { id } : null;
+  });
+  // ...and one provider's dialog with `manage=<id>`.
   const [managing, setManaging] = useState<string | null>(() => (FIXTURE ? new URLSearchParams(location.search).get("manage") : null));
   // ...and the catalog versions dialog with `versions`.
   const [versions, setVersions] = useState(() => FIXTURE && new URLSearchParams(location.search).has("versions"));
@@ -302,7 +306,19 @@ export function ProvidersScreen() {
       </Panel>
 
       {versions && <CatalogDialog onClose={() => setVersions(false)} />}
-      {adding && <AddProviderDialog providers={providers} credentials={credList} initialId={adding.id} onClose={() => setAdding(null)} />}
+      {adding && (
+        <AddProviderDialog
+          providers={providers}
+          credentials={credList}
+          profiles={profList}
+          initialId={adding.id}
+          onClose={() => setAdding(null)}
+          onSignInProfile={(id) => {
+            setAdding(null);
+            setManaging(id);
+          }}
+        />
+      )}
       {managed && (
         <ManageDialog
           provider={managed}

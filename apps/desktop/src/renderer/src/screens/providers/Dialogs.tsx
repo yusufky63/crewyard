@@ -45,8 +45,29 @@ function ModelSelect({ provider, value, onChange, id, extra = [] }: { provider: 
   );
 }
 
-/** Pick a provider, paste a key (encrypted by the daemon with DPAPI), choose which runners get a profile. */
-export function AddProviderDialog({ providers, credentials, initialId, onClose }: { providers: CatalogProvider[]; credentials: CredentialSummary[]; initialId: string | null; onClose: () => void }) {
+/**
+ * Pick a provider, paste a key (encrypted by the daemon with DPAPI), choose which runners get a
+ * profile. Where a runner has its own sign-in (Codex with ChatGPT, Gemini CLI with Google), the
+ * dialog also offers a profile without a key that signs in through that runner, then hands over to
+ * the provider's dialog, where the sign-in starts. Before, that option sat only in the provider's
+ * own dialog, which a provider without a key or profile does not have (owner, 2026-11-01: "add
+ * codex account da sadece api key girişi var", adding a Codex account offered only an API key).
+ */
+export function AddProviderDialog({
+  providers,
+  credentials,
+  profiles = [],
+  initialId,
+  onClose,
+  onSignInProfile,
+}: {
+  providers: CatalogProvider[];
+  credentials: CredentialSummary[];
+  profiles?: ProfileSummary[];
+  initialId: string | null;
+  onClose: () => void;
+  onSignInProfile?: (providerId: string) => void;
+}) {
   const { t } = useTranslation("providers");
   const refresh = useRefresh();
   const taken = useMemo(() => new Set(credentials.map((c) => c.alias.toLowerCase())), [credentials]);
@@ -61,6 +82,8 @@ export function AddProviderDialog({ providers, credentials, initialId, onClose }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const local = provider?.group === "local";
+  const signInRunner = provider && !local ? usable.find((r) => runnerSupport(provider, r) === "native" && signInKindFor(r, provider.id) !== null) : undefined;
+  const signInKind = provider && signInRunner ? signInKindFor(signInRunner, provider.id) : null;
 
   const pick = (id: string) => {
     setProviderId(id);
@@ -97,6 +120,25 @@ export function AddProviderDialog({ providers, credentials, initialId, onClose }
       }
       await refresh();
       if (failed.length) setError(t("dialog.profilesFailed", { list: failed.join("; ") }));
+      else onClose();
+    } catch (err) {
+      setError(t("dialog.failed", { message: errorText(err) }));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const signInInstead = async () => {
+    if (!provider || !signInRunner) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const takenProfiles = new Set(profiles.filter((p) => p.runner === signInRunner).map((p) => p.alias.toLowerCase()));
+      const wanted = alias.trim() || provider.id;
+      const name = takenProfiles.has(wanted.toLowerCase()) ? suggestAlias(wanted, takenProfiles) : wanted;
+      await call("providers.profileCreate", { alias: name, runner: signInRunner, providerId: provider.id, credentialId: null, defaultModel: model || null });
+      await refresh();
+      if (onSignInProfile) onSignInProfile(provider.id);
       else onClose();
     } catch (err) {
       setError(t("dialog.failed", { message: errorText(err) }));
@@ -146,6 +188,14 @@ export function AddProviderDialog({ providers, credentials, initialId, onClose }
             <Field label={t("dialog.alias")} hint={t("dialog.aliasHint")} htmlFor="pv-alias">
               <input id="pv-alias" className="pv-input mono" value={alias} onChange={(e) => setAlias(e.target.value)} maxLength={40} spellCheck={false} autoComplete="off" />
             </Field>
+            {signInRunner && signInKind && (
+              <div className="pv-signin-instead">
+                <p className="pv-hint">{t(signInKind === "google" ? "dialog.signInInsteadGoogle" : "dialog.signInInstead", { runner: t(`runner.${signInRunner}`) })}</p>
+                <Button size="sm" disabled={busy || !alias.trim()} onClick={() => void signInInstead()}>
+                  {t("dialog.signInInsteadAction", { provider: t(`signIn.kind.${signInKind}`) })}
+                </Button>
+              </div>
+            )}
             {local ? (
               <p className="pv-hint">{t("dialog.local")}</p>
             ) : (
