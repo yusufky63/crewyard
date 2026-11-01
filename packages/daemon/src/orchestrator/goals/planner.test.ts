@@ -88,7 +88,8 @@ async function setup(opts: { pick?: Picker; result?: Result; candidates?: Candid
     await git(repo, "commit", "-q", "-m", "project config");
   }
   const store = new Store(join(root, "t.db"));
-  if (opts.enabled !== false) store.db.prepare("insert into settings (key, value) values ('orchestra.enabled', 'true')").run();
+  // Written either way, so these tests do not depend on the shipped default.
+  store.db.prepare("insert into settings (key, value) values ('orchestra.enabled', ?)").run(opts.enabled === false ? "false" : "true");
   const project = store.addProject(repo, "demo repo with spaces");
   const adapter = new ScriptedAdapter(opts.pick ?? quick, { result: opts.result ?? planner(ok(PLAN)) });
   const adapters = new AdapterRegistry({});

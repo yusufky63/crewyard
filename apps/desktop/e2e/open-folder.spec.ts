@@ -62,7 +62,7 @@ test("a known project opens however its path is spelled", async () => {
   await daemon(h.page, "projects.add", { path: h.repo });
   await drop(`${h.repo.toUpperCase()}\\`);
   await expect(h.page.locator("#app-sidebar")).toBeVisible();
-  await expect(h.page.getByLabel("New task")).toBeVisible();
+  await expect(h.page.getByLabel("New goal")).toBeVisible();
 });
 
 test("WSL, network, missing and file paths are refused on the Start screen", async () => {

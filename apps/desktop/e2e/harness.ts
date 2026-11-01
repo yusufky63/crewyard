@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { _electron as electron, type ElectronApplication, type Page } from "@playwright/test";
+import { _electron as electron, expect, type ElectronApplication, type Page } from "@playwright/test";
 import type { FakeStep } from "@crewyard/adapter-fake";
 
 // Launches the built app (out/) the way screenshot mode does: a throwaway profile under %TEMP%,
@@ -132,3 +132,18 @@ export const limitReached = (resetsAt: string): FakeStep => ({ emit: { type: "li
 export const usage = (tokensIn: number, tokensOut = 0): FakeStep => ({
   emit: { type: "usage.update", tokensIn, tokensOut, cacheRead: 0, cacheWrite: 0, reasoning: 0, contextUsed: null, contextSize: null, costUsd: null, costProvenance: "unknown" },
 });
+/** Writes a file in the run's worktree, as an agent editing it would; pinHead commits it when the step completes. */
+export const write = (path: string, text: string): FakeStep => ({ write: { path, text } });
+/** The structured result the run ends with, checked against the run's schema (a verdict, findings, a goal plan). */
+export const result = (value: unknown): FakeStep => ({ result: value });
+
+/**
+ * Picks how the composer runs the next submission. Orchestra is the default wherever a profile can
+ * plan, which the fake profiles can; flows that propose one task pick Crew first. The project then
+ * reopens on Crew, so picking it again is harmless.
+ */
+export async function composerMode(page: Page, mode: "Orchestra" | "Crew" | "Solo"): Promise<void> {
+  const button = page.locator("main .tk-composer").getByRole("group", { name: "How to run" }).getByRole("button", { name: mode, exact: true });
+  await button.click();
+  await expect(button).toHaveAttribute("aria-pressed", "true");
+}

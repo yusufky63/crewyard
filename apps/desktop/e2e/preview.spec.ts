@@ -2,7 +2,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { basename } from "node:path";
 import { expect, test } from "@playwright/test";
-import { daemon, hold, launch, running, type Harness } from "./harness.ts";
+import { daemon, hold, launch, running, type Harness, composerMode } from "./harness.ts";
 
 // The inspector's Preview tab against a real dev server on loopback (docs/adr/0013): the run prints
 // the address, nothing loads until Load, the page has no bridge into the app, navigation and
@@ -69,10 +69,11 @@ test("Preview: lists the printed server, loads only on a click, and isolates the
   await expect(start).toBeVisible({ timeout: 30_000 });
   await start.getByRole("button", { name: "Open folder" }).click();
   await start.locator("button.ptile", { hasText: basename(repo) }).click();
-  await expect(page.getByLabel("New task")).toBeVisible();
+  await expect(page.getByLabel("New goal")).toBeVisible();
 
   h.setScripts({ researcher: [[running, { emit: { type: "tool.update", toolCallId: "dev", status: "in_progress", output: `  \x1b[1mLocal\x1b[22m:   http://localhost:\x1b[1m${port}\x1b[22m/\n` } }, hold()]] });
   await page.locator("#app-sidebar").getByRole("button", { name: "Tasks", exact: true }).click();
+  await composerMode(page, "Crew");
   await page.getByLabel("New task").fill("Polish the settings page");
   await page.getByLabel("Kind").selectOption("research");
   await page.getByRole("button", { name: "Propose crew" }).click();

@@ -84,7 +84,8 @@ async function setup(opts: { plans?: unknown[]; enabled?: boolean; research?: st
   const root = tempDir("crewyard goal handlers-");
   const repo = await tempRepo(root, "demo repo with spaces");
   const store = new Store(join(root, "t.db"));
-  if (opts.enabled !== false) store.db.prepare("insert into settings (key, value) values ('orchestra.enabled', 'true')").run();
+  // Written either way, so these tests do not depend on the shipped default.
+  store.db.prepare("insert into settings (key, value) values ('orchestra.enabled', ?)").run(opts.enabled === false ? "false" : "true");
   const project = store.addProject(repo, "demo repo with spaces");
   const plans = planner(...(opts.plans ?? [PLAN]));
   // A researcher reports `research` when given, so its task can finish done.

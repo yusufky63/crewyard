@@ -78,11 +78,11 @@ export const GOAL_SETTINGS = {
 } as const;
 
 /**
- * What a missing `orchestra.enabled` row means; a row exists only once you flip the switch. It
- * stays false until work item 6 (the project daily cap, which bounds goal spend, design §5.1) has
- * merged: §6.5 lets the default turn on only then, and that merge flips this one constant.
+ * What a missing `orchestra.enabled` row means; a row exists only once you flip the switch. On:
+ * the project daily cap that bounds goal spend (design §5.1, work item 6) has merged, which is the
+ * condition §6.5 sets for Orchestra to be the default.
  */
-export const ORCHESTRA_ENABLED_DEFAULT = false;
+export const ORCHESTRA_ENABLED_DEFAULT = true;
 
 export type GoalPriority = "high" | "medium" | "low";
 export const GOAL_PRIORITIES: readonly GoalPriority[] = ["high", "medium", "low"];

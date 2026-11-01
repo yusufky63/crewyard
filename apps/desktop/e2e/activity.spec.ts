@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { basename, join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { daemon, launch, running, say, type Harness } from "./harness.ts";
+import { daemon, launch, running, say, type Harness, composerMode } from "./harness.ts";
 
 // The bottom panel's Events and Logs tabs (DESIGN.md §4) against scripted runners: Ctrl J and
 // the status bar toggle, the live event feed with its filters, paging and "Show all", the redacted
@@ -34,6 +34,7 @@ async function startTask(title: string) {
   const { page } = h;
   await page.locator("#app-sidebar").getByRole("button", { name: "Tasks", exact: true }).click();
   const main = page.locator("main");
+  await composerMode(page, "Crew");
   await main.getByLabel("New task").fill(title);
   await main.getByLabel("Kind").selectOption("research");
   await main.getByRole("button", { name: "Propose crew" }).click();

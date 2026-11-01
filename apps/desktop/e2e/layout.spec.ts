@@ -1,6 +1,6 @@
 import { basename } from "node:path";
 import { expect, test } from "@playwright/test";
-import { launch, type Harness } from "./harness.ts";
+import { launch, type Harness, composerMode } from "./harness.ts";
 
 // The main view grows with the window (DESIGN.md §4). At every supported width, with the sidebar
 // expanded and as a rail, no screen may scroll sideways: long paths and rows must shrink, grids
@@ -16,8 +16,9 @@ test.beforeAll(async () => {
   await expect(start).toBeVisible({ timeout: 30_000 });
   await start.getByRole("button", { name: "Open folder" }).click();
   await start.locator("button.ptile", { hasText: basename(h.repo) }).click();
-  await expect(h.page.getByLabel("New task")).toBeVisible();
+  await expect(h.page.getByLabel("New goal")).toBeVisible();
   // A drafted crew puts the proposal tiles on the Tasks screen.
+  await composerMode(h.page, "Crew");
   await h.page.getByLabel("New task").fill("Check the layout at every width");
   await h.page.getByRole("button", { name: "Propose crew" }).click();
   await expect(h.page.getByRole("region", { name: /Suggested crew for/ })).toBeVisible();
