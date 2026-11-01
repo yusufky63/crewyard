@@ -41,6 +41,8 @@ The same steps are at the top of every release's notes ([docs/release-notes/inst
 - **Your own roles.** Markdown files in `.crewyard/roles/` (or global ones in Crewyard's data folder) change a built-in role's contract or add a role of your own. A role file can only narrow permissions, never widen them past the project's rules; a project lists the custom roles its crews may use in `.crewyard/project.json`. Settings → Roles shows each role's source and any file that was not used ([PLAN.md §9.1](PLAN.md#91-roles)).
 - **Four runners, many providers.**
   - Claude Code (Anthropic or Anthropic-compatible API keys only; never a claude.ai sign-in), Codex, OpenCode, and Gemini CLI over ACP.
+  - Codex signs in with ChatGPT through its own login, which OpenAI allows for a local, open-source app like this one, or runs on an API key.
+  - Gemini CLI signs in with Google only for Gemini Code Assist Standard or Enterprise accounts: since 18 June 2026 it no longer serves free, AI Pro or Ultra Google accounts. With a personal plan, use a Gemini API key; Gemini CLI and OpenCode profiles then run Gemini 4 Argon and Gemini 3.8 Flash among others, billed per use.
   - Providers come from a synced catalog (models.dev): DeepSeek, Kimi, GLM, Qwen, MiniMax, OpenRouter and others.
 - **Limits and spend you can trust.**
   - Every quota or cost figure says whether it is Reported, Estimated or Unknown.
