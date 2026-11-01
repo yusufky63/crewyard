@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import type { FakeStep } from "@crewyard/adapter-fake";
-import type { GoalDetail, GoalsIpc, IpcMessage, RunOutput, StartRequest } from "@crewyard/core";
+import { ORCHESTRA_ENABLED_DEFAULT, type GoalDetail, type GoalsIpc, type IpcMessage, type RunOutput, type StartRequest } from "@crewyard/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Store } from "../store.ts";
 import { AdapterRegistry } from "../orchestrator/adapters.ts";
@@ -80,12 +80,13 @@ afterEach(async () => {
   cleanTemps();
 });
 
-async function setup(opts: { plans?: unknown[]; enabled?: boolean; research?: string } = {}) {
+async function setup(opts: { plans?: unknown[]; enabled?: boolean | null; research?: string } = {}) {
   const root = tempDir("crewyard goal handlers-");
   const repo = await tempRepo(root, "demo repo with spaces");
   const store = new Store(join(root, "t.db"));
-  // Written either way, so these tests do not depend on the shipped default.
-  store.db.prepare("insert into settings (key, value) values ('orchestra.enabled', ?)").run(opts.enabled === false ? "false" : "true");
+  // Written either way, so these tests do not depend on the shipped default; null stores no row,
+  // which is how a fresh install reads the shipped default.
+  if (opts.enabled !== null) store.db.prepare("insert into settings (key, value) values ('orchestra.enabled', ?)").run(opts.enabled === false ? "false" : "true");
   const project = store.addProject(repo, "demo repo with spaces");
   const plans = planner(...(opts.plans ?? [PLAN]));
   // A researcher reports `research` when given, so its task can finish done.
@@ -202,6 +203,17 @@ describe("reading goals", () => {
     expect(await refusal(() => h["goals.preview"]({ projectId: 3 as unknown as string, text: GOAL }))).toBe("project.not_found");
     expect(await refusal(() => h["goals.stopPreview"]({ goalId: "nope" }))).toBe("goal.not_found");
     expect(await refusal(() => h["goals.setProjectDefaults"]({ projectId: "nope", budgetUsd: 2 }))).toBe("project.not_found");
+  });
+
+  it("reads Orchestra as on when no setting is stored, the shipped default (design §6.5)", async () => {
+    expect(ORCHESTRA_ENABLED_DEFAULT).toBe(true);
+    const { h, project, store } = await setup({ enabled: null });
+    expect(store.db.prepare("select count(*) as n from settings where key = 'orchestra.enabled'").get()).toEqual({ n: 0 });
+    expect(await h["goals.state"]()).toEqual({ enabled: ORCHESTRA_ENABLED_DEFAULT, pausedAll: false });
+    const preview = await h["goals.preview"]({ projectId: project.id, text: GOAL });
+    expect(preview).toMatchObject({ canPlan: true, reason: null });
+    const created = await h["goals.create"]({ projectId: project.id, text: GOAL });
+    expect(created.status).toBe("planning");
   });
 
   it("refuses a goal while Orchestra is off", async () => {
