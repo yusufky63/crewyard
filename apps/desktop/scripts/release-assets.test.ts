@@ -25,8 +25,9 @@ function artifactFor(platform: string, target: string, arch: string, version: st
 }
 
 describe("release tags", () => {
-  it("publishes every 0.x version and every pre-release suffix as a pre-release", () => {
-    expect(parseTag("v0.2.0")).toEqual({ version: "0.2.0", prerelease: true });
+  it("publishes only a version with a pre-release suffix as a pre-release", () => {
+    expect(parseTag("v0.2.0")).toEqual({ version: "0.2.0", prerelease: false });
+    expect(parseTag("v0.3.0-rc.1")).toEqual({ version: "0.3.0-rc.1", prerelease: true });
     expect(parseTag("v1.0.0")).toEqual({ version: "1.0.0", prerelease: false });
     expect(parseTag("v1.4.2-beta.1")).toEqual({ version: "1.4.2-beta.1", prerelease: true });
   });

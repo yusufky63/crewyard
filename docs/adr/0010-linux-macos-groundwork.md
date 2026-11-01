@@ -371,7 +371,7 @@ Until this update nothing had been built for macOS or Linux, and v0.1.0 was a Wi
   - `crewyard_<v>_amd64.deb`;
   - `SHA256SUMS.txt`.
 - A test expands the config's patterns with electron-builder's own `expandMacro` and `getArtifactArchName`, so the names cannot drift from what electron-builder writes.
-- **Versions.** The root `package.json` now carries the version too. The tag must equal both versions, and every `0.x` version is a pre-release. GitHub's `/releases/latest` skips pre-releases, so the website must read the list (docs/release.md).
+- **Versions.** The root `package.json` now carries the version too. The tag must equal both versions, and every `0.x` version was a pre-release until 2026-11-01, when the owner asked for v0.2.0 to be the latest release; since then only a tag with a pre-release part is one. GitHub's `/releases/latest` skips pre-releases, so the website must read the list (docs/release.md).
 
 ### Windows notes
 

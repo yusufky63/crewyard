@@ -48,7 +48,7 @@ jobs:
         with:
           node-version: 24
           package-manager-cache: false
-      # v<major>.<minor>.<patch>[-pre], equal to both package.json versions; 0.x is a pre-release.
+      # v<major>.<minor>.<patch>[-pre], equal to both package.json versions; only a -pre tag is a pre-release.
       # The tag reaches the shell only through the environment, never inside the script text.
       - id: version
         env:

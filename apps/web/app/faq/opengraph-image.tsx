@@ -8,7 +8,7 @@ export default function Image() {
   return renderCard({
     eyebrow: "FAQ",
     title: "Questions and answers",
-    lead: "Supported systems, cost, agents and providers, approvals, limits, the unsigned pre-release and updates.",
+    lead: "Supported systems, cost, agents and providers, approvals, limits, unsigned builds and updates.",
     facts: ["Short answers"],
   });
 }

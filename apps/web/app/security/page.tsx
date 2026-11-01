@@ -6,7 +6,7 @@ import { adrUrl, SITE } from "@/lib/site";
 
 export const metadata = pageMeta({
   title: "Security",
-  description: "How Crewyard handles API keys (DPAPI, Keychain, Secret Service), sign-in, local connections, approvals for outward actions, unsigned pre-release builds and updates.",
+  description: "How Crewyard handles API keys (DPAPI, Keychain, Secret Service), sign-in, local connections, approvals for outward actions, unsigned builds and updates.",
   path: "/security",
 });
 

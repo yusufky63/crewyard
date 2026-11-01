@@ -5,7 +5,7 @@ import { SITE } from "@/lib/site";
 
 export const metadata = pageMeta({
   title: "FAQ",
-  description: "Answers about Crewyard: supported systems, cost, agents and providers, Claude API keys, approvals, limits, the unsigned pre-release, updates, data and requirements.",
+  description: "Answers about Crewyard: supported systems, cost, agents and providers, Claude API keys, approvals, limits, unsigned builds, updates, data and requirements.",
   path: "/faq",
 });
 

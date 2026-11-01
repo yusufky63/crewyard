@@ -235,14 +235,14 @@ export const FAQ: Array<{ q: string; a: string[] }> = [
   {
     q: "Why does Windows SmartScreen warn about the installer?",
     a: [
-      "Pre-release builds are not code-signed yet, so SmartScreen names an unknown publisher. Choose More info, then Run anyway.",
+      "The builds are not code-signed yet, so SmartScreen names an unknown publisher. Choose More info, then Run anyway.",
       "You can check the download against the SHA-256 on the download page first. The certificate for signed builds is still an open decision in the plan.",
     ],
   },
   {
     q: "Does Crewyard update itself?",
     a: [
-      "Not yet. The pre-release builds are made without an update feed and never look for updates; install a newer release by hand from the download page.",
+      "Not yet. The builds are made without an update feed and never look for updates; install a newer release by hand from the download page.",
       "Signed Windows builds with an update feed are prepared: they check only when you press Check now (or turn on automatic checks), download on your click and install only updates signed by the same publisher.",
     ],
   },
@@ -300,7 +300,7 @@ export const SECURITY: Array<{ title: string; points: string[] }> = [
   {
     title: "Builds and updates",
     points: [
-      "Pre-release builds are unsigned. Compare the SHA-256 on the download page with your file before you run it.",
+      "The builds are unsigned. Compare the SHA-256 on the download page with your file before you run it.",
       "They have no update feed and never check for updates.",
       "A packaged build refuses to start with remote debugging switches, so no DevTools listener opens.",
       "Signed builds are prepared: they install only updates that Windows verifies as signed by the same publisher.",

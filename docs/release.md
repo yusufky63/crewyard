@@ -15,7 +15,7 @@ GitHub Releases is the download host. The website lists releases from GitHub's p
 | all | `SHA256SUMS.txt` (`<sha256>  <file>` per line) | |
 
 - `<version>` is the tag without its `v`: tag `v0.2.0` gives `Crewyard-Setup-0.2.0-x64.exe`.
-- Every `0.x` version, and every version with a pre-release part (`v1.2.0-beta.1`), is published as a GitHub pre-release. From `v1.0.0` on, plain versions are normal releases.
+- Only a version with a pre-release part (`v0.3.0-rc.1`) is published as a GitHub pre-release. Plain versions, `0.x` included, are normal releases and GitHub marks the newest one Latest. (Until 2026-11-01 every `0.x` version was a pre-release; the owner asked for v0.2.0 to be the latest release.)
 - The builds are unsigned on Windows, and ad-hoc signed but not notarized on macOS. The release notes start with [docs/release-notes/install.md](release-notes/install.md): the SmartScreen and Gatekeeper steps, and which Linux file to pick.
 - None of these builds checks for updates (no update feed, ADR 0011). Users download the next release by hand.
 - The names are fixed in [`apps/desktop/scripts/release-assets.cjs`](../apps/desktop/scripts/release-assets.cjs). `electron-builder.config.cjs` takes them from there, the workflow refuses to publish any other set, and a test pins them to electron-builder's own naming rules.
@@ -36,7 +36,7 @@ Match assets by these patterns, never by position in the list:
 Read releases from `GET https://api.github.com/repos/yusufky63/crewyard/releases`:
 
 - Take the first entry with `draft: false`. Unauthenticated callers never see drafts anyway.
-- Do not use `/releases/latest`. It skips pre-releases, so it returns 404 while every version is `0.x`.
+- Do not use `/releases/latest`. It skips pre-releases, so a newer pre-release would never show there.
 - Each asset carries `browser_download_url`, `size` and `digest` (`sha256:<hex>`, the same value as in `SHA256SUMS.txt`).
 - While the repository is private the API answers 404. Show no download then; never show a made-up version.
 
@@ -87,7 +87,7 @@ The tag push is the release. Nothing else triggers the workflow.
    - writes `SHA256SUMS.txt`;
    - uploads everything to the draft;
    - checks the draft carries exactly those files at the same sizes;
-   - publishes it (`draft: false`, pre-release while `0.x`).
+   - publishes it (`draft: false`, pre-release only for a `-pre` tag).
 
 There are no caches (dependencies and Electron come from the registry and Electron's checksums on every run) and no secret other than `GITHUB_TOKEN`. A tag pushed again cancels the run still going for it.
 

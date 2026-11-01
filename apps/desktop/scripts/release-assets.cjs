@@ -66,14 +66,15 @@ const LICENCE = { license: "MIT", copyright: "Copyright (c) 2026 Yusuf" };
 const TAG = /^v((0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?)$/;
 
 /**
- * A release tag: v<major>.<minor>.<patch>[-<pre>]. Every 0.x version and every version with a
- * pre-release part is published as a GitHub pre-release.
+ * A release tag: v<major>.<minor>.<patch>[-<pre>]. Only a version with a pre-release part is
+ * published as a GitHub pre-release; plain versions, 0.x included, are normal releases (the owner
+ * asked for v0.2.0 to be the latest release on 2026-11-01).
  * @param {string} tag
  */
 function parseTag(tag) {
   const m = TAG.exec(tag);
   if (!m) throw new Error(`not a release tag: ${JSON.stringify(tag)} (expected v<major>.<minor>.<patch>, e.g. v0.2.0)`);
-  return { version: m[1], prerelease: m[2] === "0" || m[5] !== undefined };
+  return { version: m[1], prerelease: m[5] !== undefined };
 }
 
 /**

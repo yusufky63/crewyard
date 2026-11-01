@@ -1,14 +1,27 @@
 # Crewyard
 
+**Run crews of coding agents from one desktop app, on your own accounts and keys.**
+
+[Website](https://crewyard-two.vercel.app) · [Download](https://crewyard-two.vercel.app/download) · [How it works](https://crewyard-two.vercel.app/how-it-works) · [Changelog](https://crewyard-two.vercel.app/changelog) · [Releases](https://github.com/yusufky63/crewyard/releases)
+
+[![Latest release](https://img.shields.io/github/v/release/yusufky63/crewyard?label=release)](https://github.com/yusufky63/crewyard/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![Platforms](https://img.shields.io/badge/platforms-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-555)](https://crewyard-two.vercel.app/download)
+
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="apps/web/public/shots/tasks-light.webp">
+  <img alt="Crewyard's Tasks screen with the Orchestra composer, the task list and the accounts panel, using sample data" src="apps/web/public/shots/tasks-dark.webp">
+</picture>
+
+A local desktop app that runs and supervises coding agents (Claude Code, Codex, Gemini CLI, OpenCode) across several of your own accounts and API keys. You write a goal; Crewyard plans it into tasks, proposes a crew for each, and runs nothing until you approve. It watches limits and spend, hands work to a backup agent when you allow it, and keeps every push, pull request and merge behind your click.
+
 License: [MIT](LICENSE) · [Contributing](CONTRIBUTING.md) · [Security policy](SECURITY.md)
 
-A local, Windows-first desktop app that runs and supervises coding agents (Claude Code, Codex, Gemini CLI, OpenCode) across several of your own accounts and API keys. It proposes a crew for each task, waits for your approval, watches limits and spend, hands work to a backup agent when you allow it, and keeps GitHub under your control.
-
-Status: pre-release. It is built and tested on Windows 11. From the release after v0.1.0, each version also ships for macOS (Apple silicon and Intel) and Linux (x64). Those packages are built and started on GitHub's runners for every release, but have not been tried on real Macs or Linux desktops yet ([ADR 0010](docs/adr/0010-linux-macos-groundwork.md)). No build carries a publisher's signature yet (macOS builds are only ad-hoc signed), and none checks for updates (PLAN.md §17).
+Status: v0.2.0, the first public release. It is built and tested on Windows 11, and each release also ships for macOS (Apple silicon and Intel) and Linux (x64). Those packages are built and started on GitHub's runners for every release, but have not been tried on real Macs or Linux desktops yet ([ADR 0010](docs/adr/0010-linux-macos-groundwork.md)). No build carries a publisher's signature yet (macOS builds are only ad-hoc signed), and none checks for updates (PLAN.md §17).
 
 ## Install
 
-Download from this repository's [Releases](https://github.com/yusufky63/crewyard/releases). While the version is 0.x, every release is marked pre-release. Each one lists `SHA256SUMS.txt` for checking a download.
+Download from [the website](https://crewyard-two.vercel.app/download), which picks the file for your system, or from this repository's [Releases](https://github.com/yusufky63/crewyard/releases). Each release lists `SHA256SUMS.txt` for checking a download.
 
 | System | File | First start |
 |---|---|---|
@@ -27,7 +40,15 @@ The same steps are at the top of every release's notes ([docs/release-notes/inst
 
 ## Website
 
-`apps/web` is the project's website: what Crewyard is, how it works, downloads (Windows today; macOS and Linux files appear when a release includes them), the changelog, the FAQ and the security model. It reads releases from this repository's GitHub releases, so each new release appears on the download and changelog pages within the hour with no code change. It is a Next.js app deployed on Vercel with `apps/web` as the root directory; [apps/web/README.md](apps/web/README.md) covers development, the screenshots, the deploy and its environment variables.
+[crewyard-two.vercel.app](https://crewyard-two.vercel.app) is the project's website: what Crewyard is, how it works, downloads for Windows, macOS and Linux with their checksums, the changelog, the FAQ and the security model. Its source is `apps/web`, a Next.js app on Vercel. It reads releases from this repository's GitHub releases, so each new release appears on the download and changelog pages within the hour with no code change; [apps/web/README.md](apps/web/README.md) covers development, the screenshots, the deploy and its environment variables.
+
+## Screens
+
+All screenshots use the app's sample data.
+
+| Crew graph | Inbox | Limits and usage |
+|---|---|---|
+| <img alt="Crew graph of a task's steps and agents" src="apps/web/public/shots/crew-dark.webp"> | <img alt="Inbox with agent questions and approvals" src="apps/web/public/shots/inbox-dark.webp"> | <img alt="Limits and usage with Reported and Estimated figures" src="apps/web/public/shots/limits-dark.webp"> |
 
 ## What it does
 
