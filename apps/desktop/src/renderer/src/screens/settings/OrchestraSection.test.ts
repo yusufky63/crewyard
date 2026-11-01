@@ -3,8 +3,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it } from "vitest";
 import { initI18n } from "../../i18n.ts";
-import { SECTIONS } from "./model.ts";
-import { asSwitches, OrchestraSection, pauseAllCommand } from "./OrchestraSection.tsx";
+import { useNav } from "../../nav.ts";
+import { SECTIONS, useSettingsNav } from "./model.ts";
+import { asSwitches, OrchestraSection, pauseAllCommand, pauseFromPalette, useSwitchError } from "./OrchestraSection.tsx";
 
 // Settings → Orchestra and the palette entry (docs/adr/0019, design §5.2 and §6.5): the switch that
 // turns new goals on or off, and Pause all goals, which only a click lifts.
@@ -13,6 +14,7 @@ const i18n = initI18n("en");
 
 beforeEach(async () => {
   await i18n.changeLanguage("en");
+  useSwitchError.setState({ error: null });
 });
 
 function render(state: unknown): string {
@@ -49,6 +51,17 @@ describe("Settings → Orchestra", () => {
     expect(html).toContain("Lifting it is your click.");
   });
 
+  it("shows a pressed Pause all goals in the danger tone, and a pressed Orchestra in ok", () => {
+    const html = render({ enabled: true, pausedAll: true });
+    const button = (label: string) => html.split(`aria-label="${label}"`)[1]?.split("</div>")[0]?.match(/<button[^>]*aria-pressed="true"[^>]*>/)?.[0] ?? "";
+    expect(button("Pause all goals")).toContain("seg-bad");
+    expect(button("Orchestra")).toContain("seg-ok");
+  });
+
+  it("says that planning runs are held too", () => {
+    expect(render({ enabled: true, pausedAll: false })).toContain("no goal task or planning run starts");
+  });
+
   it("disables both switches until the state is read, and ignores an answer that is not the state", () => {
     for (const state of [undefined, { id: "t1", status: "running" }]) {
       const html = render(state);
@@ -77,6 +90,28 @@ describe("goal switches", () => {
     expect(pauseAllCommand({ enabled: true, pausedAll: false })).toEqual({ id: "action:pause-goals", titleKey: "search.pauseGoals", next: true });
     expect(pauseAllCommand({ enabled: false, pausedAll: true })).toEqual({ id: "action:pause-goals", titleKey: "search.resumeGoals", next: false });
     expect(pauseAllCommand(undefined)).toBeNull();
+  });
+
+  it("reports a refused palette flip in Settings → Orchestra instead of dropping it", async () => {
+    useNav.setState({ screen: "tasks" });
+    await pauseFromPalette(async () => {
+      throw new Error("daemon.offline");
+    }, true);
+    expect(useSwitchError.getState().error).toBe("daemon.offline");
+    expect(useNav.getState().screen).toBe("settings");
+    expect(useSettingsNav.getState().section).toBe("orchestra");
+  });
+
+  it("clears an old error and stays put when the palette flip goes through", async () => {
+    useNav.setState({ screen: "tasks" });
+    useSwitchError.setState({ error: "old" });
+    const calls: boolean[] = [];
+    await pauseFromPalette(async (on) => {
+      calls.push(on);
+    }, false);
+    expect(calls).toEqual([false]);
+    expect(useSwitchError.getState().error).toBeNull();
+    expect(useNav.getState().screen).toBe("tasks");
   });
 
   it("has the palette words in both languages", async () => {

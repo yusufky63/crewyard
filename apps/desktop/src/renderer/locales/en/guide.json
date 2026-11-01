@@ -21,6 +21,9 @@
   "modes": {
     "lead": "The How to run control at the start of the Tasks composer picks one for each request. Orchestra is the default in every project with a profile that can plan read-only; without one the composer opens on Crew. It reopens on Orchestra or Crew, whichever you last used in that project, and never on Solo.",
     "default": "Default",
+    "off": "Orchestra is off in Settings → Orchestra: the composer hides it, opens on Crew and takes no new goals. Goals you already approved keep running.",
+    "offBadge": "Off",
+    "offGo": "Open Settings → Orchestra",
     "orchestra": {
       "title": "Orchestra",
       "body": "Write a goal. One read-only planning run splits it into tasks: at most 8, the order they run in, and the files each plans to change.",
@@ -40,7 +43,7 @@
         "b": "Ready-made analyses and imported issues always run as one Crew task, with no planning run.",
         "c": "Pick it when you already know the work is one change."
       },
-      "go": "Open Crew graph"
+      "go": "Write a Crew task"
     },
     "solo": {
       "title": "Solo",

@@ -21,6 +21,9 @@
   "modes": {
     "lead": "Görevler ekranındaki yazma alanının başındaki Nasıl çalışsın seçimi her istek için birini belirler. Salt okunur plan yapabilen bir profili olan her projede varsayılan Orkestra'dır; böyle bir profil yoksa yazma alanı Ekip ile açılır. Sonraki açılışta o projede en son kullandığın Orkestra ya da Ekip seçili gelir; Solo hiçbir zaman hatırlanmaz.",
     "default": "Varsayılan",
+    "off": "Orkestra, Ayarlar → Orkestra'da kapalı: yazma alanında görünmez, alan Ekip ile açılır ve yeni hedef alınmaz. Onayladığın hedefler çalışmayı sürdürür.",
+    "offBadge": "Kapalı",
+    "offGo": "Ayarlar → Orkestra'yı aç",
     "orchestra": {
       "title": "Orkestra",
       "body": "Bir hedef yaz. Salt okunur tek bir planlama çalıştırması onu görevlere böler: en fazla 8 görev, hangi sırayla çalışacakları ve her birinin değiştirmeyi planladığı dosyalar.",
@@ -40,7 +43,7 @@
         "b": "Hazır analizler ve içe aktarılan issue'lar her zaman tek bir Ekip görevi olarak, planlama çalıştırması olmadan çalışır.",
         "c": "İşin tek bir değişiklik olduğunu zaten biliyorsan bunu seç."
       },
-      "go": "Ekip grafiğini aç"
+      "go": "Ekip görevi yaz"
     },
     "solo": {
       "title": "Solo",

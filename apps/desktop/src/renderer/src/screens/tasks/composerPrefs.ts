@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
-import type { RememberedMode } from "./goalsModel.ts";
+import type { ComposerMode, RememberedMode } from "./goalsModel.ts";
 
 // The composer's per-project memory (design §1.2, §3.1): the mode you last submitted with
 // (Orchestra or Crew, never Solo) and the profile you picked on Solo's who chip. Per viewer, so it
@@ -75,6 +75,22 @@ export const useComposerPrefs = create<ComposerPrefs>()(
  * words back so you can change them and plan again. Not persisted; `n` makes the same text twice
  * still arrive.
  */
+/**
+ * A mode picked outside the composer for its next request only: the Guide's mode tiles open the
+ * composer on the mode they describe. The composer takes it once, when it mounts or when a new
+ * pick arrives. Never persisted, so a Solo pick is still never remembered (design §1.2).
+ */
+export const useComposerPick = create<{ mode: ComposerMode | null; n: number; pick(mode: ComposerMode): void; take(): ComposerMode | null }>()((set, get) => ({
+  mode: null,
+  n: 0,
+  pick: (mode) => set((s) => ({ mode, n: s.n + 1 })),
+  take: () => {
+    const { mode } = get();
+    if (mode) set({ mode: null });
+    return mode;
+  },
+}));
+
 export const useComposerFill = create<{ text: string; n: number; fill(text: string): void }>()((set) => ({
   text: "",
   n: 0,

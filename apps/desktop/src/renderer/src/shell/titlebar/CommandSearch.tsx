@@ -6,7 +6,7 @@ import type { TaskStatus } from "@crewyard/core";
 import { useDaemon } from "../../ipc.ts";
 import { useNav } from "../../nav.ts";
 import { projectScreens } from "../../registry.ts";
-import { pauseAllCommand, useGoalSwitches } from "../../screens/settings/OrchestraSection.tsx";
+import { pauseAllCommand, pauseFromPalette, useGoalSwitches } from "../../screens/settings/OrchestraSection.tsx";
 import { openSetup } from "../../screens/setup/draft.ts";
 import { useWork } from "../../screens/tasks/data.ts";
 import { focusMain, goInProject, openFolder, openProjectById, openTask, startNewTask } from "./actions.ts";
@@ -60,7 +60,7 @@ function useEntries(): Entry[] {
   // Orchestra's kill switch (design §5.2), here as in Settings; lifting it is a click here too.
   const pause = pauseAllCommand(goals.data);
   if (pause) {
-    entries.push({ id: pause.id, group: "action", title: t(pause.titleKey), keywords: t("search.goalsKeywords"), icon: ico(pause.next ? CirclePause : CirclePlay), run: () => goals.pauseAll(pause.next).catch(() => undefined) });
+    entries.push({ id: pause.id, group: "action", title: t(pause.titleKey), keywords: t("search.goalsKeywords"), icon: ico(pause.next ? CirclePause : CirclePlay), run: () => pauseFromPalette(goals.pauseAll, pause.next) });
   }
   for (const p of projects) {
     entries.push({ id: `project:${p.id}`, group: "project", title: p.name, keywords: p.path, meta: p.path, recency: p.lastOpenedAt, icon: ico(Folder), run: () => openProjectById(qc, p.id) });

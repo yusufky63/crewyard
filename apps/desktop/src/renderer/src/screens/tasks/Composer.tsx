@@ -5,7 +5,7 @@ import { GOAL_LIMITS, TASK_PRESETS, type CandidateView, type FallbackMode, type 
 import { Button, Label, Panel } from "@crewyard/ui";
 import { useNav } from "../../nav.ts";
 import { AttachButton, DraftAttachments, useAttachmentDraft, useDiscardOnUnmount } from "./Attachments.tsx";
-import { useComposerFill, useComposerPrefs } from "./composerPrefs.ts";
+import { useComposerFill, useComposerPick, useComposerPrefs } from "./composerPrefs.ts";
 import { act, useErrorText, useWork } from "./data.ts";
 import { FIXTURE } from "./fixture.ts";
 import { fixtureComposer } from "./goalFixture.ts";
@@ -120,6 +120,16 @@ export function Composer({
   useDiscardOnUnmount(attach);
   const ids = { text: useId(), branch: useId(), kind: useId(), fallback: useId(), budget: useId(), bestOf: useId(), preset: useId(), planner: useId(), who: useId(), more: useId() };
   const ta = useTranslation("assistant").t;
+
+  // A Guide mode tile picks its mode for this request; Orchestra while it cannot plan still reads
+  // as Crew below, and Solo goes back to the kept mode after the submission, as a click on it does.
+  const pickN = useComposerPick((s) => s.n);
+  useEffect(() => {
+    const m = useComposerPick.getState().take();
+    if (!m) return;
+    setPicked(m);
+    setOpen(true);
+  }, [pickN]);
 
   // `Edit goal` in the plan review hands the goal's own words back here.
   const fill = useComposerFill();

@@ -458,7 +458,7 @@
     "enabled": "Orkestra",
     "enabledHint": "Kapalıyken yazma alanında Orkestra görünmez ve yeni hedef kabul edilmez; yazma alanı Ekip ile açılır. Onayladığınız hedefler kendi sıralarıyla çalışmayı sürdürür.",
     "pauseAll": "Tüm hedefleri duraklat",
-    "pauseAllHint": "Her projedeki bütün hedefleri bir anda durdurur: çalışan hedef adımları bir sonraki tur sınırında duraklar, hiçbir hedef görevi başlamaz. Hedef dışındaki görevler çalışmaya devam eder.",
-    "pausedHint": "Açık: hiçbir hedef görevi başlamaz, durum çubuğunda Hedefler duraklatıldı yazar. Kaldırmak da sizin tıklamanızla olur."
+    "pauseAllHint": "Her projedeki bütün hedefleri bir anda durdurur: çalışan hedef adımları ve planlama çalıştırmaları bir sonraki tur sınırında duraklar, hiçbir hedef görevi ya da planlama çalıştırması başlamaz. Hedef dışındaki görevler çalışmaya devam eder.",
+    "pausedHint": "Açık: hiçbir hedef görevi ya da planlama çalıştırması başlamaz, durum çubuğunda Hedefler duraklatıldı yazar. Kaldırmak da sizin tıklamanızla olur."
   }
 }

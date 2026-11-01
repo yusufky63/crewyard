@@ -12,13 +12,15 @@ import { usePrefs } from "../../prefs.ts";
 import { openPanel } from "../../shell/activity/panel.ts";
 import { KeyboardMap } from "../../shell/status/keys.tsx";
 import { goInProject, openTask, startNewTask } from "../../shell/titlebar/actions.ts";
+import { useComposerPick } from "../tasks/composerPrefs.ts";
 import { useProvidersLive } from "../providers/shared.tsx";
 import { openSettings } from "../settings/model.ts";
+import { useGoalSwitches } from "../settings/OrchestraSection.tsx";
 import { useUpdates } from "../settings/Updates.tsx";
 import { openSetup } from "../setup/draft.ts";
 import { MACHINE_PANEL_ID } from "../start/Machine.tsx";
 import { defenderItem, longPathsItem, summarize, TOOL_ORDER, toolItem } from "../start/machine.ts";
-import { DEFAULT_MODE, FAQ, FEATURES, FLOW, MODES, needsProject, type GuideAction } from "./content.ts";
+import { FAQ, FEATURES, FLOW, MODES, modeAction, needsProject, shownDefault, type GuideAction } from "./content.ts";
 import { guideChecklist, machineProblem, releaseFacts, STATE_BADGE, type GuideRowId, type GuideState, type Read } from "./model.ts";
 import "./guide.css";
 
@@ -27,7 +29,7 @@ import "./guide.css";
 // project screens open the open project, else the most recent one, else say a project is needed.
 
 const STALE = 5 * 60_000;
-const SECTIONS = ["modes", "flow", "checklist", "features", "faq"] as const;
+export const SECTIONS = ["modes", "flow", "checklist", "features", "faq"] as const;
 const pad = (n: number) => String(n).padStart(2, "0");
 const sectionId = (id: string) => `guide-${id}`;
 
@@ -61,7 +63,10 @@ function useGuideActions() {
         if (!target) return go(a.screen);
         return goInProject(qc, target, a.screen);
       case "newTask":
-        if (target) await startNewTask(qc, target);
+        if (!target) return;
+        // Picked before the composer mounts, so it opens on the tile's mode.
+        if (a.mode) useComposerPick.getState().pick(a.mode);
+        await startNewTask(qc, target);
         return;
       case "start":
         return closeProject();
@@ -85,7 +90,7 @@ function useGuideActions() {
   return { run, available, projectKnown, target, projects, projectsRead: projectsQ.isSuccess, projectId, keysOpen, closeKeys: () => setKeysOpen(false) };
 }
 
-type Actions = ReturnType<typeof useGuideActions>;
+export type Actions = ReturnType<typeof useGuideActions>;
 
 function GoButton({ action, label, actions }: { action: GuideAction; label: string; actions: Actions }) {
   const { t } = useTranslation("guide");
@@ -131,18 +136,30 @@ function SectionHead({ id, index, children }: { id: string; index: number; child
   );
 }
 
-/** Orchestra, Crew and Solo, as the composer's How to run control offers them; Orchestra is marked as the default. */
-function Modes({ actions }: { actions: Actions }) {
+/**
+ * Orchestra, Crew and Solo, as the composer's How to run control offers them. The default is marked
+ * from the real switch: with Settings → Orchestra off, Crew is what the composer opens on, and
+ * Orchestra's tile says so and sends you to the switch.
+ */
+export function Modes({ actions }: { actions: Actions }) {
   const { t } = useTranslation("guide");
+  const on = useGoalSwitches().data?.enabled;
+  const def = shownDefault(on);
   return (
     <section id={sectionId("modes")} className="gd-section" aria-labelledby={`${sectionId("modes")}-title`}>
       <SectionHead id="modes" index={SECTIONS.indexOf("modes") + 1}>
         <p className="sec">{t("modes.lead")}</p>
       </SectionHead>
+      {on === false && (
+        <div className="banner banner-info gd-modes-off" role="note">
+          <span>{t("modes.off")}</span>
+        </div>
+      )}
       <div className="gd-modes">
         {MODES.map((m, i) => {
           const Icon = m.icon;
           const points = t(`modes.${m.id}.points`, { returnObjects: true }) as Record<string, string>;
+          const off = m.id === "orchestra" && on === false;
           return (
             <article key={m.id} className="spec gd-feature gd-mode" aria-labelledby={`gd-m-${m.id}`}>
               <div className="gd-step-top">
@@ -151,7 +168,8 @@ function Modes({ actions }: { actions: Actions }) {
                 <h3 id={`gd-m-${m.id}`} className="gd-title">
                   {t(`modes.${m.id}.title`)}
                 </h3>
-                {m.id === DEFAULT_MODE && <span className="badge badge-info gd-default">{t("modes.default")}</span>}
+                {m.id === def && <span className="badge badge-info gd-default">{t("modes.default")}</span>}
+                {off && <span className="badge gd-default">{t("modes.offBadge")}</span>}
               </div>
               <p className="sec gd-body">{t(`modes.${m.id}.body`)}</p>
               <ul className="gd-points">
@@ -159,7 +177,7 @@ function Modes({ actions }: { actions: Actions }) {
                   <li key={k}>{v}</li>
                 ))}
               </ul>
-              <GoButton action={m.action} label={t(`modes.${m.id}.go`)} actions={actions} />
+              <GoButton action={modeAction(m, on)} label={off ? t("modes.offGo") : t(`modes.${m.id}.go`)} actions={actions} />
             </article>
           );
         })}
@@ -168,7 +186,7 @@ function Modes({ actions }: { actions: Actions }) {
   );
 }
 
-function Flow({ actions }: { actions: Actions }) {
+export function Flow({ actions }: { actions: Actions }) {
   const { t } = useTranslation("guide");
   return (
     <section id={sectionId("flow")} className="gd-section" aria-labelledby={`${sectionId("flow")}-title`}>

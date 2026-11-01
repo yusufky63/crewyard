@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { GOAL_LIMITS } from "@crewyard/core";
 import { initI18n } from "../../i18n.ts";
 import { Composer, introBudget } from "./Composer.tsx";
-import { useComposerPrefs } from "./composerPrefs.ts";
+import { useComposerPick, useComposerPrefs } from "./composerPrefs.ts";
 import { goalFixtureCall } from "./goalFixture.ts";
 import { INTRO_BUDGET_USD } from "./goalsModel.ts";
 
@@ -62,5 +62,25 @@ describe("first-goal card budget", () => {
     expect(introBudget(null, 0)).toBe(INTRO_BUDGET_USD);
     expect(introBudget(undefined, null)).toBe(INTRO_BUDGET_USD);
     expect(introBudget(null, GOAL_LIMITS.budgetMaxUsd + 50)).toBe(GOAL_LIMITS.budgetMaxUsd);
+  });
+});
+
+describe("a mode picked from the Guide", () => {
+  it("is taken once for the next request and never remembered, Solo included", () => {
+    useComposerPick.getState().pick("solo");
+    const n = useComposerPick.getState().n;
+    expect(useComposerPick.getState().take()).toBe("solo");
+    expect(useComposerPick.getState().take()).toBeNull();
+    expect(useComposerPick.getState().n).toBe(n);
+    expect(useComposerPrefs.getState().modes).toEqual({});
+  });
+
+  it("arrives again when the same mode is picked twice", () => {
+    const before = useComposerPick.getState().n;
+    useComposerPick.getState().pick("crew");
+    useComposerPick.getState().take();
+    useComposerPick.getState().pick("crew");
+    expect(useComposerPick.getState().n).toBe(before + 2);
+    expect(useComposerPick.getState().take()).toBe("crew");
   });
 });
