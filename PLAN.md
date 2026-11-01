@@ -25,7 +25,7 @@
 | Earlier draft | Now | Why |
 |---|---|---|
 | Graph-first, nine overlapping documents, Tauri + Node sidecar undecided | Tasks-first, four documents, Electron + TypeScript | Every agent client library we need is TypeScript; one runtime is simpler on Windows (§3) |
-| An LLM orchestrator spawns workers | Crewyard is the orchestrator: a deterministic scheduler runs a crew plan you approved | agent-orchestrator shows the cost of LLM-driven spawning: runaway workers (#3921), roles enforced only by prompts (#6842) |
+| An LLM orchestrator spawns workers | Crewyard is the orchestrator: a deterministic scheduler runs a crew plan you approved. Orchestra (§9.8) adds an LLM-written plan of several tasks that you approve once; the daemon, not a model, decides what runs next | agent-orchestrator shows the cost of LLM-driven spawning: runaway workers (#3921), roles enforced only by prompts (#6842) |
 | Loopback HTTP API | UI talks to the daemon over Electron IPC; external ingress only through a per-user named pipe with a token | A localhost port is reachable from any web page you open |
 | Quota "if available" | Quota only from the agent's own reporting channel, labelled Reported / Estimated / Unknown | Calling undocumented usage endpoints with subscription tokens conflicts with provider credential rules (PRIOR_ART.md) |
 | "completed" vs "merged" ambiguous | One canonical state model (§13) | |
@@ -50,7 +50,10 @@
 
 **D7. Admission control from day one.** A run queue with a global cap, a per-account cap and a memory check. Nothing spawns without a free slot.
 
-**D8. Nothing outward-facing happens without you.** Starting a crew, pushing, opening a PR, merging, deleting a worktree, spending past a budget and Ask-mode fallbacks all need an explicit click. Auto mode is opt-in per task and still writes an audit record. Two opt-ins may start a crew without a click, each audited: a schedule you set up (ADR 0008), and Autopilot (§9.7, [ADR 0017](docs/adr/0017-autopilot.md)), which approves crews of tasks it created only under the budget and rate limits you set per project. Pushing, PRs, merging, deleting, spending past a cap and Inbox approvals stay with you either way.
+**D8. Nothing outward-facing happens without you.** Starting a crew, pushing, opening a PR, merging, deleting a worktree, spending past a budget and Ask-mode fallbacks all need an explicit click. Auto mode is opt-in per task and still writes an audit record. Two opt-ins may start a crew without a click, each audited: a schedule you set up (ADR 0008), and Autopilot (§9.7, [ADR 0017](docs/adr/0017-autopilot.md)), which approves crews of tasks it created only under the budget and rate limits you set per project.
+- **Orchestra (§9.8, [ADR 0019](docs/adr/0019-orchestra-goals.md)):** `Plan goal` starts only a read-only planning run whose estimate and ceiling the composer shows; the first goal in a project shows what Orchestra does before that. `Approve and start` on the plan approves the crew of every task you accepted. A task that waits for others starts when they are done and merged into the goal's branch, which is checked out only in Crewyard's own worktree. A research result that a writing task builds on is passed on only after you accept it. A revised plan, a replan, an added task and spend past any cap need your click again.
+- **Solo:** `Start` is the approval. The composer shows the profile, model and estimate before the click, and an Unknown estimate, or one a cap would hold, turns `Start` into `Propose`.
+- Pushing, PRs, merging into your branches, deleting, spending past a cap and Inbox approvals stay with you in every mode, with Autopilot on or off.
 
 **D9. Runner, provider and key are separate.** A *runner* is the agent program (Claude Code, Codex, Gemini CLI, OpenCode). A *provider* is where the model comes from (Anthropic, DeepSeek, Kimi, OpenRouter...). A *credential* is a key or a plan sign-in. A *profile* combines one of each plus a default model and its own config folder. Claude Code can run on DeepSeek, Kimi, GLM, Qwen, MiniMax and others through their Anthropic-compatible endpoints; Codex can run on OpenAI-compatible providers; OpenCode runs on everything in the catalog.
 
@@ -122,6 +125,10 @@ Electron, React 19, TypeScript, Vite, TanStack Router and Query, Zustand, `@xyfl
 | `handoffs` | from run, to run, reason, package path, mode (`native_resume` / `new_session`), outcome |
 | `account_switches` | same-provider account switches (§8.3): from run, from and to profile, trigger, the numbers on both sides with provenance, accounts passed over, handoff |
 | `assistant_conversations`, `assistant_messages`, `assistant_drafts` | the task assistant (§9.6): one open conversation per project with its profile, native session and spend, its lines, and the drafts it proposed with their status and the task each became |
+| `goals` | Orchestra (§9.8): project, your text verbatim, title, base branch and sha, budget, `max_parallel`, `max_tasks`, planner profile, the integration task (goal branch owner) or the task a one-task plan became, approved revision, paused, stopped, halted with reason, replans and revisions used |
+| `goal_plans` | one row per plan revision: cause (`initial`, `revise`, `replan`, `add`), your note, the hidden planning task, the checked plan JSON, error, superseded and approved times; no status column, it is derived from the planning task's runs |
+| `goal_tasks`, `goal_task_deps` | each goal task's plan key, position, mode, priority, basis quote and whether it matched, reason, planned paths, whether it writes, edited, accepted, discarded, released, joined sha and time, report accepted; the dependencies between them with their source (`plan`, `user`, `overlap`) |
+| `goal_joins`, `goal_decisions` | each merge into the goal branch (sha before and after, `joined` or `conflict`, conflicted paths); decisions that wait for you (conflict, prerequisite, stop rule, stuck, changes, report, profile gone) with the answer |
 | `events` | append-only: seq, at, project, task, run, kind, source, redacted payload, dedupe key |
 | `agentfile_shares`, `agentfile_copies`, `agentfile_bridges` | your own agent files shared into profile folders (item, runner, one profile or all, scripts allowed), each copy's source and written hashes, and the per-project instruction bridge (§6.2) |
 
@@ -338,7 +345,7 @@ Hardening (ADR 0006): a manual handoff either interrupts the turn or drains it (
 
 ## 9. Crew proposal (role suggestion)
 
-When you submit a task, the app proposes a crew; nothing starts until you approve.
+When you submit a task in Crew mode, the app proposes a crew; nothing starts until you approve. Orchestra, the composer's default, plans a goal into several such tasks first (§9.8); Solo starts one agent on your click.
 
 1. **Classify the task** (cheap and local first: keywords, touched paths, task kind; optionally a small model through your cheapest key) into `code` / `research` / `review` / `docs` and size `S` / `M` / `L`.
 2. **Pick role templates** for that class. Example for code M: Plan → Implement → Test ∥ Review → PR.
@@ -461,6 +468,42 @@ A run cannot create other runs. If an agent asks for more work, the request beco
 - **Stays with you:** push, PR, merge, deleting a worktree or branch, spend past any cap, Inbox approvals (Medium and High risk included), sign-in, and Autopilot's own settings. No tool exists for them; Autopilot sees them as "waiting on you" and waits.
 - **Kill switch:** `Stop Autopilot` in the status bar and Settings refuses every call at once; it never stops running agents. Two failed steps with the same failure within 24 hours halt it in that project until you turn it on again.
 - **Records:** every call, allowed or refused, is an `autopilot.*` event with its reason (timeline, Activity, the panel's Autopilot log); toasts are batched per project.
+
+### 9.8 Orchestra: goals planned once, run in order ([ADR 0019](docs/adr/0019-orchestra-goals.md))
+
+The owner asked for it on 2026-10-31: "orkestra olsun default ve kullanımı diğer popüler github repolarında nasıl yapıldığına da bak, yönetimi kolay olsun, yani önce araştır sonra en uygun şekilde ekle" (make Orchestra the default, look at how popular GitHub repos do it, make it easy to manage; research first, then add it in the most suitable way). About thirty tools were read first; the options and the sources that were re-opened and cited are in the ADR.
+
+- **Three modes.** The composer's `How to run` control offers Orchestra, Crew and Solo.
+  - It opens on **Orchestra** in every project with a profile that can plan (ready, read-only enforcement, structured output); otherwise on Crew, with Orchestra disabled and its reason.
+  - It reopens on Orchestra or Crew, whichever you last submitted in that project. **Solo is never remembered**, so a later `Ctrl Enter` never starts a paid run you did not pick this time.
+  - Ready-made analyses and imported issues always run as one Crew task. A goal that reads like one small change gets the hint "Looks like one small change" with `Use Crew`; nothing switches by itself.
+  - **Solo** proposes a one-step crew and approves it in the same call (`tasks.start`); the step is the kind's main role, and code still runs until green. An Unknown estimate, or one a cap would hold, returns the proposal instead.
+- **Planning.** `Plan goal · ~$x Estimated` starts one read-only planning run, a hidden research task with one step of the `goal-planner` role.
+  - The role is outside the built-in role list and saved as the member's role snapshot; a role file with that name is refused. It gets no user MCP servers and no `propose_followup`.
+  - Its own budget is min(project per-task cap, max(3 × estimate, $0.25)), the ceiling shown under the button. The estimate is a fixed heuristic of 80,000 input and 8,000 output tokens at the catalog price until measured runs correct it (§17, open items).
+  - Before the first goal in a project, a card says what Orchestra does and what stays with you, and sets the project's default goal budget. Nothing is spent before you click `Plan goal` on it.
+  - The result is a strict `GoalPlan`: a summary and 1 to 8 tasks (hard maximum 12), each with key, title, kind, mode, size, description, acceptance criteria, the words of your goal it rests on, dependencies on earlier tasks only, up to 20 planned paths, a reason and a priority. Core `parseGoalPlan` cleans and caps every field and refuses rather than cuts; one corrective turn follows a refusal, and a second refusal fails the plan with the parser's words. A basis that does not match your words is shown as "Not tied to your words", not refused.
+- **The plan review** replaces the crew proposal slot. Tasks are numbered tiles grouped by step; each shows its kind, Solo or Crew switch and estimate, and folds out its description, files, what it waits for, its budget share and its reason.
+  - You can edit a task, draw or remove a "waits for" (a loop is refused and named), skip a task (the tasks that wait for it are skipped too) and `Revise` with a note to the planner. Edited tasks are kept on Revise. At most 5 revisions before approval, each a paid planning run with its price on the button.
+  - Two tasks that could run at the same time and plan to change overlapping files are put in order automatically; `Run side by side anyway` removes that order. A writing task with no planned files goes after the other writing tasks.
+  - The total sums the accepted tasks and the last review; Unknown is never summed into a number. The goal budget is prefilled (the project default, or the total rounded up × 1.5); `Approve` is disabled only when the budget does not cover the known total or a task with an Unknown estimate has no budget of its own.
+  - `Approve and start n tasks` (`Ctrl Enter`) approves the revision once, idempotently. `Run as one task` turns the goal into one ordinary Crew task before approval, and a plan of one task becomes an ordinary task with no goal branch.
+- **Running.** The goal scheduler runs at the start of every scheduling pass, each goal inside its own try/catch.
+  - A task's crew stays unapproved until the scheduler releases it; `tasks.approve` refuses goal tasks. Release re-checks the crew; a profile that went away becomes a decision, never a substitute.
+  - Ready tasks are released by priority, at most 2 at once per goal (1 to 4), and then go through D7 admission, the per-step budget hold, their share of the goal budget, key caps and the project daily cap like any task.
+  - A writing prerequisite (code or docs) counts once it is merged into the goal branch. A research or review prerequisite that a writing task waits for counts once it is done and you pressed `Accept report`. A failed, cancelled or skipped prerequisite never counts: its dependents hold and a decision asks you.
+  - Each goal task branches from the goal branch tip, and its prompt quotes the goal, its place in the plan, accepted reports it builds on, the commits of writing prerequisites and the planned files of siblings running beside it.
+  - Two goal tasks failing the same way, or three failed goal tasks, halt the goal until you resume it. A goal with open tasks, none active and none releasable reads Stuck, with the chain named.
+- **The goal branch.** A goal with a writing task gets a hidden integration task that owns a worktree on `crewyard/goal/<words>-<id6>`.
+  - A writing task whose own gates passed is test-merged with `git merge-tree --write-tree` (Git 2.38 or newer) and, when clean, merged with `git merge --no-ff` in that worktree. Nothing is pushed.
+  - A conflict names the files and offers `Send to the implementer` (a follow-up that re-runs Test and Review), `I will merge it myself` with `Check again`, or `Leave it out`.
+  - When every accepted writing task has joined, the integration task's reviewer, the last review of all changes, runs pinned to the branch head. `pass` makes the goal Ready for review and opens the existing PR gate on that branch; `changes` raises a decision with `Replan` and never plans by itself.
+  - Goal task branches stay out of the push queue; only the goal branch is offered for push and PR.
+- **After approval.** `Pause goal` pauses running steps at their next turn boundary and starts no new goal run; `Stop goal…` names what it cancels and keeps worktrees and branches. `Add task` is a one-task revision with no planner call. `Replan` is a paid planning run, at most 3 per goal; done, running, released, joined and edited tasks are frozen. Every revision needs `Approve and start` again.
+- **Where it shows.** A goal is a group row in the task list with its status, `n of m` and spend against its budget; its tasks count under the goal, never on their own under Needs you or Ready for review. The goal view puts what needs you first. Goal decisions have their own list in the Inbox. A goal toasts once when it first needs you, once when it is ready for a pull request and once when it halts or finishes; goal tasks raise no per-task done toast.
+- **Switches.** Settings → Orchestra holds `Orchestra` (on by default; off hides it in the composer and refuses new goals, while approved goals keep running in their order) and `Pause all goals`, the global kill switch, also in the command palette. While it is on, the status bar shows `Goals paused` with `Resume`; lifting it is your click.
+- **Never:** a planner or goal task with a tool that creates a task, goal or run; a task started that is not accepted in an approved revision or whose prerequisites are not satisfied; a report passed to a writing task before you accept it; a limit stop counted as done; a replan, relaunch or cross-task retry on its own; a push, PR, merge into your branches or delete; spend past a share or cap; an approval carried from one task to another. Goal, plan, report and agent text are capped, cleaned, quoted and shown as plain text.
+- **Later:** Autopilot and the task assistant creating and approving goals, a clarifying-questions round, tracking the files a task actually changes, running the test command on the merged branch, `Undo last merge`, a pooled goal budget, `Clean up goal…`, moving tasks into and out of goals, stacked per-task PRs, a Settings field for the project default goal budget, and an admission check in `messages.followUp`, which today launches conflict fixes and the planner's corrective turn without D7, as PR feedback does.
 
 ## 10. GitHub
 
@@ -609,6 +652,20 @@ The full list is in the ADR.
 | `done` | non-code task finished |
 | `cancelled` | you stopped it |
 
+**Derived goal status** (Orchestra, §9.8; first match wins). A plan revision is `planning` while its planning task has an unfinished run, `failed` when its error is set or that run ended without a result, and `ready` when its plan is set and it is neither superseded nor approved.
+
+| Status | Rule |
+|---|---|
+| `stopped` | you stopped it |
+| `planning` | the latest revision is planning |
+| `needs_you` | with a reason: the latest revision failed or is ready, the goal is halted, a goal decision is open, a goal task needs input, hit a limit or failed with no retry pending, a report waits to be accepted, or it is stuck (accepted unfinished tasks, none active, none releasable) |
+| `paused` | you paused it (Pause goal, or Pause all goals) |
+| `running` | a goal task is running, queued or handing off, or an accepted task is not released yet |
+| `finished` | Merged: the goal's integration task has a merged PR; Done: a goal with no branch whose accepted tasks are all done; or the goal was run as one task |
+| `ready_for_review` | the goal has a branch, every accepted writing task joined it, and the last review passed on its head |
+
+A goal task keeps its own task status: a waiting goal task derives `proposed` but is shown as "Waits for …" under its goal, and a joined one stays `review` and reads "In goal branch".
+
 Labels, colors and icons for each status are in DESIGN.md §5.
 
 ## 14. Milestones
@@ -670,6 +727,9 @@ Each milestone ends with: typecheck, lint with `--max-warnings=0`, tests, build,
 - 2026-10-31: Autopilot (§9.7, [ADR 0017](docs/adr/0017-autopilot.md)). In the owner's words: "şimdi ai ile görev açıp görevleri düzenleyip tamamlayabilir miyim, yani kendim bir şey yapmasam bile ai ile yönetebilir miyim" (can I now open, edit and complete tasks with AI, so that I can manage everything through it even when I do nothing myself?). It is per project and off by default, acts only on tasks it created, approves crews only under the budget and rate limits you set, and has no tool for anything outward-facing: push, PR, merge, deletes, spend past a cap and Inbox approvals stay with you (D8 amended).
 - 2026-10-31: the bottom panel collapses instead of closing. The owner: "assistant paneli açılır kapanır butonu var ama onu daha iyi yapmak için toggle olarak sol ve sağ paneldeki gibi üstte buton olsun ve tam kapanmasın ona basınca" (the assistant panel has an open/close button; make it a toggle at the top like the left and right panels have, and pressing it should not close the panel completely). Its ✕ became a collapse toggle at the right end of its head; inside a project the panel is either expanded or a 36 px strip with its tabs and counts, collapsed by default. `Ctrl J`, the status bar item, the tab shortcuts and a drag under 96 px expand and collapse it. Collapsing stops nothing, the task assistant included: only its own `Stop and close` (and `Esc` inside it) stops it ([ADR 0014](docs/adr/0014-task-assistant.md) update).
 
+- 2026-11-01: Orchestra is the default mode (§9.8, [ADR 0019](docs/adr/0019-orchestra-goals.md)). In the owner's words: "orkestra olsun default ve kullanımı diğer popüler github repolarında nasıl yapıldığına da bak, yönetimi kolay olsun, yani önce araştır sonra en uygun şekilde ekle" (make Orchestra the default, look at how popular GitHub repos do it, make it easy to manage; research first, then add it in the most suitable way). After reading about thirty tools, Crewyard lets a read-only planner write a goal's plan once and lets the daemon, not a model, run it: one approval per plan, tasks in dependency order at most 2 at once, overlapping files ordered automatically, finished work merged into one goal branch in Crewyard's own worktree, a last review pinned to its head, and one pull request that you open. Crew stays one click away and Solo starts one agent on your click. D8 and DESIGN.md principle 6 are amended; Settings → Orchestra turns new goals off, and `Pause all goals` holds every goal at once.
+
 **Open**
 1. Before the first release: which code-signing certificate (OV as a PFX, a hardware-bound one in the Windows store, or Azure Trusted Signing) and which HTTPS host serves the update feed (ADR 0011, "What a real release needs").
 2. Before sharing: confirm OpenAI's and Google's terms for ChatGPT and Google sign-in through a third-party app (§6). The owner will check them (2026-10-30).
+3. Before the first release: correct Orchestra's planning estimate (a fixed 80,000 input and 8,000 output tokens, §9.8) from real planning runs; the live flow `goal` (`packages/daemon/src/live/flows.live.ts`) records them next to the heuristic.
