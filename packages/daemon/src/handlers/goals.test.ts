@@ -258,7 +258,7 @@ describe("editing an unapproved plan", () => {
     flow.candidates = async (...a: unknown[]) => {
       // Only the edit's own draft waits; the approval's preview of the last review reads straight through.
       if (approving) return original(...a);
-      approving = h["goals.approve"]({ goalId: g.id, revision: 1, accept: ["api", "ui", "tests", "docs"], budgetUsd: 50, maxParallel: 2 });
+      approving = Promise.resolve(h["goals.approve"]({ goalId: g.id, revision: 1, accept: ["api", "ui", "tests", "docs"], budgetUsd: 50, maxParallel: 2 }));
       await approving;
       return original(...a);
     };
