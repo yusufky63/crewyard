@@ -926,11 +926,19 @@ export class GoalRunner extends Part {
     if (target.plan === null || target.superseded_at || target.error) throw new GoalError("goal.not_ready");
     const limits = parseGoalLimits({ budgetUsd: p.budgetUsd, maxParallel: p.maxParallel });
     if (!limits.ok) throw new GoalError("goal.bad_budget", { field: /maxParallel/.test(limits.error) ? "maxParallel" : "budgetUsd" });
-    const budgetUsd = limits.value.budgetUsd!;
-    const maxParallel = limits.value.maxParallel!;
+    // parseGoalLimits reads a missing limit as "not given"; an approval needs both (design §4.5 step 4),
+    // and must refuse before it resolves the base or makes the integration task.
+    const budgetUsd = limits.value.budgetUsd;
+    const maxParallel = limits.value.maxParallel;
+    if (budgetUsd === undefined) throw new GoalError("goal.bad_budget", { field: "budgetUsd" });
+    if (maxParallel === undefined) throw new GoalError("goal.bad_budget", { field: "maxParallel" });
 
     const all = this.rows.tasks(goal.id);
     const mine = all.filter((t) => t.plan_id === target.id && t.discarded_at === null);
+    // What this approval reads of its tasks before it awaits the directory and git. Read again in
+    // its transaction: an edit that landed meanwhile refuses the approval instead of approving
+    // crews, writes flags and estimates the click never showed.
+    const read = this.planPrint(goal.id, target.id);
     const byKey = new Map(mine.map((t) => [t.key, t]));
     const accept = new Set<string>();
     for (const key of p.accept) {
@@ -1020,6 +1028,8 @@ export class GoalRunner extends Part {
       const now = this.rows.one<GoalPlanRow>("select * from goal_plans where id = ?", target.id);
       const newest = this.rows.latestPlan(goal.id);
       if (!now || now.approved_at || now.superseded_at || newest?.id !== now.id || this.rows.goal(goal.id).stopped_at) return false;
+      const moved = changedKeys(read, this.planPrint(goal.id, target.id));
+      if (moved.length > 0) throw new GoalError("goal.plan_changed", { keys: moved.join(", ") });
       discarded = this.deps.applyReplacements(goal.id, target.revision);
       for (const t of accepted) {
         this.rows.run("update goal_tasks set accepted = 1 where task_id = ?", t.task_id);
@@ -1055,6 +1065,8 @@ export class GoalRunner extends Part {
       budgetUsd,
       maxParallel,
       shares,
+      // The budgets you typed on tiles, kept apart from the shares (which goals.setLimits scales later).
+      typed: Object.fromEntries(accepted.flatMap((t) => (typeof p.taskBudgets?.[t.key] === "number" ? [[t.key, p.taskBudgets[t.key]]] : []))),
       ...(reviewEstimate ? { reviewEstimate } : {}),
     });
     for (const t of [...accepted, ...skippedRows]) this.emitTask(t.task_id, "goal");
@@ -1065,6 +1077,25 @@ export class GoalRunner extends Part {
     }
     this.announce(goal.id, "approved", true);
     await this.deps.tick();
+  }
+
+  /**
+   * Per key, what an approval of `planId` decides from: the goal row's mode, priority, paths, writes
+   * and edited flags, the task's title, kind, size and description, its crew and members, and its
+   * dependencies. Equal prints mean the approval approves what it read.
+   */
+  private planPrint(goalId: string, planId: string): Map<string, string> {
+    const rows = this.rows.tasks(goalId).filter((t) => t.plan_id === planId && t.discarded_at === null);
+    const deps = this.rows.deps(goalId);
+    const out = new Map<string, string>();
+    for (const t of rows) {
+      const task = this.db.task(t.task_id);
+      const crew = this.db.crew(t.task_id);
+      const members = crew ? this.db.members(crew.id).map((m) => [m.id, m.chosen, m.skipped_at]) : [];
+      const on = deps.filter((d) => d.task_id === t.task_id).map((d) => `${d.depends_on}:${d.source}`).sort();
+      out.set(t.key, JSON.stringify([t.task_id, t.mode, t.priority, t.paths, t.writes, t.edited, task.title, task.kind, task.size, task.description, task.cancelled_at, crew?.id ?? null, crew?.estimate_usd ?? null, crew?.estimate_provenance ?? null, members, on]));
+    }
+    return out;
   }
 
   private keyOf(rows: GoalTaskRow[], taskId: string): string {
@@ -1416,3 +1447,8 @@ function summaryOf(payload: string | null): string | null {
   return typeof summary === "string" && summary.trim() ? summary : null;
 }
 
+/** The keys whose approval print differs, or that one print has and the other lacks. */
+function changedKeys(before: ReadonlyMap<string, string>, after: ReadonlyMap<string, string>): string[] {
+  const keys = new Set([...before.keys(), ...after.keys()]);
+  return [...keys].filter((k) => before.get(k) !== after.get(k)).sort();
+}

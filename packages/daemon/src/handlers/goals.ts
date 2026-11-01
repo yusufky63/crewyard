@@ -42,7 +42,7 @@ export function createGoalsHandlers(ctx: HandlerContext, overrides?: Partial<Orc
     "goals.state": () => ({ enabled: o.orchestraEnabled(), pausedAll: o.goals.pausedAllState() }),
     "goals.preview": ({ projectId: pid, text, plannerProfileId }) => o.previewGoal({ projectId: projectId(pid), text: typeof text === "string" ? text : "", ...(typeof plannerProfileId === "string" && plannerProfileId ? { plannerProfileId } : {}) }),
     "goals.create": async ({ projectId: pid, text, plannerProfileId, baseBranch, attachments, defaultBudgetUsd }) => {
-      if (attachments !== undefined && !isStringList(attachments)) throw new GoalError("goal.text", { error: "attachments must be a list of ids" });
+      if (attachments !== undefined && !isStringList(attachments)) throw new GoalError("goal.bad_attachments", { error: "attachments must be a list of ids" });
       const start = await o.createGoal({
         projectId: projectId(pid),
         text,
@@ -71,12 +71,16 @@ export function createGoalsHandlers(ctx: HandlerContext, overrides?: Partial<Orc
       await o.goalEdits.editTask(goalId(id), revision, key, patch);
       return detail(id);
     },
-    "goals.setDependency": ({ goalId: id, revision, taskKey, dependsOnKey, on }) => {
-      o.goalEdits.setDependency(goalId(id), revision, taskKey, dependsOnKey, on);
+    "goals.setDependency": async ({ goalId: id, revision, taskKey, dependsOnKey, on }) => {
+      await o.goalEdits.setDependency(goalId(id), revision, taskKey, dependsOnKey, on);
       return detail(id);
     },
     "goals.approve": async ({ goalId: id, revision, accept, budgetUsd, maxParallel, taskBudgets }) => {
       if (!isStringList(accept)) throw new GoalError("goal.no_accepted");
+      // Both limits are required (design §4.5 step 4): a goal never runs without a budget, and a
+      // missing one must be refused here, before the approval resolves the base or makes a task.
+      if (typeof budgetUsd !== "number") throw new GoalError("goal.bad_budget", { field: "budgetUsd" });
+      if (typeof maxParallel !== "number") throw new GoalError("goal.bad_budget", { field: "maxParallel" });
       if (taskBudgets !== undefined && !isRecord(taskBudgets)) throw new GoalError("goal.bad_budget", { field: "taskBudgets" });
       await o.approveGoalPlan({ goalId: goalId(id), revision, accept, budgetUsd, maxParallel, ...(taskBudgets ? { taskBudgets } : {}) });
       return detail(id);

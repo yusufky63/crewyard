@@ -316,6 +316,7 @@ export class Orchestrator {
       approvalRoute: (goalId, revision) => this.goalViews.approvalRoute(goalId, revision),
       approveGoal: (p) => this.goals.approve(p),
       approveOneTask: (goalId, revision) => this.goalPlanner.approveOneTask(goalId, revision),
+      pausedAll: () => this.goals.pausedAllState(),
     });
     this.db.taskExtras = (t) => ({ ...this.bestOfRunner.taskExtras(t), goal: this.goals.goalRef(t) });
     this.db.integrationDone = (taskId) => this.goals.integrationDone(taskId);

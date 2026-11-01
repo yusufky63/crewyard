@@ -288,6 +288,7 @@ export class GoalViews extends Part {
     const factById = new Map(facts.map((f) => [f.id, f]));
     const keyOf = new Map(rows.map((r) => [r.task_id, r.key]));
     const deps = this.all<GoalDepRow>("select * from goal_task_deps where goal_id = ? order by depends_on", goal.id);
+    const typed = this.typedBudgets(goal.id);
     return shown
       .map((r) => {
         const task = this.db.task(r.task_id);
@@ -303,7 +304,6 @@ export class GoalViews extends Part {
         const accepted = r.accepted === null ? null : r.accepted === 1;
         // A share exists once an approved revision accepted the task: its task budget, which the caps enforce.
         const share = accepted === true && plan.approved_at ? task.budget_usd : null;
-        const unknown = estimate.usd === null || estimate.provenance === "unknown";
         const held = accepted === true && !released && r.discarded_at === null && !task.cancelled_at ? (this.deps.hold(task) ?? (f ? prerequisiteHold(f, facts) : null)) : null;
         return {
           sortRevision: plan.revision,
@@ -338,14 +338,29 @@ export class GoalViews extends Part {
             crewSteps: steps,
             estimate,
             shareUsd: share,
-            // Typed budgets are not stored apart from the share: after approval, an Unknown estimate's share is the budget you typed.
-            typedBudgetUsd: share !== null && unknown ? share : null,
+            // What you typed on the tile, as the approval that accepted the task recorded it; the
+            // share may move later (goals.setLimits scales unfinished shares), the typed value does not.
+            typedBudgetUsd: accepted === true && plan.approved_at ? (typed.get(plan.revision)?.get(r.key) ?? null) : null,
             spend: this.db.spend(this.db.runs(task.id)),
           } satisfies GoalTaskView,
         };
       })
       .sort((a, b) => a.view.number - b.view.number || a.sortRevision - b.sortRevision || a.view.taskId.localeCompare(b.view.taskId))
       .map((x) => x.view);
+  }
+
+  /** The budgets you typed, per approved revision and key, from each `goal.approved` event (GoalRunner.approve). */
+  private typedBudgets(goalId: string): Map<number, Map<string, number>> {
+    const out = new Map<number, Map<string, number>>();
+    const rows = this.all<{ payload: string }>("select payload from events where kind = 'goal.approved' and task_id is null and json_extract(payload, '$.goalId') = ? order by seq", goalId);
+    for (const row of rows) {
+      const p = json<{ revision?: unknown; typed?: unknown } | null>(row.payload, null);
+      if (typeof p?.revision !== "number" || typeof p.typed !== "object" || p.typed === null) continue;
+      const byKey = new Map<string, number>();
+      for (const [key, usd] of Object.entries(p.typed as Record<string, unknown>)) if (typeof usd === "number" && Number.isFinite(usd) && usd > 0) byKey.set(key, usd);
+      out.set(p.revision, byKey);
+    }
+    return out;
   }
 
   private integrationView(goal: GoalRow, taskId: string): NonNullable<GoalDetail["integration"]> {
@@ -385,7 +400,12 @@ export class GoalViews extends Part {
       const p = json<{ from?: unknown; revision?: unknown } | null>(ev?.payload, null);
       const plan = plans.find((x) => x.revision === revision);
       const only = json<GoalPlan | null>(plan?.plan, null)?.tasks;
-      if (p?.from === "one_task_plan" && p.revision === revision && only?.length === 1) return { route: "one_task", key: only[0]!.key, taskId: goal.collapsed_task_id };
+      // Only a click that repeats an approval already made reads the one task back. A crew still
+      // unapproved means `Run as one task` moved it to the normal crew review, where it may have
+      // changed since; a stale plan click must not approve it, so it goes to the goal route,
+      // which refuses a collapsed goal.
+      const approved = this.db.crew(goal.collapsed_task_id)?.approved_at ?? null;
+      if (approved && p?.from === "one_task_plan" && p.revision === revision && only?.length === 1) return { route: "one_task", key: only[0]!.key, taskId: goal.collapsed_task_id };
       return { route: "goal" };
     }
     if (goal.approved_revision !== null || goal.stopped_at || !latest || latest.revision !== revision || this.deps.planState(latest) !== "ready") return { route: "goal" };

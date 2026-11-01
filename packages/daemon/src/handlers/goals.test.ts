@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Store } from "../store.ts";
 import { AdapterRegistry } from "../orchestrator/adapters.ts";
 import { orchestratorFor } from "../orchestrator/index.ts";
-import { CANDIDATES, cleanTemps, ScriptedAdapter, tempDir, tempRepo } from "../orchestrator/testing.ts";
+import { CANDIDATES, cleanTemps, ScriptedAdapter, tempDir, tempRepo, waitFor } from "../orchestrator/testing.ts";
 import { handleMessage, type Handlers } from "../server.ts";
 import { createGoalsHandlers } from "./goals.ts";
 import type { HandlerContext } from "./types.ts";
@@ -47,6 +47,21 @@ const PLAN = {
 
 const ONE = { summary: "Tek bir değişiklik yeter.", tasks: [task({ key: "only", title: "Yazım hatasını düzelt", mode: "solo", size: "S", paths: ["README.md"] })] };
 
+/** Two research tasks: nothing writes, so the goal needs no branch and no last review. */
+const RESEARCH = {
+  summary: "Önce iki araştırma.",
+  tasks: [
+    task({ key: "r1", title: "Mevcut girişi araştır", kind: "research", mode: "solo", size: "S", paths: [] }),
+    task({ key: "r2", title: "Rakipleri araştır", kind: "research", mode: "solo", size: "S", paths: [] }),
+  ],
+};
+
+/** A UI that waits for its API. */
+const CHAIN = { summary: "API önce, ekran sonra.", tasks: [task({ key: "api", title: "Oturum API'si", paths: ["src/auth/session.ts"] }), task({ key: "ui", title: "Giriş ekranı", mode: "solo", size: "S", dependsOn: ["api"], paths: ["src/ui/login page.tsx"] })] };
+
+/** A code task that builds on a research report. */
+const REPORT = { summary: "Önce araştır, sonra kodla.", tasks: [task({ key: "r", title: "Mevcut girişi araştır", kind: "research", mode: "solo", size: "S", paths: [] }), task({ key: "k", title: "Doğrulamayı ekle", dependsOn: ["r"], paths: ["src/giriş.ts"] })] };
+
 const ok = (value: unknown): RunOutput => ({ ok: true, value });
 const running: FakeStep = { emit: { type: "run.state", state: "running" } };
 
@@ -65,13 +80,16 @@ afterEach(async () => {
   cleanTemps();
 });
 
-async function setup(opts: { plans?: unknown[]; enabled?: boolean } = {}) {
+async function setup(opts: { plans?: unknown[]; enabled?: boolean; research?: string } = {}) {
   const root = tempDir("crewyard goal handlers-");
   const repo = await tempRepo(root, "demo repo with spaces");
   const store = new Store(join(root, "t.db"));
   if (opts.enabled !== false) store.db.prepare("insert into settings (key, value) values ('orchestra.enabled', 'true')").run();
   const project = store.addProject(repo, "demo repo with spaces");
-  const adapter = new ScriptedAdapter(() => [running], { result: planner(...(opts.plans ?? [PLAN])) });
+  const plans = planner(...(opts.plans ?? [PLAN]));
+  // A researcher reports `research` when given, so its task can finish done.
+  const result = (role: string, nth: number, req: StartRequest): RunOutput | undefined => plans(role, nth, req) ?? (opts.research !== undefined && role === "researcher" ? ok({ summary: opts.research, findings: [] }) : undefined);
+  const adapter = new ScriptedAdapter((role) => [running, { emit: { type: "message.delta", text: `${role} bitti` } }], { result });
   const adapters = new AdapterRegistry({});
   adapters.set("fake", adapter);
   const emitted: Array<{ topic: string; payload: unknown }> = [];
@@ -196,7 +214,7 @@ describe("reading goals", () => {
     const { h, project } = await setup();
     expect(await refusal(() => h["goals.create"]({ projectId: project.id, text: "   " }))).toBe("goal.text");
     expect(await refusal(() => h["goals.create"]({ projectId: project.id, text: GOAL, defaultBudgetUsd: -1 }))).toBe("goal.bad_budget");
-    expect(await refusal(() => h["goals.create"]({ projectId: project.id, text: GOAL, attachments: "x" as unknown as string[] }))).toBe("goal.text");
+    expect(await refusal(() => h["goals.create"]({ projectId: project.id, text: GOAL, attachments: "x" as unknown as string[] }))).toBe("goal.bad_attachments");
     expect(await refusal(() => h["goals.setProjectDefaults"]({ projectId: project.id, budgetUsd: 0 }))).toBe("goal.bad_budget");
   });
 });
@@ -245,6 +263,8 @@ describe("editing an unapproved plan", () => {
     expect(byKey(next).get("docs")).toMatchObject({ kind: "research", writes: false });
   });
 
+  // goals.approve and goals.editTask wait for each other per goal, so this approval comes from the
+  // scheduler's own entry (GoalRunner.approve), which the edit's transaction must still refuse.
   it("refuses a whole tile edit when the plan is approved while its crew is drafted", async () => {
     const env = await setup();
     const { h, o, store } = env;
@@ -258,7 +278,7 @@ describe("editing an unapproved plan", () => {
     flow.candidates = async (...a: unknown[]) => {
       // Only the edit's own draft waits; the approval's preview of the last review reads straight through.
       if (approving) return original(...a);
-      approving = Promise.resolve(h["goals.approve"]({ goalId: g.id, revision: 1, accept: ["api", "ui", "tests", "docs"], budgetUsd: 50, maxParallel: 2 }));
+      approving = o.approveGoal({ goalId: g.id, revision: 1, accept: ["api", "ui", "tests", "docs"], budgetUsd: 50, maxParallel: 2 });
       await approving;
       return original(...a);
     };
@@ -329,11 +349,18 @@ describe("editing an unapproved plan", () => {
 describe("approving a plan", () => {
   it("approves once per revision: a second click creates nothing twice", async () => {
     const env = await setup();
-    const { h, store } = env;
+    const { h, o, store } = env;
     const g = await planned(env);
     const id = g.id;
+    const tasksBefore = count(store, "select count(*) as n from tasks");
     // Held, so nothing runs while the approval is checked.
     expect(await h["goals.pauseAll"]({ on: true })).toEqual({ pausedAll: true });
+    // Both limits are required; a missing one is refused before anything is resolved or made.
+    expect(await refusalOf(() => h["goals.approve"]({ goalId: id, revision: 1, accept: ["api"], maxParallel: 2 } as never))).toEqual({ code: "goal.bad_budget", params: { field: "budgetUsd" } });
+    expect(await refusalOf(() => h["goals.approve"]({ goalId: id, revision: 1, accept: ["api"], budgetUsd: 50 } as never))).toEqual({ code: "goal.bad_budget", params: { field: "maxParallel" } });
+    expect(await refusalOf(() => o.approveGoal({ goalId: id, revision: 1, accept: ["api", "ui", "tests", "docs"], budgetUsd: 50 } as never))).toEqual({ code: "goal.bad_budget", params: { field: "maxParallel" } });
+    expect(count(store, "select count(*) as n from tasks")).toBe(tasksBefore);
+    expect((store.db.prepare("select integration_task_id from goals where id = ?").get(id) as { integration_task_id: string | null }).integration_task_id).toBeNull();
     expect(await refusal(() => h["goals.approve"]({ goalId: id, revision: 1, accept: [], budgetUsd: 50, maxParallel: 2 }))).toBe("goal.no_accepted");
     expect(await refusal(() => h["goals.approve"]({ goalId: id, revision: 1, accept: "api" as never, budgetUsd: 50, maxParallel: 2 }))).toBe("goal.no_accepted");
     expect(await refusal(() => h["goals.approve"]({ goalId: id, revision: 1, accept: ["nope"], budgetUsd: 50, maxParallel: 2 }))).toBe("goal.task_not_found");
@@ -342,7 +369,6 @@ describe("approving a plan", () => {
     expect(await refusal(() => h["goals.approve"]({ goalId: id, revision: 2, accept: ["api"], budgetUsd: 50, maxParallel: 2 }))).toBe("goal.stale_revision");
     expect(await refusal(() => h["goals.approve"]({ goalId: id, revision: 1, accept: ["ui"], budgetUsd: 50, maxParallel: 2 }))).toBe("goal.skipped_dependency");
 
-    const tasksBefore = count(store, "select count(*) as n from tasks");
     const params = { goalId: id, revision: 1, accept: ["api", "ui", "tests", "docs"], budgetUsd: 50, maxParallel: 2 };
     const [first, second] = await Promise.all([h["goals.approve"](params), h["goals.approve"](params)]);
     const third = await h["goals.approve"](params);
@@ -437,6 +463,10 @@ describe("budgets on approval", () => {
     const done = await h["goals.approve"]({ goalId: g.id, revision: 1, accept, budgetUsd: 50, maxParallel: 2, taskBudgets: { docs: 3 } });
     expect(byKey(done).get("docs")).toMatchObject({ shareUsd: 3, typedBudgetUsd: 3, estimate: { usd: null, provenance: "unknown" } });
     expect(byKey(done).get("api")!.typedBudgetUsd).toBeNull();
+    // A higher goal budget may move the shares; what you typed stays what you typed.
+    const raised = await h["goals.setLimits"]({ goalId: g.id, budgetUsd: 100 });
+    expect(byKey(raised).get("docs")!.typedBudgetUsd).toBe(3);
+    expect(byKey(raised).get("api")!.typedBudgetUsd).toBeNull();
   });
 
   it("never raises a one-task plan's own budget", async () => {
@@ -544,6 +574,180 @@ describe("running a goal", () => {
     expect(await refusal(() => h["goals.approve"]({ goalId: id, revision: 1, accept: ["api"], budgetUsd: 50, maxParallel: 2 }))).toBe("goal.stopped");
 
     expect(await h["goals.pauseAll"]({ on: false })).toEqual({ pausedAll: false });
+  });
+});
+
+describe("approvals and edits never cross", () => {
+  it("holds a tile edit that arrives while the approval awaits, so the approval approves what it read", async () => {
+    const env = await setup({ plans: [RESEARCH] });
+    const { h, o } = env;
+    const g = await planned(env);
+    const r1 = byKey(g).get("r1")!;
+    await h["goals.pauseAll"]({ on: true });
+    const runner = o.goals as unknown as { candidates: (...a: unknown[]) => Promise<unknown> };
+    const original = runner.candidates.bind(runner);
+    let edit: Promise<unknown> | null = null;
+    runner.candidates = async (...a: unknown[]) => {
+      // The edit is clicked while the approval reads the directory; it must wait for the approval.
+      edit ??= Promise.resolve(h["goals.editTask"]({ goalId: g.id, revision: 1, key: "r1", patch: { kind: "code", paths: ["src/a.ts"] } })).catch((err: Error) => err.message);
+      await new Promise((r) => setTimeout(r, 50));
+      return original(...a);
+    };
+    const approved = await h["goals.approve"]({ goalId: g.id, revision: 1, accept: ["r1", "r2"], budgetUsd: 5, maxParallel: 2 });
+    runner.candidates = original;
+    expect(await edit).toBe("goal.approved");
+    expect(approved).toMatchObject({ approvedRevision: 1, integrationTaskId: null, branch: null });
+    const after = byKey(await h["goals.get"]({ goalId: g.id })).get("r1")!;
+    expect(after).toMatchObject({ kind: "research", writes: false, edited: false, crewSteps: r1.crewSteps, accepted: true });
+  });
+
+  it("refuses an approval whose tasks changed while it awaited, naming them, and approves the edited plan next", async () => {
+    const env = await setup({ plans: [RESEARCH] });
+    const { h, o, store } = env;
+    const g = await planned(env);
+    await h["goals.pauseAll"]({ on: true });
+    const runner = o.goals as unknown as { candidates: (...a: unknown[]) => Promise<unknown> };
+    const original = runner.candidates.bind(runner);
+    let edited = false;
+    runner.candidates = async (...a: unknown[]) => {
+      // The scheduler's own entry holds no plan lock, so this edit lands between its read and its write.
+      if (!edited) {
+        edited = true;
+        await h["goals.editTask"]({ goalId: g.id, revision: 1, key: "r1", patch: { kind: "code", paths: ["src/a.ts"] } });
+      }
+      return original(...a);
+    };
+    const refused = await refusalOf(() => o.approveGoal({ goalId: g.id, revision: 1, accept: ["r1", "r2"], budgetUsd: 50, maxParallel: 2 }));
+    runner.candidates = original;
+    expect(refused).toEqual({ code: "goal.plan_changed", params: { keys: "r1" } });
+    const held = await h["goals.get"]({ goalId: g.id });
+    expect(held).toMatchObject({ approvedRevision: null });
+    expect(byKey(held).get("r1")).toMatchObject({ kind: "code", writes: true, edited: true, accepted: null, shareUsd: null });
+    expect(count(store, "select count(*) as n from events where kind = 'goal.approved'")).toBe(0);
+    // The plan you see now approves as shown: a writing task, so a goal branch and its last review.
+    const approved = await h["goals.approve"]({ goalId: g.id, revision: 1, accept: ["r1", "r2"], budgetUsd: 50, maxParallel: 2 });
+    expect(approved.approvedRevision).toBe(1);
+    expect(approved.integrationTaskId).not.toBeNull();
+    expect(approved.integration?.shareUsd ?? 0).toBeGreaterThan(0);
+  });
+});
+
+describe("a plan of one task", () => {
+  it("needs both limits and refuses to start the task while the goal or every goal is paused", async () => {
+    const env = await setup({ plans: [ONE] });
+    const { h, o, store } = env;
+    const g = await planned(env, "README'deki yazım hatasını düzelt");
+    const only = g.tasks[0]!.taskId;
+    expect(await refusalOf(() => h["goals.approve"]({ goalId: g.id, revision: 1, accept: ["only"], maxParallel: 2 } as never))).toEqual({ code: "goal.bad_budget", params: { field: "budgetUsd" } });
+    // The plan editor checks on its own too, for a caller that skips the handler.
+    expect(await refusalOf(() => o.approveGoalPlan({ goalId: g.id, revision: 1, accept: ["only"], maxParallel: 2 } as never))).toEqual({ code: "goal.bad_budget", params: { field: "budgetUsd" } });
+    expect(await refusalOf(() => o.approveGoalPlan({ goalId: g.id, revision: 1, accept: ["only"], budgetUsd: 1 } as never))).toEqual({ code: "goal.bad_budget", params: { field: "maxParallel" } });
+
+    const params = { goalId: g.id, revision: 1, accept: ["only"], budgetUsd: 1, maxParallel: 2 };
+    await h["goals.pause"]({ goalId: g.id });
+    expect(await refusal(() => h["goals.approve"](params))).toBe("goal.paused");
+    await h["goals.resume"]({ goalId: g.id });
+    await h["goals.pauseAll"]({ on: true });
+    expect(await refusal(() => h["goals.approve"](params))).toBe("goal.paused_all");
+    await o.settle();
+    expect((await h["goals.get"]({ goalId: g.id })).collapsedTaskId).toBeNull();
+    expect(o.get(only).crew?.approvedAt ?? null).toBeNull();
+    expect(count(store, "select count(*) as n from events where kind = 'task.approved' and task_id = ?", only)).toBe(0);
+    expect(count(store, "select count(*) as n from runs where task_id = ?", only)).toBe(0);
+
+    await h["goals.pauseAll"]({ on: false });
+    expect((await h["goals.approve"](params)).collapsedTaskId).toBe(only);
+    expect(o.get(only).crew?.approvedAt ?? null).not.toBeNull();
+  });
+
+  it("never approves through a stale plan click after Run as one task moved it to the crew review", async () => {
+    const env = await setup({ plans: [ONE] });
+    const { h, o, store } = env;
+    const g = await planned(env, "README'deki yazım hatasını düzelt");
+    const only = g.tasks[0]!.taskId;
+    expect((await h["goals.collapse"]({ goalId: g.id })).collapsedTaskId).toBe(only);
+    // Changed in the normal crew review: a crew the plan review never showed.
+    await o.edit(only, { kind: "research" });
+    expect(await refusal(() => h["goals.approve"]({ goalId: g.id, revision: 1, accept: ["only"], budgetUsd: 5, maxParallel: 2 }))).toBe("goal.not_ready");
+    expect(o.get(only)).toMatchObject({ kind: "research" });
+    expect(o.get(only).crew?.approvedAt ?? null).toBeNull();
+    expect(count(store, "select count(*) as n from events where kind = 'task.approved' and task_id = ?", only)).toBe(0);
+  });
+});
+
+describe("orderings you change survive Revise", () => {
+  it("keeps side by side, a removed planned edge and your own edge when the plan is revised", async () => {
+    const notes = task({ key: "notes", title: "Sürüm notları", kind: "docs", mode: "solo", size: "S", paths: ["CHANGELOG.md"], priority: "low" });
+    const revised = { summary: "Notunuza göre bir görev eklendi.", tasks: [PLAN.tasks[0]!, { ...PLAN.tasks[1]!, dependsOn: [] }, PLAN.tasks[2]!, PLAN.tasks[3]!, notes] };
+    const env = await setup({ plans: [PLAN, revised] });
+    const { h, o } = env;
+    const g = await planned(env);
+    const before = byKey(g);
+    const api = before.get("api")!.taskId;
+    expect(before.get("tests")!.dependsOn).toEqual([{ taskId: api, key: "api", source: "overlap" }]);
+    await h["goals.setDependency"]({ goalId: g.id, revision: 1, taskKey: "tests", dependsOnKey: "api", on: false });
+    await h["goals.setDependency"]({ goalId: g.id, revision: 1, taskKey: "ui", dependsOnKey: "api", on: false });
+    const now = byKey(await h["goals.setDependency"]({ goalId: g.id, revision: 1, taskKey: "docs", dependsOnKey: "api", on: true }));
+    // Each changed ordering is an edit of its tile; side by side marks both tiles.
+    for (const key of ["api", "ui", "tests", "docs"]) expect(now.get(key)).toMatchObject({ edited: true, frozen: "edited" });
+
+    await h["goals.revise"]({ goalId: g.id, revision: 1, note: "Sürüm notlarını da ekle." });
+    await o.settle();
+    const next = await h["goals.get"]({ goalId: g.id });
+    expect(next.revisions[1]).toMatchObject({ state: "ready", diff: { added: ["notes"], changed: [], removed: [] } });
+    const t = byKey(next);
+    for (const key of ["api", "ui", "tests", "docs"]) expect(t.get(key)!.taskId).toBe(before.get(key)!.taskId);
+    expect(t.get("tests")!.dependsOn).toEqual([]);
+    expect(t.get("ui")!.dependsOn).toEqual([]);
+    expect(t.get("docs")!.dependsOn).toEqual([{ taskId: api, key: "api", source: "user" }]);
+    expect(next.revisions[1]!.overlaps).toEqual([]);
+  });
+});
+
+describe("answers after approval", () => {
+  it("answers a decision the scheduler raised, then replans", async () => {
+    const env = await setup({ plans: [CHAIN, CHAIN] });
+    const { h, o, store } = env;
+    const g = await planned(env);
+    await h["goals.pauseAll"]({ on: true });
+    const approved = await h["goals.approve"]({ goalId: g.id, revision: 1, accept: ["api", "ui"], budgetUsd: 50, maxParallel: 2 });
+    const api = byKey(approved).get("api")!.taskId;
+    const ui = byKey(approved).get("ui")!.taskId;
+    // A cancelled prerequisite never counts as met: the scheduler asks you instead.
+    await o.cancel(api);
+    await h["goals.pauseAll"]({ on: false });
+    await o.tick();
+    await waitFor(() => store.db.prepare("select id from goal_decisions where goal_id = ? and kind = 'prerequisite'").get(g.id), 20_000);
+    const d = (await h["goals.get"]({ goalId: g.id })).decisions.find((x) => x.kind === "prerequisite")!;
+    expect(d).toMatchObject({ taskId: api, actions: ["run_without", "replan", "cancel_dependents"], answeredAt: null, payload: { waiting: [ui] } });
+    const answered = await h["goals.decide"]({ goalId: g.id, decisionId: d.id, action: "cancel_dependents" });
+    expect(answered.decisions.find((x) => x.id === d.id)).toMatchObject({ answer: "cancel_dependents" });
+    expect(o.get(ui).status).toBe("cancelled");
+
+    const replanning = await h["goals.replan"]({ goalId: g.id, note: "API'yi yeniden ele al." });
+    expect(replanning).toMatchObject({ latestRevision: 2, replansLeft: 2 });
+    expect(replanning.revisions[1]).toMatchObject({ cause: "replan", state: "planning", note: "API'yi yeniden ele al." });
+    await o.settle();
+    expect((await h["goals.get"]({ goalId: g.id })).revisions[1]!.state).toBe("ready");
+  });
+
+  it("accepts a finished research report a code task builds on, once", async () => {
+    const env = await setup({ plans: [REPORT], research: "Özet: doğrulama kodu 6 hane olmalı." });
+    const { h, o, store } = env;
+    const g = await planned(env);
+    const approved = await h["goals.approve"]({ goalId: g.id, revision: 1, accept: ["r", "k"], budgetUsd: 50, maxParallel: 1 });
+    const r = byKey(approved).get("r")!.taskId;
+    const k = byKey(approved).get("k")!.taskId;
+    await waitFor(() => o.get(r).status === "done", 30_000);
+    await waitFor(() => o.get(k).goal?.hold?.code === "goal.waits_report", 20_000);
+    // Held, so the code task does not start once the report is accepted.
+    await h["goals.pauseAll"]({ on: true });
+    expect(await refusal(() => h["goals.acceptReport"]({ goalId: g.id, taskId: k }))).toBe("goal.not_report");
+    const accepted = await h["goals.acceptReport"]({ goalId: g.id, taskId: r });
+    const at = byKey(accepted).get("r")!.reportAcceptedAt;
+    expect(at).not.toBeNull();
+    expect(byKey(await h["goals.acceptReport"]({ goalId: g.id, taskId: r })).get("r")!.reportAcceptedAt).toBe(at);
+    expect(count(store, "select count(*) as n from events where kind = 'goal.report_accepted' and json_extract(payload, '$.goalId') = ?", g.id)).toBe(1);
   });
 });
 

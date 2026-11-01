@@ -217,6 +217,7 @@
     "goal_not_found": "This goal no longer exists.",
     "goal_task_not_found": "That task is not part of this goal.",
     "goal_text": "The goal text is empty or too long.",
+    "goal_bad_attachments": "The attachments could not be read.",
     "goal_no_planner": "No profile can plan read-only here. Add one, or use Crew.",
     "goal_planner_unknown": "That planner is not available here.",
     "goal_stopped": "The goal is stopped; nothing more changes.",
@@ -244,11 +245,13 @@
     "goal_not_report": "That task has no report a writing task waits for.",
     "goal_report_not_done": "The task has not finished; there is no report yet.",
     "goal_paused": "The goal is paused. Resume it first.",
+    "goal_paused_all": "Pause all goals is on. Lift it first.",
     "goal_not_paused": "The goal is not paused.",
     "goal_no_integration": "This goal has no goal branch.",
     "goal_collapse_after_approval": "Run as one task works only before approval.",
     "goal_not_one_task": "The plan does not hold exactly one task.",
-    "goal_plan_moved": "Tasks this plan replaces have started since it was made: {{keys}}. Replan again."
+    "goal_plan_moved": "Tasks this plan replaces have started since it was made: {{keys}}. Replan again.",
+    "goal_plan_changed": "The plan changed while it was being approved: {{keys}}. Check it and approve again."
   },
   "halt": {
     "same_failure": "two tasks failed the same way",

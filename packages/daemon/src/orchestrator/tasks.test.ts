@@ -149,6 +149,47 @@ describe("run modes", () => {
     seedGoalTask(store, t.id, "server", "solo");
     expect((await flowOf(o).edit(t.id, { kind: "code" }, { byGoal: true })).crew!.members.map((m) => m.role)).toEqual(["implementer"]);
   });
+
+  it("drafts a goal tile again for a new size or mode, and runs the goal's records in the edit's transaction", async () => {
+    const { o, store, project } = await setup();
+    const t = await o.propose({ projectId: project.id, ...CODE_TR, kind: "code", size: "M", mode: "solo" });
+    seedGoal(store, project.id);
+    seedGoalTask(store, t.id, "server", "solo");
+    const flow = flowOf(o);
+    const crewId = () => o.get(t.id).crew!.id;
+    const first = crewId();
+    // The same size and mode draft nothing; the goal's records still run.
+    let ran = 0;
+    await flow.edit(t.id, { title: "Oturum sunucusu" }, { byGoal: true, mode: "solo", inTx: () => void ran++ });
+    expect(ran).toBe(1);
+    expect(crewId()).toBe(first);
+    // A new size is drafted again, in the mode the plan chose.
+    const large = await flow.edit(t.id, { size: "L" }, { byGoal: true, mode: "solo" });
+    expect(large.size).toBe("L");
+    expect(large.crew!.members.map((m) => m.role)).toEqual(["implementer"]);
+    expect(crewId()).not.toBe(first);
+    expect(events(store, t.id, "task.edited").at(-1)).toMatchObject({ size: "L", mode: "solo" });
+    // Solo to Crew is drafted again with the Crew roles.
+    const crew = await flow.edit(t.id, {}, { byGoal: true, mode: "crew" });
+    expect(crew.crew!.members.map((m) => m.role)).toEqual(expect.arrayContaining(["planner", "implementer", "tester", "reviewer"]));
+    // A refusal inside the goal's records undoes the whole edit, the redrafted crew and what the
+    // records wrote before refusing too: they ran in the edit's own transaction.
+    const before = crewId();
+    await expect(
+      flow.edit(t.id, { title: "Yarım kalmamalı", size: "S" }, {
+        byGoal: true,
+        mode: "crew",
+        inTx: () => {
+          store.db.prepare("update goal_tasks set edited = 1 where task_id = ?").run(t.id);
+          throw new Error("goal.approved");
+        },
+      }),
+    ).rejects.toThrow("goal.approved");
+    expect(o.get(t.id)).toMatchObject({ size: "L" });
+    expect(o.get(t.id).title).not.toBe("Yarım kalmamalı");
+    expect(crewId()).toBe(before);
+    expect((store.db.prepare("select edited from goal_tasks where task_id = ?").get(t.id) as { edited: number }).edited).toBe(0);
+  });
 });
 
 describe("goal tasks start with their plan", () => {

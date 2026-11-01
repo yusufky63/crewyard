@@ -217,6 +217,7 @@
     "goal_not_found": "Bu hedef artık yok.",
     "goal_task_not_found": "Bu görev bu hedefe ait değil.",
     "goal_text": "Hedef metni boş ya da çok uzun.",
+    "goal_bad_attachments": "Ekler okunamadı.",
     "goal_no_planner": "Burada salt okunur plan yapabilecek bir profil yok. Bir tane ekleyin ya da Ekip'i kullanın.",
     "goal_planner_unknown": "Bu planlayan burada kullanılamıyor.",
     "goal_stopped": "Hedef durduruldu; artık hiçbir şey değişmez.",
@@ -244,11 +245,13 @@
     "goal_not_report": "Bu görevin, yazan bir görevin beklediği bir raporu yok.",
     "goal_report_not_done": "Görev bitmedi; henüz bir rapor yok.",
     "goal_paused": "Hedef duraklatılmış. Önce sürdürün.",
+    "goal_paused_all": "Tüm hedefleri duraklat açık. Önce onu kaldırın.",
     "goal_not_paused": "Hedef duraklatılmamış.",
     "goal_no_integration": "Bu hedefin hedef dalı yok.",
     "goal_collapse_after_approval": "Tek görev olarak çalıştırma yalnızca onaydan önce mümkün.",
     "goal_not_one_task": "Planda tam olarak bir görev yok.",
-    "goal_plan_moved": "Bu planın yerini aldığı görevler, plan yapıldıktan sonra başladı: {{keys}}. Yeniden planlayın."
+    "goal_plan_moved": "Bu planın yerini aldığı görevler, plan yapıldıktan sonra başladı: {{keys}}. Yeniden planlayın.",
+    "goal_plan_changed": "Plan onaylanırken değişti: {{keys}}. Gözden geçirip yeniden onaylayın."
   },
   "halt": {
     "same_failure": "iki görev aynı şekilde başarısız oldu",

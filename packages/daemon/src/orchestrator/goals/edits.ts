@@ -51,6 +51,8 @@ export interface GoalEditorDeps {
   approveGoal(p: GoalApproveParams): Promise<void>;
   /** GoalPlanner.approveOneTask: a plan of one task becomes that ordinary task, approved in the same click. */
   approveOneTask(goalId: string, revision: number): Promise<unknown>;
+  /** GoalRunner.pausedAllState: whether Pause all goals is on. */
+  pausedAll(): boolean;
 }
 
 /** The tile fields you may change; basis, reason and dependencies are not tile fields. */
@@ -66,8 +68,12 @@ const json = <T>(s: string | null, fallback: T): T => {
 };
 
 export class GoalEditor extends Part {
-  /** One goals.approve per goal at a time, so a double click reads the first click's outcome. */
-  private readonly approving = new Map<string, Promise<void>>();
+  /**
+   * One plan click per goal at a time: approvals, tile edits and dependency changes. A double click
+   * reads the first click's outcome, and an edit can never land while an approval awaits the
+   * directory or git, where the approval would go on with the tasks it read before the edit.
+   */
+  private readonly busy = new Map<string, Promise<unknown>>();
 
   constructor(
     ctx: OrchestratorContext,
@@ -148,7 +154,11 @@ export class GoalEditor extends Part {
    * and the file-overlap ordering of this task is computed again from its new paths, keeping any
    * pair you set to run side by side.
    */
-  async editTask(goalId: string, revision: number, key: string, patch: GoalTaskPatch): Promise<void> {
+  editTask(goalId: string, revision: number, key: string, patch: GoalTaskPatch): Promise<void> {
+    return this.serial(goalId, () => this.doEditTask(goalId, revision, key, patch));
+  }
+
+  private async doEditTask(goalId: string, revision: number, key: string, patch: GoalTaskPatch): Promise<void> {
     const { plan } = this.editable(goalId, revision);
     const row = this.liveRows(goalId).find((r) => r.plan_id === plan.id && r.key === key);
     if (!row) throw new GoalError("goal.task_not_found", { key: String(key) });
@@ -262,9 +272,19 @@ export class GoalEditor extends Part {
    * one of the revision's and never started; the task it waits for may be any task the revision
    * keeps, including one an earlier approval accepted. A loop is refused with its path ("01 → 03 → 01").
    * Removing an automatic ordering is "Run side by side anyway"; at approval the overlap check keeps it so.
+   *
+   * A changed ordering is an edit of the tile that waits (design §4.10: your edits are kept on
+   * Revise), so that tile is marked edited and the planner must return it as it is now: a planned
+   * edge you removed leaves its stored plan entry, an edge you drew stays yours. "Run side by side
+   * anyway" marks both tiles of this revision, so the planner's overlap check finds them both kept
+   * and unordered, which only your choice leaves them, and keeps them side by side.
    */
-  setDependency(goalId: string, revision: number, taskKey: string, dependsOnKey: string, on: boolean): void {
-    if (typeof on !== "boolean") throw new GoalError("goal.action", { action: "setDependency" });
+  setDependency(goalId: string, revision: number, taskKey: string, dependsOnKey: string, on: boolean): Promise<void> {
+    if (typeof on !== "boolean") return Promise.reject(new GoalError("goal.action", { action: "setDependency" }));
+    return this.serial(goalId, () => this.doSetDependency(goalId, revision, taskKey, dependsOnKey, on));
+  }
+
+  private doSetDependency(goalId: string, revision: number, taskKey: string, dependsOnKey: string, on: boolean): void {
     const { plan } = this.editable(goalId, revision);
     const find = () => {
       const { own, kept } = this.members(goalId, plan);
@@ -282,6 +302,7 @@ export class GoalEditor extends Part {
       const again = this.editable(goalId, revision);
       if (again.plan.id !== plan.id) throw new GoalError("goal.stale_revision", { revision, latest: again.plan.revision });
       const { task, dep, all } = find();
+      const ownIds = new Set(this.members(goalId, plan).own.map((r) => r.task_id));
       const existing = this.one<{ source: GoalDepSource }>("select source from goal_task_deps where task_id = ? and depends_on = ?", task.task_id, dep.task_id);
       if (on) {
         if (existing && existing.source !== "overlap") return;
@@ -300,7 +321,11 @@ export class GoalEditor extends Part {
         if (!existing) return;
         this.db.exec("delete from goal_task_deps where task_id = ? and depends_on = ?", task.task_id, dep.task_id);
         changed = { source: existing.source };
+        // A planned edge you removed leaves the plan entry, or a Revise would bring it back.
+        if (existing.source === "plan") this.dropPlannedEdge(again.plan, taskKey, dependsOnKey);
+        if (existing.source === "overlap" && ownIds.has(dep.task_id)) this.db.exec("update goal_tasks set edited = 1 where task_id = ?", dep.task_id);
       }
+      this.db.exec("update goal_tasks set edited = 1 where task_id = ?", task.task_id);
       this.setWaitsFor(goalId, task.task_id);
     });
     if (!changed) return;
@@ -329,21 +354,13 @@ export class GoalEditor extends Part {
    * the goal scheduler's. A second click waits for the first and then reads its outcome, so it
    * creates nothing twice.
    */
-  async approve(p: GoalApproveParams): Promise<void> {
-    for (;;) {
-      const pending = this.approving.get(p.goalId);
-      if (!pending) break;
-      await pending.catch(() => undefined);
-    }
-    const run = (async () => {
+  approve(p: GoalApproveParams): Promise<void> {
+    return this.serial(p.goalId, async () => {
       const route = this.deps.approvalRoute(p.goalId, p.revision);
       if (route.route === "goal") return this.deps.approveGoal(p);
       this.prepareOneTask(p.goalId, route.key, route.taskId, p);
       await this.deps.approveOneTask(p.goalId, p.revision);
-    })();
-    const tracked = run.finally(() => this.approving.delete(p.goalId));
-    this.approving.set(p.goalId, tracked);
-    await tracked;
+    });
   }
 
   // ---------------------------------------------------------------- a plan of one task
@@ -353,14 +370,24 @@ export class GoalEditor extends Part {
    * click must accept that task, and its limits must be valid. The budget you approved becomes the
    * task's own budget when it is lower, so the one task never spends past what you saw; it is never
    * raised. A repeated click on a goal already collapsed checks the same and changes nothing more.
+   *
+   * The goal route approves a paused goal but releases nothing until you lift the pause (design
+   * §5.2). Here the approval itself starts the run, so it is refused while either switch is on.
    */
   private prepareOneTask(goalId: string, key: string, taskId: string | null, p: { accept: unknown; budgetUsd: unknown; maxParallel: unknown }): void {
-    this.goal(goalId);
+    const goal = this.goal(goalId);
     if (!Array.isArray(p.accept) || p.accept.length === 0) throw new GoalError("goal.no_accepted");
     for (const k of p.accept) if (k !== key) throw new GoalError("goal.task_not_found", { key: String(k) });
+    // Both limits are required, as on the goal route: the one task never runs without a budget.
+    if (p.budgetUsd === undefined) throw new GoalError("goal.bad_budget", { field: "budgetUsd" });
+    if (p.maxParallel === undefined) throw new GoalError("goal.bad_budget", { field: "maxParallel" });
     const limits = parseGoalLimits({ budgetUsd: p.budgetUsd, maxParallel: p.maxParallel });
     if (!limits.ok) throw new GoalError("goal.bad_budget", { field: /maxParallel/.test(limits.error) ? "maxParallel" : "budgetUsd" });
     const budget = limits.value.budgetUsd;
+    if (!goal.collapsed_task_id) {
+      if (goal.paused_at) throw new GoalError("goal.paused", { goalId });
+      if (this.deps.pausedAll()) throw new GoalError("goal.paused_all");
+    }
     if (!taskId || budget === undefined) return;
     // Only a proposal's budget moves: an approved crew keeps the budget it was approved with.
     this.db.exec(
@@ -372,6 +399,34 @@ export class GoalEditor extends Part {
   }
 
   // ---------------------------------------------------------------- helpers
+
+  /** Runs one plan click after any other click on the same goal has settled, whatever its outcome. */
+  private async serial<T>(goalId: string, fn: () => T | Promise<T>): Promise<T> {
+    for (;;) {
+      const pending = this.busy.get(goalId);
+      if (!pending) break;
+      await pending.catch(() => undefined);
+    }
+    // The slot is taken before `fn` runs: its synchronous part may already reach a click of the
+    // same goal (an approval reads the directory, which a click can interleave with).
+    let release!: () => void;
+    const slot = new Promise<void>((resolve) => (release = resolve));
+    this.busy.set(goalId, slot);
+    try {
+      return await fn();
+    } finally {
+      if (this.busy.get(goalId) === slot) this.busy.delete(goalId);
+      release();
+    }
+  }
+
+  /** Drops `dependsOnKey` from the stored plan entry of `taskKey` (inside the caller's transaction). */
+  private dropPlannedEdge(plan: GoalPlanRow, taskKey: string, dependsOnKey: string): void {
+    const stored = json<GoalPlan | null>(plan.plan, null);
+    if (!stored) return;
+    const tasks = stored.tasks.map((t) => (t.key === taskKey ? { ...t, dependsOn: t.dependsOn.filter((d) => d !== dependsOnKey) } : t));
+    this.db.exec("update goal_plans set plan = ? where id = ?", JSON.stringify({ ...stored, tasks }), plan.id);
+  }
 
   /** "[Goal: waits for 01, 02]" at the end of the description, as the planner writes it, for an older build after a rollback. */
   private setWaitsFor(goalId: string, taskId: string): void {

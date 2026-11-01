@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  ancestorsOf,
   applyPlanRevision,
   deriveGoalStatus,
   derivePlanState,
@@ -22,6 +23,7 @@ import {
   wouldCycle,
   type CandidateView,
   type CostEstimate,
+  type DagNode,
   type EndReason,
   type FrozenBecause,
   type GoalChangeCause,
@@ -460,6 +462,9 @@ export class GoalPlanner extends Part {
     if (goal.collapsed_task_id) {
       const crew = this.db.crew(goal.collapsed_task_id);
       if (crew?.approved_at) return this.deps.get(goal.collapsed_task_id);
+      // Collapsed but unapproved: `Run as one task` moved it to the normal crew review, where it
+      // may have changed since. A plan click never approves what that review has not shown.
+      throw new OrchestratorError("goal.not_ready", { revision });
     } else {
       this.assertOpen(goal);
       if (goal.approved_revision !== null) throw new OrchestratorError("goal.approved");
@@ -678,6 +683,18 @@ export class GoalPlanner extends Part {
         if (target && target !== id) userEdges.push({ task: id, on: target });
       }
     }
+    // Writing tasks that keep their task id through this revision and that nothing orders: only
+    // "Run side by side anyway" leaves two overlapping writers unordered, so the overlap check
+    // below keeps them so instead of ordering them again. Read before the old edges go.
+    const carried = this.overlapInput(goalId).filter((t) => members.has(t.id) && t.writes && (stayed.has(t.id) || !rebuilt.has(t.id)));
+    const before: DagNode[] = this.overlapInput(goalId).map((t) => ({ id: t.id, dependsOn: t.dependsOn }));
+    const sideBySide: Array<[string, string]> = [];
+    for (let i = 0; i < carried.length; i++)
+      for (let j = i + 1; j < carried.length; j++) {
+        const a = carried[i]!.id;
+        const b = carried[j]!.id;
+        if (!ancestorsOf(before, a).has(b) && !ancestorsOf(before, b).has(a)) sideBySide.push([a, b]);
+      }
     const list = [...rebuilt];
     if (list.length > 0) {
       const marks = list.map(() => "?").join(", ");
@@ -701,7 +718,7 @@ export class GoalPlanner extends Part {
     const input = this.overlapInput(goalId)
       .filter((t) => members.has(t.id))
       .map((t) => (stayed.has(t.id) ? { ...t, position: t.position - GOAL_LIMITS.maxTasksHard } : t));
-    for (const e of overlapPairs(input)) {
+    for (const e of overlapPairs(input, { sideBySide })) {
       if (!rebuilt.has(e.taskId) || graph.get(e.taskId)!.includes(e.dependsOn) || loops(e.taskId, e.dependsOn)) continue;
       add(e.taskId, e.dependsOn, "overlap");
     }
