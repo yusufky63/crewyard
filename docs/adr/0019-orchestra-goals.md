@@ -51,9 +51,9 @@ What must not change:
   - The role is a saved role snapshot, outside the built-in role list; a role file named `goal-planner.md` is refused.
   - It has no user MCP servers and no `propose_followup`.
   - It has its own budget: min(project per-task cap, max(3 × estimate, $0.25)), shown on the composer as the ceiling.
-  - It returns a strict, simple `GoalPlan`: at most 8 tasks (hard maximum 12), dependencies only on earlier tasks, planned paths, and the words of the goal each task rests on (a soft check).
+  - It returns a strict, simple `GoalPlan`: at most 8 tasks (the cap every goal gets; 12 is only the parser's absolute ceiling), dependencies only on earlier tasks, planned paths, and the words of the goal each task rests on (a soft check).
   - Core `parseGoalPlan` checks it again and refuses rather than cuts.
-  - One corrective turn goes through `messages.followUp`; a second refusal fails the plan with the parser's words.
+  - One corrective turn goes through `messages.followUp` once D7 admission lets it start; a second refusal fails the plan with the parser's words.
 - **Approval:** one `Approve and start` per revision approves every accepted task, idempotently (`goals.approve` takes the revision and the accepted keys and checks them in one transaction).
   - `tasks.approve` refuses goal tasks (`task.goal_managed`).
   - A task's crew is approved only when the goal scheduler releases it.
@@ -64,7 +64,7 @@ What must not change:
   - A prerequisite is ready when:
     - a writing task has been merged into the goal branch;
     - a task that writes nothing is done and, when it feeds a writing task, its report is accepted by you.
-  - It holds every goal task of a paused goal, and of every goal while `Pause all goals` is on.
+  - It holds every goal task and planning task of a paused goal, and of every goal while `Pause all goals` is on, approved or still planning; a queued corrective turn waits too. Pause and `Pause all goals` pause the goal's running steps, planning runs included, at their next turn boundary.
   - Released tasks go through the normal dispatcher, D7 and caps.
 - **Overlap:** planned paths compared before approval, and overlapping tasks put in order automatically (`Run side by side anyway` removes the order). `git merge-tree` before each merge.
 - **Goal branch:** a hidden integration task owns a worktree on `crewyard/goal/<words>-<id6>`.
@@ -111,6 +111,9 @@ Where the build differs from the proposal:
 - **The planner you pick** on the planner chip is remembered per project by the daemon (`orchestra.planner.<projectId>`), because `goals.create` pins it there; the proposal kept it in renderer preferences.
 - **The minimum Git version** for `merge-tree --write-tree` is 2.38.0 (`MIN_GIT_MERGE_TREE`); the machine check reports an older Git as outdated.
 - **The planning estimate** is still the fixed heuristic (80,000 input and 8,000 output tokens at the catalog price). The end-to-end flow checks the spend label and the ceiling with scripted token counts; the live flow `goal` records real counts next to the heuristic. Correcting the heuristic from those numbers is still open before release (PLAN.md §17).
+- **The task cap is fixed at 8 per goal.** The proposal let a plan refused for too many tasks offer `Raise the limit to 12 and retry` (bounds 1 to 12). That action is not built: `goals.max_tasks` is always written as 8 and nothing in the app changes it, so 12 is only the parser's absolute ceiling.
+- **The planner's corrective turn waits for D7.** The proposal listed it with the launches that skip admission. It is queued and started from the dispatcher's pass only once admission (slots, memory, spend held) lets it, and it stays queued while the goal or every goal is paused.
+- **Pause covers planning.** A paused goal's planning task starts no run, `Pause all goals` reaches goals that are still planning, and both pause a planning run in flight at its turn boundary, so the kill switch stops every goal's spend.
 - **"A first approved crew"** in the Guide's Getting started list does not count a goal's hidden planning or integration task, because the daemon approves those, not you.
 
 ## Sources
@@ -167,11 +170,12 @@ Items taken from the researchers' notes and not re-opened (Kiro #10098, Vibe Kan
   - The project daily cap is enforced.
   - The planning ceiling is shown before the click.
 - The `Orchestra` switch and `Pause all goals` change only on a real boolean; a malformed call is refused and changes nothing.
-- Known gap: `messages.followUp`, used for conflict fixes and the planner's corrective turn, launches without D7 admission, as PR feedback does. Tracked as later work.
+- The planner's corrective turn starts only after D7 admission, and not while the goal or every goal is paused.
+- Known gap: the conflict fix sent to the implementer (`Send to the implementer`, your click) and PR feedback launch through `messages.followUp` without D7 admission. Tracked as later work.
 
 ## Rollback
 
-- Turn `Orchestra` off in Settings: no new goals, and the composer opens on Crew; approved goals continue in their order. `Pause all goals` pauses every goal at once.
+- Turn `Orchestra` off in Settings: no new goals, and the composer opens on Crew; approved goals continue in their order. `Pause all goals` pauses every goal at once, planning runs included.
 - Reverting the code leaves six tables and some settings rows that nothing else reads. Unknown events are skipped by the timeline.
 - Goal tasks are ordinary tasks. The ones not yet released stay proposals, because their crews were never approved. An older build cannot start them without a click, and their descriptions name what they wait for ("[Goal: waits for 01, 02]").
 - The goal branch stays a local branch in its worktree. The existing cleanup removes it after confirmation.
