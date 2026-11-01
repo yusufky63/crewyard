@@ -730,9 +730,11 @@ function ReadyState({
   // Ctrl Enter approves while this review is the open slot, wherever focus is, except in a text
   // field of another surface (the composer, the bottom panel) or the places approveKeyApplies keeps.
   const approveRef = useRef(approve);
-  approveRef.current = approve;
   const keyState = useRef({ editing: editing !== null, pending });
-  keyState.current = { editing: editing !== null, pending };
+  useEffect(() => {
+    approveRef.current = approve;
+    keyState.current = { editing: editing !== null, pending };
+  });
   useEffect(() => {
     const onDocKey = (e: globalThis.KeyboardEvent) => {
       if (e.defaultPrevented || !matches(e, "submit")) return;

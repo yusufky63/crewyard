@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
 import { create } from "zustand";
@@ -107,21 +107,22 @@ function DefaultBudgetRow({ onError }: { onError: (message: string | null) => vo
   const project = projects.data?.find((p) => p.id === projectId);
   const q = useWork("goals.projectDefaults", { projectId: projectId ?? "" }, { enabled: Boolean(projectId), retry: false });
   const saved = q.data && typeof q.data === "object" && "budgetUsd" in q.data ? (q.data.budgetUsd as number | null) : null;
-  const [draft, setDraft] = useState("");
-  useEffect(() => setDraft(saved === null ? "" : String(saved)), [saved]);
+  // What you are typing; null shows the saved value, so a later read never fights your edit.
+  const [typing, setTyping] = useState<string | null>(null);
   if (!projectId || !project) return null;
+  const draft = typing ?? (saved === null ? "" : String(saved));
   const value = typedUsd(draft);
   const valid = value !== null && value <= GOAL_LIMITS.budgetMaxUsd;
   const commit = () => {
-    if (!valid) {
-      setDraft(saved === null ? "" : String(saved));
+    if (!valid || value === saved) {
+      setTyping(null);
       return;
     }
-    if (value === saved) return;
     onError(null);
     void act("goals.setProjectDefaults", { projectId, budgetUsd: value })
       .then((r) => qc.setQueryData(["goals.projectDefaults", { projectId }], r))
-      .catch((err: unknown) => onError(message(err)));
+      .catch((err: unknown) => onError(message(err)))
+      .finally(() => setTyping(null));
   };
   return (
     <Row label={t("settings.defaultBudget", { project: project.name })} hint={t("settings.defaultBudgetHint", { max: GOAL_LIMITS.budgetMaxUsd })}>
@@ -134,7 +135,7 @@ function DefaultBudgetRow({ onError }: { onError: (message: string | null) => vo
           placeholder={t("settings.defaultBudgetNone")}
           aria-label={t("settings.defaultBudget", { project: project.name })}
           aria-invalid={draft.trim() !== "" && !valid}
-          onChange={(e) => setDraft(e.target.value)}
+          onChange={(e) => setTyping(e.target.value)}
           onBlur={commit}
           onKeyDown={(e) => e.key === "Enter" && commit()}
           size={8}

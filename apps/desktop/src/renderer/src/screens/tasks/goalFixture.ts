@@ -287,6 +287,33 @@ export function fixtureGoals(projectId: string): Record<string, GoalDetail> {
     integration: { taskId: "g-run-ti", status: "proposed", reviewPassed: false, estimate: usd(0.17), shareUsd: 0.26 },
     suggestedBudgetUsd: 3,
   });
+  // The same goal needing you: 02's merge into the goal branch conflicts, and 03 waits on it.
+  const run = g["g-run"]!;
+  g["g-needs"] = {
+    ...run,
+    id: "g-needs",
+    status: "needs_you",
+    reason: "decision",
+    tasks: run.tasks.map((x) =>
+      x.number === 2
+        ? { ...x, status: "review" as const, hold: { code: "goal.conflict" as const, params: { paths: "src/api/middleware/index.ts, CHANGELOG.md" } } }
+        : x.number === 3
+          ? { ...x, hold: { code: "goal.waits_join" as const, params: { task: "02", taskId: "g-run-t2" } } }
+          : x,
+    ),
+    decisions: [
+      {
+        id: "g-needs-d1",
+        kind: "conflict",
+        taskId: "g-run-t2",
+        payload: { paths: ["src/api/middleware/index.ts", "CHANGELOG.md"] },
+        actions: ["send_to_implementer", "merge_myself", "check_again", "leave_out"],
+        createdAt: at(-2),
+        answeredAt: null,
+        answer: null,
+      },
+    ],
+  };
   return g;
 }
 

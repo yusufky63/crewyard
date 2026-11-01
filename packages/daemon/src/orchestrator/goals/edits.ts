@@ -342,14 +342,15 @@ export class GoalEditor extends Part {
   projectDefaults(projectId: string): { projectId: string; budgetUsd: number | null } {
     this.db.project(projectId);
     const v = this.opts.store.db.prepare("select value from settings where key = ?").get(GOAL_SETTINGS.goalBudget(projectId)) as { value: string } | undefined;
-    let budgetUsd: number | null = null;
-    try {
-      const n = v ? (JSON.parse(v.value) as unknown) : null;
-      budgetUsd = typeof n === "number" && Number.isFinite(n) && n > 0 ? n : null;
-    } catch {
-      budgetUsd = null;
-    }
-    return { projectId, budgetUsd };
+    const read = (): unknown => {
+      try {
+        return v ? (JSON.parse(v.value) as unknown) : null;
+      } catch {
+        return null;
+      }
+    };
+    const n = read();
+    return { projectId, budgetUsd: typeof n === "number" && Number.isFinite(n) && n > 0 ? n : null };
   }
 
   setProjectDefaults(projectId: string, budgetUsd: number): { projectId: string; budgetUsd: number } {
