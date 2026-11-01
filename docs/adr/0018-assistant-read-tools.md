@@ -1,6 +1,6 @@
 # ADR 0018: Read tools and own-draft tools for the task assistant
 
-**Status:** accepted, 2026-10-31. Owner request the same day. Amends ADR 0014 (the assistant's tools) and ADR 0017 (`list_tasks` and `read_task` are no longer gated on Autopilot).
+**Status:** accepted, 2026-10-31. Owner request the same day. Amends ADR 0014 (the assistant's tools) and ADR 0017 (`list_tasks` and `read_task` are no longer gated on Autopilot). Amended by [ADR 0022](0022-assistant-goals.md): a third own-draft tool, `draft_goal`, and `discard_draft` takes a goal draft too.
 
 ## Problem
 

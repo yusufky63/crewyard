@@ -1,6 +1,6 @@
 # ADR 0019: Orchestra, Crew and Solo, with Orchestra as the default
 
-**Status:** accepted, 2026-11-01. Proposed 2026-10-31, the day of the owner's request, and built the next day. Changes PLAN.md D8 and DESIGN.md principle 6. Rules in PLAN.md §9.8; screens in DESIGN.md §5.
+**Status:** accepted, 2026-11-01. Proposed 2026-10-31, the day of the owner's request, and built the next day. Changes PLAN.md D8 and DESIGN.md principle 6. Rules in PLAN.md §9.8; screens in DESIGN.md §5. Amended by [ADR 0022](0022-assistant-goals.md): the assistant drafts goals into the composer, and Autopilot may plan goals and approve their first plan within its limits.
 
 ## Problem
 
