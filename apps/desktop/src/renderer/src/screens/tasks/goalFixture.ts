@@ -5,7 +5,8 @@ import type { CandidateView, CostEstimate, CrewMemberView, GoalDetail, GoalPrevi
 // fixture tests; a normal run never reads it. `goal=<id>` opens one in the Tasks slot; `intro`
 // makes the first-goal card due; `noplanner` leaves no profile that can plan.
 
-const T0 = Date.UTC(2026, 9, 31, 9, 0, 0);
+// Relative to now, so elapsed times read as they would in a live goal ("41m", not a day).
+const T0 = Date.now();
 const at = (min: number) => new Date(T0 + min * 60_000).toISOString();
 const usd = (n: number | null, provenance: Provenance = "estimated"): CostEstimate => ({ usd: n, provenance: n === null ? "unknown" : provenance });
 

@@ -693,7 +693,7 @@ function ReadyState({
   const approveLabel = one ? g.t("review.approveOne", { cost: cost.total(totals.knownUsd, totals.unknown) }) : g.t("review.approve", { count: totals.count, cost: cost.total(totals.knownUsd, totals.unknown) });
 
   return (
-    <div onKeyDown={onKey}>
+    <div className="gp-ready" onKeyDown={onKey}>
       <GoalHead goal={goal} onClose={onClose}>
         {!approvedBefore && (
           <Button size="sm" variant="ghost" disabled={offline} onClick={onEditGoal}>
