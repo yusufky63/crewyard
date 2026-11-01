@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import { Readable, Writable } from "node:stream";
 import type { ChildProcess } from "node:child_process";
 import * as acp from "@agentclientprotocol/sdk";
@@ -34,11 +34,24 @@ export interface AcpSignInState {
   update: { min: string; command: string } | null;
 }
 
+/**
+ * Why a sign-in failed, where the adapter can tell. "account_refused": the browser login finished
+ * (the agent stored tokens) but the agent then refused the account, which for Gemini CLI is the
+ * account-tier check that personal Google accounts fail since 2026-06-18.
+ */
+export type AcpSignInFailure = "account_refused";
+
+export interface AcpLoginResult {
+  success: boolean;
+  error: string | null;
+  reason: AcpSignInFailure | null;
+}
+
 export interface AcpLoginSession {
   /** The sign-in page once the agent printed it; the agent also opens it in the browser itself. */
   url(): string | null;
   /** Settles once: success, failure, cancel, timeout or the agent exiting. */
-  completed: Promise<{ success: boolean; error: string | null }>;
+  completed: Promise<AcpLoginResult>;
   cancel(): Promise<void>;
 }
 
@@ -175,9 +188,9 @@ export class AcpAdapter implements AgentAdapter {
     });
 
     let finished = false;
-    let settle!: (r: { success: boolean; error: string | null }) => void;
-    const completed = new Promise<{ success: boolean; error: string | null }>((resolve) => (settle = resolve));
-    const finish = (r: { success: boolean; error: string | null }) => {
+    let settle!: (r: AcpLoginResult) => void;
+    const completed = new Promise<AcpLoginResult>((resolve) => (settle = resolve));
+    const finish = (r: AcpLoginResult) => {
       if (finished) return;
       finished = true;
       clearTimeout(timer);
@@ -185,26 +198,38 @@ export class AcpAdapter implements AgentAdapter {
       opened.conn.close();
       void opened.kill();
     };
+    const fail = (error: string): AcpLoginResult => ({ success: false, error, reason: null });
     // Gemini CLI gives up after 5 minutes on its own; this only covers an agent that never answers.
-    const timer = setTimeout(() => finish({ success: false, error: "sign-in timed out" }), opts.timeoutMs ?? 6 * 60_000);
-    opened.child.once("exit", () => finish({ success: false, error: `${spec.label} exited before sign-in finished: ${lastLine(tail)}` }));
+    const timer = setTimeout(() => finish(fail("sign-in timed out")), opts.timeoutMs ?? 6 * 60_000);
+    opened.child.once("exit", () => finish(fail(`${spec.label} exited before sign-in finished: ${lastLine(tail)}`)));
 
     const methodId = spec.signIn.methodId;
     const credentials = spec.signIn.credentialsFile(profile);
+    // signInState only offers a sign-in to a signed-out profile, so a file that appears during this
+    // attempt was written by it.
+    const hadCredentials = existsSync(credentials);
     void (async () => {
       try {
         const init = await opened.init;
         if (init.authMethods && !init.authMethods.some((m) => m.id === methodId)) throw new Error(`${spec.label} does not offer ${methodId} sign-in`);
         await opened.conn.agent.request(acp.methods.agent.authenticate, { methodId });
-        finish(existsSync(credentials) ? { success: true, error: null } : { success: false, error: `${spec.label} finished without storing a sign-in` });
+        finish(existsSync(credentials) ? { success: true, error: null, reason: null } : fail(`${spec.label} finished without storing a sign-in`));
       } catch (err) {
-        finish({ success: false, error: message(err) });
+        if (!hadCredentials && existsSync(credentials)) {
+          // The browser login went through and the agent stored tokens, then refused the account.
+          // Removing the file (never opening it) keeps the profile from reading as signed in with
+          // an account the agent will not serve.
+          await rm(credentials, { force: true }).catch(() => undefined);
+          finish({ success: false, error: message(err), reason: "account_refused" });
+          return;
+        }
+        finish(fail(message(err)));
       }
     })();
     return {
       url: () => url,
       completed,
-      cancel: async () => finish({ success: false, error: "cancelled" }),
+      cancel: async () => finish(fail("cancelled")),
     };
   }
 

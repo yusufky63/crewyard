@@ -1,6 +1,6 @@
 import { capabilities as acpCapabilities, AcpAdapter, gemini } from "@crewyard/adapter-acp";
 import { CodexAdapter, compareVersions, logout, MIN_CODEX_VERSION, readAccount, startLogin } from "@crewyard/adapter-codex";
-import type { LimitSample, Profile, SignInKind, SignInSession, SignInStatus } from "@crewyard/core";
+import type { LimitSample, Profile, SignInFailure, SignInKind, SignInSession, SignInStatus } from "@crewyard/core";
 import { profileFor } from "./directory.ts";
 import type { ProvidersService } from "./service.ts";
 
@@ -15,7 +15,8 @@ export interface DriverLogin {
   url(): string | null;
   userCode: string | null;
   browserOpened: boolean;
-  completed: Promise<{ success: boolean; error: string | null }>;
+  /** reason: why it failed where the runner lets us tell (SignInSession.reason); absent means unknown. */
+  completed: Promise<{ success: boolean; error: string | null; reason?: SignInFailure | null }>;
   cancel(): Promise<void>;
 }
 
@@ -169,7 +170,7 @@ export class SignInService {
     if (existing && this.pending(profileId)) return this.view(existing);
     if (this.deps.busy?.(profileId)) throw new Error(`${profile.alias} is running a task; sign in once it has finished`);
     const live: Live = {
-      session: { profileId, kind, state: "starting", url: null, userCode: null, browserOpened: false, startedAt: this.now().toISOString(), error: null },
+      session: { profileId, kind, state: "starting", url: null, userCode: null, browserOpened: false, startedAt: this.now().toISOString(), error: null, reason: null },
       login: null,
     };
     this.live.set(profileId, live);
@@ -189,7 +190,7 @@ export class SignInService {
     void live.login.completed.then(async (r) => {
       if (this.live.get(profileId) !== live) return;
       const state = r.success ? "succeeded" : r.error === "cancelled" ? "cancelled" : "failed";
-      live.session = { ...live.session, state, error: r.success ? null : r.error };
+      live.session = { ...live.session, state, error: r.success ? null : r.error, reason: r.success ? null : (r.reason ?? null) };
       await this.probe(profileId).catch(() => undefined);
       // Success is told by the probed badge from here on; failures stay until the next try.
       if (r.success && this.live.get(profileId) === live) this.live.delete(profileId);

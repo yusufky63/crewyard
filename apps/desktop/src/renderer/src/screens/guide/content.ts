@@ -53,7 +53,7 @@ export const FEATURES: Feature[] = [
   { id: "keyboard", icon: Keyboard, action: { kind: "keys" } },
 ];
 
-export const FAQ = ["keys", "nothingStarts", "closePanel", "estimated", "subscriptions", "external", "release"] as const;
+export const FAQ = ["keys", "nothingStarts", "closePanel", "estimated", "subscriptions", "gemini", "external", "release"] as const;
 
 /** An action that only makes sense inside a project. */
 export const needsProject = (a: GuideAction): boolean => a.kind === "newTask" || a.kind === "panel" || (a.kind === "screen" && a.screen !== "providers");

@@ -22,7 +22,8 @@ export const runnerSupport = (provider: CatalogProvider, runner: ProfileRunner):
 
 /**
  * Subscription sign-ins we start, always through the runner's own login (PLAN.md §6):
- * Codex with a ChatGPT account and Gemini CLI with a Google account. Claude Code never signs in to
+ * Codex with a ChatGPT account and Gemini CLI with a Google account (since 2026-06-18 only Gemini
+ * Code Assist Standard or Enterprise accounts; personal plans use a Gemini API key). Claude Code never signs in to
  * claude.ai. OpenCode 1.19.5 lists OAuth only for providers outside its official CLIs (ChatGPT,
  * SuperGrok, Copilot...) and none for OpenCode Go or the coding plans, so those stay on keys.
  */
@@ -411,7 +412,15 @@ export interface SignInSession {
   browserOpened: boolean;
   startedAt: string;
   error: string | null;
+  /**
+   * Why it failed, where the runner lets us tell; null otherwise. "account_refused": the browser
+   * login went through but the CLI refused the account. For Gemini CLI that is a personal Google
+   * account (free, AI Pro, Ultra), which it no longer serves since 2026-06-18.
+   */
+  reason: SignInFailure | null;
 }
+
+export type SignInFailure = "account_refused";
 
 export interface ProvidersIpc {
   "providers.catalog": { params: void; result: CatalogView };

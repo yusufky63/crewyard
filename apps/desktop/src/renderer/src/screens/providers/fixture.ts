@@ -32,6 +32,7 @@ const PROFILES: ProfileSummary[] = [
   profile("p-work", "work", "codex", "openai", null, null),
   profile("p-personal", "personal", "codex", "openai", null, null),
   profile("p-team", "team", "codex", "openai", null, null),
+  profile("p-assist", "code-assist", "gemini-cli", "google", null, null),
   profile("p-google", "google", "gemini-cli", "google", null, null),
   profile("p-ds", "ds-primary", "opencode", "deepseek", "c-ds", "deepseek-flash", { note: "fast and cheap, good for docs" }),
   profile("p-ds-cc", "ds-claude", "claude-code", "deepseek", "c-ds", "deepseek-v4-pro", {
@@ -62,10 +63,13 @@ const STATUS: SignInStatus[] = [
     problem: "Gemini CLI 0.6.1 ignores GEMINI_CLI_HOME and would use your own ~/.gemini; update it to 0.25.0 or newer",
     probedAt: ago(2),
   },
+  { profileId: "p-assist", kind: "google", state: "signed_out", plan: null, cliVersion: "0.66.0", update: null, problem: null, probedAt: ago(4) },
 ];
 
 const SESSIONS: SignInSession[] = [
-  { profileId: "p-personal", kind: "chatgpt", state: "waiting", url: "https://auth.openai.com/oauth/authorize", userCode: null, browserOpened: false, startedAt: ago(1), error: null },
+  { profileId: "p-personal", kind: "chatgpt", state: "waiting", url: "https://auth.openai.com/oauth/authorize", userCode: null, browserOpened: false, startedAt: ago(1), error: null, reason: null },
+  // A personal Google account after the browser login: Gemini CLI refuses it (since 2026-06-18). Sample wording, not Google's.
+  { profileId: "p-assist", kind: "google", state: "failed", url: null, userCode: null, browserOpened: true, startedAt: ago(3), error: "account is not eligible for this service", reason: "account_refused" },
 ];
 
 const LIMITS: LimitsOverview = {
@@ -137,7 +141,7 @@ const ACCOUNTS: AccountRow[] = [
   { key: "credential:c-ds", label: "ds-primary", providerId: "deepseek", runner: "opencode", kind: "api_key", pct: 22.4, value: { kind: "usd", usd: 1.12, capUsd: 5 }, provenance: "estimated", window: "budget-day", resetsAt: null, signIn: null },
   { key: "credential:c-kimi", label: "kimi", providerId: "kimi-code-plan-global", runner: "claude-code", kind: "plan", pct: null, value: { kind: "none" }, provenance: "unknown", window: null, resetsAt: null, meters: [], plan: "unchecked", signIn: null },
   { key: "credential:c-ocg", label: "zen", providerId: "opencode-go", runner: "opencode", kind: "api_key", pct: null, value: { kind: "usd", usd: 0, capUsd: null }, provenance: "estimated", window: "budget-day", resetsAt: null, plan: "no_plan", signIn: null },
-  ...(["p-google", "p-personal", "p-team"] as const).map((id): AccountRow => {
+  ...(["p-google", "p-assist", "p-personal", "p-team"] as const).map((id): AccountRow => {
     const p = PROFILES.find((x) => x.id === id)!;
     const s = signIn(id);
     return { key: `profile:${id}`, label: p.alias, providerId: p.providerId, runner: p.runner, kind: "plan", pct: null, value: { kind: "none" }, provenance: "unknown", window: null, resetsAt: null, signIn: { state: s.state, plan: s.plan, probedAt: s.probedAt } };

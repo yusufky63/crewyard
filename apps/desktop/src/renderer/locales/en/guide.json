@@ -228,6 +228,10 @@
       "q": "Does Crewyard read my subscription sign-ins?",
       "a": "No. Each CLI signs in through its own login inside the profile's own folder, and Crewyard never reads its tokens. Claude Code profiles use Anthropic API keys only."
     },
+    "gemini": {
+      "q": "Can Gemini CLI run on my Google AI Pro or Ultra plan?",
+      "a": "No. Since 18 June 2026 Gemini CLI no longer serves free, AI Pro or Ultra Google accounts, and its Google sign-in does not work for them. That sign-in stays in Crewyard for Gemini Code Assist Standard or Enterprise accounts only. With a personal plan, add a Gemini API key: Gemini CLI and OpenCode profiles then run models such as Gemini 4 Argon and Gemini 3.8 Flash, billed per use."
+    },
     "external": {
       "q": "Can Claude Code or another agent change my projects?",
       "a": "Only if you turn on External access in Settings. A connected agent can read, add a folder as a project, tighten a project's settings, save an MCP server with plain values and propose tasks. It cannot approve a crew, start work, answer the Inbox, push, merge, delete, raise a budget or read a key, and every change it makes shows in the activity log with its name."

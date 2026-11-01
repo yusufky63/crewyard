@@ -167,7 +167,11 @@ export function SignInControl({ profile, status, session, compact = false }: { p
           <span className="muted">{t("signIn.private")}</span>
         </div>
       )}
-      {session?.state === "failed" && status.state !== "blocked" && <p className="pv-error">{t("signIn.failed", { message: session.error ?? "" })}</p>}
+      {session?.state === "failed" && status.state !== "blocked" && (
+        <p className="pv-error">{session.reason === "account_refused" && status.kind === "google" ? t("signIn.refusedGoogle", { message: session.error ?? "" }) : t("signIn.failed", { message: session.error ?? "" })}</p>
+      )}
+      {/* Google stopped serving personal accounts in Gemini CLI on 2026-06-18; say whom this sign-in is for before anyone tries it. */}
+      {status.kind === "google" && <p className="muted si-note">{t("signIn.googleScope")}</p>}
       {error && <p className="pv-error">{error}</p>}
     </div>
   );

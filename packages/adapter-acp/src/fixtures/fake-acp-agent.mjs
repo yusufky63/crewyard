@@ -147,6 +147,9 @@ const app = acp
       const dir = join(process.env.GEMINI_CLI_HOME ?? ".", ".gemini");
       mkdirSync(dir, { recursive: true });
       writeFileSync(join(dir, "oauth_creds.json"), "{}");
+      // Like Gemini CLI 0.66 for an account Google will not serve: the tokens are cached first,
+      // then the tier check fails. The text is made up here; Google's own wording is not known.
+      if (process.env.FAKE_ACP_LOGIN === "refused") throw new acp.RequestError(-32000, "fake: this account is not eligible");
     }
     authed = true;
     return {};

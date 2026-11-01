@@ -141,7 +141,7 @@
       },
       "plan": {
         "label": "Bir abonelik hesabında oturum açık",
-        "hint": "ChatGPT ya da Google aboneliği için profil ekleyin; oturum CLI'ın kendi girişiyle açılır."
+        "hint": "ChatGPT aboneliği ya da Gemini Code Assist Standard veya Enterprise Google hesabı için profil ekleyin; oturum CLI'ın kendi girişiyle açılır."
       },
       "github": {
         "label": "GitHub bağlı",

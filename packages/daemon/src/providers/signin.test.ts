@@ -134,6 +134,24 @@ describe("sign-in per profile", () => {
     expect(candidates.find((c) => c.profile.id === p.id)?.ready).toBe(false);
   });
 
+  it("keeps why Gemini CLI refused the account, so the UI can say it plainly", async () => {
+    let finish!: (r: { success: boolean; error: string | null; reason: "account_refused" | null }) => void;
+    const completed = new Promise<{ success: boolean; error: string | null; reason: "account_refused" | null }>((r) => (finish = r));
+    const gemini: SignInDriver = {
+      probe: async () => ({ state: "signed_out", plan: null, cliVersion: "0.66.0", update: null, problem: null }),
+      start: async () => ({ url: () => null, userCode: null, browserOpened: true, completed, cancel: async () => undefined }),
+      signOut: async () => undefined,
+    };
+    const { svc, signIn, signedIn } = setup({ google: gemini });
+    const p = svc.createProfile({ alias: "me", runner: "gemini-cli", providerId: "google", credentialId: null, defaultModel: null });
+    expect(await signIn.start(p.id)).toMatchObject({ state: "waiting", reason: null });
+    finish({ success: false, error: "not eligible", reason: "account_refused" });
+    await tick();
+    expect(signIn.sessions()[0]).toMatchObject({ state: "failed", error: "not eligible", reason: "account_refused" });
+    expect(svc.signInStatus(p.id)).toMatchObject({ state: "signed_out" });
+    expect(signedIn).toEqual([]);
+  });
+
   it("signs out through the CLI, then empties only that profile's folder", async () => {
     const driver = codexFake({ signedIn: true });
     const { svc, signIn, accounts } = setup({ chatgpt: driver });

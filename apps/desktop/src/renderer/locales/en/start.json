@@ -141,7 +141,7 @@
       },
       "plan": {
         "label": "A plan account is signed in",
-        "hint": "Add a ChatGPT or Google plan profile; it signs in through the CLI's own login."
+        "hint": "Add a ChatGPT plan profile, or a Google one for a Gemini Code Assist Standard or Enterprise account; it signs in through the CLI's own login."
       },
       "github": {
         "label": "GitHub is connected",

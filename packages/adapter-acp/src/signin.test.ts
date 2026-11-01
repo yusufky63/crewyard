@@ -43,7 +43,7 @@ describe("Gemini sign-in through ACP", () => {
     const a = adapter();
     await expect(a.signInState(p)).resolves.toEqual({ version: "0.66.0", state: "signed_out", problem: null, update: null });
     const session = await a.signIn(p);
-    await expect(session.completed).resolves.toEqual({ success: true, error: null });
+    await expect(session.completed).resolves.toEqual({ success: true, error: null, reason: null });
     expect(session.url()).toBe("https://accounts.google.com/o/oauth2/v2/auth?client_id=fake&state=x");
     expect(existsSync(join(p.configDir, ".gemini", "oauth_creds.json"))).toBe(true);
     await expect(a.signInState(p)).resolves.toMatchObject({ state: "signed_in" });
@@ -54,13 +54,24 @@ describe("Gemini sign-in through ACP", () => {
     const session = await adapter().signIn(profile("pending"));
     await new Promise((r) => setTimeout(r, 300));
     await session.cancel();
-    await expect(session.completed).resolves.toEqual({ success: false, error: "cancelled" });
+    await expect(session.completed).resolves.toEqual({ success: false, error: "cancelled", reason: null });
   });
 
   it("passes the agent's failure through", async () => {
     process.env.FAKE_ACP_LOGIN = "fail";
     const session = await adapter().signIn(profile("fail"));
-    await expect(session.completed).resolves.toMatchObject({ success: false, error: expect.stringMatching(/Failed to authenticate/) });
+    await expect(session.completed).resolves.toMatchObject({ success: false, error: expect.stringMatching(/Failed to authenticate/), reason: null });
+  });
+
+  it("tells a refused account apart and does not leave it reading as signed in", async () => {
+    // Personal Google accounts pass the browser login, then Gemini CLI refuses them (since 2026-06-18).
+    process.env.FAKE_ACP_LOGIN = "refused";
+    const p = profile("refused");
+    const a = adapter();
+    const session = await a.signIn(p);
+    await expect(session.completed).resolves.toEqual({ success: false, error: "fake: this account is not eligible", reason: "account_refused" });
+    expect(existsSync(join(p.configDir, ".gemini", "oauth_creds.json"))).toBe(false);
+    await expect(a.signInState(p)).resolves.toMatchObject({ state: "signed_out" });
   });
 
   it("refuses an old Gemini CLI and offers the update instead of using ~/.gemini", async () => {

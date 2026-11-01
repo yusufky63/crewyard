@@ -113,6 +113,7 @@
     "runner": "Runner",
     "credential": "Key",
     "ownSignInOption": "Sign in through {{runner}}",
+    "ownSignInOptionGoogle": "Sign in through {{runner}} (Code Assist Standard or Enterprise only)",
     "aliasPlaceholder": "Profile name",
     "addProfile": "Add profile",
     "signsIn": "signs in with {{provider}}"
@@ -139,6 +140,8 @@
     "cancel": "Cancel sign-in",
     "private": "The CLI keeps its sign-in in this profile's folder. Crewyard never sees or stores it.",
     "failed": "Sign-in did not finish: {{message}}",
+    "refusedGoogle": "Google accepted the sign-in, but Gemini CLI then refused the account: {{message}}. Since 18 June 2026 Gemini CLI serves only Gemini Code Assist Standard or Enterprise accounts, so a personal Google account (free, AI Pro, Ultra) cannot go further here; add a Gemini API key for it instead.",
+    "googleScope": "Google sign-in in Gemini CLI is for Gemini Code Assist Standard or Enterprise accounts only. Personal Google plans (free, AI Pro, Ultra) lost Gemini CLI access on 18 June 2026; use a Gemini API key for those.",
     "update": "Gemini CLI {{current}} would keep the sign-in in your own home folder, not in this profile. Update it to {{min}} or newer first:",
     "updateThen": "Then choose Check again.",
     "unknownVersion": "(unknown version)",
