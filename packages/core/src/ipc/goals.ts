@@ -324,6 +324,11 @@ export interface GoalsIpc {
   "goals.checkMerge": { params: { goalId: string; taskId: string }; result: GoalDetail };
   /** The global kill switch; lifting it is your click too. */
   "goals.pauseAll": { params: { on: boolean }; result: { pausedAll: boolean } };
+  /**
+   * Settings → Orchestra: off hides Orchestra in the composer and refuses new goals; goals that
+   * already run keep their scheduler, because their waiting tasks must still wait (design §6.5).
+   */
+  "goals.setEnabled": { params: { on: boolean }; result: { enabled: boolean; pausedAll: boolean } };
   /** The project's default goal budget (Settings → Project, and the first-goal card). */
   "goals.setProjectDefaults": { params: { projectId: string; budgetUsd: number }; result: { projectId: string; budgetUsd: number } };
 }

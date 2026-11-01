@@ -453,5 +453,12 @@
     "note": "An edited task stays as you left it when you revise the plan.",
     "save": "Save task",
     "loop": "That would make tasks wait for each other in a loop: {{loop}}"
+  },
+  "settings": {
+    "enabled": "Orchestra",
+    "enabledHint": "Off hides Orchestra in the composer and refuses new goals; the composer opens on Crew. Goals you already approved keep running in their order.",
+    "pauseAll": "Pause all goals",
+    "pauseAllHint": "Stops every goal in every project at once: running goal steps pause at their next turn boundary and no goal task starts. Tasks outside goals keep running.",
+    "pausedHint": "On: no goal task starts, and the status bar says Goals paused. Lifting it is your click."
   }
 }

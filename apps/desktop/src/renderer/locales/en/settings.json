@@ -28,6 +28,7 @@
     "mcp": "MCP servers",
     "autopilot": "Autopilot",
     "fallback": "Fallback",
+    "orchestra": "Orchestra",
     "updates": "Updates",
     "roles": "Roles",
     "agentfiles": "Instructions and skills"

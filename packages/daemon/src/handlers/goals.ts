@@ -124,6 +124,11 @@ export function createGoalsHandlers(ctx: HandlerContext, overrides?: Partial<Orc
       if (typeof p?.on !== "boolean") throw new GoalError("goal.action", { action: "pauseAll" });
       return o.goals.pauseAll(p.on);
     },
+    // Like the kill switch, only a real boolean changes it: a malformed call never flips Orchestra.
+    "goals.setEnabled": (p) => {
+      if (typeof p?.on !== "boolean") throw new GoalError("goal.action", { action: "setEnabled" });
+      return { enabled: o.setOrchestraEnabled(p.on), pausedAll: o.goals.pausedAllState() };
+    },
     "goals.setProjectDefaults": ({ projectId: pid, budgetUsd }) => o.goalEdits.setProjectDefaults(projectId(pid), budgetUsd),
   };
 }

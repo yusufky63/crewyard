@@ -15,6 +15,7 @@ import { AboutSection, DataSection } from "./DataSection.tsx";
 import { HibernationRows } from "./Hibernation.tsx";
 import { KeepAwakeRows } from "./KeepAwake.tsx";
 import { McpSection } from "./McpSection.tsx";
+import { OrchestraSection } from "./OrchestraSection.tsx";
 import { RolesSection } from "./RolesSection.tsx";
 import { backTarget, errorCode, SECTIONS, useSettingsNav, type SectionId } from "./model.ts";
 import { Row, Section, Seg, Toggle } from "./parts.tsx";
@@ -306,6 +307,7 @@ export function SettingsScreen() {
           <Notifications supported={startup.data?.supported ?? false} />
           <Startup />
           <Fallback />
+          <OrchestraSection index={SECTIONS.indexOf("orchestra") + 1} />
           <AutopilotSection index={SECTIONS.indexOf("autopilot") + 1} />
           <McpSection index={SECTIONS.indexOf("mcp") + 1} />
           <RolesSection index={SECTIONS.indexOf("roles") + 1} />

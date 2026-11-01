@@ -603,6 +603,11 @@ export class Orchestrator {
     return this.goalPlanner.enabled();
   }
 
+  /** Settings → Orchestra: turns new goals on or off; running goals keep their scheduler. */
+  setOrchestraEnabled(on: boolean): boolean {
+    return this.goalPlanner.setEnabled(on);
+  }
+
   /** A goal's derived status. */
   goalState(goalId: string): ReturnType<GoalPlanner["state"]> {
     return this.goalPlanner.state(goalId);

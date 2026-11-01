@@ -223,6 +223,37 @@ describe("reading goals", () => {
     expect(await refusal(() => h["goals.create"]({ projectId: project.id, text: GOAL }))).toBe("goal.disabled");
   });
 
+  it("turns Orchestra off and on from Settings: new goals stop, an approved goal keeps its scheduler and order", async () => {
+    const env = await setup({ enabled: null, plans: [CHAIN] });
+    const { h, o, store, project } = env;
+    const g = await planned(env);
+    // Held, so nothing runs while the switch is flipped.
+    await h["goals.pauseAll"]({ on: true });
+    const approved = await h["goals.approve"]({ goalId: g.id, revision: 1, accept: ["api", "ui"], budgetUsd: 20, maxParallel: 2 });
+    const ui = byKey(approved).get("ui")!.taskId;
+
+    // Only a real boolean flips it; a malformed call writes nothing.
+    expect(await refusal(() => h["goals.setEnabled"]({ on: "off" as never }))).toBe("goal.action");
+    expect(count(store, "select count(*) as n from settings where key = 'orchestra.enabled'")).toBe(0);
+
+    expect(await h["goals.setEnabled"]({ on: false })).toEqual({ enabled: false, pausedAll: true });
+    expect(await h["goals.state"]()).toEqual({ enabled: false, pausedAll: true });
+    expect((await h["goals.preview"]({ projectId: project.id, text: GOAL })).reason).toEqual({ code: "goal.disabled" });
+    expect(await refusal(() => h["goals.create"]({ projectId: project.id, text: GOAL }))).toBe("goal.disabled");
+
+    // The approved goal is still managed: its waiting task stays unapproved and pause still works.
+    await o.settle();
+    expect((store.db.prepare("select approved_at from crews where task_id = ?").get(ui) as { approved_at: string | null }).approved_at).toBeNull();
+    expect((await h["goals.pause"]({ goalId: g.id })).paused).toBe(true);
+    expect((await h["goals.get"]({ goalId: g.id })).approvedRevision).toBe(1);
+
+    // Your choice is stored, so a later change of the shipped default never overrides it.
+    expect(store.db.prepare("select value from settings where key = 'orchestra.enabled'").get()).toEqual({ value: "false" });
+    expect(await h["goals.setEnabled"]({ on: true })).toEqual({ enabled: true, pausedAll: true });
+    expect((await h["goals.preview"]({ projectId: project.id, text: GOAL })).reason).toBeNull();
+    await h["goals.pauseAll"]({ on: false });
+  });
+
   it("refuses empty goal text, a bad default budget and attachments that are not ids", async () => {
     const { h, project } = await setup();
     expect(await refusal(() => h["goals.create"]({ projectId: project.id, text: "   " }))).toBe("goal.text");

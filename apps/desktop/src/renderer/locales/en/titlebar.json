@@ -25,7 +25,10 @@
       "action": "Action",
       "project": "Project",
       "task": "Task"
-    }
+    },
+    "pauseGoals": "Pause all goals",
+    "resumeGoals": "Resume all goals",
+    "goalsKeywords": "Orchestra goals stop kill switch"
   },
   "notifications": {
     "label": "Notifications",

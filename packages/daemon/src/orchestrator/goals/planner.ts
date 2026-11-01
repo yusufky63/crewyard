@@ -213,6 +213,16 @@ export class GoalPlanner extends Part {
   }
 
   /**
+   * Settings → Orchestra. Writing the row makes your choice outlive a later change of the shipped
+   * default. Only new goals are affected: an approved goal's waiting tasks still wait for the goal
+   * scheduler, so turning Orchestra off never lets them start out of order.
+   */
+  setEnabled(on: boolean): boolean {
+    this.writeSetting(GOAL_SETTINGS.enabled, on);
+    return this.enabled();
+  }
+
+  /**
    * What `Plan goal` would cost and whether it can run: the planner candidates, the estimate and
    * its ceiling, the small-change hint and whether the first-goal card is due. Writes nothing.
    */
