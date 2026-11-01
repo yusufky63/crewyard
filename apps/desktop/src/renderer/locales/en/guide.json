@@ -28,7 +28,7 @@
       "title": "Orchestra",
       "body": "Write a goal. One read-only planning run splits it into tasks: at most 8, the order they run in, and the files each plans to change.",
       "points": {
-        "a": "Plan goal shows the planning estimate before you click, and the note under it the ceiling. The first goal in a project first shows what Orchestra does and asks for the project's default goal budget, which you can change later in Settings → Orchestra.",
+        "a": "Plan goal shows the planning estimate before you click, and the note under it the ceiling. The first goal in a project first shows what Orchestra does and asks for the project's default goal budget.",
         "b": "You read the plan, edit or skip tasks, and one Approve and start approves every task you kept. Tasks that plan to change the same files are put in order for you.",
         "c": "Tasks start in that order, at most 2 at once per goal, each within its share of the goal budget. A research report that a code task builds on waits until you accept it.",
         "d": "Finished work is merged into one goal branch in Crewyard's own worktree. A last review reads all of it, and you open the one pull request."
@@ -251,7 +251,7 @@
     },
     "planningCost": {
       "q": "What does planning a goal cost?",
-      "a": "One read-only run of the planner on the composer's Planner chip. Plan goal shows its estimate, and the note under it the ceiling: the planning run's own budget, three times the estimate (at least $0.25) and never above the project's per-task cap. Reaching it pauses the run and asks in the Inbox. Revise and Replan each cost one more planning run, priced on their button: at most 5 revisions before approval and 3 replans after it. A plan you never approve starts nothing else."
+      "a": "One read-only run of the planner on the composer's Planner chip. Plan goal shows its estimate, and the note under it the ceiling: the planning run's own budget, three times the estimate (at least $0.25) and never above the project's per-task cap. Reaching it pauses the run and asks in the Inbox. Revise and Replan each cost one more planning run, priced on their button: at most 5 revisions before approval and 3 replans after it. A plan you never approve starts nothing else. Each plan starts its goal budget at the project's default goal budget, which you can change in Settings → Orchestra."
     },
     "goalBranch": {
       "q": "Does Orchestra push or merge into my branches?",

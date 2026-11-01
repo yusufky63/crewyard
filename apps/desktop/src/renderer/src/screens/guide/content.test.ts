@@ -53,7 +53,7 @@ describe("guide content", () => {
     expect(at(tr, "modes.orchestra.body")).toContain(`en fazla ${L.maxTasks} görev`);
     expect(at(tr, "modes.orchestra.points.c")).toContain(`en fazla ${L.maxParallel} görev`);
     expect(at(tr, "faq.planningCost.a")).toContain(`${L.planningFloorUsd.toFixed(2).replace(".", ",")} $`);
-    expect(at(tr, "faq.planningCost.a")).toContain(`en fazla ${L.revisionsBeforeApproval} düzeltme`);
+    expect(at(tr, "faq.planningCost.a")).toContain(`en fazla ${L.revisionsBeforeApproval} güncelleme`);
     expect(at(tr, "faq.planningCost.a")).toContain(`en fazla ${L.replans} yeniden planlama`);
   });
 
