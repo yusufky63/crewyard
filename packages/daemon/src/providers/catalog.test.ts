@@ -97,3 +97,19 @@ describe("catalog pin", () => {
     expect(svc.pin(null)).toMatchObject({ hash: bundled, pinned: false });
   });
 });
+
+describe("bundled snapshot", () => {
+  // Owner's "Yes, apply" on 2026-11-01 (PLAN.md §17): the models Antigravity serves on Google plans
+  // are offered by API key instead. models.dev lists both under google, so they come from the
+  // snapshot, not curated.json; the prices match ai.google.dev/gemini-api/docs/pricing (opened
+  // 2026-11-01, valid until 2026-11-30 for Argon and 2026-12-31 for 3.8 Flash).
+  it("offers Gemini 4 Argon and Gemini 3.8 Flash by API key to Gemini CLI and OpenCode", () => {
+    const svc = new CatalogService(newStore().db, vi.fn<typeof fetch>(), () => new Date("2026-11-01T00:00:00Z"));
+    const google = svc.provider("google");
+    expect(google?.runners).toMatchObject({ geminiCli: "native", opencode: "native" });
+    expect(google?.env).toContain("GEMINI_API_KEY");
+    const model = (id: string) => google?.models.find((m) => m.id === id);
+    expect(model("gemini-4-argon")?.cost).toEqual({ input: 2, output: 10, cacheRead: 0.1 });
+    expect(model("gemini-3.8-flash")?.cost).toEqual({ input: 0.75, output: 3.75, cacheRead: 0.075 });
+  });
+});
