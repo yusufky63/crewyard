@@ -65,6 +65,25 @@ export interface AssistantDraftView extends TaskDraftInput {
   createdAt: string;
 }
 
+/**
+ * A goal the assistant drafted with draft_goal (docs/adr/0022): text for the Tasks composer in
+ * Orchestra mode. `planned` once you pressed Plan goal on it; the goal is then yours like any other.
+ * The text is agent-written: cleaned and capped, shown as plain text only.
+ */
+export interface AssistantGoalDraftView {
+  id: string;
+  conversationId: string;
+  text: string;
+  /** A planner the agent named that can plan here; null leaves the composer's own pick. */
+  plannerProfileId: string | null;
+  plannerAlias: string | null;
+  /** A goal budget the agent suggested; the plan review prefills it, and you still approve it. */
+  budgetUsd: number | null;
+  status: "open" | "planned" | "discarded";
+  goalId: string | null;
+  createdAt: string;
+}
+
 export interface AssistantSpend {
   /** USD for this conversation; null when any part had no price (Unknown) or for a plan. */
   usd: number | null;
@@ -87,6 +106,8 @@ export interface AssistantView {
   detail: string | null;
   lines: AssistantLine[];
   drafts: AssistantDraftView[];
+  /** This conversation's goal drafts, oldest first; at most one is open. */
+  goalDrafts: AssistantGoalDraftView[];
   spend: AssistantSpend;
   /** Idle minutes before the process is stopped (the hibernation setting). */
   idleMinutes: number;
@@ -179,7 +200,10 @@ export interface AutopilotLogEntry {
   code: AutopilotRefusal | null;
   reason: string;
   taskId: string | null;
+  /** The task's title, or for create_goal and approve_goal_plan the goal's. */
   taskTitle: string | null;
+  /** For create_goal and approve_goal_plan (docs/adr/0022): the goal it acted on, so the log links to it. */
+  goalId?: string | null;
   /** A refusal's detail for the agent, or a halt's failure; untrusted, capped. */
   detail: string | null;
 }
@@ -233,6 +257,10 @@ export interface AssistantIpc {
   /** Turns a draft (with your edits) into a task with a proposed crew. Nothing starts. */
   "assistant.addDraft": { params: { draftId: string; edit?: AssistantDraftEdit }; result: { draft: AssistantDraftView; taskId: string } };
   "assistant.discardDraft": { params: { draftId: string }; result: AssistantDraftView };
+  /** Your Discard on a goal draft card. A planned draft stays planned. */
+  "assistant.discardGoalDraft": { params: { draftId: string }; result: AssistantGoalDraftView };
+  /** Plan goal was pressed on a goal draft in the composer: the card then links to that goal. */
+  "assistant.goalDraftPlanned": { params: { draftId: string; goalId: string }; result: AssistantGoalDraftView };
   /** A finished non-code task's report and suggested drafts; null while it is not done or produced nothing. */
   "assistant.report": { params: { taskId: string }; result: TaskReport | null };
   "assistant.presets": { params: { projectId: string }; result: AssistantPresetsView };

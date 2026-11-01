@@ -85,7 +85,13 @@
     "foldedLabel": "New request",
     "foldedHint": "A goal is open below. Write the next goal or task here.",
     "foldedDraft": "Your unsent text is kept.",
-    "unfold": "Write a request"
+    "unfold": "Write a request",
+    "fromAssistant": {
+      "badge": "From the assistant",
+      "note": "The assistant drafted this goal. Read and change it; nothing is planned until you press Plan goal.",
+      "planner": "Planner: {{alias}}",
+      "budget": "Suggested goal budget: {{budget}}"
+    }
   },
   "kind": { "auto": "Detect", "code": "Code", "research": "Research", "review": "Review", "docs": "Docs" },
   "fallback": {

@@ -1,6 +1,6 @@
 # ADR 0017: Autopilot, the task assistant running the task flow within your limits
 
-**Status:** accepted, 2026-10-31. Owner request the same day. Changes PLAN.md D8 for one opt-in case. Amended by [ADR 0018](0018-assistant-read-tools.md): `list_tasks` and `read_task` are the assistant's read tools now and work with Autopilot off.
+**Status:** accepted, 2026-10-31. Owner request the same day. Changes PLAN.md D8 for one opt-in case. Amended by [ADR 0018](0018-assistant-read-tools.md): `list_tasks` and `read_task` are the assistant's read tools now and work with Autopilot off. Amended by [ADR 0022](0022-assistant-goals.md): `create_goal` and `approve_goal_plan` for goals it creates, under the same limits.
 
 ## Problem
 

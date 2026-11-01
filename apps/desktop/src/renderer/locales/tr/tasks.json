@@ -85,7 +85,13 @@
     "foldedLabel": "Yeni istek",
     "foldedHint": "Aşağıda bir hedef açık. Sıradaki hedefi ya da görevi buraya yazın.",
     "foldedDraft": "Gönderilmemiş metniniz saklanıyor.",
-    "unfold": "İstek yaz"
+    "unfold": "İstek yaz",
+    "fromAssistant": {
+      "badge": "Asistandan",
+      "note": "Bu hedefin taslağını asistan hazırladı. Oku, istersen değiştir; Hedefi planla'ya basana kadar hiçbir şey planlanmaz.",
+      "planner": "Planlayıcı: {{alias}}",
+      "budget": "Önerilen hedef bütçesi: {{budget}}"
+    }
   },
   "kind": { "auto": "Algıla", "code": "Kod", "research": "Araştırma", "review": "İnceleme", "docs": "Belge" },
   "fallback": {

@@ -1,6 +1,8 @@
+import { randomUUID } from "node:crypto";
 import {
   ASSISTANT_TOOL_CAPS,
   fitResult,
+  goalDraftSubject,
   parseAssistantToolCall,
   parseTaskDraft,
   redactLogLine,
@@ -12,6 +14,7 @@ import {
   type AssistantToolCall,
   type BridgeView,
   type CrewReportView,
+  type GoalPreview,
   type ProblemSources,
   type ProjectConfig,
   type ProjectConfigStatus,
@@ -62,6 +65,8 @@ export interface AssistantToolsHost {
   roles(projectId: string): RolesListing;
   agentFiles(projectId: string): { scan: AgentFilesScan; shares: ShareView[]; bridge: BridgeView };
   config(path: string, name: string): { config: ProjectConfig; fromFile: boolean; status: ProjectConfigStatus };
+  /** What `Plan goal` would cost here and who can plan: GoalPlanner's own preview, which writes nothing. */
+  goalPreview(projectId: string, text: string): Promise<GoalPreview>;
 }
 
 export interface AssistantToolsOptions {
@@ -238,6 +243,8 @@ export class AssistantTools {
         return this.editDraft(ctx, c.draftId, c.patch);
       case "discard_draft":
         return this.discardDraft(ctx, c.draftId);
+      case "draft_goal":
+        return this.draftGoal(ctx, c);
     }
   }
 
@@ -413,9 +420,65 @@ export class AssistantTools {
   }
 
   private discardDraft(ctx: ToolContext, draftId: string) {
+    // A goal draft (draft_goal) is discarded the same way; only this conversation's open one.
+    const goal = this.db.prepare("select id, conversation_id, text, status from assistant_goal_drafts where id = ?").get(draftId) as { id: string; conversation_id: string; text: string; status: string } | undefined;
+    if (goal) {
+      if (goal.conversation_id !== ctx.conversationId) refuse("not_yours", "That goal draft belongs to an earlier conversation; it stays with the person.");
+      if (goal.status !== "open") refuse("wrong_status", `That goal draft was already ${goal.status === "planned" ? "planned by the person" : "discarded"}.`);
+      this.db.prepare("update assistant_goal_drafts set status = 'discarded' where id = ? and status = 'open'").run(goal.id);
+      return { result: { draft_id: goal.id, status: "discarded" }, subject: goalDraftSubject(goal.text), draftsChanged: true };
+    }
     const d = this.ownOpenDraft(ctx, draftId);
     this.db.prepare("update assistant_drafts set status = 'discarded' where id = ? and status = 'open'").run(d.id);
     return { result: { draft_id: d.id, status: "discarded" }, subject: d.title, draftsChanged: true };
+  }
+
+  /**
+   * draft_goal (docs/adr/0022): the goal goes to the Tasks composer in Orchestra mode, where the
+   * person reads it and presses Plan goal, which shows the planning estimate first. Nothing is
+   * planned or spent here. A new goal draft replaces this conversation's open one, so the composer
+   * never has two to choose from. GoalPlanner's preview, which writes nothing, says whether a goal
+   * can be planned at all and which planners exist, so a draft the person could not plan is refused.
+   */
+  private async draftGoal(ctx: ToolContext, c: Extract<AssistantToolCall, { tool: "draft_goal" }>) {
+    const preview = await this.opts.host.goalPreview(ctx.projectId, c.text);
+    if (preview.reason?.code === "goal.disabled") refuse("wrong_status", "Orchestra is turned off in Settings, so no goal can be planned now. Propose the work as tasks with propose_task instead.");
+    if (!preview.canPlan) refuse("wrong_status", "No profile here can plan a goal (it needs a ready profile with read-only mode and structured output). Propose the work as tasks with propose_task, or tell the person a planner can be set up under Providers.");
+    let planner: GoalPreview["candidates"][number] | null = null;
+    if (c.planner) {
+      const want = c.planner.toLowerCase();
+      planner = preview.candidates.find((v) => v.alias.toLowerCase() === want) ?? null;
+      if (!planner) refuse("invalid", `${shownText(c.planner, 64, true)} cannot plan here. Profiles that can: ${preview.candidates.map((v) => shownText(v.alias, 64, true)).join(", ")}.`);
+    }
+    const n = Number((this.db.prepare("select count(*) as n from assistant_goal_drafts where conversation_id = ?").get(ctx.conversationId) as { n: number }).n);
+    if (n >= ASSISTANT_TOOL_CAPS.goalDraftsPerConversation) refuse("wrong_status", `This conversation already has ${ASSISTANT_TOOL_CAPS.goalDraftsPerConversation} goal drafts. Ask the person to start a new conversation.`);
+    const id = randomUUID();
+    const at = new Date(this.now()).toISOString();
+    this.db.exec("begin");
+    try {
+      this.db.prepare("update assistant_goal_drafts set status = 'discarded' where conversation_id = ? and status = 'open'").run(ctx.conversationId);
+      this.db
+        .prepare("insert into assistant_goal_drafts (id, conversation_id, project_id, text, planner_profile_id, planner_alias, budget_usd, created_at) values (?, ?, ?, ?, ?, ?, ?, ?)")
+        .run(id, ctx.conversationId, ctx.projectId, c.text, planner?.profileId ?? null, planner?.alias ?? null, c.budgetUsd, at);
+      this.db.exec("commit");
+    } catch (err) {
+      this.db.exec("rollback");
+      throw err;
+    }
+    const chosen = planner ?? preview.planner;
+    return {
+      result: {
+        draft_id: id,
+        status: "open",
+        planner: chosen ? chosen.alias : null,
+        planning_estimate: { usd: preview.estimate.usd, label: label(preview.estimate.provenance) },
+        planning_ceiling_usd: preview.ceilingUsd,
+        suggested_budget_usd: c.budgetUsd,
+        next: "The goal is in the Tasks composer in Orchestra mode. Nothing is planned or spent until the person presses Plan goal, which shows this estimate first. Tell them it is there; a new draft_goal replaces it.",
+      },
+      subject: goalDraftSubject(c.text),
+      draftsChanged: true,
+    };
   }
 
   // ---------------------------------------------------------------- what waits on the person

@@ -198,7 +198,10 @@
     "project_not_found": "Proje artık yok.",
     "assistant_preset_unknown": "Böyle bir hazır görev yok.",
     "assistant_too_many_drafts": "Bu sohbette zaten 20 taslak var. Önce bazılarını ekle ya da vazgeç.",
-    "other": "Bir şeyler ters gitti: {{message}}"
+    "other": "Bir şeyler ters gitti: {{message}}",
+    "assistant_goal_draft_not_found": "Bu hedef taslağı artık yok.",
+    "assistant_goal_draft_planned": "Bu hedef taslağı zaten planlandı; hedef Görevler'de.",
+    "assistant_goal_not_found": "Bu hedef artık yok."
   },
   "toolLine": {
     "withSubject": "{{title}}: {{subject}}",
@@ -219,7 +222,8 @@
       "list_problems": "Sorunlara baktı",
       "list_agent_files": "Talimat dosyalarına ve skill'lere baktı",
       "edit_draft": "Taslağı düzenledi",
-      "discard_draft": "Taslaktan vazgeçti"
+      "discard_draft": "Taslaktan vazgeçti",
+      "draft_goal": "Hedef taslağı hazırladı"
     },
     "refused": {
       "list_tasks": "Görevler listelenemedi",
@@ -236,7 +240,8 @@
       "list_problems": "Sorunlar listelenemedi",
       "list_agent_files": "Talimat dosyaları ve skill'ler listelenemedi",
       "edit_draft": "Taslak düzenlenemedi",
-      "discard_draft": "Taslaktan vazgeçilemedi"
+      "discard_draft": "Taslaktan vazgeçilemedi",
+      "draft_goal": "Hedef taslağı hazırlanamadı"
     },
     "status": {
       "proposed": "onay bekleyenler",
@@ -290,5 +295,17 @@
     "drafts": "Bundan taslak çıkar",
     "draftsTitle": "Asistana bu yanıtı görev taslaklarına çevirmesini isteyen bir mesaj gönderir. Her mesaj gibi ücretlidir.",
     "draftsMessage": "\"{{excerpt}}\" diye başlayan yanıtını görev taslaklarına çevir: içindeki her görev için bir kez propose_task çağır; her birinin türü, kabul ölçütleri ve boyutu olsun."
+  },
+  "goalDraft": {
+    "badge": "Hedef",
+    "from": "Asistanın taslağı",
+    "label": "Orkestra hedefi",
+    "planner": "Planlayıcı: {{alias}}",
+    "budget": "Önerilen hedef bütçesi: {{budget}}",
+    "note": "Yazı kutusunda Hedefi planla'ya basmadan hiçbir şey planlanmaz; düğme önce planlama maliyetini gösterir.",
+    "open": "Yazı kutusunda aç",
+    "plannedBadge": "Planlandı",
+    "planned": "Bu hedefi planladın. Planı Görevler'de onayını bekliyor.",
+    "openGoal": "Hedefi aç"
   }
 }

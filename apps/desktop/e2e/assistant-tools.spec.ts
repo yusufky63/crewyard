@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import { basename, join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import type { FakeStep } from "@crewyard/adapter-fake";
-import { daemon, launch, say, type Harness } from "./harness.ts";
+import { composerMode, daemon, launch, result, running, say, type Harness } from "./harness.ts";
 
 // The task assistant's read tools (docs/adr/0018) against the fake runner, with Autopilot off: the
 // agent lists the tasks, reads one and its crew, reads spend and local git through the real report
@@ -16,10 +16,12 @@ test.describe.configure({ mode: "serial" });
 
 let h: Harness;
 const shots = join(import.meta.dirname, "..", "screens", "assistant-tools");
+const goalShots = join(import.meta.dirname, "..", "screens", "assistant-goals");
 
 test.beforeAll(async () => {
   h = await launch();
   mkdirSync(shots, { recursive: true });
+  mkdirSync(goalShots, { recursive: true });
 });
 
 test.afterAll(async () => {
@@ -155,4 +157,76 @@ test("the assistant reads with Autopilot off, refines its own draft, and starts 
   // Add creates the task from the agent's edited draft; its crew still waits for approval.
   await card.getByRole("button", { name: "Add as draft" }).click();
   await expect.poll(async () => (await daemon<Array<{ title: string; status: string }>>(page, "tasks.list", { projectId: project!.id })).map((t) => [t.title, t.status])).toContainEqual(["Fix the login redirect for SSO users", "proposed"]);
+});
+
+// draft_goal (docs/adr/0022). The owner, 2026-11-01: "assistant task veya görev açamıyor mu veya
+// diğer şeylere erişimi yok mu öyle bir tool yok diyor" (can't the assistant open tasks, doesn't it
+// have access to other things, it says there is no such tool). The agent drafts a goal; the Tasks
+// composer picks it up in Orchestra mode with a visible note, the drafts column shows its card, and
+// nothing is planned until the person presses Plan goal, which then links the card to the goal.
+test("draft_goal fills the composer in Orchestra mode, and planning it stays the person's click", async () => {
+  const { page } = h;
+  const [project] = await daemon<Array<{ id: string }>>(page, "projects.list", undefined);
+  await daemon(page, "assistant.clear", { projectId: project!.id });
+  const GOAL = "Add passkey sign-in next to passwords\nand document it for users.";
+  const PLAN = {
+    summary: "One change with its docs.",
+    tasks: [{ key: "passkeys", title: "Add passkey sign-in", kind: "code", mode: "crew", size: "M", description: "Passkeys next to passwords.", acceptance: ["A passkey signs in"], basis: "passkey sign-in", dependsOn: [], paths: ["src/auth.ts"], reason: "The goal asks for it.", priority: "medium" }],
+  };
+  h.setScripts({
+    assistant: [[{ emit: { type: "turn.started", turnRef: null } }, tool("draft_goal", { text: GOAL, planner: "Fake Beta", budget_usd: 4 }), say("I put the goal in the composer. Press Plan goal when it reads right.")]],
+    "goal-planner": [[running, say("read src"), result(PLAN)]],
+  });
+  // The composer starts on Crew: the goal draft must switch it to Orchestra by itself.
+  await composerMode(page, "Crew");
+  const p = page.getByRole("region", { name: "Task assistant" });
+  const input = p.getByLabel("Message to the task assistant");
+  await input.fill("Plan the passkey work as a goal.");
+  await input.press("Enter");
+  const log = p.getByRole("log", { name: "Conversation with the task assistant" });
+  await expect(log.getByText("I put the goal in the composer.", { exact: false })).toBeVisible({ timeout: 40_000 });
+  for (const head of await log.locator(".as-burst-head[aria-expanded='false']").all()) await head.click();
+  await expect(log.getByText("Drafted a goal: Add passkey sign-in next to passwords", { exact: true })).toBeVisible();
+
+  const composer = page.locator("main .tk-composer");
+  await expect(page.getByLabel("New goal")).toHaveValue(GOAL);
+  await expect(composer.getByRole("group", { name: "How to run" }).getByRole("button", { name: "Orchestra", exact: true })).toHaveAttribute("aria-pressed", "true");
+  const note = composer.getByRole("note").filter({ hasText: "From the assistant" });
+  await expect(note).toContainText("nothing is planned until you press Plan goal");
+  await expect(note).toContainText("Planner: Fake Beta");
+  await expect(note).toContainText("Suggested goal budget: $4.00");
+  await expect(composer.getByLabel("Planner")).toHaveValue("e2e-beta");
+  const card = p.getByRole("region", { name: "Task drafts" }).getByRole("article", { name: "Orchestra goal" });
+  await expect(card.getByText("Add passkey sign-in next to passwords", { exact: false })).toBeVisible();
+  // Drafting planned nothing.
+  expect(await daemon<unknown[]>(page, "goals.list", { projectId: project!.id })).toEqual([]);
+
+  for (const theme of ["dark", "light"] as const) {
+    await h.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.setContentSize(1280, 1000));
+    await expect.poll(() => page.evaluate(() => window.innerWidth)).toBe(1280);
+    const html = page.locator("html");
+    for (let i = 0; i < 3 && (await html.getAttribute("data-theme")) !== theme; i++) await page.locator(".statusbar").getByTitle(/theme|tema/i).click();
+    await expect(html).toHaveAttribute("data-theme", theme);
+    await page.screenshot({ path: join(goalShots, `composer-goal-draft-${theme}-1280.png`) });
+    await card.screenshot({ path: join(goalShots, `drafts-card-${theme}-1280.png`) });
+    await composer.screenshot({ path: join(goalShots, `composer-${theme}-1280.png`) });
+  }
+
+  // What you typed is never replaced by itself; `Open in composer` is your click to bring it back.
+  await page.getByLabel("New goal").fill("");
+  await expect(note).toHaveCount(0);
+  await card.getByRole("button", { name: "Open in composer" }).click();
+  await expect(page.getByLabel("New goal")).toHaveValue(GOAL);
+  await expect(page.getByLabel("New goal")).toBeFocused();
+
+  // Plan goal is the person's click: the first-goal card first, then the one planning run.
+  await composer.getByRole("button", { name: /^Plan goal · ~\$\d+\.\d+ Estimated$/ }).click();
+  const intro = page.getByRole("alertdialog", { name: "Before your first goal in this project" });
+  await expect(intro).toBeVisible();
+  await intro.getByRole("button", { name: /^Plan goal · ~\$\d+\.\d+ Estimated$/ }).click();
+  await expect.poll(async () => (await daemon<Array<{ id: string }>>(page, "goals.list", { projectId: project!.id })).length).toBe(1);
+  const [goal] = await daemon<Array<{ id: string }>>(page, "goals.list", { projectId: project!.id });
+  await expect.poll(async () => (await daemon<{ goalDrafts: Array<{ status: string; goalId: string | null }> }>(page, "assistant.get", { projectId: project!.id })).goalDrafts.at(-1)).toEqual(expect.objectContaining({ status: "planned", goalId: goal!.id }));
+  await expect(card.getByText("Planned", { exact: true })).toBeVisible();
+  await expect(card.getByRole("button", { name: "Open goal" })).toBeVisible();
 });

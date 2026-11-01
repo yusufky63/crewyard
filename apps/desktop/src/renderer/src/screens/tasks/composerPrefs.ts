@@ -71,11 +71,6 @@ export const useComposerPrefs = create<ComposerPrefs>()(
 );
 
 /**
- * Text handed to the composer from elsewhere in the Tasks screen: `Edit goal` puts the goal's own
- * words back so you can change them and plan again. Not persisted; `n` makes the same text twice
- * still arrive.
- */
-/**
  * A mode picked outside the composer for its next request only: the Guide's mode tiles open the
  * composer on the mode they describe. The composer takes it once, when it mounts or when a new
  * pick arrives. Never persisted, so a Solo pick is still never remembered (design §1.2).
@@ -91,8 +86,49 @@ export const useComposerPick = create<{ mode: ComposerMode | null; n: number; pi
   },
 }));
 
-export const useComposerFill = create<{ text: string; n: number; fill(text: string): void }>()((set) => ({
+/** A goal the assistant drafted (draft_goal, docs/adr/0022), carried with its text into the composer. */
+export interface ComposerFillFrom {
+  draftId: string;
+  projectId: string;
+  plannerProfileId: string | null;
+  plannerAlias: string | null;
+  budgetUsd: number | null;
+}
+
+export interface ComposerFill {
+  text: string;
+  /** Set when the text is an assistant's goal draft; the composer says so and links the goal to it. */
+  from: ComposerFillFrom | null;
+}
+
+/**
+ * Text handed to the composer from elsewhere: `Edit goal` puts the goal's own words back so you can
+ * change them and plan again, and a goal draft's `Open in composer` puts the assistant's goal there
+ * in Orchestra mode. Not persisted; `n` makes the same text twice still arrive. A fill made while
+ * no composer is mounted (the drafts card on another screen) waits in `pending` until one takes it.
+ */
+export const useComposerFill = create<{
+  text: string;
+  from: ComposerFillFrom | null;
+  n: number;
+  pending: ComposerFill | null;
+  fill(text: string, from?: ComposerFillFrom | null): void;
+  peek(projectId: string): ComposerFill | null;
+  take(projectId: string): ComposerFill | null;
+}>()((set, get) => ({
   text: "",
+  from: null,
   n: 0,
-  fill: (text) => set((s) => ({ text, n: s.n + 1 })),
+  pending: null,
+  fill: (text, from = null) => set((s) => ({ text, from, n: s.n + 1, pending: { text, from } })),
+  // A goal draft belongs to its project; another project's composer leaves it waiting.
+  peek: (projectId) => {
+    const p = get().pending;
+    return p && (!p.from || p.from.projectId === projectId) ? p : null;
+  },
+  take: (projectId) => {
+    const p = get().peek(projectId);
+    if (p) set({ pending: null });
+    return p;
+  },
 }));

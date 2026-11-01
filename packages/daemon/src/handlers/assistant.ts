@@ -52,6 +52,13 @@ export function assistantFor(ctx: HandlerContext, overrides: Partial<Omit<Assist
       projectName: (projectId) => (db.prepare("select name from projects where id = ?").get(projectId) as { name: string } | undefined)?.name ?? null,
       userMessages: (conversationId) => db.prepare("select id, text from assistant_messages where conversation_id = ? and role = 'user' order by at, rowid").all(conversationId) as Array<{ id: string; text: string }>,
       notify: (projectId, code, text) => service.notify(projectId, code, text),
+      // The goal parts your Plan goal and Approve and start clicks reach (handlers/goals.ts):
+      // GoalPlanner through its facade pass-throughs, GoalViews and GoalEditor directly.
+      previewGoal: (projectId, text, plannerProfileId) => o.previewGoal({ projectId, text, ...(plannerProfileId ? { plannerProfileId } : {}) }),
+      createGoal: (p) => o.createGoal({ ...p, by: "autopilot" }),
+      goal: (goalId) => o.goalViews.detail(goalId),
+      goalPriced: (goalId) => o.goalViews.detailPriced(goalId),
+      approveGoal: (p) => o.goalEdits.approve(p),
     },
   });
   const project = (id: string) => {
@@ -89,6 +96,7 @@ export function assistantFor(ctx: HandlerContext, overrides: Partial<Omit<Assist
         return { scan: files.scan(projectId), shares: files.shares(), bridge: files.bridge(projectId) };
       },
       config: (path, name) => effectiveProjectConfig(path, name),
+      goalPreview: (projectId, text) => o.previewGoal({ projectId, text }),
     },
   });
   const tools = readTools(true);
@@ -139,6 +147,7 @@ export function assistantFor(ctx: HandlerContext, overrides: Partial<Omit<Assist
   });
   mcp.setAssistant((conversationId, tool, args) => service.toolCall(conversationId, tool, args));
   o.watchTasks((p) => autopilot.onTaskChanged(p));
+  o.watchGoals((p) => autopilot.onGoalChanged(p));
   services.set(ctx.store, service);
   autopilots.set(ctx.store, autopilot);
   return service;
@@ -161,6 +170,8 @@ export function createAssistantHandlers(ctx: HandlerContext): HandlerMap<Assista
     "assistant.clear": ({ projectId }) => a.clear(projectId),
     "assistant.addDraft": ({ draftId, edit }) => a.addDraft(draftId, edit),
     "assistant.discardDraft": ({ draftId }) => a.discardDraft(draftId),
+    "assistant.discardGoalDraft": ({ draftId }) => a.discardGoalDraft(draftId),
+    "assistant.goalDraftPlanned": ({ draftId, goalId }) => a.goalDraftPlanned(draftId, goalId),
     "assistant.report": ({ taskId }) => a.report(taskId),
     "assistant.presets": ({ projectId }) => a.presets(projectId),
     "assistant.preset": ({ projectId, presetId }) => a.preset(projectId, presetId),

@@ -22,6 +22,7 @@ import {
   type AssistantPresetsView,
   type AssistantDraftEdit,
   type AssistantDraftView,
+  type AssistantGoalDraftView,
   type AssistantEnd,
   type AssistantLine,
   type AssistantProfileOption,
@@ -152,6 +153,19 @@ interface DraftRow {
   created_at: string;
 }
 
+interface GoalDraftRow {
+  id: string;
+  conversation_id: string;
+  project_id: string;
+  text: string;
+  planner_profile_id: string | null;
+  planner_alias: string | null;
+  budget_usd: number | null;
+  status: AssistantGoalDraftView["status"];
+  goal_id: string | null;
+  created_at: string;
+}
+
 interface Live {
   conversationId: string;
   projectId: string;
@@ -258,6 +272,7 @@ export class AssistantService {
       detail: live ? null : (conv?.detail ?? null),
       lines: [],
       drafts: [],
+      goalDrafts: [],
       spend: conv ? { usd: conv.spend_label === "unknown" || conv.spend_label === "plan" ? null : conv.spend_usd, label: conv.spend_label, tokensIn: conv.tokens_in, tokensOut: conv.tokens_out } : NO_SPEND,
       idleMinutes: this.opts.host.idleMinutes(),
     };
@@ -279,7 +294,42 @@ export class AssistantService {
     if (live?.reply) lines.push({ id: live.reply.id, role: "assistant", text: live.reply.text, at: live.reply.at, ...(live.reply.truncated ? { truncated: true } : {}) });
     base.lines = lines;
     base.drafts = this.drafts(conv.id);
+    base.goalDrafts = this.goalDrafts(conv.id);
     return base;
+  }
+
+  private goalDrafts(conversationId: string): AssistantGoalDraftView[] {
+    return (this.db.prepare("select * from assistant_goal_drafts where conversation_id = ? order by created_at, rowid").all(conversationId) as unknown as GoalDraftRow[]).map(goalDraftView);
+  }
+
+  private goalDraftRow(id: string): GoalDraftRow {
+    const r = this.db.prepare("select * from assistant_goal_drafts where id = ?").get(id) as GoalDraftRow | undefined;
+    if (!r) fail("assistant.goal_draft_not_found");
+    return r;
+  }
+
+  /** Your Discard on a goal draft card (docs/adr/0022). A planned one is a goal now and stays planned. */
+  discardGoalDraft(draftId: string): AssistantGoalDraftView {
+    const row = this.goalDraftRow(draftId);
+    if (row.status === "planned") fail("assistant.goal_draft_planned");
+    this.db.prepare("update assistant_goal_drafts set status = 'discarded' where id = ?").run(draftId);
+    this.emitNow(row.project_id);
+    return goalDraftView(this.goalDraftRow(draftId));
+  }
+
+  /**
+   * Plan goal was pressed on a goal draft in the composer: the card links to that goal from now on.
+   * Only a goal of the draft's own project counts; marking it starts or changes nothing.
+   */
+  goalDraftPlanned(draftId: string, goalId: string): AssistantGoalDraftView {
+    const row = this.goalDraftRow(draftId);
+    if (typeof goalId !== "string" || !goalId) fail("assistant.goal_not_found");
+    const goal = this.db.prepare("select project_id from goals where id = ?").get(goalId) as { project_id: string } | undefined;
+    if (!goal || goal.project_id !== row.project_id) fail("assistant.goal_not_found");
+    if (row.status === "planned" && row.goal_id === goalId) return goalDraftView(row);
+    this.db.prepare("update assistant_goal_drafts set status = 'planned', goal_id = ? where id = ?").run(goalId, draftId);
+    this.emitNow(row.project_id);
+    return goalDraftView(this.goalDraftRow(draftId));
   }
 
   private open(projectId: string): ConversationRow | null {
@@ -643,6 +693,7 @@ export class AssistantService {
     const conv = this.open(projectId);
     if (conv) {
       this.db.prepare("update assistant_drafts set status = 'discarded' where conversation_id = ? and status = 'open'").run(conv.id);
+      this.db.prepare("update assistant_goal_drafts set status = 'discarded' where conversation_id = ? and status = 'open'").run(conv.id);
       this.db.prepare("update assistant_conversations set cleared_at = ? where id = ?").run(this.iso(), conv.id);
     }
     this.emitNow(projectId);
@@ -917,6 +968,20 @@ function parseTotals(s: string | null): Totals {
   } catch {
     return { ...ZERO_TOTALS };
   }
+}
+
+function goalDraftView(r: GoalDraftRow): AssistantGoalDraftView {
+  return {
+    id: r.id,
+    conversationId: r.conversation_id,
+    text: r.text,
+    plannerProfileId: r.planner_profile_id,
+    plannerAlias: r.planner_alias,
+    budgetUsd: r.budget_usd,
+    status: r.status,
+    goalId: r.goal_id,
+    createdAt: r.created_at,
+  };
 }
 
 function draftView(r: DraftRow): AssistantDraftView {

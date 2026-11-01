@@ -129,6 +129,11 @@
 .as-draft-title { margin: 0; font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
 .as-draft-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .as-open-task { justify-self: start; }
+/* A goal draft (docs/adr/0022): the agent's goal as plain text, kept short in the column. */
+.as-goal-draft { border-left: 2px solid var(--accent); }
+.as-goal-draft > .lbl { margin: 0; }
+.as-goal-text { margin: 0; font-size: var(--font-size-body-compact); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 9.5em; overflow-y: auto; color: var(--ink); }
+.as-goal-meta { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0; }
 .as-field { display: grid; gap: 4px; min-width: 0; }
 .as-field input, .as-field select, .as-field textarea {
   width: 100%; min-width: 0; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink);

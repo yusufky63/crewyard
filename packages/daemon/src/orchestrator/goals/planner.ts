@@ -100,6 +100,17 @@ export interface GoalReplacements {
   started: Array<{ key: string; taskId: string; because: FrozenBecause }>;
 }
 
+/** `Plan goal`'s parameters. `by: "autopilot"` is Autopilot's create_goal, which changes none of your settings. */
+export interface GoalCreateParams {
+  projectId: string;
+  text: string;
+  plannerProfileId?: string;
+  baseBranch?: string;
+  attachments?: string[];
+  defaultBudgetUsd?: number;
+  by?: "person" | "autopilot";
+}
+
 /** What a planning click returns; the goal view is built from the store (handlers/goals.ts). */
 export interface GoalPlanStart {
   goalId: string;
@@ -258,7 +269,7 @@ export class GoalPlanner extends Part {
    * `Plan goal`: stores the goal and its first revision and approves its one read-only planning
    * run, whose cost the button showed. The scheduler starts it under admission control.
    */
-  async create(p: { projectId: string; text: string; plannerProfileId?: string; baseBranch?: string; attachments?: string[]; defaultBudgetUsd?: number }): Promise<GoalPlanStart> {
+  async create(p: GoalCreateParams): Promise<GoalPlanStart> {
     if (!this.enabled()) throw new OrchestratorError("goal.disabled");
     const project = this.db.project(p.projectId);
     const text = parseGoalText(p.text);
@@ -319,12 +330,16 @@ export class GoalPlanner extends Part {
       // The files have their paths only now; the prompt names them, as design §4.4 asks.
       this.db.exec("update tasks set description = ? where id = ?", this.promptFor(goal, project, null), planTaskId);
     }
-    // The first-goal card's click is this one: its budget becomes the project default, and the card is done.
-    if (limits.value.budgetUsd !== undefined) this.writeSetting(GOAL_SETTINGS.goalBudget(project.id), limits.value.budgetUsd);
-    this.writeSetting(GOAL_SETTINGS.introduced(project.id), true);
-    // You picked this planner on the chip: remembered per project (design §4.4), and pinned from now on.
-    if (p.plannerProfileId) this.writeSetting(GOAL_SETTINGS.planner(project.id), p.plannerProfileId);
-    this.goalEvent(goal, "goal.created", { title: goal.title, baseBranch, baseSha, plannerProfileId: choice.chosen.profileId });
+    // Your settings change only on your click. A goal Autopilot creates (docs/adr/0022) leaves the
+    // first-goal card due for your own first goal and your remembered planner as you picked it.
+    if (p.by !== "autopilot") {
+      // The first-goal card's click is this one: its budget becomes the project default, and the card is done.
+      if (limits.value.budgetUsd !== undefined) this.writeSetting(GOAL_SETTINGS.goalBudget(project.id), limits.value.budgetUsd);
+      this.writeSetting(GOAL_SETTINGS.introduced(project.id), true);
+      // You picked this planner on the chip: remembered per project (design §4.4), and pinned from now on.
+      if (p.plannerProfileId) this.writeSetting(GOAL_SETTINGS.planner(project.id), p.plannerProfileId);
+    }
+    this.goalEvent(goal, "goal.created", { title: goal.title, baseBranch, baseSha, plannerProfileId: choice.chosen.profileId, ...(p.by === "autopilot" ? { by: "autopilot" } : {}) });
     this.planningStarted(goal, 1, "initial", planTaskId, choice.chosen);
     this.emitGoal(goal.id, "created");
     await this.deps.tick();

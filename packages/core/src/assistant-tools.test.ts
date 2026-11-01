@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  ASSISTANT_DRAFT_TOOLS,
   ASSISTANT_EXTRA_TOOL_DEFS,
   ASSISTANT_EXTRA_TOOLS,
   ASSISTANT_TOOL_CAPS,
   fitResult,
+  goalDraftSubject,
   isAssistantExtraTool,
   isOwnToolTitle,
   parseAssistantToolCall,
@@ -15,6 +17,7 @@ import {
 } from "./assistant-tools.ts";
 import { AUTOPILOT_TOOLS } from "./autopilot.ts";
 import { utf8Length } from "./event-caps.ts";
+import { GOAL_LIMITS } from "./goals.ts";
 import { REPORT_TOOL_DEFS } from "./mcp.ts";
 
 // The assistant's read and own-draft tools (docs/adr/0018): which exist, how their arguments are
@@ -128,5 +131,38 @@ describe("results and tool lines", () => {
       "xcrewyard.read_task",
     ])
       expect(isOwnToolTitle(t)).toBe(false);
+  });
+});
+
+describe("draft_goal", () => {
+  // The assistant's goal draft (docs/adr/0022): text for the composer in Orchestra mode, checked
+  // like a goal you type, with an optional planner alias and a suggested budget.
+  it("is one of the own-draft tools, listed beside propose_task", () => {
+    expect(ASSISTANT_DRAFT_TOOLS).toContain("draft_goal");
+    expect(isAssistantExtraTool("draft_goal")).toBe(true);
+    expect(ASSISTANT_EXTRA_TOOL_DEFS.find((d) => d.name === "draft_goal")?.inputSchema.required).toEqual(["text"]);
+  });
+
+  it("cleans the text and refuses it past the goal cap instead of cutting it", () => {
+    expect(parseAssistantToolCall("draft_goal", { text: "Add two-step sign-in‮ and update the docs" })).toEqual({ ok: true, value: { tool: "draft_goal", text: "Add two-step sign-in and update the docs", planner: null, budgetUsd: null } });
+    expect(parseAssistantToolCall("draft_goal", {})).toMatchObject({ ok: false, error: "text is required" });
+    expect(parseAssistantToolCall("draft_goal", { text: "   " })).toMatchObject({ ok: false, error: "text must not be empty" });
+    const long = parseAssistantToolCall("draft_goal", { text: "ğ".repeat(GOAL_LIMITS.goalTextBytes) });
+    expect(long).toMatchObject({ ok: false, error: expect.stringContaining(`the limit is ${GOAL_LIMITS.goalTextBytes}`) });
+  });
+
+  it("takes a planner alias and a budget, and refuses anything else", () => {
+    expect(parseAssistantToolCall("draft_goal", { text: "Goal", planner: "  cheap  key ", budget_usd: 2.345 })).toEqual({ ok: true, value: { tool: "draft_goal", text: "Goal", planner: "cheap key", budgetUsd: 2.35 } });
+    expect(parseAssistantToolCall("draft_goal", { text: "Goal", planner: null, budget_usd: null })).toMatchObject({ ok: true, value: { planner: null, budgetUsd: null } });
+    expect(parseAssistantToolCall("draft_goal", { text: "Goal", planner: 7 })).toMatchObject({ ok: false, error: expect.stringContaining("profile alias") });
+    expect(parseAssistantToolCall("draft_goal", { text: "Goal", planner: "x".repeat(ASSISTANT_TOOL_CAPS.plannerAliasBytes + 1) })).toMatchObject({ ok: false });
+    for (const budget_usd of [0, -1, GOAL_LIMITS.budgetMaxUsd + 1, "5", Number.NaN]) expect(parseAssistantToolCall("draft_goal", { text: "Goal", budget_usd })).toMatchObject({ ok: false, error: expect.stringContaining("budget_usd") });
+    expect(parseAssistantToolCall("draft_goal", { text: "Goal", start: true })).toEqual({ ok: false, error: "unknown argument start" });
+  });
+
+  it("words its line from the goal's first line", () => {
+    expect(goalDraftSubject("Two-step sign-in\nwith docs")).toBe("Two-step sign-in");
+    expect(toolLineCall(toolLineId("draft_goal", "done", "u"), "Two-step sign-in")).toEqual({ tool: "draft_goal", outcome: "done", subject: "Two-step sign-in" });
+    expect(isOwnToolTitle("mcp__crewyard__draft_goal")).toBe(true);
   });
 });

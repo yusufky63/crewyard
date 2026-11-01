@@ -159,7 +159,7 @@
       "title": "Task assistant and ready-made analyses",
       "body": "A read-only chat in the bottom panel that turns what you describe into task drafts.",
       "points": {
-        "a": "It never edits files or starts runs. Add as draft gives a task whose crew still waits for you.",
+        "a": "It never edits files or starts runs. Add as draft gives a task whose crew still waits for you. For work that needs several tasks it drafts an Orchestra goal into the composer, and Plan goal there is still your click.",
         "b": "Six ready-made analyses (review, optimizations, bugs, security, dependencies and licences, test gaps) are local templates with no model call; up to three are suggested for the project.",
         "c": "Its spend counts against the profile key's daily cap and says Estimated. It stops on Stop and close or after sitting idle."
       },
@@ -169,7 +169,7 @@
       "title": "Autopilot",
       "body": "An opt-in mode of the task assistant, per project and off by default.",
       "points": {
-        "a": "After a consent card it may create tasks, edit ones that have not started, approve their crews when the Estimated cost fits, retry a failed step once and cancel its own tasks.",
+        "a": "After a consent card it may create tasks, edit ones that have not started, approve their crews when the Estimated cost fits, retry a failed step once and cancel its own tasks. It may also plan an Orchestra goal when the planning ceiling fits today's limit, and approve that goal's first plan when every estimate is known and fits.",
         "b": "Your limits: per task, per day, tasks per hour and tasks at once ($1.00, $5.00, 4 and 2 by default). Only your click changes them.",
         "c": "It can never push, open pull requests, merge, delete, spend past a cap, answer the Inbox or sign in. Stop Autopilot refuses everything at once without stopping running agents."
       },
@@ -253,7 +253,7 @@
     },
     "nothingStarts": {
       "q": "Can anything start without me?",
-      "a": "No crew starts before you approve it. In Orchestra, Plan goal starts only a read-only planning run whose cost is on the button, and Approve and start on the plan approves its tasks, including the ones that start later in order. Solo's Start, which shows its estimate, is its approval. Pushes, pull requests, merges into your branches and spend past a cap always wait for your click. The one exception is Autopilot, which you turn on per project: it may approve crews of tasks it created within your limits, it leaves goals alone, and it never pushes or merges."
+      "a": "No crew starts before you approve it. In Orchestra, Plan goal starts only a read-only planning run whose cost is on the button, and Approve and start on the plan approves its tasks, including the ones that start later in order. Solo's Start, which shows its estimate, is its approval. Pushes, pull requests, merges into your branches and spend past a cap always wait for your click. The one exception is Autopilot, which you turn on per project: within your limits it may approve crews of tasks it created, and plan goals and approve their first plan; replans, pushes and merges stay yours. Without Autopilot the assistant only drafts: tasks as draft cards and goals into the composer."
     },
     "whichMode": {
       "q": "Which mode should I use?",

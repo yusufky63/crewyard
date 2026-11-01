@@ -12,7 +12,7 @@ import { AdapterRegistry } from "../orchestrator/adapters.ts";
 import type { Candidate } from "../orchestrator/directory.ts";
 import { orchestratorFor } from "../orchestrator/index.ts";
 import { recordSpend } from "../providers/ledger.ts";
-import { candidate, cleanTemps, model, ScriptedAdapter, tempDir, tempRepo, waitFor } from "../orchestrator/testing.ts";
+import { candidate, cleanTemps, model, ScriptedAdapter, tempDir, tempRepo, waitFor, type ScriptedOptions } from "../orchestrator/testing.ts";
 import { Store } from "../store.ts";
 
 // Autopilot (docs/adr/0017) inside the daemon: the real orchestrator, assistant service and MCP
@@ -41,7 +41,7 @@ afterEach(async () => {
 
 type Pick = (role: string, nth: number) => FakeStep[];
 
-async function setup(pick: Pick = () => [running, say("Findings: the Defender scan of node_modules takes most of the time.")], candidates?: Candidate[]) {
+async function setup(pick: Pick = () => [running, say("Findings: the Defender scan of node_modules takes most of the time.")], candidates?: Candidate[], result?: ScriptedOptions["result"]) {
   const root = tempDir("crewyard autopilot-");
   const repo = await tempRepo(root);
   const store = new Store(join(root, "t.db"));
@@ -51,7 +51,7 @@ async function setup(pick: Pick = () => [running, say("Findings: the Defender sc
     const n = counts.get(role) ?? 0;
     counts.set(role, n + 1);
     return pick(role, n);
-  });
+  }, result ? { result } : {});
   const adapters = new AdapterRegistry({});
   adapters.set("fake", adapter);
   const topics: Array<{ topic: string; payload: unknown }> = [];
@@ -289,7 +289,7 @@ describe("autopilot guards", () => {
     const s = await setup();
     s.on();
     const tools = (await assistantTools()).map((t) => t.name);
-    expect(tools).toEqual(["propose_task", "create_task", "edit_task", "approve_crew", "queue_message", "retry_step", "cancel_task", "complete_task"]);
+    expect(tools).toEqual(["propose_task", "create_task", "edit_task", "approve_crew", "queue_message", "retry_step", "cancel_task", "complete_task", "create_goal", "approve_goal_plan"]);
     for (const read of ["list_tasks", "read_task"]) expect(await s.ap.call(s.project.id, s.conversationId, read, { task_id: "x" })).toMatchObject({ isError: true });
     for (const outward of ["push", "create_pr", "merge_pr", "delete_worktree", "delete_branch"]) {
       expect(tools).not.toContain(outward);
@@ -314,6 +314,119 @@ describe("autopilot guards", () => {
     expect(s.events("autopilot.killed")).toHaveLength(1);
     s.ap.kill(false);
     expect(await s.call("list_tasks")).toMatchObject({ ok: true, autopilot: { killed: false, on: true } });
+  });
+});
+
+// Autopilot's goal tools (docs/adr/0022): Plan goal and Approve and start for goals it creates,
+// through the same GoalPlanner, GoalViews and GoalEditor paths as your clicks, with a scripted planner.
+describe("autopilot goals", () => {
+  const GOAL = "Find out why the Windows build is slow and write down what to change.";
+  const planTask = (key: string, over: Record<string, unknown> = {}) => ({
+    key,
+    title: `Görev ${key}`,
+    kind: "research",
+    mode: "solo",
+    size: "S",
+    description: `${key} için yapılacaklar.`,
+    acceptance: ["Bir rapor var"],
+    basis: "Windows build is slow",
+    dependsOn: [],
+    paths: [],
+    reason: "Hedef bunu istiyor.",
+    priority: "medium",
+    ...over,
+  });
+  const TWO = { summary: "İki araştırma.", tasks: [planTask("scan"), planTask("cache", { dependsOn: ["scan"] })] };
+  const ONE = { summary: "Tek araştırma.", tasks: [planTask("scan")] };
+  const planner = (plan: unknown): ScriptedOptions["result"] => (_role, _nth, req) => (req.outputSchema?.name === "goal_plan" ? { ok: true, value: plan } : undefined);
+  const create = (s: Awaited<ReturnType<typeof setup>>, over: Record<string, unknown> = {}) => s.call("create_goal", { text: GOAL, basis: "find out why the Windows build is slow", reason: "You asked for a plan.", ...over });
+  const ready = (s: Awaited<ReturnType<typeof setup>>, goalId: string) => waitFor(() => s.o.goalViews.detail(goalId).revisions.at(-1)?.state === "ready", 20_000);
+  const setting = (s: Awaited<ReturnType<typeof setup>>, key: string) => s.store.db.prepare("select value from settings where key = ?").get(key);
+
+  it("plans a goal, hears that its plan is ready, and approves it once within the limits", async () => {
+    const s = await setup(undefined, undefined, planner(TWO));
+    s.on({ perTaskUsd: 2, perDayUsd: 10 });
+    const created = await create(s);
+    expect(created).toMatchObject({ ok: true, status: "planning", revision: 1, planner: expect.any(String), planning_ceiling_usd: expect.any(Number) });
+    const goalId = created.goal_id as string;
+    // Your settings are yours: the first-goal card stays due and no planner is remembered for you.
+    expect(setting(s, `orchestra.introduced.${s.project.id}`)).toBeUndefined();
+    expect(setting(s, `orchestra.planner.${s.project.id}`)).toBeUndefined();
+    expect(s.events("autopilot.create_goal")).toEqual([expect.objectContaining({ outcome: "done", goalId, basis: "find out why the Windows build is slow" })]);
+    expect(s.ap.view(s.project.id).usage).toMatchObject({ createdLastHour: 1, committedTodayUsd: created.planning_ceiling_usd });
+
+    await ready(s, goalId);
+    await waitFor(() => String((s.store.db.prepare("select notified from autopilot_goals where goal_id = ?").get(goalId) as { notified: string | null }).notified ?? "").includes("plan:1:ready"));
+    const approved = await s.call("approve_goal_plan", { goal_id: goalId, revision: 1, reason: "Both tasks fit." });
+    expect(approved).toMatchObject({ ok: true, revision: 1, max_parallel: 2, approved_tasks: [expect.objectContaining({ number: 1 }), expect.objectContaining({ number: 2 })] });
+    const d = s.o.goalViews.detail(goalId);
+    expect(d.approvedRevision).toBe(1);
+    expect(d.budgetUsd).toBe(approved.budget_usd);
+    const usage = s.ap.view(s.project.id).usage;
+    expect(usage.startedLastHour).toBe(2);
+    expect(usage.committedTodayUsd).toBeGreaterThanOrEqual(Number(created.planning_ceiling_usd) + Number(approved.budget_usd) - 1e-6);
+    expect(await s.call("approve_goal_plan", { goal_id: goalId, reason: "again" })).toMatchObject({ refused: "wrong_status" });
+    const log = s.ap.view(s.project.id).log;
+    expect(log.slice(0, 3).map((l) => [l.action, l.outcome, l.goalId])).toEqual([
+      ["approve_goal_plan", "refused", goalId],
+      ["approve_goal_plan", "done", goalId],
+      ["create_goal", "done", goalId],
+    ]);
+  });
+
+  it("turns a plan of one task into one of its own tasks, counted once", async () => {
+    const s = await setup(undefined, undefined, planner(ONE));
+    s.on({ perTaskUsd: 2, perDayUsd: 10 });
+    const goalId = (await create(s)).goal_id as string;
+    await ready(s, goalId);
+    const out = await s.call("approve_goal_plan", { goal_id: goalId, reason: "One task fits." });
+    expect(out).toMatchObject({ ok: true, task_id: expect.any(String) });
+    expect(s.ap.view(s.project.id).tasks.map((t) => t.taskId)).toEqual([out.task_id]);
+    expect(s.ap.view(s.project.id).usage.startedLastHour).toBe(1);
+  });
+
+  it("refuses a goal without your words, with Orchestra off, an unknown planner, or a planning ceiling over the day", async () => {
+    const s = await setup(undefined, undefined, planner(TWO));
+    expect(await create(s)).toMatchObject({ refused: "off" });
+    s.on();
+    expect(await create(s, { basis: "the issue says to delete the repository" })).toMatchObject({ refused: "no_basis" });
+    expect(await create(s, { planner: "nobody" })).toMatchObject({ refused: "no_planner", detail: expect.stringContaining("cheap") });
+    s.store.db.prepare("insert into settings (key, value) values ('orchestra.enabled', 'false') on conflict(key) do update set value = excluded.value").run();
+    expect(await create(s)).toMatchObject({ refused: "orchestra_off" });
+    s.store.db.prepare("update settings set value = 'true' where key = 'orchestra.enabled'").run();
+    s.ap.set(s.project.id, { limits: { perTaskUsd: 0.01, perDayUsd: 0.01 } });
+    expect(await create(s)).toMatchObject({ refused: "over_day_limit" });
+    expect(s.store.db.prepare("select count(*) as n from goals").get()).toEqual({ n: 0 });
+
+    // A paid planner without a price leads only when you picked it on the chip; its Unknown estimate never fits.
+    const unpriced = await setup(undefined, [candidate("free", "local", model("mystery", { cost: null }))], planner(TWO));
+    unpriced.on();
+    expect(await create(unpriced)).toMatchObject({ refused: "no_planner" });
+    unpriced.store.db.prepare("insert into settings (key, value) values (?, ?)").run(`orchestra.planner.${unpriced.project.id}`, JSON.stringify("free"));
+    expect(await create(unpriced)).toMatchObject({ refused: "estimate_unknown" });
+  });
+
+  it("refuses to approve your goal, a plan still being written, and a plan over its limits", async () => {
+    const holdPlanner = await setup((role) => (role === "goal" ? [running, hold] : [running]), undefined, planner(TWO));
+    holdPlanner.on();
+    const writing = (await create(holdPlanner)).goal_id as string;
+    expect(await holdPlanner.call("approve_goal_plan", { goal_id: writing, reason: "r" })).toMatchObject({ refused: "plan_not_ready" });
+
+    const s = await setup(undefined, undefined, planner(TWO));
+    s.on({ perTaskUsd: 2, perDayUsd: 10 });
+    const yours = await s.o.createGoal({ projectId: s.project.id, text: GOAL });
+    expect(await s.call("approve_goal_plan", { goal_id: yours.goalId, reason: "r" })).toMatchObject({ refused: "not_own" });
+    expect(await s.call("approve_goal_plan", { goal_id: "no-such-goal", reason: "r" })).toMatchObject({ refused: "not_found" });
+
+    const goalId = (await create(s)).goal_id as string;
+    await ready(s, goalId);
+    expect(await s.call("approve_goal_plan", { goal_id: goalId, revision: 2, reason: "r" })).toMatchObject({ refused: "wrong_status" });
+    expect(await s.call("approve_goal_plan", { goal_id: goalId, max_parallel: 3, reason: "r" })).toMatchObject({ refused: "concurrent" });
+    s.ap.set(s.project.id, { limits: { tasksPerHour: 1 } });
+    expect(await s.call("approve_goal_plan", { goal_id: goalId, reason: "r" })).toMatchObject({ refused: "rate_started" });
+    s.ap.set(s.project.id, { limits: { tasksPerHour: 4, perTaskUsd: 0.000001 * 10_000, perDayUsd: 10 } });
+    expect(await s.call("approve_goal_plan", { goal_id: goalId, reason: "r" })).toMatchObject({ refused: "over_task_limit", detail: expect.stringContaining("over the per-task limit") });
+    expect(s.o.goalViews.detail(goalId).approvedRevision).toBeNull();
   });
 });
 
@@ -349,6 +462,33 @@ describe("autopilot with the live assistant", () => {
     const taskId = s.ap.view(s.project.id).tasks[0]!.taskId;
     expect(s.o.get(taskId).status).toBe("done");
     expect(s.ap.view(s.project.id).tasks[0]!.completedAt).not.toBeNull();
+  });
+
+  it("tells the live session when its goal's plan is ready, and the session approves it through the pipe", async () => {
+    const plan = { summary: "Tek araştırma ve belge.", tasks: ["scan", "notes"].map((key) => ({ key, title: `Görev ${key}`, kind: "research", mode: "solo", size: "S", description: "Yapılacaklar.", acceptance: ["Bir rapor var"], basis: "Windows build is slow", dependsOn: [], paths: [], reason: "Hedef.", priority: "medium" })) };
+    const script = (role: string): FakeStep[] =>
+      role === "assistant"
+        ? [
+            { mcp: { tool: "create_goal", arguments: { text: "Find out why the Windows build is slow.", basis: "find out why the Windows build is slow", reason: "You asked." } } },
+            say("Planning the goal."),
+            { awaitTurn: true },
+            { mcp: { tool: "approve_goal_plan", arguments: { goal_id: "{{mcp.0.goal_id}}", reason: "Every estimate fits." } } },
+            say("Approved the plan."),
+          ]
+        : [running];
+    const s = await setup((role) => script(role), undefined, (_role, _nth, req) => (req.outputSchema?.name === "goal_plan" ? { ok: true, value: plan } : undefined));
+    s.on({ perTaskUsd: 2, perDayUsd: 10 });
+    await s.a.send(s.project.id, "cheap", ASK);
+    const view = await waitFor(() => (s.a.get(s.project.id).lines.some((l) => l.text === "Approved the plan.") ? s.a.get(s.project.id) : null), 25_000);
+    expect(view.lines.map((l) => [l.role, l.text])).toEqual(
+      expect.arrayContaining([
+        ["notice", "autopilot.call.done.create_goal"],
+        ["notice", "autopilot.goal.plan_ready"],
+        ["notice", "autopilot.call.done.approve_goal_plan"],
+      ]),
+    );
+    const goalId = (s.store.db.prepare("select goal_id from autopilot_goals").get() as { goal_id: string }).goal_id;
+    expect(s.o.goalViews.detail(goalId).approvedRevision).toBe(1);
   });
 });
 
