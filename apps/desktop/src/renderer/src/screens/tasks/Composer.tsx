@@ -110,11 +110,11 @@ export function Composer({
   const [picking, setPicking] = useState(false);
   const [issue, setIssue] = useState<{ number: number; url: string; title: string } | null>(null);
   const [preset, setPreset] = useState(false);
-  const [picked, setPicked] = useState<ComposerMode | null>(SHOT?.mode ?? null);
+  const [picked, setPicked] = useState<ComposerMode | null>(() => SHOT?.mode ?? useComposerPick.getState().mode);
   const [planner, setPlanner] = useState<string | null>(null);
   const [intro, setIntro] = useState(SHOT?.intro ?? false);
   const [more, setMore] = useState(false);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(() => useComposerPick.getState().mode !== null);
   const area = useRef<HTMLTextAreaElement>(null);
   const attach = useAttachmentDraft();
   useDiscardOnUnmount(attach);
@@ -123,13 +123,17 @@ export function Composer({
 
   // A Guide mode tile picks its mode for this request; Orchestra while it cannot plan still reads
   // as Crew below, and Solo goes back to the kept mode after the submission, as a click on it does.
-  const pickN = useComposerPick((s) => s.n);
+  // A pick made before this composer mounted was read into its first state above and is cleared
+  // here; a pick made while it is open arrives through the subscription.
   useEffect(() => {
-    const m = useComposerPick.getState().take();
-    if (!m) return;
-    setPicked(m);
-    setOpen(true);
-  }, [pickN]);
+    useComposerPick.getState().take();
+    return useComposerPick.subscribe((s, prev) => {
+      if (s.n === prev.n || !s.mode) return;
+      setPicked(s.mode);
+      setOpen(true);
+      useComposerPick.getState().take();
+    });
+  }, []);
 
   // `Edit goal` in the plan review hands the goal's own words back here.
   const fill = useComposerFill();

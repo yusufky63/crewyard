@@ -75,6 +75,17 @@ describe("a mode picked from the Guide", () => {
     expect(useComposerPrefs.getState().modes).toEqual({});
   });
 
+  it("opens the composer on the picked mode, Solo too, while nothing is remembered", () => {
+    useComposerPick.setState({ mode: null });
+    useComposerPick.getState().pick("solo");
+    const html = render();
+    expect(modeButton(html, "solo")).toContain('aria-pressed="true"');
+    expect(modeButton(html, "orchestra")).toContain('aria-pressed="false"');
+    expect(useComposerPrefs.getState().modes).toEqual({});
+    useComposerPick.setState({ mode: null });
+    expect(modeButton(render(), "orchestra")).toContain('aria-pressed="true"');
+  });
+
   it("arrives again when the same mode is picked twice", () => {
     const before = useComposerPick.getState().n;
     useComposerPick.getState().pick("crew");
