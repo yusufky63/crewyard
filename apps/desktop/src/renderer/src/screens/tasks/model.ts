@@ -1,4 +1,4 @@
-import { providerErrorLine, providerErrorRaw, splitEndDetail, STATUS_FILTER, type CandidateView, type CostEstimate, type GoalDecisionView, type GoalDetail, type GoalNeedsReason, type GoalSummary, type GoalTaskView, type HandoffView, type LoopDecisionKind, type CrewMemberView, type LimitNoticePayload, type LimitWindow, type Reason, type RequestKind, type RequestView, type RunView, type TaskDetail, type TaskGoalRef, type TaskStatus, type TaskSummary } from "@crewyard/core";
+import { GOAL_LIMITS, providerErrorLine, providerErrorRaw, splitEndDetail, STATUS_FILTER, type CandidateView, type CostEstimate, type GoalDecisionView, type GoalDetail, type GoalNeedsReason, type GoalSummary, type GoalTaskView, type HandoffView, type LoopDecisionKind, type CrewMemberView, type LimitNoticePayload, type LimitWindow, type Reason, type RequestKind, type RequestView, type RunView, type TaskDetail, type TaskGoalRef, type TaskStatus, type TaskSummary } from "@crewyard/core";
 import type { InspectorTarget } from "../../inspector.ts";
 
 // Pure view logic for the Tasks screen, the Inbox and the inspector. The app has no DOM test
@@ -55,6 +55,27 @@ export function taskBucket(t: Pick<TaskSummary, "status" | "goal">): Bucket | "g
   if (!t.goal) return STATUS_FILTER[t.status];
   if (t.goal.hidden) return null;
   return t.status === "needs_input" || t.status === "limited" ? "needs_you" : "goal";
+}
+
+/** How high a bucket sits in the list: what needs you first, then what runs, then what waits for review. */
+const BUCKET_RANK: Record<Bucket, number> = { needs_you: 0, running: 1, review: 2, merged: 3, done: 3, other: 3 };
+
+export type ListRow<G, T> = { kind: "goal"; goal: G } | { kind: "task"; task: T };
+
+/**
+ * The task list's one order for goal rows and task rows together (design §3.3, §3.4): Needs you
+ * first, then Running, then Ready for review, then the rest, newest first inside each bucket. A
+ * finished or stopped goal sinks with the finished tasks instead of staying above every task.
+ */
+export function listOrder<G extends Pick<GoalSummary, "id" | "status" | "outcome" | "createdAt">, T extends Pick<TaskSummary, "id" | "status" | "goal" | "createdAt">>(goals: readonly G[], tasks: readonly T[]): ListRow<G, T>[] {
+  const rank = (r: ListRow<G, T>): number => {
+    if (r.kind === "goal") return BUCKET_RANK[goalBucket(r.goal)];
+    const b = taskBucket(r.task);
+    return b === null || b === "goal" ? BUCKET_RANK.other : BUCKET_RANK[b];
+  };
+  const at = (r: ListRow<G, T>) => (r.kind === "goal" ? r.goal.createdAt : r.task.createdAt);
+  const rows: ListRow<G, T>[] = [...goals.map((goal) => ({ kind: "goal" as const, goal })), ...tasks.map((task) => ({ kind: "task" as const, task }))];
+  return rows.map((r, i) => ({ r, i, k: rank(r) })).sort((a, b) => a.k - b.k || at(b.r).localeCompare(at(a.r)) || a.i - b.i).map((x) => x.r);
 }
 
 /** Whether a task row shows under a filter tab; a goal task otherwise shows under its goal's row. */
@@ -135,8 +156,8 @@ export function goalTaskLine(
   if (t.status === "cancelled") return line("cancelled", "muted", "square");
   if (t.status === "failed") return line("failed", "bad", "x");
   if (!t.released) {
-    if (t.hold) return line("hold", "wait", "clock", t.hold);
-    return opts.paused ? line("goalPaused", "muted", "pause") : line("waiting", "wait", "clock");
+    if (t.hold) return line("hold", holdTone(t.hold), "clock", t.hold);
+    return opts.paused ? line("goalPaused", "muted", "pause") : line("waiting", "ink", "clock");
   }
   switch (t.status) {
     case "needs_input":
@@ -152,12 +173,26 @@ export function goalTaskLine(
     case "review":
     case "done":
     case "merged":
-      if (t.writes) return line("awaitingJoin", "wait", "clock");
+      if (t.writes) return line("awaitingJoin", "ink", "clock");
       if (t.reportAcceptedAt) return line("reportAccepted", "ok", "check");
       return opts.feedsWriter ? line("reportWaits", "wait", "question") : line("done", "ok", "check");
     default:
-      return opts.paused ? line("goalPaused", "muted", "pause") : line("queued", "wait", "clock");
+      return opts.paused ? line("goalPaused", "muted", "pause") : line("queued", "ink", "clock");
   }
+}
+
+/** Holds that only you can lift: your answer, a report to accept, a halt or a broken pass. */
+const HOLDS_ON_YOU: ReadonlySet<string> = new Set(["goal.waits_report", "goal.prereq_failed", "goal.prereq_cancelled", "goal.prereq_skipped", "goal.conflict", "goal.halted", "goal.error"]);
+
+/**
+ * The warning color is for what waits on you (DESIGN.md §5): a hold you must lift reads `wait`, a
+ * pause you set reads muted, and an ordering that clears by itself (it waits for another task to
+ * finish or merge, the same files, the parallel cap) reads as plain ink.
+ */
+export function holdTone(hold: Reason): Tone {
+  if (HOLDS_ON_YOU.has(hold.code)) return "wait";
+  if (hold.code === "goal.paused" || hold.code === "goal.paused_all") return "muted";
+  return "ink";
 }
 
 /**
@@ -188,7 +223,7 @@ export const utf8Bytes = (s: string) => new TextEncoder().encode(s).length;
 export const haltKey = (reason: string): "same_failure" | "failed_tasks" | "other" => (reason === "same_failure" || reason === "failed_tasks" ? reason : "other");
 
 /** Goal events per page in the goal view's Details fold (design §3.3). */
-export const GOAL_FEED_PAGE = 40;
+export const GOAL_FEED_PAGE = GOAL_LIMITS.eventsPage;
 
 /** The goal budget meter: spend as a share of the budget; null (Unknown) without a number on either side. */
 export function goalSpendPct(g: Pick<GoalSummary, "spend" | "budgetUsd">): number | null {

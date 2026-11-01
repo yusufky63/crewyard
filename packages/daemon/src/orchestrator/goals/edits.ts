@@ -338,6 +338,20 @@ export class GoalEditor extends Part {
   // ---------------------------------------------------------------- the project default
 
   /** The project's default goal budget (Settings, and the first-goal card's value); the plan review prefills from it. */
+  /** The project's default goal budget (Settings → Orchestra); null when none is set. */
+  projectDefaults(projectId: string): { projectId: string; budgetUsd: number | null } {
+    this.db.project(projectId);
+    const v = this.opts.store.db.prepare("select value from settings where key = ?").get(GOAL_SETTINGS.goalBudget(projectId)) as { value: string } | undefined;
+    let budgetUsd: number | null = null;
+    try {
+      const n = v ? (JSON.parse(v.value) as unknown) : null;
+      budgetUsd = typeof n === "number" && Number.isFinite(n) && n > 0 ? n : null;
+    } catch {
+      budgetUsd = null;
+    }
+    return { projectId, budgetUsd };
+  }
+
   setProjectDefaults(projectId: string, budgetUsd: number): { projectId: string; budgetUsd: number } {
     this.db.project(projectId);
     const limits = parseGoalLimits({ budgetUsd });

@@ -453,6 +453,18 @@ ipcMain.handle("crewyard:open-licenses", async () => {
   return (await shell.openPath(file)) === "";
 });
 // A folder dropped on the Start screen or the title bar: checked like one from the command line.
+// "I'll merge it" on a goal's conflicted merge (docs/adr/0019): the renderer names a task, never a
+// path, and only the worktree the daemon recorded for that task opens.
+ipcMain.on("crewyard:reveal-worktree", (_e, taskId: unknown) => {
+  if (typeof taskId !== "string" || !taskId) return;
+  void daemon
+    .call("tasks.get", { taskId })
+    .then((t) => {
+      const path = (t as IpcResult<"tasks.get"> | null)?.worktree?.path;
+      if (typeof path === "string" && isAbsolute(path) && existsSync(path)) void shell.openPath(path);
+    })
+    .catch(() => undefined);
+});
 ipcMain.on("crewyard:open-folder", (_e, path: unknown) => {
   if (typeof path === "string") openFolder(path);
 });

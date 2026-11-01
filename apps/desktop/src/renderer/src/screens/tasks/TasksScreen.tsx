@@ -20,7 +20,7 @@ import { GoalRow, useGoalsChanged } from "./GoalRow.tsx";
 import { GoalView } from "./GoalView.tsx";
 import { useGoalNav } from "./goalNav.ts";
 import { latestRevision, showsPlanReview } from "./goalsModel.ts";
-import { FILTERS, filterCounts, goalMatchesFilter, offersCrewProposal, taskMatchesFilter, type Filter } from "./model.ts";
+import { FILTERS, filterCounts, goalMatchesFilter, listOrder, offersCrewProposal, taskMatchesFilter, type Filter } from "./model.ts";
 import { TaskRow } from "./TaskRow.tsx";
 import "./tasks.css";
 import { LazyRow } from "./LazyRow.tsx";
@@ -72,9 +72,11 @@ export function TasksScreen() {
   const goalShown = new Set(shownGoals.map((g) => g.id));
   // Goal tasks show under their goal's row; on their own only when that row is not in this tab (model.ts).
   const shown = all.filter((x) => taskMatchesFilter(x, filter) && !(x.goal && goalShown.has(x.goal.goalId)));
+  // Goals and tasks in one order: what needs you first, then what runs (model.ts listOrder).
+  const ordered = listOrder(shownGoals, shown);
   // J and K select as a click on the row does: the task and the inspector on it, or the goal in the slot.
   useListKeys(
-    [...shownGoals.map((g) => GOAL_ID + g.id), ...shown.map((x) => x.id)],
+    ordered.map((r) => (r.kind === "goal" ? GOAL_ID + r.goal.id : r.task.id)),
     goalId && goalShown.has(goalId) ? GOAL_ID + goalId : taskId,
     (id) => {
       if (id.startsWith(GOAL_ID)) {
@@ -87,6 +89,27 @@ export function TasksScreen() {
     },
     view === "tasks" && goal === null,
   );
+  // Opening a goal from a row far down the list shows its review or view in the slot above the list:
+  // the slot scrolls into sight and takes focus, so Approve is reachable from the keyboard; closing
+  // it gives focus back to the row that opened it.
+  const slot = useRef<HTMLDivElement | null>(null);
+  const opener = useRef<HTMLElement | null>(null);
+  const shownSlot = useRef<string | null>(null);
+  const slotGoal = goal?.id ?? null;
+  useEffect(() => {
+    if (slotGoal === shownSlot.current) return;
+    const before = shownSlot.current;
+    shownSlot.current = slotGoal;
+    if (slotGoal && slot.current) {
+      if (!before && document.activeElement instanceof HTMLElement && !slot.current.contains(document.activeElement)) opener.current = document.activeElement;
+      const smooth = !matchMedia("(prefers-reduced-motion: reduce)").matches;
+      slot.current.scrollIntoView({ block: "start", behavior: smooth ? "smooth" : "auto" });
+      slot.current.focus({ preventScroll: true });
+    } else if (!slotGoal && opener.current) {
+      if (opener.current.isConnected) opener.current.focus();
+      opener.current = null;
+    }
+  }, [slotGoal]);
   // Selecting a task that is not the open goal's own closes the goal, so its crew proposal can show.
   const lastTask = useRef(taskId);
   useEffect(() => {
@@ -155,10 +178,15 @@ export function TasksScreen() {
         <>
           {/* One focus at a time (DESIGN.md principle 2): the composer folds while a goal or plan is open. */}
           <Composer key={projectId} projectId={projectId} projectName={project?.name ?? ""} projectPath={project?.path ?? null} assistantOpen={assistant} onAssistant={() => toggleAssistant(projectId)} folded={goal !== null} />
-          {goal && planOpen && (
-            <GoalPlanReview key={goal.id} goal={goal} offline={offline} onClose={() => openGoal(null)} onBack={goal.approvedRevision !== null ? () => setReviewing(null) : undefined} onCollapsed={onCollapsed} />
+          {goal && (
+            <div ref={slot} className="tk-slot" tabIndex={-1} onKeyDown={(e) => e.key === "Escape" && e.target === e.currentTarget && openGoal(null)}>
+              {planOpen ? (
+                <GoalPlanReview key={goal.id} goal={goal} offline={offline} onClose={() => openGoal(null)} onBack={goal.approvedRevision !== null ? () => setReviewing(null) : undefined} onCollapsed={onCollapsed} />
+              ) : (
+                <GoalView key={goal.id} goal={goal} requests={requests.data ?? []} offline={offline} keyboard onReviewPlan={() => setReviewing(goal.id)} onClose={() => openGoal(null)} />
+              )}
+            </div>
           )}
-          {goal && !planOpen && <GoalView key={goal.id} goal={goal} requests={requests.data ?? []} offline={offline} keyboard onReviewPlan={() => setReviewing(goal.id)} onClose={() => openGoal(null)} />}
           {!goal && proposing && selected && draft.data && draft.data.id === selected.id && <CrewProposal key={selected.id} task={draft.data} onClose={() => selectTask(selected.id)} />}
           {!goal && comparing && group.data && group.data.id === selected.id && <BestOfCompare detail={group.data} />}
 
@@ -186,22 +214,23 @@ export function TasksScreen() {
               </p>
             )}
             {tasks.isSuccess && !empty && shown.length === 0 && shownGoals.length === 0 && <p className="tk-empty muted">{t("empty.filter")}</p>}
-            {shownGoals.map((g) => (
-              <GoalRow
-                key={g.id}
-                goal={g}
-                tasks={all}
-                requests={requests.data ?? []}
-                selected={g.id === goalId}
-                onSelect={(id) => openGoal(id === goalId ? null : id)}
-                renderTask={(x) => <TaskRow summary={x} requests={requests.data ?? []} />}
-              />
-            ))}
-            {shown.map((s, i) => (
-              <LazyRow key={s.id} index={i + shownGoals.length} force={s.id === taskId}>
-                <TaskRow summary={s} requests={requests.data ?? []} />
-              </LazyRow>
-            ))}
+            {ordered.map((r, i) =>
+              r.kind === "goal" ? (
+                <GoalRow
+                  key={r.goal.id}
+                  goal={r.goal}
+                  tasks={all}
+                  requests={requests.data ?? []}
+                  selected={r.goal.id === goalId}
+                  onSelect={(id) => openGoal(id === goalId ? null : id)}
+                  renderTask={(x) => <TaskRow summary={x} requests={requests.data ?? []} />}
+                />
+              ) : (
+                <LazyRow key={r.task.id} index={i} force={r.task.id === taskId}>
+                  <TaskRow summary={r.task} requests={requests.data ?? []} />
+                </LazyRow>
+              ),
+            )}
           </Panel>
         </>
       )}

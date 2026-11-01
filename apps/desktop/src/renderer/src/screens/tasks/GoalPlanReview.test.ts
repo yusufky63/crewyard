@@ -143,14 +143,19 @@ describe("plan review states", () => {
     expect(t).toContain("Share of the goal budget");
   });
 
-  it("one task: One task is enough, its crew, Edit crew and Approve and start", () => {
+  it("one task: One task is enough, its crew and one Approve and start, with the task's own budget", () => {
     const html = review(g("g-one"));
     const t = text(html);
     expect(t).toContain("One task is enough");
     expect(t).toContain("Implement");
     expect(t).toContain("no goal branch");
     expect(enabled(html, "Approve and start · $1.60 Estimated")).toBe(true);
-    expect(enabled(html, "Edit crew")).toBe(true);
+    // Approving already makes it one ordinary task: no Run as one task beside it, no goal limits.
+    expect(button(html, "Run as one task")).toBeNull();
+    expect(t).toContain("Limits: task budget");
+    expect(t).toContain("Task budget (USD)");
+    expect(t).not.toContain("at once");
+    expect(button(html, "Edit crew")).toBeNull();
     expect(t).not.toContain("Step 1");
   });
 
@@ -158,7 +163,9 @@ describe("plan review states", () => {
     const html = review(g("g-failed"));
     const t = text(html);
     expect(t).toContain("Needs you · Plan failed");
-    expect(t).toContain("The planner returned 15 tasks; the limit is 8.");
+    // The parser's code is read back and said in your language, not as the parser's English.
+    expect(t).toContain("The planner returned 15 tasks; a goal holds at most 8.");
+    expect(t).not.toContain("the plan has 15 tasks");
     expect(enabled(html, "Retry planning · ~$0.36 Estimated, up to $1.08")).toBe(true);
     expect(enabled(html, "Run as one task")).toBe(true);
     expect(enabled(html, "Edit goal")).toBe(true);
@@ -219,10 +226,30 @@ describe("plan review states", () => {
     expect(review(g("g-review"))).not.toMatch(/<details class="gp-limits" open="">/);
   });
 
-  it("each tile offers Edit crew, and Revise is a button, not a form a stray Enter submits", () => {
+  it("tiles have no Edit crew (not built, ADR 0019), keep their checkbox out of the tab order, and Revise is a button, not a form", () => {
     const html = review(g("g-review"));
-    expect(html.match(/class="[^"]*gp-editcrew/g)?.length).toBe(4);
+    expect(html).not.toContain("gp-editcrew");
+    expect(button(html, "Edit crew")).toBeNull();
+    expect(html.match(/type="checkbox" tabindex="-1"/g)?.length).toBe(4);
     expect(html).not.toContain("<form");
+  });
+
+  it("a failure the plan checks do not name says so in your language and keeps the raw text in Details", () => {
+    const failed = g("g-failed");
+    const html = review({ ...failed, revisions: [{ ...failed.revisions[0]!, error: "503 overloaded_error: Sunucu meşgul" }] });
+    const t = text(html);
+    expect(t).toContain("The planner's answer did not pass the plan checks.");
+    expect(html).toMatch(/<details[^>]*class="gp-fold"[\s\S]*503 overloaded_error: Sunucu meşgul/);
+  });
+
+  it("prices the last review before the first approval, and asks for its budget when its cost is Unknown", () => {
+    const priced = text(review(g("g-review")));
+    expect(priced).toContain("Last review of all changes reviewer, read-only $0.17 Estimated");
+    const unknown = review({ ...g("g-review"), reviewEstimate: { usd: null, provenance: "unknown" } });
+    expect(text(unknown)).toContain("Last review of all changes");
+    expect(unknown).toMatch(/gp-review-line[\s\S]*<input/);
+    // An Unknown last review with no typed budget blocks Approve, as goals.approve would refuse it.
+    expect(enabled(unknown, "Approve and start 4 tasks")).toBe(false);
   });
 
   it("caps: no revisions left disables Revise, no planning runs left disables Retry planning", () => {

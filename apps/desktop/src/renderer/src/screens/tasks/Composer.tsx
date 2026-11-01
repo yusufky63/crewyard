@@ -513,11 +513,20 @@ export function Composer({
                 </select>
               </label>
             )}
-            <span className="kbd">Ctrl</span>
-            <span className="kbd">Enter</span>
-            <Button type="submit" variant={used === "orchestra" ? "primary" : "secondary"} disabled={!ready || intro}>
-              {submitLabel}
-            </Button>
+            {/* While the first-goal card is open, its own Plan goal is the one button that plans: no dead twin here. */}
+            {intro ? (
+              <span className="muted tk-small" role="note">
+                {t("composer.introPointer")}
+              </span>
+            ) : (
+              <>
+                <span className="kbd">Ctrl</span>
+                <span className="kbd">Enter</span>
+                <Button type="submit" variant={used === "orchestra" ? "primary" : "secondary"} disabled={!ready}>
+                  {submitLabel}
+                </Button>
+              </>
+            )}
           </div>
         </div>
         {mode !== "crew" && oneTaskSource && (

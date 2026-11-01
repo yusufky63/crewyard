@@ -21,6 +21,8 @@ import {
   goalSpendPct,
   goalStatusLine,
   goalTaskLine,
+  holdTone,
+  listOrder,
   haltKey,
   limitBanner,
   loopLook,
@@ -303,6 +305,18 @@ describe("goal filters", () => {
   });
 });
 
+describe("list order", () => {
+  it("puts what needs you first, then what runs, then review, then the rest, newest first inside each, goals and tasks together", () => {
+    const g = (id: string, status: GoalSummary["status"], createdAt: string, outcome: GoalSummary["outcome"] = null) => ({ id, status, outcome, createdAt });
+    const t = (id: string, status: TaskSummary["status"], createdAt: string) => ({ id, status, goal: null, createdAt });
+    const rows = listOrder(
+      [g("g-done", "finished", "2026-10-31T12:00:00Z", "merged"), g("g-run", "running", "2026-10-31T09:00:00Z"), g("g-plan", "needs_you", "2026-10-31T08:00:00Z"), g("g-planning", "planning", "2026-10-31T11:00:00Z"), g("g-stopped", "stopped", "2026-10-31T13:00:00Z")],
+      [t("t-failed", "failed", "2026-10-31T10:00:00Z"), t("t-proposed", "proposed", "2026-10-31T07:00:00Z"), t("t-run", "running", "2026-10-31T10:30:00Z"), t("t-review", "review", "2026-10-31T06:00:00Z"), t("t-done", "done", "2026-10-31T14:00:00Z")],
+    );
+    expect(rows.map((r) => (r.kind === "goal" ? r.goal.id : r.task.id))).toEqual(["t-failed", "g-plan", "t-proposed", "g-planning", "t-run", "g-run", "t-review", "t-done", "g-stopped", "g-done"]);
+  });
+});
+
 describe("goal status labels", () => {
   it("has seven states with their icon and color, and never shows Ready for review as merged", () => {
     expect(goalStatusLine(goalSummary("planning"))).toMatchObject({ key: "planning", tone: "run", icon: "spinner" });
@@ -339,13 +353,22 @@ describe("goal task lines", () => {
   it("says why an unreleased task waits, and never Waiting for approval", () => {
     const hold = { code: "goal.waits_report" as const, params: { task: "01", taskId: "t1" } };
     expect(goalTaskLine(goalTask(3, { released: false, status: "proposed", hold }))).toMatchObject({ key: "hold", tone: "wait", hold });
-    expect(goalTaskLine(goalTask(3, { released: false, status: "proposed" }))).toMatchObject({ key: "waiting" });
+    expect(goalTaskLine(goalTask(3, { released: false, status: "proposed" }))).toMatchObject({ key: "waiting", tone: "ink" });
     expect(goalTaskLine(goalTask(3, { released: false, status: "proposed" }), { paused: true })).toMatchObject({ key: "goalPaused", icon: "pause" });
+  });
+
+  it("keeps the warning color for holds only you can lift, and plain ink for orderings that clear by themselves", () => {
+    const line = (code: string) => goalTaskLine(goalTask(3, { released: false, status: "proposed", hold: { code, params: { task: "02", taskId: "t2" } } as never })).tone;
+    for (const code of ["goal.waits_report", "goal.prereq_failed", "goal.prereq_cancelled", "goal.conflict", "goal.halted", "goal.error"]) expect(line(code)).toBe("wait");
+    for (const code of ["goal.waits_finish", "goal.waits_overlap", "goal.waits_join", "goal.parallel_cap"]) expect(line(code)).toBe("ink");
+    expect(line("goal.paused")).toBe("muted");
+    expect(holdTone({ code: "goal.paused_all" })).toBe("muted");
+    expect(goalTaskLine(goalTask(2, { status: "queued" as never, released: true })).tone).toBe("ink");
   });
 
   it("reads In goal branch once merged, and a finished writer waits to be merged instead of Ready for review", () => {
     expect(goalTaskLine(goalTask(2, { status: "review", joined: { sha: "abc", at: "x" } }))).toMatchObject({ key: "inGoalBranch", tone: "ok" });
-    expect(goalTaskLine(goalTask(2, { status: "review" }))).toMatchObject({ key: "awaitingJoin", tone: "wait" });
+    expect(goalTaskLine(goalTask(2, { status: "review" }))).toMatchObject({ key: "awaitingJoin", tone: "ink" });
   });
 
   it("marks a finished report that writing tasks wait on until you accept it", () => {

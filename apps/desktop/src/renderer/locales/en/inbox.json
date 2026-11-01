@@ -168,7 +168,8 @@
     "accept": "Turn into a task",
     "acceptNote": "Creates a draft task with a proposed crew. Nothing starts until you approve it.",
     "openRun": "Open run",
-    "dismiss": "Dismiss"
+    "dismiss": "Dismiss",
+    "acceptGoal": "Add to its goal"
   },
   "switch": {
     "section": "Switched accounts · {{count}}",

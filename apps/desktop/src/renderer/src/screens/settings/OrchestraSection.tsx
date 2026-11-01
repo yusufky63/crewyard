@@ -1,7 +1,12 @@
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
 import { create } from "zustand";
+import { GOAL_LIMITS } from "@crewyard/core";
+import { useDaemon } from "../../ipc.ts";
+import { useNav } from "../../nav.ts";
 import { act, useWork } from "../tasks/data.ts";
+import { typedUsd } from "../tasks/goalsModel.ts";
 import { useGoalsChanged } from "../tasks/GoalRow.tsx";
 import { openSettings } from "./model.ts";
 import { Row, Section, Toggle } from "./parts.tsx";
@@ -89,6 +94,56 @@ export function useGoalSwitches() {
   return { data, pauseAll, setEnabled };
 }
 
+/**
+ * The open project's default goal budget (design §3.2): the first goal's card sets it, and it is
+ * changed here later. Every plan starts its goal budget at max(this, the plan's total x 1.5).
+ * The daemon checks the bounds again (goals.setProjectDefaults).
+ */
+function DefaultBudgetRow({ onError }: { onError: (message: string | null) => void }) {
+  const { t } = useTranslation("goals");
+  const qc = useQueryClient();
+  const projectId = useNav((s) => s.projectId);
+  const projects = useDaemon("projects.list", undefined);
+  const project = projects.data?.find((p) => p.id === projectId);
+  const q = useWork("goals.projectDefaults", { projectId: projectId ?? "" }, { enabled: Boolean(projectId), retry: false });
+  const saved = q.data && typeof q.data === "object" && "budgetUsd" in q.data ? (q.data.budgetUsd as number | null) : null;
+  const [draft, setDraft] = useState("");
+  useEffect(() => setDraft(saved === null ? "" : String(saved)), [saved]);
+  if (!projectId || !project) return null;
+  const value = typedUsd(draft);
+  const valid = value !== null && value <= GOAL_LIMITS.budgetMaxUsd;
+  const commit = () => {
+    if (!valid) {
+      setDraft(saved === null ? "" : String(saved));
+      return;
+    }
+    if (value === saved) return;
+    onError(null);
+    void act("goals.setProjectDefaults", { projectId, budgetUsd: value })
+      .then((r) => qc.setQueryData(["goals.projectDefaults", { projectId }], r))
+      .catch((err: unknown) => onError(message(err)));
+  };
+  return (
+    <Row label={t("settings.defaultBudget", { project: project.name })} hint={t("settings.defaultBudgetHint", { max: GOAL_LIMITS.budgetMaxUsd })}>
+      <label className="st-number">
+        <span className="lbl">$</span>
+        <input
+          className="pv-input mono"
+          inputMode="decimal"
+          value={draft}
+          placeholder={t("settings.defaultBudgetNone")}
+          aria-label={t("settings.defaultBudget", { project: project.name })}
+          aria-invalid={draft.trim() !== "" && !valid}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => e.key === "Enter" && commit()}
+          size={8}
+        />
+      </label>
+    </Row>
+  );
+}
+
 export function OrchestraSection({ index }: { index: number }) {
   const { t } = useTranslation("goals");
   const ts = useTranslation("settings").t;
@@ -107,6 +162,7 @@ export function OrchestraSection({ index }: { index: number }) {
       <Row label={t("settings.pauseAll")} hint={s.data?.pausedAll ? t("settings.pausedHint") : t("settings.pauseAllHint")}>
         <Toggle label={t("settings.pauseAll")} onTone="bad" value={s.data?.pausedAll ?? false} disabled={!s.data} onChange={(on) => run(s.pauseAll(on))} />
       </Row>
+      <DefaultBudgetRow onError={setError} />
       {error && <p className="pv-error st-note">{ts("saveFailed", { error })}</p>}
     </Section>
   );

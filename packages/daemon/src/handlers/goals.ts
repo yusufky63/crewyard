@@ -135,5 +135,6 @@ export function createGoalsHandlers(ctx: HandlerContext, overrides?: Partial<Orc
       return { enabled: o.setOrchestraEnabled(p.on), pausedAll: o.goals.pausedAllState() };
     },
     "goals.setProjectDefaults": ({ projectId: pid, budgetUsd }) => o.goalEdits.setProjectDefaults(projectId(pid), budgetUsd),
+    "goals.projectDefaults": (p) => o.goalEdits.projectDefaults(projectId(p?.projectId)),
   };
 }

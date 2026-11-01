@@ -119,6 +119,7 @@ export function goalDetail(over: Partial<GoalDetail> = {}): GoalDetail {
     integration: { taskId: "ti", status: "proposed", reviewPassed: false, estimate: cost(0.17), shareUsd: 0.2 },
     stuck: null,
     suggestedBudgetUsd: 3,
+    reviewEstimate: null,
     ...over,
   };
 }

@@ -189,6 +189,8 @@ export interface CrewyardApi {
   saveExport(kind: "csv" | "json", defaultName: string, content: string): Promise<string | null>;
   /** Shows a file or folder in Explorer. Only paths inside the Crewyard profile are honoured. */
   revealPath(path: string): void;
+  /** Opens a task's own worktree folder in Explorer; the main process looks the path up by task id. */
+  revealWorktree(taskId: string): void;
   /** Keeps the tray, toasts and dialogs in the language the renderer shows. */
   setLanguage(language: string): void;
   /** Shows one plain toast so the user can see notifications work. */

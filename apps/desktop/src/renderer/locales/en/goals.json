@@ -105,7 +105,8 @@
     "taskFailed": "{{number}} {{title}} failed",
     "reportWaits": "Read the report of {{number}} {{title}}, then accept it: writing tasks build on it",
     "empty": "No accepted task is left. Replan, add a task or stop the goal.",
-    "readyForPr": "The last review passed on the goal branch. You open the pull request."
+    "readyForPr": "The last review passed on the goal branch. You open the pull request.",
+    "followup": "{{number}} proposes a follow-up task"
   },
   "action": {
     "pause": "Pause goal",
@@ -126,7 +127,9 @@
     "openGoal": "Open goal",
     "more": "Limits",
     "close": "Close",
-    "openBlocking": "Open {{number}}"
+    "openBlocking": "Open {{number}}",
+    "addFollowup": "Add to the goal",
+    "dismissFollowup": "Dismiss"
   },
   "replan": {
     "note": "Note to the planner (optional)",
@@ -137,7 +140,8 @@
     "hint": "One read-only planning run. Done, running and merged tasks stay as they are; the new plan waits for your approval.",
     "noApiCost": "no API cost",
     "estimateUpTo": "~{{usd}} Estimated, up to {{ceiling}}",
-    "unknownUpTo": "cost unknown, up to {{ceiling}}"
+    "unknownUpTo": "cost unknown, up to {{ceiling}}",
+    "goFrom": "{{label}} · {{cost}}"
   },
   "stop": {
     "preview": "Stop this goal? It cancels {{tasks}} and stops {{runs}}. Spent so far: {{spend}}. Worktrees and branches are kept.",
@@ -153,7 +157,8 @@
     "budget": "Goal budget (USD)",
     "atOnce": "At once",
     "save": "Save limits",
-    "hint": "Raising the budget raises the shares of unfinished tasks in the same proportion."
+    "hint": "Raising the budget raises the shares of unfinished tasks in the same proportion.",
+    "taskBudget": "Task budget (USD)"
   },
   "add": {
     "title": "Add a task",
@@ -180,7 +185,10 @@
     "changes": "The last review asks for changes",
     "report": "Read the report of {{task}} and accept it before the tasks that build on it start",
     "profile_gone": "A profile the plan uses is gone: {{profile}}",
-    "detail": "Details: {{detail}}"
+    "detail": "Details: {{detail}}",
+    "heldPaused": "The goal is paused. Retry and Send back start a run, so they wait until you resume it.",
+    "heldPausedAll": "All goals are paused. Retry and Send back start a run, so they wait until you lift Pause all goals.",
+    "mergeHint": "The task's worktree is open in Explorer. Merge the goal branch into it there and commit, then click Check again."
   },
   "why": {
     "finish": "has not finished",
@@ -404,11 +412,9 @@
     "notTied": "Not tied to your words",
     "lastReview": "Last review of all changes",
     "lastReviewWho": "reviewer, read-only",
-    "lastReviewLater": "priced when you approve",
     "oneTask": "One task is enough",
     "oneTaskNote": "Approving makes it an ordinary task with this crew: no goal branch, and its own pull request.",
     "oneUnknown": "Its cost is Unknown: the goal budget under Limits becomes this task's budget, and it asks you before spending past it.",
-    "editCrew": "Edit crew",
     "limitsSummary": "Limits: goal budget",
     "noBudget": "no budget yet",
     "atOnceSummary": "{{count}} at once",
@@ -437,6 +443,18 @@
       "over_budget": "{{total}} is over the goal budget",
       "at_once": "At once must be from {{min}} to {{max}}.",
       "too_many": "A goal holds at most {{max}} tasks, counting the ones approved earlier: skip some."
+    },
+    "limitsSummaryOne": "Limits: task budget",
+    "lastReviewPricing": "pricing…",
+    "failedReason": {
+      "too_many_tasks": "The planner returned {{count}} tasks; a goal holds at most {{max}}.",
+      "no_tasks": "The planner returned a plan with no tasks.",
+      "no_result": "The planning run ended without returning a plan.",
+      "frozen_changed": "The plan changed task {{key}}, which can no longer change.",
+      "frozen_removed": "The plan dropped task {{key}}, which can no longer be removed.",
+      "kept_changing": "The goal's tasks kept changing while the plan's tasks were being created.",
+      "not_created": "The plan's tasks could not be created.",
+      "invalid": "The planner's answer did not pass the plan checks."
     }
   },
   "editor": {
@@ -459,6 +477,15 @@
     "enabledHint": "Off hides Orchestra in the composer and refuses new goals; the composer opens on Crew. Goals you already approved keep running in their order.",
     "pauseAll": "Pause all goals",
     "pauseAllHint": "Stops every goal in every project at once: running goal steps and planning runs pause at their next turn boundary, and no goal task or planning run starts. Tasks outside goals keep running.",
-    "pausedHint": "On: no goal task or planning run starts, and the status bar says Goals paused. Lifting it is your click."
+    "pausedHint": "On: no goal task or planning run starts, and the status bar says Goals paused. Lifting it is your click.",
+    "defaultBudget": "Default goal budget for {{project}}",
+    "defaultBudgetHint": "Every new plan in this project starts its goal budget at this amount, or at the plan's estimate times 1.5 when that is higher. Up to ${{max}}.",
+    "defaultBudgetNone": "not set"
+  },
+  "answerStuck": {
+    "retryOne": "Retry {{number}}",
+    "retryMany": "Retry the {{count}} failed tasks",
+    "runWithout": "Run {{task}} without {{without}}",
+    "replan": "Replan from here"
   }
 }

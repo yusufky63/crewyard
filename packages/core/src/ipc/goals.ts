@@ -339,8 +339,10 @@ export interface GoalsIpc {
    * already run keep their scheduler, because their waiting tasks must still wait (design §6.5).
    */
   "goals.setEnabled": { params: { on: boolean }; result: { enabled: boolean; pausedAll: boolean } };
-  /** The project's default goal budget (Settings → Project, and the first-goal card). */
+  /** The project's default goal budget (the first-goal card, and Settings → Orchestra later). */
   "goals.setProjectDefaults": { params: { projectId: string; budgetUsd: number }; result: { projectId: string; budgetUsd: number } };
+  /** The project's default goal budget, as Settings shows it; null until the first goal card or Settings sets it. */
+  "goals.projectDefaults": { params: { projectId: string }; result: { projectId: string; budgetUsd: number | null } };
 }
 
 export type GoalChangeCause =

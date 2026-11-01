@@ -28,7 +28,7 @@
       "title": "Orchestra",
       "body": "Write a goal. One read-only planning run splits it into tasks: at most 8, the order they run in, and the files each plans to change.",
       "points": {
-        "a": "Plan goal shows the planning estimate before you click, and the note under it the ceiling. The first goal in a project first shows what Orchestra does and asks for the project's default goal budget.",
+        "a": "Plan goal shows the planning estimate before you click, and the note under it the ceiling. The first goal in a project first shows what Orchestra does and asks for the project's default goal budget, which you can change later in Settings → Orchestra.",
         "b": "You read the plan, edit or skip tasks, and one Approve and start approves every task you kept. Tasks that plan to change the same files are put in order for you.",
         "c": "Tasks start in that order, at most 2 at once per goal, each within its share of the goal budget. A research report that a code task builds on waits until you accept it.",
         "d": "Finished work is merged into one goal branch in Crewyard's own worktree. A last review reads all of it, and you open the one pull request."

@@ -359,8 +359,9 @@ export function InboxScreen() {
               <Item key={q.id} q={q} selected={selected?.id === q.id} onSelect={() => setPicked(q.id)} />
             ))}
           </Panel>
-          <ReportList reports={reports.data ?? []} onError={(e) => setStallError(errorText(e))} />
+          {/* Goal decisions wait for your answer, like the requests above: before the agents' reports. */}
           <GoalList projectId={projectId} />
+          <ReportList reports={reports.data ?? []} onError={(e) => setStallError(errorText(e))} />
           <StallList alerts={stalled} onOpenRequest={setPicked} onError={(e) => setStallError(errorText(e))} />
           <SwitchList switches={switches.data ?? []} onError={(e) => setStallError(errorText(e))} />
           <ErrorLine>{stallError}</ErrorLine>

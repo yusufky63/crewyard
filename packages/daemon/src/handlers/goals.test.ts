@@ -141,7 +141,10 @@ describe("reading goals", () => {
     expect(preview).toMatchObject({ canPlan: true, reason: null, introDue: true, smallHint: false, defaultBudgetUsd: null, billing: "api" });
     expect(preview.estimate.provenance).toBe("estimated");
 
+    // Settings → Orchestra reads the default and changes it later (design §3.2).
+    expect(await h["goals.projectDefaults"]({ projectId: project.id })).toEqual({ projectId: project.id, budgetUsd: null });
     expect(await h["goals.setProjectDefaults"]({ projectId: project.id, budgetUsd: 7.5 })).toEqual({ projectId: project.id, budgetUsd: 7.5 });
+    expect(await h["goals.projectDefaults"]({ projectId: project.id })).toEqual({ projectId: project.id, budgetUsd: 7.5 });
     expect((await h["goals.preview"]({ projectId: project.id, text: GOAL })).defaultBudgetUsd).toBe(7.5);
 
     const g = await planned(env);
@@ -858,6 +861,7 @@ describe("the goals area in the daemon", () => {
       "goals.pauseAll",
       "goals.setEnabled",
       "goals.setProjectDefaults",
+      "goals.projectDefaults",
     ];
     expect(Object.keys(h).sort()).toEqual([...methods].sort());
     const msg: IpcMessage = { kind: "request", id: 1, method: "goals.get", params: { goalId: "nope" } } as IpcMessage;

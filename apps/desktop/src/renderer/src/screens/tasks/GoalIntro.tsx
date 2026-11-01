@@ -38,10 +38,16 @@ export function GoalIntro({
   const value = typedUsd(budget);
   const bad = value === null || value > GOAL_LIMITS.budgetMaxUsd;
   const first = useRef<HTMLInputElement>(null);
+  const card = useRef<HTMLDivElement>(null);
   // The card asks before anything runs, so focus lands in it; Esc puts you back in the composer.
-  useEffect(() => first.current?.focus(), []);
+  // Its heading and lead come into sight first, so a short window does not scroll them away.
+  useEffect(() => {
+    card.current?.scrollIntoView({ block: "start", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    first.current?.focus({ preventScroll: true });
+  }, []);
   return (
     <div
+      ref={card}
       className="banner gp-intro"
       role="alertdialog"
       aria-labelledby={ids.title}

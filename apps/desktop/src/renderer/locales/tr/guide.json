@@ -28,7 +28,7 @@
       "title": "Orkestra",
       "body": "Bir hedef yaz. Salt okunur tek bir planlama çalıştırması onu görevlere böler: en fazla 8 görev, hangi sırayla çalışacakları ve her birinin değiştirmeyi planladığı dosyalar.",
       "points": {
-        "a": "Hedefi planla düğmesi tıklamadan önce planlama tahminini, altındaki not da üst sınırı gösterir. Bir projedeki ilk hedefte önce Orkestra'nın ne yaptığı anlatılır ve projenin varsayılan hedef bütçesi sorulur.",
+        "a": "Hedefi planla düğmesi tıklamadan önce planlama tahminini, altındaki not da üst sınırı gösterir. Bir projedeki ilk hedefte önce Orkestra'nın ne yaptığı anlatılır ve projenin varsayılan hedef bütçesi sorulur; bu bütçeyi sonra Ayarlar → Orkestra'dan değiştirebilirsin.",
         "b": "Planı okur, görevleri düzenler ya da atlarsın; tek bir Onayla ve başlat, tuttuğun bütün görevleri onaylar. Aynı dosyaları değiştirmeyi planlayan görevler senin yerine sıraya konur.",
         "c": "Görevler bu sırayla başlar; hedef başına aynı anda en fazla 2 görev çalışır ve her biri hedef bütçesindeki payının içinde kalır. Bir kod görevinin dayandığı araştırma raporu, sen kabul edene kadar bekler.",
         "d": "Biten işler Crewyard'ın kendi worktree'sindeki tek bir hedef dalında birleştirilir. Son bir inceleme hepsini okur, tek pull request'i de sen açarsın."
@@ -251,7 +251,7 @@
     },
     "planningCost": {
       "q": "Bir hedefi planlamak ne kadar tutar?",
-      "a": "Yazma alanındaki Planlayıcı çipinde görünen planlayıcının salt okunur tek bir çalıştırması. Hedefi planla düğmesi tahminini, altındaki not da üst sınırı gösterir: planlama çalıştırmasının kendi bütçesi, tahminin üç katı (en az 0,25 $) ve hiçbir zaman projenin görev başına sınırının üstünde değil. Bu sınıra gelince çalıştırma duraklar ve Gelen kutusunda sorar. Düzelt ve Yeniden planla, düğmelerinde fiyatı yazan birer planlama çalıştırması daha tutar: onaydan önce en fazla 5 düzeltme, onaydan sonra en fazla 3 yeniden planlama. Onaylamadığın bir plan başka hiçbir şey başlatmaz."
+      "a": "Yazma alanındaki Planlayıcı çipinde görünen planlayıcının salt okunur tek bir çalıştırması. Hedefi planla düğmesi tahminini, altındaki not da üst sınırı gösterir: planlama çalıştırmasının kendi bütçesi, tahminin üç katı (en az 0,25 $) ve hiçbir zaman projenin görev başına sınırının üstünde değil. Bu sınıra gelince çalıştırma duraklar ve Gelen kutusunda sorar. Planı güncelle ve Yeniden planla, düğmelerinde fiyatı yazan birer planlama çalıştırması daha tutar: onaydan önce en fazla 5 güncelleme, onaydan sonra en fazla 3 yeniden planlama. Onaylamadığın bir plan başka hiçbir şey başlatmaz."
     },
     "goalBranch": {
       "q": "Orkestra benim dallarıma push eder ya da birleştirir mi?",

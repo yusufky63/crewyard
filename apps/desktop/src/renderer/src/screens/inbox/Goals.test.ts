@@ -25,7 +25,7 @@ function render(node: ReactNode, seed?: (qc: QueryClient) => void): string {
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&#x27;|&#39;/g, "'").replace(/&amp;/g, "&").replace(/\s+/g, " ");
 
 const summary = (id: string, over: Partial<GoalSummary>): GoalSummary => {
-  const { text: _t, baseBranch: _b, baseSha: _s, maxParallel: _m, maxTasks: _x, plannerProfileId: _p, revisions: _r, tasks: _k, decisions: _d, joins: _j, revisionsLeft: _rl, replansLeft: _pl, integration: _i, stuck: _st, suggestedBudgetUsd: _sb, ...s } = goalDetail();
+  const { text: _t, baseBranch: _b, baseSha: _s, maxParallel: _m, maxTasks: _x, plannerProfileId: _p, revisions: _r, tasks: _k, decisions: _d, joins: _j, revisionsLeft: _rl, replansLeft: _pl, integration: _i, stuck: _st, suggestedBudgetUsd: _sb, reviewEstimate: _re, ...s } = goalDetail();
   return { ...s, id, ...over };
 };
 

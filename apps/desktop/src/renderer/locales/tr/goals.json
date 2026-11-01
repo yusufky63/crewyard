@@ -36,7 +36,7 @@
     "collapse": "Hedefin görevlerini gizle",
     "tasks_one": "{{count}} görev",
     "tasks_other": "{{count}} görev",
-    "planner": "Planlayan · {{who}}",
+    "planner": "Planlayıcı · {{who}}",
     "plannerWaits": "Boş bir yer bekleniyor"
   },
   "hold": {
@@ -105,7 +105,8 @@
     "taskFailed": "{{number}} {{title}} başarısız oldu",
     "reportWaits": "{{number}} {{title}} görevinin raporunu okuyup onaylayın: yazan görevler bunun üzerine kurulacak",
     "empty": "Onaylı görev kalmadı. Yeniden planlayın, görev ekleyin ya da hedefi durdurun.",
-    "readyForPr": "Son inceleme hedef dalında geçti. Pull request'i siz açarsınız."
+    "readyForPr": "Son inceleme hedef dalında geçti. Pull request'i siz açarsınız.",
+    "followup": "{{number}} bir ek görev öneriyor"
   },
   "action": {
     "pause": "Hedefi duraklat",
@@ -126,10 +127,12 @@
     "openGoal": "Hedefi aç",
     "more": "Sınırlar",
     "close": "Kapat",
-    "openBlocking": "{{number}} görevini aç"
+    "openBlocking": "{{number}} görevini aç",
+    "addFollowup": "Hedefe ekle",
+    "dismissFollowup": "Kapat"
   },
   "replan": {
-    "note": "Planlayana not (isteğe bağlı)",
+    "note": "Planlayıcıya not (isteğe bağlı)",
     "go": "Yeniden planla · {{cost}}",
     "cancel": "Vazgeç",
     "estimate": "~{{usd}} Tahmini",
@@ -137,10 +140,11 @@
     "hint": "Yalnızca okuyan tek bir planlama çalışması. Biten, çalışan ve birleştirilen görevler olduğu gibi kalır; yeni plan onayınızı bekler.",
     "noApiCost": "API ücreti yok",
     "estimateUpTo": "~{{usd}} Tahmini, en çok {{ceiling}}",
-    "unknownUpTo": "maliyet bilinmiyor, en çok {{ceiling}}"
+    "unknownUpTo": "maliyet bilinmiyor, en çok {{ceiling}}",
+    "goFrom": "{{label}} · {{cost}}"
   },
   "stop": {
-    "preview": "Bu hedef durdurulsun mu? {{tasks}} iptal edilir, {{runs}} durdurulur. Şimdiye kadarki harcama: {{spend}}. Çalışma ağaçları ve dallar silinmez.",
+    "preview": "Bu hedef durdurulsun mu? {{tasks}} iptal edilir, {{runs}} durdurulur. Şimdiye kadarki harcama: {{spend}}. Worktree'ler ve dallar silinmez.",
     "tasks_one": "{{count}} görev",
     "tasks_other": "{{count}} görev",
     "runs_one": "çalışan {{count}} ajan",
@@ -153,7 +157,8 @@
     "budget": "Hedef bütçesi (USD)",
     "atOnce": "Aynı anda",
     "save": "Sınırları kaydet",
-    "hint": "Bütçeyi artırmak, bitmemiş görevlerin paylarını aynı oranda artırır."
+    "hint": "Bütçeyi artırmak, bitmemiş görevlerin paylarını aynı oranda artırır.",
+    "taskBudget": "Görev bütçesi (USD)"
   },
   "add": {
     "title": "Görev ekle",
@@ -165,7 +170,7 @@
     "none": "Hiçbiri: hemen başlayabilir",
     "submit": "Hedefe ekle",
     "cancel": "Vazgeç",
-    "note": "Hedefe tek görevlik bir plan olarak katılır; tek tıkla onaylarsınız. Planlayan çalışmaz.",
+    "note": "Hedefe tek görevlik bir plan olarak katılır; tek tıkla onaylarsınız. Planlayıcı çalışmaz.",
     "titleTooLong": "Başlık çok uzun: en çok {{max}} bayt olabilir; ç, ş gibi harfler iki bayt sayılır."
   },
   "decision": {
@@ -180,7 +185,10 @@
     "changes": "Son inceleme değişiklik istiyor",
     "report": "{{task}} görevinin raporunu okuyup onaylayın; ona dayanan görevler ancak o zaman başlar",
     "profile_gone": "Planın kullandığı bir profil artık yok: {{profile}}",
-    "detail": "Ayrıntı: {{detail}}"
+    "detail": "Ayrıntı: {{detail}}",
+    "heldPaused": "Hedef duraklatıldı. Yeniden deneme ve geri gönderme yeni bir çalışma başlatır; hedefi sürdürene kadar bekler.",
+    "heldPausedAll": "Tüm hedefler duraklatıldı. Yeniden deneme ve geri gönderme yeni bir çalışma başlatır; Tüm hedefleri duraklat kapanana kadar bekler.",
+    "mergeHint": "Görevin worktree'si Gezgin'de açıldı. Hedef dalını orada birleştirip commit edin, sonra Tekrar kontrol et'e tıklayın."
   },
   "why": {
     "finish": "henüz bitmedi",
@@ -223,13 +231,13 @@
     "goal_text": "Hedef metni boş ya da çok uzun.",
     "goal_bad_attachments": "Ekler okunamadı.",
     "goal_no_planner": "Burada salt okunur plan yapabilecek bir profil yok. Bir tane ekleyin ya da Ekip'i kullanın.",
-    "goal_planner_unknown": "Bu planlayan burada kullanılamıyor.",
+    "goal_planner_unknown": "Bu planlayıcı burada kullanılamıyor.",
     "goal_stopped": "Hedef durduruldu; artık hiçbir şey değişmez.",
     "goal_stale_revision": "Daha yeni bir plan var. Şimdi o gösteriliyor.",
     "goal_not_ready": "Plan henüz hazır değil.",
     "goal_approved": "Bu plan onaylandı. Yeniden planla ya da Görev ekle'yi kullanın.",
     "goal_not_approved": "Hedefin henüz onaylı bir planı yok.",
-    "goal_revisions_used": "Onaydan önceki düzeltme hakkı bitti.",
+    "goal_revisions_used": "Onaydan önceki güncelleme hakkı bitti.",
     "goal_replans_used": "Yeniden planlama hakkı kalmadı.",
     "goal_too_many": "Hedef, alabileceği en fazla göreve ulaştı.",
     "goal_invalid_task": "Görev plan denetimlerinden geçmedi.",
@@ -289,7 +297,7 @@
       "goal_error": "Zamanlama hatası",
       "goal_limits": "Sınırlar değişti",
       "goal_collapsed": "Tek görev olarak çalıştırıldı",
-      "goal_plan_refused": "Plan planlayana geri gönderildi",
+      "goal_plan_refused": "Plan planlayıcıya geri gönderildi",
       "goal_plan_ignored": "Eskimiş plan bir kenara bırakıldı",
       "goal_integration_created": "Son inceleme hazırlandı",
       "goal_halt_lifted": "Durdurma kaldırıldı",
@@ -349,7 +357,7 @@
     "retryPlain": "Yeniden planla",
     "retryNone": "Planlama hakkı kalmadı",
     "editGoal": "Hedefi düzenle",
-    "editGoalHint": "Hedefi düzenle, onaylanmamış bu planı durdurur ve sözlerinizi değiştirip yeniden planlamanız için oluşturucuya geri koyar.",
+    "editGoalHint": "Hedefi düzenle, onaylanmamış bu planı durdurur ve hedef metninizi oluşturucuya geri koyar; değiştirip yeniden planlayabilirsiniz.",
     "backToGoal": "Hedefe dön",
     "state": {
       "planning": "Yeni bir plan yazılıyor.",
@@ -362,13 +370,13 @@
     "tasks_other": "{{count}} görev",
     "accepted": "{{total}} görevden {{accepted}} kabul edildi",
     "ofBudget": "/ hedef bütçesi",
-    "diff": "Düzeltildi: eklenen {{added}} · değişen {{changed}} · çıkarılan {{removed}}",
+    "diff": "Güncellendi: eklenen {{added}} · değişen {{changed}} · çıkarılan {{removed}}",
     "removedCount_one": "{{count}} görev",
     "removedCount_other": "{{count}} görev",
     "heldShares_one": "Daha önce onaylanan {{count}} görevin ayrılmış payı",
     "heldShares_other": "Daha önce onaylanan {{count}} görevin ayrılmış payı",
     "yourNote": "Notunuz: {{note}}",
-    "overlap": "{{task}}, {{after}} sonrasında çalışır: ikisi de {{paths}} yolunu değiştiriyor",
+    "overlap": "{{task}} görevi {{after}} görevinden sonra çalışır: ikisi de {{paths}} yolunu değiştiriyor",
     "noPaths": "{{task}} değiştireceği dosyaları belirtmiyor, bu yüzden {{after}} sonrasında çalışır",
     "sideBySide": "Yine de yan yana çalıştır",
     "feeds_one": "{{from}} görevinin raporu {{to}} görevine girdi olur: o başlamadan önce raporu okuyup onaylarsınız",
@@ -385,7 +393,7 @@
       "added": "Eklendi",
       "changed": "Değişti"
     },
-    "edited": "Düzenlendi: düzeltmede korunur",
+    "edited": "Düzenlendi · korunur",
     "edit": "Düzenle",
     "unknownCost": "Maliyet bilinmiyor: bu görev için bir bütçe yazın",
     "typedPlaceholder": "$",
@@ -401,14 +409,12 @@
     "share": "Hedef bütçesindeki payı",
     "reason": "Neden",
     "basis": "Hedefinizden",
-    "notTied": "Sözlerinize bağlı değil",
+    "notTied": "Hedef metninizde geçmiyor",
     "lastReview": "Tüm değişikliklerin son incelemesi",
     "lastReviewWho": "inceleyici, salt okunur",
-    "lastReviewLater": "onayladığınızda fiyatlanır",
     "oneTask": "Tek görev yeterli",
     "oneTaskNote": "Onaylamak onu bu ekiple sıradan bir göreve dönüştürür: hedef dalı olmaz, kendi pull request'i olur.",
     "oneUnknown": "Maliyeti bilinmiyor: Sınırlar altındaki hedef bütçesi bu görevin bütçesi olur; görev onu aşmadan önce size sorar.",
-    "editCrew": "Ekibi düzenle",
     "limitsSummary": "Sınırlar: hedef bütçesi",
     "noBudget": "henüz bütçe yok",
     "atOnceSummary": "aynı anda {{count}}",
@@ -416,12 +422,12 @@
     "limitsHintOne": "Hedef bütçesi bu görevin bütçesi olur; görev onu aşmadan önce size sorar.",
     "limitsHintRaise": "Onaylamak için hedef bütçesini buradan artırın ya da bir görevi atlayın.",
     "editingBlock": "Önce {{number}} görevindeki düzenlemeyi kaydedin ya da iptal edin.",
-    "revise": "Düzelt",
+    "revise": "Planı güncelle",
     "revisePlaceholder": "Planlayıcıya not…",
-    "reviseGo": "Düzelt · {{cost}}",
-    "reviseNone": "Düzeltme hakkı kalmadı",
-    "revisionsLeft_one": "{{count}} düzeltme hakkı kaldı",
-    "revisionsLeft_other": "{{count}} düzeltme hakkı kaldı",
+    "reviseGo": "Planı güncelle · {{cost}}",
+    "reviseNone": "Güncelleme hakkı kalmadı",
+    "revisionsLeft_one": "{{count}} güncelleme hakkı kaldı",
+    "revisionsLeft_other": "{{count}} güncelleme hakkı kaldı",
     "nothingStarts": "Siz onaylayana kadar hiçbir şey başlamaz.",
     "nothingStartsPr": "Siz onaylayana kadar hiçbir şey başlamaz. Pull request'i siz açarsınız.",
     "approve_one": "Onayla ve {{count}} görevi başlat · {{cost}}",
@@ -437,6 +443,18 @@
       "over_budget": "{{total}}, hedef bütçesini aşıyor:",
       "at_once": "Aynı anda değeri {{min}} ile {{max}} arasında olmalı.",
       "too_many": "Bir hedef, daha önce onaylananlarla birlikte en fazla {{max}} görev tutar: bazılarını atlayın."
+    },
+    "limitsSummaryOne": "Sınırlar: görev bütçesi",
+    "lastReviewPricing": "fiyatlanıyor…",
+    "failedReason": {
+      "too_many_tasks": "Planlayıcı {{count}} görev döndürdü; bir hedefte en fazla {{max}} görev olabilir.",
+      "no_tasks": "Planlayıcı içinde hiç görev olmayan bir plan döndürdü.",
+      "no_result": "Planlama çalışması bir plan döndürmeden bitti.",
+      "frozen_changed": "Plan, artık değişemeyecek olan {{key}} görevini değiştirdi.",
+      "frozen_removed": "Plan, artık çıkarılamayacak olan {{key}} görevini çıkardı.",
+      "kept_changing": "Planın görevleri oluşturulurken hedefin görevleri değişmeye devam etti.",
+      "not_created": "Planın görevleri oluşturulamadı.",
+      "invalid": "Planlayıcının yanıtı plan denetimlerinden geçmedi."
     }
   },
   "editor": {
@@ -450,7 +468,7 @@
       "medium": "Orta",
       "low": "Düşük"
     },
-    "note": "Düzenlediğiniz görev, planı düzelttiğinizde bıraktığınız gibi kalır.",
+    "note": "Düzenlediğiniz görev, planı güncellediğinizde bıraktığınız gibi kalır.",
     "save": "Görevi kaydet",
     "loop": "Bu, görevlerin birbirini döngü hâlinde beklemesine yol açar: {{loop}}"
   },
@@ -459,6 +477,15 @@
     "enabledHint": "Kapalıyken yazma alanında Orkestra görünmez ve yeni hedef kabul edilmez; yazma alanı Ekip ile açılır. Onayladığınız hedefler kendi sıralarıyla çalışmayı sürdürür.",
     "pauseAll": "Tüm hedefleri duraklat",
     "pauseAllHint": "Her projedeki bütün hedefleri bir anda durdurur: çalışan hedef adımları ve planlama çalıştırmaları bir sonraki tur sınırında duraklar, hiçbir hedef görevi ya da planlama çalıştırması başlamaz. Hedef dışındaki görevler çalışmaya devam eder.",
-    "pausedHint": "Açık: hiçbir hedef görevi ya da planlama çalıştırması başlamaz, durum çubuğunda Hedefler duraklatıldı yazar. Kaldırmak da sizin tıklamanızla olur."
+    "pausedHint": "Açık: hiçbir hedef görevi ya da planlama çalıştırması başlamaz, durum çubuğunda Hedefler duraklatıldı yazar. Kaldırmak da sizin tıklamanızla olur.",
+    "defaultBudget": "{{project}} için varsayılan hedef bütçesi",
+    "defaultBudgetHint": "Bu projedeki her yeni plan, hedef bütçesine bu tutarla başlar; planın tahmininin 1,5 katı daha yüksekse onunla. En fazla ${{max}}.",
+    "defaultBudgetNone": "ayarlanmadı"
+  },
+  "answerStuck": {
+    "retryOne": "{{number}} görevini yeniden dene",
+    "retryMany": "Başarısız {{count}} görevi yeniden dene",
+    "runWithout": "{{task}} görevini {{without}} olmadan çalıştır",
+    "replan": "Buradan yeniden planla"
   }
 }

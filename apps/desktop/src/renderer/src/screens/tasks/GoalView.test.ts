@@ -253,6 +253,53 @@ describe("GoalView", () => {
     expect(t).toContain("Done · report waits for you");
   });
 
+  it("a stuck decision names its tasks: Retry 02, Run 03 without 02, Replan from here", async () => {
+    const base = goalDetail();
+    const goal = goalDetail({
+      status: "needs_you",
+      reason: "decision",
+      stuck: { taskId: "t3", waitsFor: "t2", why: "failed" },
+      tasks: base.tasks.map((x) => (x.taskId === "t2" ? { ...x, status: "failed" as const } : x)),
+      decisions: [decision({ id: "s1", kind: "stuck", taskId: null, payload: { waiting: ["t3"], detail: "failed:t2" }, actions: ["retry", "replan", "run_without", "stop"] })],
+    });
+    const html = view(goal, [], seedPreview(goal, { canPlan: true, estimate: cost(0.31), ceilingUsd: 0.93 }));
+    expect(enabled(html, "Retry 02", true)).toBe(true);
+    expect(enabled(html, "Run 03 without 02", true)).toBe(true);
+    expect(enabled(html, "Replan from here · ~$0.31 Estimated, up to $0.93", true)).toBe(true);
+    // Replan opens its form (which states the cost and starts the run); it is never a bare answer.
+    expect(button(html, "Replan from here", false)).toContain('aria-expanded="false"');
+    await i18n.changeLanguage("tr");
+    const tr = view(goal);
+    expect(button(tr, "02 görevini yeniden dene", true)).not.toBeNull();
+    expect(button(tr, "03 görevini 02 olmadan çalıştır", true)).not.toBeNull();
+  });
+
+  it("keeps Retry and Send back disabled while the goal or every goal is paused, and says why", () => {
+    const conflict = decision({ id: "c1", kind: "conflict", taskId: "t2", payload: { paths: ["CHANGELOG.md"] }, actions: ["send_to_implementer", "merge_myself", "check_again", "leave_out"] });
+    const paused = view(goalDetail({ status: "needs_you", reason: "decision", paused: true, decisions: [conflict] }));
+    expect(enabled(paused, "Send to 02's implementer", true)).toBe(false);
+    // Answers that start no run stay open to you.
+    expect(enabled(paused, "I will merge it myself", true)).toBe(true);
+    expect(enabled(paused, "Leave 02 out of the goal", true)).toBe(true);
+    expect(text(paused)).toContain("The goal is paused. Retry and Send back start a run, so they wait until you resume it.");
+    const all = view(goalDetail({ status: "needs_you", reason: "decision", decisions: [conflict] }), [], (qc) => qc.setQueryData(["goals.state", undefined], { enabled: true, pausedAll: true }));
+    expect(enabled(all, "Send to 02's implementer", true)).toBe(false);
+    expect(text(all)).toContain("All goals are paused.");
+  });
+
+  it("lists a follow-up a goal task proposed under Needs you, with Add to the goal", () => {
+    const goal = goalDetail();
+    const followup = { id: "rep1", projectId: goal.projectId, taskId: "t2", runId: "r2", memberId: "m2", type: "followup", text: "Oturum aramaları iki kez çalışıyor.", title: "Oturum aramalarını önbelleğe al", artifacts: [], createdAt: "2026-10-31T10:00:00.000Z", closedAt: null, closedBy: null, taskCreated: null };
+    const other = { ...followup, id: "rep2", taskId: "not-in-goal", title: "Başka bir öneri" };
+    const html = view(goal, [], (qc) => qc.setQueryData(["mcp.reports.list", { projectId: goal.projectId }], [followup, other]));
+    const t = text(html);
+    expect(t).toContain("Needs you · 1");
+    expect(t).toContain("02 proposes a follow-up task");
+    expect(t).toContain("Oturum aramalarını önbelleğe al");
+    expect(t).not.toContain("Başka bir öneri");
+    expect(enabled(html, "Add to the goal", true)).toBe(true);
+  });
+
   it("a conflicted merge offers its three ways, the buttons naming the task they act on (design §4.9)", async () => {
     const goal = goalDetail({ status: "needs_you", reason: "decision", decisions: [decision({ id: "c1", kind: "conflict", taskId: "t2", payload: { paths: ["CHANGELOG.md", "docs/giriş kılavuzu.md"] }, actions: ["send_to_implementer", "merge_myself", "check_again", "leave_out"] })] });
     const html = view(goal);
@@ -280,7 +327,7 @@ describe("GoalView", () => {
 });
 
 const summary = (over: Partial<GoalSummary> = {}): GoalSummary => {
-  const { text: _t, baseBranch: _b, baseSha: _s, maxParallel: _m, maxTasks: _x, plannerProfileId: _p, revisions: _r, tasks: _k, decisions: _d, joins: _j, revisionsLeft: _rl, replansLeft: _pl, integration: _i, stuck: _st, suggestedBudgetUsd: _sb, ...s } = goalDetail();
+  const { text: _t, baseBranch: _b, baseSha: _s, maxParallel: _m, maxTasks: _x, plannerProfileId: _p, revisions: _r, tasks: _k, decisions: _d, joins: _j, revisionsLeft: _rl, replansLeft: _pl, integration: _i, stuck: _st, suggestedBudgetUsd: _sb, reviewEstimate: _re, ...s } = goalDetail();
   return { ...s, ...over };
 };
 

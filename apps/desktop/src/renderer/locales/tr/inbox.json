@@ -168,7 +168,8 @@
     "accept": "Göreve dönüştür",
     "acceptNote": "Önerilen ekiple taslak bir görev oluşturur. Siz onaylamadan hiçbir şey başlamaz.",
     "openRun": "Çalıştırmayı aç",
-    "dismiss": "Kapat"
+    "dismiss": "Kapat",
+    "acceptGoal": "Hedefine ekle"
   },
   "switch": {
     "section": "Hesap geçişleri · {{count}}",

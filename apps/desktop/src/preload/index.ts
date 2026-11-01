@@ -19,6 +19,7 @@ const api: CrewyardApi = {
   pickDatabase: (mode, defaultName) => ipcRenderer.invoke("crewyard:pick-database", mode, defaultName),
   saveExport: (kind, defaultName, content) => ipcRenderer.invoke("crewyard:save-export", kind, defaultName, content),
   revealPath: (path) => ipcRenderer.send("crewyard:reveal", path),
+  revealWorktree: (taskId) => ipcRenderer.send("crewyard:reveal-worktree", taskId),
   setLanguage: (language) => ipcRenderer.send("crewyard:language", language),
   testToast: () => ipcRenderer.send("crewyard:test-toast"),
   keepAwake: () => ipcRenderer.invoke("crewyard:keep-awake"),

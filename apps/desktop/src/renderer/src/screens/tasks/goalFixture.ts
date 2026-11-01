@@ -191,12 +191,14 @@ function goal(id: string, projectId: string, over: Partial<GoalDetail>): GoalDet
     integration: null,
     stuck: null,
     suggestedBudgetUsd: 3,
+    reviewEstimate: null,
     ...over,
   };
 }
 
 const overlap = (g: string) => [{ taskId: `${g}-t3`, dependsOn: `${g}-t2`, cause: "paths" as const, paths: ["src/auth/client.ts", "src/auth/**"] as [string, string] }];
-const lastReview = (g: string, est: number | null = 0.17) => ({ taskId: `${g}-ti`, status: "proposed" as const, reviewPassed: false, estimate: usd(est), shareUsd: null });
+/** The last review's price before approval, as goals.get prices it (reviewEstimate). */
+const lastReview = (est: number | null = 0.17) => usd(est);
 
 /** Every goal the fixtures know, by id. */
 export function fixtureGoals(projectId: string): Record<string, GoalDetail> {
@@ -205,7 +207,7 @@ export function fixtureGoals(projectId: string): Record<string, GoalDetail> {
   g["g-review"] = goal("g-review", projectId, {
     revisions: [rev({ overlaps: overlap("g-review") })],
     tasks: passkeys("g-review", [0.08, 0.92, 0.61, 0.06], { 4: { basis: "write a guide for support", basisMatched: false } }),
-    integration: lastReview("g-review"),
+    reviewEstimate: lastReview(),
   });
   // Planning: the planner is reading the project.
   g["g-planning"] = goal("g-planning", projectId, { status: "planning", reason: null, spend: usd(0.04, "reported"), planningSpend: usd(0.04, "reported"), revisions: [rev({ state: "planning", summary: null, planningSpend: usd(0.04, "reported") })] });
@@ -213,7 +215,7 @@ export function fixtureGoals(projectId: string): Record<string, GoalDetail> {
   g["g-failed"] = goal("g-failed", projectId, {
     reason: "plan_failed",
     revisionsLeft: 4,
-    revisions: [rev({ state: "failed", summary: null, error: "The planner returned 15 tasks; the limit is 8." })],
+    revisions: [rev({ state: "failed", summary: null, error: "the plan has 15 tasks; the limit is 8" })],
   });
   // One task is enough.
   g["g-one"] = goal("g-one", projectId, {
@@ -226,14 +228,14 @@ export function fixtureGoals(projectId: string): Record<string, GoalDetail> {
   g["g-over"] = goal("g-over", projectId, {
     revisions: [rev({ overlaps: overlap("g-over") })],
     tasks: passkeys("g-over", [0.4, 1.9, 1.3, 0.33]),
-    integration: lastReview("g-over"),
+    reviewEstimate: lastReview(),
     suggestedBudgetUsd: 3,
   });
   // A task whose estimate is Unknown needs a budget typed on its tile.
   g["g-unknown"] = goal("g-unknown", projectId, {
     revisions: [rev({ overlaps: overlap("g-unknown") })],
     tasks: passkeys("g-unknown", [0.08, 0.92, null, 0.06]),
-    integration: lastReview("g-unknown"),
+    reviewEstimate: lastReview(),
   });
   // A revise: the diff, your note, and an edited task kept as you left it.
   g["g-revise"] = goal("g-revise", projectId, {
@@ -249,7 +251,7 @@ export function fixtureGoals(projectId: string): Record<string, GoalDetail> {
       ...passkeys("g-revise", [0.08, 0.92, 0.61, 0.05], { 2: { edited: true, frozen: "edited" }, 4: { title: "Docs: one-page passkeys guide" } }).map((x) => ({ ...x, revision: 2 })),
       task("g-revise", { n: 5, revision: 2, title: "Recovery: sign in after losing a passkey", estimate: usd(0.48), paths: ["src/auth/recovery.ts"], dependsOn: [dep("g-revise", 2)], basis: "add a recovery path", reason: "Your note asked for it." }),
     ],
-    integration: lastReview("g-revise"),
+    reviewEstimate: lastReview(),
   });
   // A running goal: what the goal view and the goal row show after approval.
   g["g-run"] = goal("g-run", projectId, {
@@ -291,7 +293,7 @@ export function fixtureGoals(projectId: string): Record<string, GoalDetail> {
 /** The fixture states the plan review shows, in the order design §3.2 lists them. */
 export const REVIEW_FIXTURES = ["g-planning", "g-review", "g-one", "g-failed", "g-over", "g-unknown", "g-revise"] as const;
 
-const summary = ({ text: _t, baseBranch: _b, baseSha: _s, maxParallel: _m, maxTasks: _x, plannerProfileId: _p, revisions: _r, tasks: _k, decisions: _d, joins: _j, revisionsLeft: _rl, replansLeft: _pl, integration: _i, stuck: _st, suggestedBudgetUsd: _sb, ...s }: GoalDetail): GoalSummary => s;
+const summary = ({ text: _t, baseBranch: _b, baseSha: _s, maxParallel: _m, maxTasks: _x, plannerProfileId: _p, revisions: _r, tasks: _k, decisions: _d, joins: _j, revisionsLeft: _rl, replansLeft: _pl, integration: _i, stuck: _st, suggestedBudgetUsd: _sb, reviewEstimate: _re, ...s }: GoalDetail): GoalSummary => s;
 
 /** What a goal call answers in screenshot mode; writes change nothing and return the goal. */
 export function goalFixtureCall(method: string, params: unknown, projectId: string, query: URLSearchParams): unknown {
