@@ -179,6 +179,19 @@ export class GoalRows {
   }
 
   /**
+   * Goals a pause reaches: every goal that is not stopped or collapsed into one task, approved or
+   * still planning, because a planning run spends too (design §5.2).
+   */
+  liveGoals(): GoalRow[] {
+    return this.all<GoalRow>("select * from goals where stopped_at is null and collapsed_task_id is null order by created_at, id");
+  }
+
+  /** The planning tasks of every revision of the goal, first to last. */
+  planTasks(goalId: string): string[] {
+    return this.all<{ id: string }>("select plan_task_id as id from goal_plans where goal_id = ? and plan_task_id is not null order by revision", goalId).map((r) => r.id);
+  }
+
+  /**
    * Tasks of stopped goals that are not cancelled yet, and their last reviews: Stop goal cancels them
    * one by one, and none of them may start a run in between (design §5.2).
    */
@@ -590,6 +603,9 @@ export class GoalRunner extends Part {
     if (this.closed) return { held, rerun };
     for (const id of this.rows.stoppedGoalTasks()) held.add(id);
     const pausedAll = this.pausedAll();
+    // A paused goal's planning task starts no run either, approved or not: the kill switch must
+    // stop every goal's spend, and a planning run is paid like any other (design §5.2).
+    for (const goal of this.rows.liveGoals()) if (pausedAll.on || goal.paused_at) for (const id of this.rows.planTasks(goal.id)) held.add(id);
     for (const goal of this.rows.activeGoals()) {
       if (this.settled.has(goal.id) && this.settled.get(goal.id) === goal.approved_at) continue;
       try {
@@ -1186,6 +1202,11 @@ export class GoalRunner extends Part {
     return ids.flatMap((id) => this.db.runs(id));
   }
 
+  /** What Pause and Pause all goals pause and resume: the goal's runs and its planning runs. */
+  private pausableRuns(goal: GoalRow) {
+    return [...this.goalRuns(goal), ...this.rows.planTasks(goal.id).flatMap((id) => this.db.runs(id))];
+  }
+
   /** Pauses running steps at their next turn boundary; no new run of a goal task starts (design §5.2). */
   async pause(goalId: string): Promise<void> {
     const goal = this.rows.goal(goalId);
@@ -1194,7 +1215,7 @@ export class GoalRunner extends Part {
       this.rows.run("update goals set paused_at = ? where id = ? and paused_at is null", this.iso(), goal.id);
       this.events.append(goal.project_id, goal.id, "goal.paused", {});
     }
-    for (const r of this.goalRuns(goal).filter((x) => x.ended_at === null && x.paused_at === null)) await this.deps.pauseRun(r.id).catch(() => undefined);
+    for (const r of this.pausableRuns(goal).filter((x) => x.ended_at === null && x.paused_at === null)) await this.deps.pauseRun(r.id).catch(() => undefined);
     this.announce(goal.id, "paused", true);
     await this.deps.tick();
   }
@@ -1206,7 +1227,7 @@ export class GoalRunner extends Part {
     if (!goal.paused_at) throw new GoalError("goal.not_paused");
     this.rows.run("update goals set paused_at = null where id = ?", goal.id);
     this.events.append(goal.project_id, goal.id, "goal.resumed", {});
-    if (!this.pausedAll().on) for (const r of this.goalRuns(goal).filter((x) => x.ended_at === null && x.paused_at !== null && x.paused_at >= goal.paused_at!)) await this.deps.resumeRun(r.id).catch(() => undefined);
+    if (!this.pausedAll().on) for (const r of this.pausableRuns(goal).filter((x) => x.ended_at === null && x.paused_at !== null && x.paused_at >= goal.paused_at!)) await this.deps.resumeRun(r.id).catch(() => undefined);
     this.announce(goal.id, "resumed", true);
     await this.deps.tick();
   }
@@ -1216,11 +1237,11 @@ export class GoalRunner extends Part {
     const before = this.pausedAll();
     const at = this.iso();
     this.rows.writeSetting(GOAL_SETTINGS.pausedAll, { on, at: on ? (before.on ? before.at : at) : null });
-    for (const goal of this.rows.activeGoals()) {
+    for (const goal of this.rows.liveGoals()) {
       if (on) {
-        for (const r of this.goalRuns(goal).filter((x) => x.ended_at === null && x.paused_at === null)) await this.deps.pauseRun(r.id).catch(() => undefined);
+        for (const r of this.pausableRuns(goal).filter((x) => x.ended_at === null && x.paused_at === null)) await this.deps.pauseRun(r.id).catch(() => undefined);
       } else if (before.on && !goal.paused_at) {
-        for (const r of this.goalRuns(goal).filter((x) => x.ended_at === null && x.paused_at !== null && (before.at === null || x.paused_at >= before.at))) await this.deps.resumeRun(r.id).catch(() => undefined);
+        for (const r of this.pausableRuns(goal).filter((x) => x.ended_at === null && x.paused_at !== null && (before.at === null || x.paused_at >= before.at))) await this.deps.resumeRun(r.id).catch(() => undefined);
       }
       this.events.append(goal.project_id, goal.id, "goal.paused_all", { on });
       this.announce(goal.id, on ? "paused" : "resumed", true);

@@ -774,6 +774,92 @@ describe("corrective turns", () => {
   });
 });
 
+describe("pausing a goal while it plans", () => {
+  // Pause all goals is the kill switch for every goal's spend (design §5.2): a planning run is a
+  // paid run too, approved goal or not.
+  const BAD = { summary: "", tasks: [task({ key: "a" }), task({ key: "b", dependsOn: ["c"] }), task({ key: "c" })] };
+  const planRuns = (store: Store, taskId: string) => rows<{ id: string; paused_at: string | null; ended_at: string | null }>(store, "select id, paused_at, ended_at from runs where task_id = ? order by started_at", taskId);
+
+  it("starts no planning run while Pause all goals is on, and plans once you lift it", async () => {
+    const env = await setup();
+    const { o, store, project, adapter } = env;
+    await o.goals.pauseAll(true);
+    const start = await o.createGoal({ projectId: project.id, text: GOAL });
+    await o.settle();
+    await o.tick();
+    await o.settle();
+    expect(plannerRuns(adapter)).toHaveLength(0);
+    expect(planRuns(store, start.planTaskId!)).toEqual([]);
+    await o.goals.pauseAll(false);
+    await o.settle();
+    expect(plannerRuns(adapter)).toHaveLength(1);
+    expect(o.goalState(start.goalId).reason).toBe("plan_ready");
+  });
+
+  it("holds the planning run of a goal you paused while it plans, until you resume it", async () => {
+    const env = await setup({ pick: (role, _req, resumed) => (role === "goal" && !resumed ? [running, { wait: 300 }] : [running]) });
+    const { o, project, adapter } = env;
+    // Paused before its first run can start: the goal is created and paused in the same tick.
+    await o.goals.pauseAll(true);
+    const start = await o.createGoal({ projectId: project.id, text: GOAL });
+    await o.goals.pause(start.goalId);
+    await o.goals.pauseAll(false);
+    await o.settle();
+    expect(plannerRuns(adapter)).toHaveLength(0);
+    await o.goals.resume(start.goalId);
+    await o.settle();
+    expect(plannerRuns(adapter)).toHaveLength(1);
+  });
+
+  it("pauses a planning run in flight at its turn boundary with Pause all goals and resumes it when lifted", async () => {
+    const env = await setup({ pick: (role) => (role === "goal" ? [running, { awaitAnswer: "never" }] : [running]) });
+    const { o, store, project } = env;
+    const start = await o.createGoal({ projectId: project.id, text: GOAL });
+    const run = await waitFor(() => planRuns(store, start.planTaskId!)[0]);
+    await o.goals.pauseAll(true);
+    expect(planRuns(store, start.planTaskId!).find((r) => r.id === run.id)!.paused_at).not.toBeNull();
+    await o.goals.pauseAll(false);
+    expect(planRuns(store, start.planTaskId!).find((r) => r.id === run.id)!.paused_at).toBeNull();
+  });
+
+  it("pauses a planning run in flight with Pause goal", async () => {
+    const env = await setup({ pick: (role) => (role === "goal" ? [running, { awaitAnswer: "never" }] : [running]) });
+    const { o, store, project } = env;
+    const start = await o.createGoal({ projectId: project.id, text: GOAL });
+    const run = await waitFor(() => planRuns(store, start.planTaskId!)[0]);
+    await o.goals.pause(start.goalId);
+    expect(planRuns(store, start.planTaskId!).find((r) => r.id === run.id)!.paused_at).not.toBeNull();
+    await o.goals.resume(start.goalId);
+    expect(planRuns(store, start.planTaskId!).find((r) => r.id === run.id)!.paused_at).toBeNull();
+  });
+
+  it("keeps a queued corrective turn while every goal or the goal is paused", async () => {
+    let free = 64_000;
+    const env = await setup({ result: planner(ok(BAD)), freeMb: () => free, pick: (role, _req, resumed) => (role === "goal" && !resumed ? [running, { wait: 100 }] : [running]) });
+    const { o, store, project, adapter } = env;
+    const start = await o.createGoal({ projectId: project.id, text: GOAL });
+    await waitFor(() => plannerRuns(adapter).length === 1);
+    // Admission holds the turn while the plan is refused, so it is still queued when the pause lands.
+    free = 100;
+    await waitFor(() => plans(store, start.goalId)[0]!.error !== null);
+    await o.settle();
+    await o.goals.pauseAll(true);
+    free = 64_000;
+    await o.tick();
+    await o.settle();
+    expect(plannerRuns(adapter)).toHaveLength(1);
+    await o.goals.pause(start.goalId);
+    await o.goals.pauseAll(false);
+    await o.tick();
+    await o.settle();
+    expect(plannerRuns(adapter)).toHaveLength(1);
+    await o.goals.resume(start.goalId);
+    await o.settle();
+    expect(plannerRuns(adapter)).toHaveLength(2);
+    expect(plannerRuns(adapter)[1]!.resumed).toBe(true);
+  });
+});
+
 describe("the planning task", () => {
   it("refuses the task path's retry, follow-up, messages, handoff, undo and edit on it", async () => {
     const env = await setup();

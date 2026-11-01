@@ -554,6 +554,9 @@ export class GoalPlanner extends Part {
         this.corrective.delete(taskId);
         continue;
       }
+      // A paused goal, or Pause all goals, keeps the turn queued: it is a paid run the daemon would
+      // start by itself, and the kill switch stops every goal's spend (design §5.2).
+      if (goal.paused_at || this.pausedAll()) continue;
       const run = this.db.run(turn.runId);
       if (await admit(this.db.task(taskId), this.db.member(run.member_id), run.profile_id)) continue;
       this.corrective.delete(taskId);
