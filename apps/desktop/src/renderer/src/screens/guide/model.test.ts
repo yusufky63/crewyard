@@ -120,7 +120,7 @@ describe("tasks and GitHub", () => {
   });
 
   it("does not count a goal's hidden planning run or last review as a crew you approved", () => {
-    const base = { profiles: ok([]), credentials: ok([]), keyChecks: ok([]), signIns: ok([]), tools: allTools(), projectOpen: true, github: pending() };
+    const base = { profiles: ok([]), credentials: ok([]), keyChecks: ok([]), signIns: ok([]), tools: allTools(), projectOpen: true, github: pending<GithubAuth>() };
     const ref = (role: "planning" | "integration" | "task", hidden: boolean) => ({ goalId: "g1", key: role, number: 1, waiting: false, hold: null, joined: false, hidden, role });
     const planning = { ...task("done"), goal: ref("planning", true) } as TaskSummary;
     const review = { ...task("running"), goal: ref("integration", true) } as TaskSummary;
