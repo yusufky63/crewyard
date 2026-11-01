@@ -2,6 +2,7 @@ import { reviewFixture } from "./reviewFixture.ts";
 import { fixtureReport } from "./reportFixture.ts";
 import { NO_RUN_CONTROLS, type AccountSwitchView, type AttachmentView, type CandidateView, type CrewMemberView, type IpcMethod, type IpcParams, type IpcResult, type LimitNoticePayload, type LoopDecisionView, type RequestView, type RoleId, type RunView, type StallAlertView, type TaskDetail, type TaskSummary, type UndoPreview, type BestOfVariantView, type ScheduleRunView, type ScheduleView } from "@crewyard/core";
 import { fixtureReports, fixtureServers, fixtureUsage } from "../../shell/mcpFixture.ts";
+import { fixtureTaskPreview, goalFixtureCall } from "./goalFixture.ts";
 
 // Screenshot data. Used only when the page URL has `fixture`, which the main process sets only
 // in screenshot mode (CREWYARD_SHOT_QUERY); a normal run never reads anything from this file.
@@ -362,6 +363,18 @@ function build(projectId: string): { tasks: TaskDetail[]; requests: RequestView[
     accountSwitch: true,
   });
 
+  // Orchestra (docs/adr/0019): the hidden planning task of `g-planning`, and the tasks of the running
+  // goal `g-run`, which the task list shows under their goal row (goalFixture.ts).
+  const goalRef = (goalId: string, number: number, over: Partial<NonNullable<TaskSummary["goal"]>> = {}): TaskSummary["goal"] => ({ goalId, key: `k${number}`, number, waiting: false, hold: null, joined: false, hidden: false, role: "task", ...over });
+  const gp = [member("researcher", 1, OPUS, [ARGON])];
+  const planTask = detail(summary("t-goal-plan", "Plan: Add passkey sign-in next to passwords and document it", { kind: "research", status: "running", activeRuns: 1, createdAt: ago(1), goal: goalRef("g-planning", 0, { hidden: true, role: "planning", key: "" }) }), gp, [run("t-goal-plan", gp[0]!, OPUS, { startedAt: ago(0.7), cwd: "C:\\Projeler\\crewyard", worktreeId: null, tokensIn: 41_200, cost: { usd: 0.04, provenance: "estimated" } })], { worktree: null });
+  const gr1 = [member("researcher", 1, ARGON, [OPUS])];
+  const goalResearch = detail(summary("g-run-t1", "Compare rate-limit stores", { kind: "research", size: "S", status: "done", spend: { usd: 0.07, provenance: "reported" }, createdAt: ago(40), goal: goalRef("g-run", 1) }), gr1, [run("g-run-t1", gr1[0]!, ARGON, { state: "ended", startedAt: ago(38), endedAt: ago(30), endReason: "completed", cwd: "C:\\Projeler\\crewyard", worktreeId: null })], { worktree: null });
+  const gr2 = [member("implementer", 1, SOL, [OPUS], [], true), member("reviewer", 2, GLM, [ARGON], ["implementer"])];
+  const goalCode = detail(summary("g-run-t2", "Token bucket middleware", { status: "running", activeRuns: 1, spend: { usd: 0.41, provenance: "reported" }, createdAt: ago(40), goal: goalRef("g-run", 2) }), gr2, [run("g-run-t2", gr2[0]!, SOL, { startedAt: ago(12), tokensIn: 88_000, tokensOut: 6_100 })]);
+  const gr3 = [member("implementer", 1, FLASH, [SOL], [], true), member("reviewer", 2, GLM, [ARGON], ["implementer"])];
+  const goalWaiting = detail(summary("g-run-t3", "Per-key limits in the admin screen", { status: "proposed", createdAt: ago(40), goal: goalRef("g-run", 3, { waiting: true, hold: { code: "goal.waits_overlap", params: { task: "02", taskId: "g-run-t2" } } }) }), gr3, []);
+
   const requests: RequestView[] = [
     {
       id: "q-asleep",
@@ -422,7 +435,7 @@ function build(projectId: string): { tasks: TaskDetail[]; requests: RequestView[
   ];
   // The failed rows first, so a 1280 px shot of the list shows how their errors fit.
   // New kinds of rows go last, so earlier shots of the list keep their first rows.
-  return { tasks: [noStart, credit, proposed, running, approval, capped, unpriced, review, merged, done, bestOf, asleep, bestOfProposed, switched], requests };
+  return { tasks: [noStart, credit, proposed, running, approval, capped, unpriced, review, merged, done, bestOf, asleep, bestOfProposed, switched, planTask, goalResearch, goalCode, goalWaiting], requests };
 }
 
 let cache: { projectId: string; data: ReturnType<typeof build> } | null = null;
@@ -480,6 +493,10 @@ export function fixtureCall<M extends IpcMethod>(method: M, params: IpcParams<M>
       return reviewFixture(method, params, task) as IpcResult<M>;
     case "assistant.report":
       return fixtureReport(p.taskId) as IpcResult<M>;
+    case "tasks.preview":
+      return fixtureTaskPreview() as IpcResult<M>;
+    case "activity.events":
+      return { events: [], older: null } as IpcResult<M>;
     case "agentfiles.forSteps":
       // Screenshot data: the first profile reads CLAUDE.md and gets AGENTS.md through the bridge (docs/adr/0015).
       return (params as { profileIds: string[] }).profileIds.map((profileId, i) => ({
@@ -490,6 +507,7 @@ export function fixtureCall<M extends IpcMethod>(method: M, params: IpcParams<M>
         shared: i === 0 ? [{ kind: "skill", name: "release-notes", state: "current" }] : [],
       })) as IpcResult<M>;
     default:
+      if (method.startsWith("goals.")) return goalFixtureCall(method, params, p.projectId ?? anyProject(), new URLSearchParams(typeof location === "undefined" ? "" : location.search)) as IpcResult<M>;
       return task(p.taskId) as IpcResult<M>;
   }
 }

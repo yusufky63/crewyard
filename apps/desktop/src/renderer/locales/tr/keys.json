@@ -53,6 +53,9 @@
     "panel.terminal": "Paneli terminalde genişlet ya da daralt",
     "panel.problems": "Paneli sorunlarda genişlet ya da daralt",
     "terminal.close": "Bir terminalin sekmesindeyken: kabuğunu kapat (çalışıyorsa önce sorar)",
-    "terminal.leave": "Terminalin içindeyken: odağı sekmesine geri taşı (Tab kabuğa gider)"
+    "terminal.leave": "Terminalin içindeyken: odağı sekmesine geri taşı (Tab kabuğa gider)",
+    "composer.mode": "Oluşturucunun Nasıl çalışsın seçiminde: odaktaki modu seçer (Orkestra, Ekip veya Solo); Tab aralarında gezinir",
+    "plan.toggle": "Plandaki bir görevde: görevi kabul eder ya da atlar (atlamak, onu bekleyen görevleri de atlar)",
+    "plan.edit": "Plandaki bir görevde: düzenleyicisini planın yanında açar; Esc kapatır ve odağı geri verir"
   }
 }
