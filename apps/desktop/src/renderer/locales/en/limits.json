@@ -12,7 +12,7 @@
   "plans": {
     "title": "Plan windows",
     "notify": "Notify {{warn}}% · critical {{critical}}%",
-    "none": "No plan accounts yet. Codex accounts that sign in with ChatGPT, Gemini CLI accounts that sign in with Google, and coding-plan keys for Kimi Code, Z.ai, MiniMax and OpenCode Go show their windows here.",
+    "none": "No plan accounts yet. Codex accounts that sign in with ChatGPT, Gemini CLI accounts that sign in with a Gemini Code Assist Standard or Enterprise Google account, and coding-plan keys for Kimi Code, Z.ai, MiniMax and OpenCode Go show their windows here.",
     "signInChecked": "sign-in checked {{time}}",
     "quota": "Plan quota",
     "unknownMeter": "{{name}}: quota unknown",

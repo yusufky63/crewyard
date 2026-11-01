@@ -107,6 +107,12 @@ export const gemini: AgentSpec = {
   // Checked against gemini-cli v0.66.0 on 2026-10-30: `authenticate` with "oauth-personal"
   // (AuthType.LOGIN_WITH_GOOGLE) opens the browser itself in ACP mode, waits for Google's callback on
   // its own local port and resolves once the tokens are cached in <GEMINI_CLI_HOME>/.gemini/oauth_creds.json.
+  // Since 2026-06-18 Google serves this sign-in only to Gemini Code Assist Standard and Enterprise
+  // accounts; free, AI Pro and Ultra accounts lost Gemini CLI access (Google's transition post and
+  // the Code Assist deprecation page, docs/research/2026-11-01-subscriptions-and-app-bridges.md §1
+  // and §4). The path stays for those enterprise accounts; the UI says so and points personal users
+  // to a Gemini API key. Gemini CLI caches the tokens before it asks Google for the account's tier
+  // (getOauthClient, then setupUser, in v0.66.0), so a refused account fails after the file exists.
   signIn: {
     methodId: "oauth-personal",
     credentialsFile: (profile) => join(profile.configDir, ".gemini", "oauth_creds.json"),

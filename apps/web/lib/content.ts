@@ -114,7 +114,7 @@ export const OPT_INS: Array<{ title: string; body: string }> = [
 export const CLI_VERSIONS: Array<{ id: string; name: string; version: string; note: string }> = [
   { id: "claude-code", name: "Claude Code", version: "2.1.312 or newer", note: "Anthropic or Anthropic-compatible API keys only; never a claude.ai sign-in." },
   { id: "codex", name: "Codex", version: "0.147.0 or newer", note: "ChatGPT sign-in through its own login, or an API key, on OpenAI or OpenAI-compatible providers." },
-  { id: "gemini-cli", name: "Gemini CLI", version: "0.25.0 or newer", note: "Driven over the Agent Client Protocol; sign-in through its own login." },
+  { id: "gemini-cli", name: "Gemini CLI", version: "0.25.0 or newer", note: "Driven over the Agent Client Protocol on a Gemini API key; its own Google sign-in serves Gemini Code Assist Standard or Enterprise accounts only." },
   { id: "opencode", name: "OpenCode", version: "exactly 1.19.5, or exactly 2.2.4", note: "Runs on every provider in the catalog." },
 ];
 
@@ -202,6 +202,13 @@ export const FAQ: Array<{ q: string; a: string[] }> = [
     a: [
       "Anthropic's Agent SDK terms say third-party products may not offer claude.ai login or its rate limits without Anthropic's approval. Because Crewyard is made to be shared, Claude profiles always use an Anthropic or Anthropic-compatible API key.",
       "Codex, Gemini CLI and OpenCode sign in through their own login flows, and Crewyard never reads, copies or relays those tokens.",
+    ],
+  },
+  {
+    q: "Can Gemini CLI run on my Google AI Pro or Ultra plan?",
+    a: [
+      "No. Since 18 June 2026 Gemini CLI no longer serves free, AI Pro or Ultra Google accounts, and its Google sign-in does not work for them. Crewyard keeps that sign-in for Gemini Code Assist Standard or Enterprise accounts only.",
+      "With a personal plan, add a paid Gemini API key: Gemini CLI and OpenCode profiles then run models such as Gemini 4 Argon and Gemini 3.8 Flash, billed per use.",
     ],
   },
   {

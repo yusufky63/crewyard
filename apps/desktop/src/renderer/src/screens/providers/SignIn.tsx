@@ -45,6 +45,13 @@ export function SignInBadge({ status }: { status: SignInStatus | undefined }) {
 
 const pending = (s: SignInSession | undefined) => s?.state === "starting" || s?.state === "waiting";
 
+/**
+ * The Google-specific text for a sign-in Gemini CLI stopped after the browser login, or null for a
+ * plain failure. The CLI does not say whether the account is personal, so neither text claims it.
+ */
+const googleAdvice = (session: SignInSession): "signIn.projectRequiredGoogle" | "signIn.afterLoginGoogle" | null =>
+  session.kind !== "google" ? null : session.reason === "project_required" ? "signIn.projectRequiredGoogle" : session.reason === "after_login" ? "signIn.afterLoginGoogle" : null;
+
 export function SignInControl({ profile, status, session, compact = false }: { profile: ProfileSummary; status: SignInStatus; session: SignInSession | undefined; compact?: boolean }) {
   const { t } = useTranslation("providers");
   const when = useWhen();
@@ -53,6 +60,8 @@ export function SignInControl({ profile, status, session, compact = false }: { p
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const provider = t(`signIn.kind.${status.kind}`);
+  const failure = session?.state === "failed" && status.state !== "blocked" ? session : null;
+  const failureText = (f: SignInSession) => t(googleAdvice(f) ?? "signIn.failed", { message: f.error ?? "" });
 
   const refresh = () => qc.invalidateQueries({ predicate: (q) => String(q.queryKey[0]).startsWith("providers.") });
   const act = async (what: string, fn: () => Promise<unknown>) => {
@@ -167,7 +176,11 @@ export function SignInControl({ profile, status, session, compact = false }: { p
           <span className="muted">{t("signIn.private")}</span>
         </div>
       )}
-      {session?.state === "failed" && status.state !== "blocked" && <p className="pv-error">{t("signIn.failed", { message: session.error ?? "" })}</p>}
+      {failure && <p className="pv-error">{failureText(failure)}</p>}
+      {/* Google stopped serving personal accounts in Gemini CLI on 2026-06-18; say whom this sign-in is for
+          before anyone tries it. The after-login failure text already carries the same advice, so it replaces
+          the note rather than repeating it. */}
+      {status.kind === "google" && !(failure && googleAdvice(failure)) && <p className="muted si-note">{t("signIn.googleScope")}</p>}
       {error && <p className="pv-error">{error}</p>}
     </div>
   );

@@ -113,6 +113,7 @@
     "runner": "Ajan",
     "credential": "Anahtar",
     "ownSignInOption": "{{runner}} ile oturum aç",
+    "ownSignInOptionGoogle": "{{runner}} ile oturum aç (yalnızca Code Assist Standard ya da Enterprise)",
     "aliasPlaceholder": "Profil adı",
     "addProfile": "Profil ekle",
     "signsIn": "{{provider}} hesabıyla oturum açar"
@@ -139,6 +140,9 @@
     "cancel": "Oturum açmayı iptal et",
     "private": "Oturum bilgisini CLI bu profilin klasöründe tutar. Crewyard onu görmez, saklamaz.",
     "failed": "Oturum açılamadı: {{message}}",
+    "afterLoginGoogle": "Google oturumu kabul etti ama Gemini CLI ardından durdu: {{message}}. Bu kişisel bir Google hesabıysa (ücretsiz, AI Pro, Ultra), Gemini CLI 18 Haziran 2026'dan beri bu hesaplara hizmet vermiyor; onun yerine ücretli bir Gemini API anahtarı kullan. Gemini Code Assist Standard ya da Enterprise hesabıysa yukarıdaki sorun giderilince yeniden dene.",
+    "projectRequiredGoogle": "Google oturumu kabul etti ama Gemini CLI bu hesap için bir Google Cloud projesi istiyor: {{message}}. Crewyard'ın başladığı ortamda GOOGLE_CLOUD_PROJECT değişkenine proje kimliğini yaz, Crewyard'ı yeniden başlat ve tekrar oturum aç.",
+    "googleScope": "Gemini CLI'da Google ile oturum açma yalnızca Gemini Code Assist Standard ya da Enterprise hesapları için. Kişisel Google planları (ücretsiz, AI Pro, Ultra) 18 Haziran 2026'da Gemini CLI erişimini kaybetti; bunlar için ücretli bir Gemini API anahtarı kullan.",
     "update": "Gemini CLI {{current}}, oturumu bu profilde değil kendi ana klasöründe tutar. Önce {{min}} ya da daha yeni bir sürüme güncelle:",
     "updateThen": "Ardından Yeniden denetle'ye bas.",
     "unknownVersion": "(sürüm bilinmiyor)",

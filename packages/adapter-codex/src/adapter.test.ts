@@ -73,7 +73,9 @@ describe("CodexAdapter against a fake app-server", () => {
 
     const log = received(dir);
     expect(log[0]).toMatchObject({ env: { CODEX_HOME: dir, CREWYARD_TEST_SECRET: "s3cret", OPENAI_API_KEY: null }, cwd: dir });
-    expect(sentBy(log, "initialize")[0]).toMatchObject({ clientInfo: { name: "crewyard" }, capabilities: { experimentalApi: true } });
+    // Read from disk here, not imported, so the test catches the version going back to a literal.
+    const appVersion = (JSON.parse(readFileSync(fileURLToPath(new URL("../../../apps/desktop/package.json", import.meta.url)), "utf8")) as { version: string }).version;
+    expect(sentBy(log, "initialize")[0]).toMatchObject({ clientInfo: { name: "crewyard", version: appVersion }, capabilities: { experimentalApi: true } });
     expect(log.some((e) => (e.in as { method?: string } | undefined)?.method === "initialized")).toBe(true);
     expect(sentBy(log, "thread/start")[0]).toEqual({ cwd: dir, approvalPolicy: "on-request", sandbox: "workspace-write", model: "gpt-5.5-codex", config: { "agents.enabled": false, "features.default_mode_request_user_input": true, ...shellEnvPolicy({ CREWYARD_TEST_SECRET: "s3cret" }) } });
     expect((sentBy(log, "thread/start")[0] as { config: object }).config).toMatchObject({ "shell_environment_policy.ignore_default_excludes": false, "shell_environment_policy.exclude": ["CODEX_API_KEY", "CREWYARD_TEST_SECRET", "OPENAI_API_KEY"] });

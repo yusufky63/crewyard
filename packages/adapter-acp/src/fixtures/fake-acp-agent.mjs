@@ -147,6 +147,12 @@ const app = acp
       const dir = join(process.env.GEMINI_CLI_HOME ?? ".", ".gemini");
       mkdirSync(dir, { recursive: true });
       writeFileSync(join(dir, "oauth_creds.json"), "{}");
+      // Like Gemini CLI 0.66: the tokens are cached first, then the account is set up. "refused" is
+      // an account Google will not serve (made-up text; Google's own wording is not known),
+      // "project" is Gemini CLI's ProjectIdRequiredError text, "tiercheck" hangs during setup.
+      if (process.env.FAKE_ACP_LOGIN === "refused") throw new acp.RequestError(-32000, "fake: this account is not eligible");
+      if (process.env.FAKE_ACP_LOGIN === "project") throw new acp.RequestError(-32000, "This account requires setting the GOOGLE_CLOUD_PROJECT or GOOGLE_CLOUD_PROJECT_ID env var.");
+      if (process.env.FAKE_ACP_LOGIN === "tiercheck") await new Promise(() => undefined);
     }
     authed = true;
     return {};

@@ -97,3 +97,22 @@ describe("catalog pin", () => {
     expect(svc.pin(null)).toMatchObject({ hash: bundled, pinned: false });
   });
 });
+
+describe("bundled snapshot", () => {
+  // Owner's "Yes, apply" on 2026-11-01 (PLAN.md §17): the models Antigravity serves on Google plans
+  // are offered by API key instead. models.dev lists both under google, so they come from the
+  // snapshot, not curated.json. Exact prices are not pinned: Google's pricing page schedules rises
+  // (Argon from 2026-12-01, 3.8 Flash from 2027-01-01), and the next snapshot sync carries them.
+  it("offers Gemini 4 Argon and Gemini 3.8 Flash by API key to Gemini CLI and OpenCode", () => {
+    const svc = new CatalogService(newStore().db, vi.fn<typeof fetch>(), () => new Date("2026-11-01T00:00:00Z"));
+    const google = svc.provider("google");
+    expect(google?.runners).toMatchObject({ geminiCli: "native", opencode: "native" });
+    expect(google?.env).toContain("GEMINI_API_KEY");
+    for (const id of ["gemini-4-argon", "gemini-3.8-flash"]) {
+      const cost = google?.models.find((m) => m.id === id)?.cost;
+      // A listed price is what lets spend show as Estimated rather than Unknown (PLAN.md §7.1).
+      expect(cost?.input, id).toBeGreaterThan(0);
+      expect(cost?.output, id).toBeGreaterThan(0);
+    }
+  });
+});

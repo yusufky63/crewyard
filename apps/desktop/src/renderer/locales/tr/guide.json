@@ -228,6 +228,10 @@
       "q": "Crewyard abonelik oturumlarımı okuyor mu?",
       "a": "Hayır. Her CLI kendi giriş akışıyla, profilin kendi klasöründe oturum açar ve Crewyard bu token'ları hiçbir zaman okumaz. Claude Code profilleri yalnızca Anthropic API anahtarlarıyla çalışır."
     },
+    "gemini": {
+      "q": "Gemini CLI, Google AI Pro ya da Ultra planımla çalışır mı?",
+      "a": "Hayır. Gemini CLI 18 Haziran 2026'dan beri ücretsiz, AI Pro ve Ultra Google hesaplarına hizmet vermiyor; bu hesaplarla Google girişi de çalışmıyor. Crewyard'daki Google girişi yalnızca Gemini Code Assist Standard ya da Enterprise hesapları için duruyor. Kişisel bir planın varsa ücretli bir Gemini API anahtarı ekle: Gemini CLI ve OpenCode profilleri Gemini 4 Argon, Gemini 3.8 Flash gibi modelleri kullandığın kadar ödeyerek çalıştırır."
+    },
     "external": {
       "q": "Claude Code ya da başka bir ajan projelerimi değiştirebilir mi?",
       "a": "Yalnızca Ayarlar'da Dış erişim'i açarsan. Bağlı bir ajan okuyabilir, bir klasörü proje olarak ekleyebilir, bir projenin ayarlarını sıkılaştırabilir, düz değerlerle bir MCP sunucusu kaydedebilir ve görev önerebilir. Ekibi onaylayamaz, işi başlatamaz, Gelen kutusunu yanıtlayamaz, push, merge ya da silme yapamaz, bütçeyi artıramaz, anahtar okuyamaz; yaptığı her değişiklik etkinlik kaydında onun adıyla görünür."

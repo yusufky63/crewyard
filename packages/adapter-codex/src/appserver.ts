@@ -3,6 +3,7 @@ import { ensureSystemEnv, killTree, parseVersion, resolveBin, start } from "@cre
 import type { ChildProcess } from "node:child_process";
 import type { InitializeParams, InitializeResponse } from "./protocol/index.ts";
 import { JsonRpcConnection } from "./rpc.ts";
+import desktopPackage from "../../../apps/desktop/package.json" with { type: "json" };
 
 // One `codex app-server` process per run (or per probe / login). CODEX_HOME points at the
 // profile's own folder, so two accounts never share auth, sessions or config (PLAN.md D4).
@@ -35,7 +36,9 @@ export interface LaunchOptions {
 // Variables that would point codex at another account or key than the profile's own.
 const INHERITED_BLOCKLIST = ["CODEX_HOME", "OPENAI_API_KEY", "CODEX_API_KEY", "OPENAI_BASE_URL"];
 
-export const CLIENT_INFO = { name: "crewyard", title: "Crewyard", version: "0.1.0" } as const;
+// The app's own version (what Electron's app.getVersion reports), so codex sees the real client
+// version after every release instead of a literal that drifts.
+export const CLIENT_INFO = { name: "crewyard", title: "Crewyard", version: desktopPackage.version } as const;
 
 export class AppServer {
   /** Version from the initialize handshake's user agent, e.g. "0.147.0". */

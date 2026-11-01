@@ -350,7 +350,8 @@ function AddProfile({ provider, credentials, profiles, checks }: { provider: Cat
   const [runner, setRunner] = useState<ProfileRunner | "">(usable[0] ?? "");
   const support = runner ? runnerSupport(provider, runner) : "none";
   // Own sign-in only where we can start that runner's own login: Codex with ChatGPT, Gemini CLI with
-  // Google (PLAN.md §6). Claude Code never; OpenCode plans stay on keys.
+  // Google (PLAN.md §6; Code Assist Standard or Enterprise accounts only since 2026-06-18, so the
+  // option says so). Claude Code never; OpenCode plans stay on keys.
   const signInAllowed = runner !== "" && support === "native" && !local && signInKindFor(runner, provider.id) !== null;
   const [credentialId, setCredentialId] = useState(credentials[0]?.id ?? "");
   const [alias, setAlias] = useState("");
@@ -393,7 +394,7 @@ function AddProfile({ provider, credentials, profiles, checks }: { provider: Cat
             {c.alias}
           </option>
         ))}
-        {signInAllowed && <option value="">{t("manage.ownSignInOption", { runner: t(`runner.${runner}`) })}</option>}
+        {signInAllowed && <option value="">{t(signInKindFor(runner, provider.id) === "google" ? "manage.ownSignInOptionGoogle" : "manage.ownSignInOption", { runner: t(`runner.${runner}`) })}</option>}
       </select>
       <input className="pv-input mono" value={alias} onChange={(e) => setAlias(e.target.value)} placeholder={t("manage.aliasPlaceholder")} aria-label={t("dialog.alias")} maxLength={40} spellCheck={false} />
       {(provider.models.length > 0 || listed.length > 0) && <ModelSelect provider={provider} extra={listed} value={model} onChange={setModel} />}
