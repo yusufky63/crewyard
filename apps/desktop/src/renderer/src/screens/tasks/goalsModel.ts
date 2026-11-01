@@ -1,4 +1,4 @@
-import { goalDependents, layers, skippedDependency, splitBudget, wouldCycle, type BudgetItem, type CostEstimate, type DagNode, type GoalDetail, type GoalRevisionView, type GoalTaskView, type TaskPreview } from "@crewyard/core";
+import { goalDependents, layers, skippedDependency, splitBudget, wouldCycle, type BudgetItem, type CostEstimate, type DagNode, type GoalDetail, type GoalRevisionView, type GoalPreview, type GoalTaskView, type TaskPreview } from "@crewyard/core";
 import { goalNumber } from "./model.ts";
 
 // Pure rules for the composer's mode control and the plan review (docs/adr/0019, design §1.2,
@@ -129,30 +129,33 @@ export interface ReviewItem {
 
 /**
  * The plan total (design §3.2): the accepted tasks' estimates plus the last review. Unknown is
- * never summed into a number; a typed budget counts as what it is, a budget, not an estimate.
+ * never summed into a number ("$1.61 Estimated + 1 task Unknown"); a budget typed for an Unknown
+ * task counts as what it is, a budget, not an estimate. `untyped` are the Unknown ones still without one.
  */
 export function planTotals(
   tiles: readonly Pick<GoalTaskView, "key" | "estimate" | "writes">[],
   accepted: ReadonlySet<string>,
   typed: Readonly<Record<string, string>>,
   review: ReviewItem | null,
-): { knownUsd: number; unknown: number; typedUsd: number; count: number; reviewIncluded: boolean } {
+): { knownUsd: number; unknown: number; untyped: number; typedUsd: number; count: number; reviewIncluded: boolean } {
   let knownUsd = 0;
   let unknownCount = 0;
+  let untyped = 0;
   let typedTotal = 0;
   const on = tiles.filter((t) => accepted.has(t.key));
   const add = (key: string, e: CostEstimate) => {
     const own = typedUsd(typed[key]);
     if (unknown(e)) {
+      unknownCount += 1;
       if (own !== null) typedTotal += own;
-      else unknownCount += 1;
+      else untyped += 1;
     } else knownUsd += Math.max(0, e.usd ?? 0);
   };
   for (const t of on) add(t.key, t.estimate);
   const reviewIncluded = review !== null && on.some((t) => t.writes);
   if (reviewIncluded) add(REVIEW_KEY, review!.estimate);
   const r6 = (x: number) => Math.round(x * 1_000_000) / 1_000_000;
-  return { knownUsd: r6(knownUsd), unknown: unknownCount, typedUsd: r6(typedTotal), count: on.length, reviewIncluded };
+  return { knownUsd: r6(knownUsd), unknown: unknownCount, untyped, typedUsd: r6(typedTotal), count: on.length, reviewIncluded };
 }
 
 /** The key the daemon takes a typed budget for the last review under (goals.approve `taskBudgets.review`). */
@@ -339,3 +342,16 @@ export const splitLines = (s: string): string[] =>
     .split(/\r?\n/)
     .map((x) => x.trim())
     .filter(Boolean);
+
+/**
+ * How `Plan goal` states a planning run's cost (design §3.1, §4.4): a sign-in or a local model
+ * bills no API cost ($0 Estimated, named as such); a paid model without a price is Unknown; a
+ * priced one is "~$x Estimated". The ceiling, the planning run's own budget, is stated only for an
+ * API run, where it is what the run may spend.
+ */
+export function planningCost(p: Pick<GoalPreview, "estimate" | "billing" | "ceilingUsd">): { kind: "plan" | "local" | "unknown" | "approx"; usd: number | null; ceiling: number | null } {
+  if (p.billing === "plan" || p.billing === "local") return { kind: p.billing, usd: 0, ceiling: null };
+  const ceiling = p.ceilingUsd !== null && p.ceilingUsd > 0 ? p.ceilingUsd : null;
+  if (p.estimate.usd === null || p.estimate.provenance === "unknown") return { kind: "unknown", usd: null, ceiling };
+  return { kind: "approx", usd: p.estimate.usd, ceiling };
+}

@@ -41,6 +41,10 @@ export const SHORTCUTS = [
   { id: "list.next", group: "lists", chords: [{ key: "j" }] },
   { id: "list.prev", group: "lists", chords: [{ key: "k" }] },
   { id: "submit", group: "tasks", chords: [{ key: "Enter", ctrl: true }] },
+  // Orchestra (docs/adr/0019, design §3.7): the composer's mode control and the plan review's tiles.
+  { id: "composer.mode", group: "tasks", chords: [{ key: " " }] },
+  { id: "plan.toggle", group: "tasks", chords: [{ key: " " }] },
+  { id: "plan.edit", group: "tasks", chords: [{ key: "Enter" }] },
   { id: "assistant", group: "panel", chords: [{ key: "a", ctrl: true, shift: true }] },
   { id: "assistant.send", group: "panel", chords: [{ key: "Enter" }] },
   { id: "assistant.prev", group: "panel", chords: [{ key: "ArrowUp" }] },

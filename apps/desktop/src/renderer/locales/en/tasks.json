@@ -40,7 +40,51 @@
     "preset": "Ready-made",
     "presetNone": "Pick…",
     "presetTitle": "Fill the composer with a ready-made analysis: a research task that ends with findings and suggested tasks",
-    "note": "Proposing only drafts a crew. Nothing starts until you approve it."
+    "note": "Proposing only drafts a crew. Nothing starts until you approve it.",
+    "labelGoal": "New goal",
+    "mode": {
+      "label": "How to run",
+      "orchestra": "Orchestra",
+      "orchestraHint": "Write a goal. A planner splits it into tasks; you approve the plan.",
+      "crew": "Crew",
+      "crewHint": "One task, worked by a crew: plan, implement, test, review.",
+      "solo": "Solo",
+      "soloHint": "One agent in its own worktree. Starts on your click."
+    },
+    "orchestraPlaceholder": "Describe the goal: what should be true when it is done?",
+    "soloPlaceholder": "One job for one agent. The first line becomes its title.",
+    "planGoal": "Plan goal · {{cost}}",
+    "planGoalPlain": "Plan goal",
+    "planning": "Planning…",
+    "orchestraNote": "Planning only reads the project and costs up to {{ceiling}}. Nothing else starts until you approve the plan.",
+    "orchestraNoteNoCeiling": "Planning only reads the project. Nothing else starts until you approve the plan.",
+    "smallHint": "Looks like one small change.",
+    "useCrew": "Use Crew",
+    "oneTaskSource": "Ready-made analyses and issues run as one task.",
+    "soloStart": "Start · {{cost}}",
+    "soloStartPlain": "Start",
+    "soloPropose": "Propose",
+    "starting": "Starting…",
+    "soloNote": "Starts one agent now, in its own worktree, on the account shown.",
+    "soloProposeNote": "Its cost is unknown or a cap would hold it, so Solo proposes the step for your review instead of starting it.",
+    "held": {
+      "estimate_unknown": "Not started: its cost is unknown. Review the proposal below and approve it to start.",
+      "over_cap": "Not started: it would pass the {{cap}}. Review the proposal below.",
+      "crew": "Not started: the step needs your review first. See the proposal below."
+    },
+    "planner": "Planner",
+    "plannerTitle": "The profile that writes the plan, read-only; your pick is remembered in this project",
+    "who": "Runs as",
+    "whoTitle": "The profile that runs this one step; your pick is remembered in this project",
+    "moreOptions": "More options",
+    "lessOptions": "Fewer options",
+    "moreNote": "These apply when the text runs as Crew or Solo. In a plan, each task gets its own kind and budget.",
+    "noPlanner": "Orchestra: {{reason}}",
+    "openProviders": "Open Providers",
+    "foldedLabel": "New request",
+    "foldedHint": "A goal is open below. Write the next goal or task here.",
+    "foldedDraft": "Your unsent text is kept.",
+    "unfold": "Write a request"
   },
   "kind": { "auto": "Detect", "code": "Code", "research": "Research", "review": "Review", "docs": "Docs" },
   "fallback": {
@@ -259,7 +303,8 @@
   },
   "empty": {
     "none": "No tasks yet. Describe one above; its crew waits for your approval before anything runs.",
-    "filter": "No tasks match this filter."
+    "filter": "No tasks match this filter.",
+    "goals": "Write a goal above; Crewyard plans it and asks before anything runs."
   },
   "statusbar": {
     "work": "{{agents}} · {{queued}}",

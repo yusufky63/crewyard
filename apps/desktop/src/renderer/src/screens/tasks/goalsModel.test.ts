@@ -118,10 +118,10 @@ describe("plan review", () => {
 
   it("sums known estimates and the last review, never adds Unknown into a number, and counts typed budgets apart", () => {
     const tiles = plan();
-    expect(planTotals(tiles, all(tiles), {}, review)).toEqual({ knownUsd: 1.84, unknown: 0, typedUsd: 0, count: 4, reviewIncluded: true });
+    expect(planTotals(tiles, all(tiles), {}, review)).toEqual({ knownUsd: 1.84, unknown: 0, untyped: 0, typedUsd: 0, count: 4, reviewIncluded: true });
     const withUnknown = tiles.map((t) => (t.key === "k3" ? { ...t, estimate: cost(null, "unknown") } : t));
-    expect(planTotals(withUnknown, all(tiles), {}, review)).toMatchObject({ knownUsd: 1.23, unknown: 1, typedUsd: 0 });
-    expect(planTotals(withUnknown, all(tiles), { k3: "0,75" }, review)).toMatchObject({ knownUsd: 1.23, unknown: 0, typedUsd: 0.75 });
+    expect(planTotals(withUnknown, all(tiles), {}, review)).toMatchObject({ knownUsd: 1.23, unknown: 1, untyped: 1, typedUsd: 0 });
+    expect(planTotals(withUnknown, all(tiles), { k3: "0,75" }, review)).toMatchObject({ knownUsd: 1.23, unknown: 1, untyped: 0, typedUsd: 0.75 });
     // A plan that writes nothing has no last review.
     const research = [tiles[0]!];
     expect(planTotals(research, all(research), {}, review)).toMatchObject({ knownUsd: 0.08, reviewIncluded: false });
