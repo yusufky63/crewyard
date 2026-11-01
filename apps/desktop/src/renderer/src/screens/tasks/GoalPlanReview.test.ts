@@ -2,12 +2,12 @@ import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it } from "vitest";
-import type { GoalDetail } from "@crewyard/core";
+import { GOAL_LIMITS, type GoalDetail } from "@crewyard/core";
 import { initI18n } from "../../i18n.ts";
 import { fixtureCall } from "./fixture.ts";
 import { fixtureGoals, goalFixtureCall, REVIEW_FIXTURES } from "./goalFixture.ts";
 import { GoalIntro } from "./GoalIntro.tsx";
-import { GoalPlanReview, useCostText } from "./GoalPlanReview.tsx";
+import { GoalPlanReview, TaskEditor, useCostText } from "./GoalPlanReview.tsx";
 
 // The plan review's states from the screenshot fixtures (design §3.2), rendered to static markup
 // with real translations, as GoalView.test.ts does (the app has no DOM test environment).
@@ -86,6 +86,22 @@ describe("every cost carries its provenance", () => {
     const html = render(createElement(GoalIntro, { cost: "~$0.36 Estimated", ceiling: "$1.08", budgetUsd: 3, busy: false, onPlan: () => undefined, onCrew: () => undefined, onCancel: () => undefined }));
     expect(unlabelledCosts(html).bad).toEqual([]);
     expect(unlabelledCosts(html).found).toBeGreaterThan(1);
+  });
+
+  it("the first-goal card says no ceiling when the planner has none (a sign-in or a local model)", () => {
+    const t = text(render(createElement(GoalIntro, { cost: "plan sign-in, $0.00 Estimated", ceiling: null, budgetUsd: 3, busy: false, onPlan: () => undefined, onCrew: () => undefined, onCancel: () => undefined })));
+    expect(t).toContain("A planner reads the project and proposes tasks: plan sign-in, $0.00 Estimated.");
+    expect(t).not.toContain("up to");
+  });
+
+  it("the first-goal card refuses a budget past the goal budget limit, and holds no form", () => {
+    const html = render(createElement(GoalIntro, { cost: "~$0.36 Estimated", ceiling: "$1.08", budgetUsd: GOAL_LIMITS.budgetMaxUsd + 1, busy: false, onPlan: () => undefined, onCrew: () => undefined, onCancel: () => undefined }));
+    expect(text(html)).toContain(`at most $${GOAL_LIMITS.budgetMaxUsd}`);
+    expect(enabled(html, "Plan goal · ~$0.36 Estimated")).toBe(false);
+    // No form, so it can never nest inside the composer's, and Enter in the field starts nothing.
+    expect(html).not.toContain("<form");
+    const ok = render(createElement(GoalIntro, { cost: "~$0.36 Estimated", ceiling: "$1.08", budgetUsd: 3, busy: false, onPlan: () => undefined, onCrew: () => undefined, onCancel: () => undefined }));
+    expect(enabled(ok, "Plan goal · ~$0.36 Estimated")).toBe(true);
   });
 
   it("catches an amount without one", () => {
@@ -168,13 +184,69 @@ describe("plan review states", () => {
   it("revise: the diff with your note, the changed and added marks, and the edited task kept", () => {
     const html = review(g("g-revise"));
     const t = text(html);
-    expect(t).toContain("Revised: added 05 · changed 04 · removed k6");
+    // The removed task is not in the goal before approval: it is counted, never named by its internal key.
+    expect(t).toContain("Revised: added 05 · changed 04 · removed 1 task");
+    expect(t).not.toContain("k6");
     expect(t).toContain("Your note: Keep the docs short and add a recovery path for lost passkeys.");
     expect(t).toContain("Edited: kept on revise");
     expect(t).toContain("Added");
     expect(t).toContain("Changed");
     expect(t).toContain("4 revisions left");
     expect(t).toContain("5 tasks");
+  });
+
+  it("one task with an Unknown estimate: approved on the goal budget, with no typed budget and no last review", () => {
+    const goal = g("g-one");
+    const unknownOne: GoalDetail = {
+      ...goal,
+      tasks: goal.tasks.map((x) => ({ ...x, estimate: { usd: null, provenance: "unknown" as const } })),
+      integration: { taskId: "t-int", status: "proposed", reviewPassed: false, estimate: { usd: 0.17, provenance: "estimated" }, shareUsd: null },
+    };
+    const html = review(unknownOne);
+    const t = text(html);
+    expect(t).toContain("Its cost is Unknown: the goal budget under Limits becomes this task's budget");
+    expect(t).not.toContain("Last review of all changes");
+    expect(t).not.toContain("type a budget for it");
+    expect(enabled(html, "Approve and start · 1 task, cost Unknown")).toBe(true);
+    // The goal budget is the fix here, so the Limits fold is open.
+    expect(html).toMatch(/<details class="gp-limits" open="">/);
+  });
+
+  it("over budget: the Limits fold opens on its own with the hint to raise the budget", () => {
+    const html = review(g("g-over"));
+    expect(html).toMatch(/<details class="gp-limits" open="">/);
+    expect(text(html)).toContain("Raise the goal budget here, or skip a task, to approve.");
+    expect(review(g("g-review"))).not.toMatch(/<details class="gp-limits" open="">/);
+  });
+
+  it("each tile offers Edit crew, and Revise is a button, not a form a stray Enter submits", () => {
+    const html = review(g("g-review"));
+    expect(html.match(/class="[^"]*gp-editcrew/g)?.length).toBe(4);
+    expect(html).not.toContain("<form");
+  });
+
+  it("caps: no revisions left disables Revise, no planning runs left disables Retry planning", () => {
+    const html = review({ ...g("g-review"), revisionsLeft: 0 });
+    expect(enabled(html, "No revisions left")).toBe(false);
+    expect(text(html)).toContain("0 revisions left");
+    const failedBefore = review({ ...g("g-failed"), revisionsLeft: 0 });
+    expect(enabled(failedBefore, "No planning runs left")).toBe(false);
+    // After approval, Retry planning is a replan, capped by the replans left.
+    const failedAfter = review({ ...g("g-failed"), approvedRevision: 0, replansLeft: 0, revisionsLeft: 3 });
+    expect(enabled(failedAfter, "No planning runs left")).toBe(false);
+  });
+
+  it("caps: the editor refuses a title past the byte limit, counted in UTF-8 so Turkish letters count double", () => {
+    const goal = g("g-review");
+    const tiles = goal.tasks.filter((x) => x.revision === Math.max(...goal.revisions.map((r) => r.revision)));
+    // "ğ" is two bytes: half the limit in letters already passes it.
+    const long = { ...tiles[1]!, title: "ğ".repeat(Math.ceil(GOAL_LIMITS.titleBytes / 2) + 1) };
+    const html = render(createElement(TaskEditor, { goal, tile: long, tiles, onSaved: () => undefined, onClose: () => undefined }));
+    expect(text(html)).toContain(String(GOAL_LIMITS.titleBytes));
+    expect(html).toContain('aria-invalid="true"');
+    expect(enabled(html, "Save")).toBe(false);
+    const fine = render(createElement(TaskEditor, { goal, tile: { ...tiles[1]!, title: "Sunucu: geçiş anahtarı" }, tiles, onSaved: () => undefined, onClose: () => undefined }));
+    expect(enabled(fine, "Save")).toBe(true);
   });
 
   it("offline: the last state with every action disabled", () => {
@@ -199,6 +271,9 @@ describe("plan review states", () => {
     expect(t).toContain("Maliyet bilinmiyor: bu görev için bir bütçe yazın");
     expect(t).toMatch(/Bilinmiyor/);
     expect(t).toContain("Onayla ve 4 görevi başlat");
+    // Harmony that does not depend on the plan number: "02 görevinin raporu", never "02 da".
+    const r = text(review(g("g-review")));
+    expect(r).toContain("01 görevinin raporu 02 ve 03 görevlerine girdi olur");
   });
 });
 

@@ -13,9 +13,12 @@ import { GoalStatusLabel, useGoalFormat } from "./GoalRow.tsx";
 import {
   acceptWithPrerequisites,
   approvalCheck,
+  approveKeyApplies,
   approveParams,
   diffLines,
   diffMark,
+  heldShares,
+  keptTasks,
   latestRevision,
   overlapLines,
   planningCost,
@@ -298,6 +301,7 @@ function PlanTile({
   onEdit,
   onMode,
   onTyped,
+  onEditCrew,
 }: {
   tile: GoalTaskView;
   tiles: GoalTaskView[];
@@ -311,6 +315,7 @@ function PlanTile({
   onEdit: (opener: HTMLElement) => void;
   onMode: (m: TaskMode) => void;
   onTyped: (v: string) => void;
+  onEditCrew: () => void;
 }) {
   const g = useGoalFormat();
   const ids = { title: useId(), budget: useId() };
@@ -402,6 +407,10 @@ function PlanTile({
           <dt className="lbl">{g.t("review.basis")}</dt>
           <dd>{tile.basisMatched && tile.basis ? <q className="as-typed">{tile.basis}</q> : <span className="st-wait">{g.t("review.notTied")}</span>}</dd>
         </dl>
+        {/* The crew and estimate the approval covers, opened in the Crew graph before you approve. */}
+        <Button size="sm" variant="ghost" className="gp-editcrew" disabled={locked} onClick={onEditCrew}>
+          {g.t("review.editCrew")}
+        </Button>
       </details>
     </div>
   );
@@ -414,7 +423,7 @@ function PlanTile({
  * for". A loop is refused before the call and named ("01 → 03 → 01"); the daemon refuses it
  * again. Saved edits keep the task as it is on `Revise`.
  */
-function TaskEditor({ goal, tile, tiles, onSaved, onClose }: { goal: GoalDetail; tile: GoalTaskView; tiles: GoalTaskView[]; onSaved: (r: GoalDetail) => void; onClose: () => void }) {
+export function TaskEditor({ goal, tile, tiles, onSaved, onClose }: { goal: GoalDetail; tile: GoalTaskView; tiles: GoalTaskView[]; onSaved: (r: GoalDetail) => void; onClose: () => void }) {
   const g = useGoalFormat();
   const qc = useQueryClient();
   const errorText = useGoalErrorText();
@@ -497,6 +506,11 @@ function TaskEditor({ goal, tile, tiles, onSaved, onClose }: { goal: GoalDetail;
         if (e.key === "Escape") {
           e.preventDefault();
           onClose();
+        } else if (matches(e, "submit")) {
+          // Ctrl Enter here means Save task, never Approve: the plan must not start with this edit unsaved.
+          e.preventDefault();
+          e.stopPropagation();
+          if (!busy) void save().then((ok) => ok && onClose());
         }
       }}
     >
@@ -601,6 +615,8 @@ function blockText(t: (k: string, o?: Record<string, unknown>) => string, b: App
       return t("review.block.skipped_dependency", { task: b.task, dependsOn: b.dependsOn });
     case "at_once":
       return t("review.block.at_once", { min: GOAL_LIMITS.maxParallelMin, max: GOAL_LIMITS.maxParallelMax });
+    case "too_many":
+      return t("review.block.too_many", { max: b.max });
     case "bad_budget":
       return t("review.block.bad_budget");
     case "none_accepted":
@@ -632,7 +648,18 @@ function ReadyState({
   const ready = latest.state === "ready";
   const locked = offline || !ready;
   const [error, setError] = useState<string | null>(null);
-  const run = useGoalRun(goal.id, setError);
+  const runNow = useGoalRun(goal.id, setError);
+  // A goal call on its way (an edit, an ordering, a revise) changes the plan the approval covers:
+  // Approve and every other plan action wait until it answers and the plan shows its result.
+  const [pending, setPending] = useState(false);
+  const run: Run = async (fn) => {
+    setPending(true);
+    try {
+      return await runNow(fn);
+    } finally {
+      setPending(false);
+    }
+  };
   const [skipped, setSkipped] = useState<Set<string>>(() => new Set());
   const [lastSkip, setLastSkip] = useState<{ keys: string[]; before: Set<string> } | null>(null);
   const [typed, setTyped] = useState<Record<string, string>>({});
@@ -640,22 +667,34 @@ function ReadyState({
   const [note, setNote] = useState("");
   const opener = useRef<HTMLElement | null>(null);
   const accepted = new Set(tiles.filter((t) => !skipped.has(t.key)).map((t) => t.key));
-  const review: ReviewItem | null = goal.integration ? { estimate: goal.integration.estimate } : null;
-  const totals = planTotals(tiles, accepted, typed, review);
+  const one = tiles.length === 1 && !approvedBefore;
+  // A plan of one task becomes an ordinary task: no goal branch, so no last review to price.
+  const review: ReviewItem | null = goal.integration && !one ? { estimate: goal.integration.estimate, shareUsd: goal.integration.shareUsd } : null;
+  const kept = keptTasks(goal);
+  const held = heldShares(kept, review);
+  const totals = planTotals(tiles, accepted, typed, review && !(review.shareUsd && review.shareUsd > 0) ? review : null);
   const prefill = goal.budgetUsd ?? goal.suggestedBudgetUsd ?? defaultGoalBudget(totals.knownUsd, null);
   const [budget, setBudget] = useState(() => String(prefill));
   const [atOnce, setAtOnce] = useState(goal.maxParallel);
-  const check = approvalCheck(tiles, accepted, budget, typed, review, atOnce, { min: GOAL_LIMITS.maxParallelMin, max: GOAL_LIMITS.maxParallelMax });
+  const check = approvalCheck(tiles, accepted, budget, typed, review, atOnce, { min: GOAL_LIMITS.maxParallelMin, max: GOAL_LIMITS.maxParallelMax }, { kept, oneTask: one, maxTasks: goal.maxTasks });
   const shares = check.ok ? check.shares : {};
   const overlaps = overlapLines(latest, tiles, accepted);
   const feeds = reportFeeds(tiles, accepted);
-  const diff = diffLines(latest, tiles);
+  const diff = diffLines(latest, tiles, goal.tasks);
   const writes = tiles.some((t) => accepted.has(t.key) && t.writes);
   const reviseCost = useReplanCost(goal, !offline && ready && !approvedBefore && goal.revisionsLeft > 0);
   const budgetValue = typedUsd(budget);
-  const one = tiles.length === 1 && !approvedBefore;
   const steps = planSteps(tiles);
   const editingTile = tiles.find((t) => t.key === editing) ?? null;
+  const busy = locked || pending;
+  const oneUnknown = one && tiles[0] !== undefined && (tiles[0].estimate.usd === null || tiles[0].estimate.provenance === "unknown");
+  // The budget is the fix for these blocks, so the Limits fold opens on its own to show the field.
+  const budgetBlock = !check.ok && (check.block.code === "over_budget" || check.block.code === "bad_budget" || check.block.code === "typed_over");
+  const [limitsOpen, setLimitsOpen] = useState(false);
+  const editCrew = (taskId: string) => {
+    selectTask(taskId);
+    go("crew");
+  };
 
   const toggle = (key: string) => {
     if (accepted.has(key)) {
@@ -673,17 +712,17 @@ function ReadyState({
   };
 
   const approve = async () => {
-    if (!check.ok || locked || budgetValue === null) return;
+    if (!check.ok || busy || editing !== null || budgetValue === null) return;
     const p = approveParams(tiles, accepted, typed, review);
     const r = await run(() => act("goals.approve", { goalId: goal.id, revision: latest.revision, accept: p.accept, budgetUsd: budgetValue, maxParallel: atOnce, ...(Object.keys(p.taskBudgets).length ? { taskBudgets: p.taskBudgets } : {}) }));
     // A plan of one task became an ordinary task: it shows as the task it now is.
     if (r?.collapsedTaskId) onCollapsed(r.collapsedTaskId);
   };
   const onKey = (e: KeyboardEvent) => {
-    if (matches(e, "submit") && !(e.target instanceof HTMLTextAreaElement && e.target.closest(".gp-editor"))) {
-      e.preventDefault();
-      void approve();
-    }
+    if (!matches(e, "submit")) return;
+    if (!approveKeyApplies(e.target as Element, { editing: editing !== null, pending })) return;
+    e.preventDefault();
+    void approve();
   };
   const closeEditor = () => {
     setEditing(null);
@@ -712,7 +751,7 @@ function ReadyState({
       {!ready && <p className="muted tk-small">{g.t(`review.state.${latest.state}`)}</p>}
 
       {one ? (
-        <OneTask tile={tiles[0]!} />
+        <OneTask tile={tiles[0]!} unknown={oneUnknown} />
       ) : (
         <>
           <div className="gp-counts tk-small">
@@ -725,13 +764,21 @@ function ReadyState({
                 </>
               )}
             </span>
+            {held > 0 && (
+              <span>
+                {g.t("review.heldShares", { count: kept.length })} <Limit usd={held} />
+              </span>
+            )}
           </div>
           {diff && (
             <p className="gp-info tk-small" role="note">
               {g.t("review.diff", {
                 added: diff.added.length ? diff.added.join(", ") : "—",
                 changed: diff.changed.length ? diff.changed.join(", ") : "—",
-                removed: diff.removed.length ? diff.removed.join(", ") : "—",
+                removed:
+                  diff.removed.length || diff.removedUnnamed
+                    ? [...diff.removed.map((x) => `“${capRow(x)}”`), ...(diff.removedUnnamed ? [g.t("review.removedCount", { count: diff.removedUnnamed })] : [])].join(", ")
+                    : "—",
               })}
               {latest.note && <span className="muted as-typed"> {g.t("review.yourNote", { note: capRow(latest.note) })}</span>}
             </p>
@@ -739,7 +786,7 @@ function ReadyState({
           {overlaps.map((o) => (
             <p key={`${o.taskKey}-${o.afterKey}`} className="gp-info tk-small" role="note">
               <span>{o.cause === "paths" ? g.t("review.overlap", { task: o.task, after: o.after, paths: o.paths ?? "" }) : g.t("review.noPaths", { task: o.task, after: o.after })}</span>
-              <Button size="sm" variant="ghost" disabled={locked} onClick={() => void run(() => act("goals.setDependency", { goalId: goal.id, revision: latest.revision, taskKey: o.taskKey, dependsOnKey: o.afterKey, on: false }))}>
+              <Button size="sm" variant="ghost" disabled={busy} onClick={() => void run(() => act("goals.setDependency", { goalId: goal.id, revision: latest.revision, taskKey: o.taskKey, dependsOnKey: o.afterKey, on: false }))}>
                 {g.t("review.sideBySide")}
               </Button>
             </p>
@@ -776,7 +823,7 @@ function ReadyState({
                       tile={tile}
                       tiles={tiles}
                       accepted={accepted.has(tile.key)}
-                      locked={locked}
+                      locked={busy}
                       mark={diffMark(latest, tile.key)}
                       share={shares[tile.key] ?? null}
                       typed={typed[tile.key] ?? ""}
@@ -788,6 +835,7 @@ function ReadyState({
                       }}
                       onMode={(m) => void run(() => act("goals.editTask", { goalId: goal.id, revision: latest.revision, key: tile.key, patch: { mode: m } }))}
                       onTyped={(v) => setTyped((x) => ({ ...x, [tile.key]: v }))}
+                      onEditCrew={() => editCrew(tile.taskId)}
                     />
                   ))}
                 </section>
@@ -799,19 +847,19 @@ function ReadyState({
         </>
       )}
 
-      <details className="gp-limits">
+      <details className="gp-limits" open={limitsOpen || budgetBlock || oneUnknown} onToggle={(e) => setLimitsOpen(e.currentTarget.open)}>
         <summary className="tk-small">
           {g.t("review.limitsSummary")} {budgetValue !== null ? <Limit usd={budgetValue} /> : <span className="st-wait">{g.t("review.noBudget")}</span>} · {g.t("review.atOnceSummary", { count: atOnce })}
         </summary>
         <div className="gv-form-row gp-limits-row">
           <label className="gv-field">
             <span className="lbl">{g.t("limits.budget")}</span>
-            <input className="num gp-limit" inputMode="decimal" value={budget} disabled={locked} onChange={(e) => setBudget(e.target.value)} aria-invalid={budgetValue === null || undefined} size={8} />
+            <input className="num gp-limit" inputMode="decimal" value={budget} disabled={busy} onChange={(e) => setBudget(e.target.value)} aria-invalid={budgetValue === null || budgetBlock || undefined} size={8} />
           </label>
           {!one && (
             <label className="gv-field">
               <span className="lbl">{g.t("limits.atOnce")}</span>
-              <select value={atOnce} disabled={locked} onChange={(e) => setAtOnce(Number(e.target.value))}>
+              <select value={atOnce} disabled={busy} onChange={(e) => setAtOnce(Number(e.target.value))}>
                 {Array.from({ length: GOAL_LIMITS.maxParallelMax - GOAL_LIMITS.maxParallelMin + 1 }, (_, i) => GOAL_LIMITS.maxParallelMin + i).map((n) => (
                   <option key={n} value={n}>
                     {n}
@@ -820,36 +868,36 @@ function ReadyState({
               </select>
             </label>
           )}
-          <p className="muted tk-small">{g.t("review.limitsHint")}</p>
+          <p className="muted tk-small">{g.t(one ? "review.limitsHintOne" : budgetBlock ? "review.limitsHintRaise" : "review.limitsHint")}</p>
         </div>
       </details>
 
       {!approvedBefore && (
-        <form
-          className="gp-revise"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (reviseCost.label === null || locked || goal.revisionsLeft <= 0) return;
-            void run(() => act("goals.revise", { goalId: goal.id, revision: latest.revision, note: note.trim() })).then((r) => r && setNote(""));
-          }}
-        >
+        <div className="gp-revise">
           <label className="gv-field gp-revise-note">
             <span className="lbl">{g.t("review.revise")}</span>
-            <input value={note} maxLength={GOAL_LIMITS.noteBytes} disabled={locked} placeholder={g.t("review.revisePlaceholder")} onChange={(e) => setNote(e.target.value)} />
+            <input value={note} maxLength={GOAL_LIMITS.noteBytes} disabled={busy} placeholder={g.t("review.revisePlaceholder")} onChange={(e) => setNote(e.target.value)} />
           </label>
-          <Button size="sm" type="submit" disabled={locked || reviseCost.label === null || goal.revisionsLeft <= 0}>
+          <Button
+            size="sm"
+            disabled={busy || reviseCost.label === null || goal.revisionsLeft <= 0}
+            onClick={() => {
+              if (reviseCost.label === null || busy || goal.revisionsLeft <= 0) return;
+              void run(() => act("goals.revise", { goalId: goal.id, revision: latest.revision, note: note.trim() })).then((r) => r && setNote(""));
+            }}
+          >
             {goal.revisionsLeft <= 0 ? g.t("review.reviseNone") : reviseCost.label ? g.t("review.reviseGo", { cost: reviseCost.label }) : g.t("review.revise")}
           </Button>
           <span className="muted tk-small">{g.t("review.revisionsLeft", { count: goal.revisionsLeft })}</span>
           {reviseCost.blocked && <span className="muted tk-small">{reviseCost.blocked}</span>}
-        </form>
+        </div>
       )}
 
       <p className="muted tk-small gp-note">{g.t(writes ? "review.nothingStartsPr" : "review.nothingStarts")}</p>
       <div className="gp-approve">
         {!approvedBefore && (
           <Button
-            disabled={offline || latest.state === "planning"}
+            disabled={offline || pending || latest.state === "planning"}
             onClick={() =>
               void run(() => act("goals.collapse", { goalId: goal.id })).then((r) => {
                 if (r?.collapsedTaskId) onCollapsed(r.collapsedTaskId);
@@ -860,22 +908,16 @@ function ReadyState({
           </Button>
         )}
         {one && (
-          <Button
-            variant="ghost"
-            disabled={offline}
-            onClick={() => {
-              selectTask(tiles[0]!.taskId);
-              go("crew");
-            }}
-          >
+          <Button variant="ghost" disabled={offline || pending} onClick={() => editCrew(tiles[0]!.taskId)}>
             {g.t("review.editCrew")}
           </Button>
         )}
         <div className="end">
           {!check.ok && ready && <span className="st-wait tk-small gp-block">{blockText(g.t, check.block, cost)}</span>}
+          {check.ok && ready && editingTile && <span className="st-wait tk-small gp-block">{g.t("review.editingBlock", { number: goalNumber(editingTile.number) })}</span>}
           <span className="kbd">Ctrl</span>
           <span className="kbd">Enter</span>
-          <Button variant="primary" tone="ok" disabled={locked || !check.ok} onClick={() => void approve()}>
+          <Button variant="primary" tone="ok" disabled={busy || !check.ok || editing !== null} onClick={() => void approve()}>
             {approveLabel}
           </Button>
         </div>
@@ -911,7 +953,7 @@ function ReviewLine({ review, share, typed, locked, onTyped }: { review: ReviewI
 }
 
 /** "One task is enough": the task and its crew, as the crew proposal shows them. Approving makes it an ordinary task. */
-function OneTask({ tile }: { tile: GoalTaskView }) {
+function OneTask({ tile, unknown }: { tile: GoalTaskView; unknown: boolean }) {
   const g = useGoalFormat();
   const detail = useWork("tasks.get", { taskId: tile.taskId });
   const members = detail.data && detail.data.crew && detail.data.id === tile.taskId ? detail.data.crew.members : [];
@@ -940,6 +982,7 @@ function OneTask({ tile }: { tile: GoalTaskView }) {
           </ol>
         )}
       </div>
+      {unknown && <p className="st-wait tk-small">{g.t("review.oneUnknown")}</p>}
       <p className="muted tk-small">{g.t("review.oneTaskNote")}</p>
     </div>
   );

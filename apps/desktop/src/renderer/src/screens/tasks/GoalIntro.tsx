@@ -62,7 +62,7 @@ export function GoalIntro({
           <Label>{t("intro.happens")}</Label>
           <ul>
             {HAPPENS.map((k) => (
-              <li key={k}>{t(`intro.happensItems.${k}`, { cost, ceiling: ceiling ?? "", atOnce: GOAL_LIMITS.maxParallel })}</li>
+              <li key={k}>{t(k === "plan" && ceiling === null ? "intro.happensItems.planNoCeiling" : `intro.happensItems.${k}`, { cost, ceiling: ceiling ?? "", atOnce: GOAL_LIMITS.maxParallel })}</li>
             ))}
           </ul>
         </div>
@@ -75,13 +75,8 @@ export function GoalIntro({
           </ul>
         </div>
       </div>
-      <form
-        className="gp-intro-acts"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (!bad && !busy) onPlan(value);
-        }}
-      >
+      {/* No form: Enter in the budget field never starts the planning run; only the button that shows its cost does. */}
+      <div className="gp-intro-acts">
         <label className="gv-field" htmlFor={ids.budget}>
           <span className="lbl">{t("intro.budget")}</span>
           <input ref={first} id={ids.budget} className="num gp-limit" inputMode="decimal" value={budget} onChange={(e) => setBudget(e.target.value)} aria-invalid={bad || undefined} size={8} />
@@ -91,11 +86,17 @@ export function GoalIntro({
           <Button variant="ghost" onClick={onCrew} disabled={busy}>
             {t("intro.useCrew")}
           </Button>
-          <Button type="submit" variant="primary" disabled={bad || busy}>
+          <Button
+            variant="primary"
+            disabled={bad || busy}
+            onClick={() => {
+              if (!bad && !busy && value !== null) onPlan(value);
+            }}
+          >
             {busy ? t("intro.planning") : t("intro.plan", { cost })}
           </Button>
         </div>
-      </form>
+      </div>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { Folder, GitBranch, SquareTerminal } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { TASK_PRESETS, type CandidateView, type FallbackMode, type GoalPreview, type IssueDetail, type RoleId, type TaskKind, type TaskStartHold } from "@crewyard/core";
+import { GOAL_LIMITS, TASK_PRESETS, type CandidateView, type FallbackMode, type GoalPreview, type IssueDetail, type RoleId, type TaskKind, type TaskStartHold } from "@crewyard/core";
 import { Button, Label, Panel } from "@crewyard/ui";
 import { useNav } from "../../nav.ts";
 import { AttachButton, DraftAttachments, useAttachmentDraft, useDiscardOnUnmount } from "./Attachments.tsx";
@@ -55,7 +55,35 @@ function useWhoText() {
 /** Screenshot mode only: the composer state a shot asks for (a draft, a mode, the first-goal card). */
 const SHOT = FIXTURE ? fixtureComposer(new URLSearchParams(location.search)) : null;
 
-export function Composer({ projectId, projectName, assistantOpen, onAssistant, folded = false }: { projectId: string; projectName: string; assistantOpen: boolean; onAssistant(): void; folded?: boolean }) {
+/**
+ * The first-goal card's default goal budget (design §3.2 step 0): the project's own default when it
+ * has one, else its per-task cap from .crewyard/project.json, the same cap the planning ceiling
+ * uses; $3 only for a project with neither. Never past the goal budget limit.
+ */
+export function introBudget(defaultBudgetUsd: number | null | undefined, perTaskCapUsd: number | null | undefined): number {
+  const pick = defaultBudgetUsd && defaultBudgetUsd > 0 ? defaultBudgetUsd : perTaskCapUsd && perTaskCapUsd > 0 ? perTaskCapUsd : INTRO_BUDGET_USD;
+  return Math.min(GOAL_LIMITS.budgetMaxUsd, pick);
+}
+
+/**
+ * Mounted once per project (TasksScreen keys it by project id), so a mode, planner or Solo pick
+ * made in one project never carries into another: each opens on what it remembers.
+ */
+export function Composer({
+  projectId,
+  projectName,
+  projectPath,
+  assistantOpen,
+  onAssistant,
+  folded = false,
+}: {
+  projectId: string;
+  projectName: string;
+  projectPath: string | null;
+  assistantOpen: boolean;
+  onAssistant(): void;
+  folded?: boolean;
+}) {
   const { t } = useTranslation("tasks");
   const tg = useTranslation("goals").t;
   const errorText = useErrorText();
@@ -118,6 +146,10 @@ export function Composer({ projectId, projectName, assistantOpen, onAssistant, f
   const mode: ComposerMode = picked === "orchestra" && canPlan === false ? "crew" : (picked ?? opening);
   const oneTaskSource = issue ? "issue" : preset ? "preset" : null;
   const used = submitMode(mode, oneTaskSource);
+  // The first-goal card's budget comes from the project's per-task cap, read before the card opens.
+  const detect = useWork("setup.detect", { path: projectPath ?? "" }, { enabled: Boolean(gp?.introDue && !gp.defaultBudgetUsd && projectPath), staleTime: 5 * 60_000, retry: false });
+  const introCap = detect.data?.configStatus?.state === "missing" ? null : (detect.data?.existingConfig?.budget.perTaskUsd ?? null);
+  const introReady = Boolean(gp?.defaultBudgetUsd) || !projectPath || detect.isFetched || detect.isError;
 
   const budgetUsd = budget.trim() === "" ? undefined : Number(budget);
   const budgetBad = budgetUsd !== undefined && (!Number.isFinite(budgetUsd) || budgetUsd <= 0);
@@ -168,7 +200,7 @@ export function Composer({ projectId, projectName, assistantOpen, onAssistant, f
       ...(fallback !== "default" ? { fallback } : {}),
       ...(branch.trim() ? { baseBranch: branch.trim() } : {}),
       ...(budgetUsd !== undefined ? { budgetUsd } : {}),
-      ...(bestOf > 0 && mode === "crew" ? { bestOf } : {}),
+      ...(bestOf > 0 && used === "crew" ? { bestOf } : {}),
       ...(attach.ids.length > 0 ? { attachments: attach.ids } : {}),
     });
     // The link is kept with the task; a failure here leaves the proposed task as it is.
@@ -292,16 +324,16 @@ export function Composer({ projectId, projectName, assistantOpen, onAssistant, f
           : t("composer.soloNote")
         : issue
           ? t("issues.composerNote")
-          : bestOf > 0 && mode === "crew"
+          : bestOf > 0
             ? t("composer.bestOfNote", { count: bestOf })
             : t("composer.note");
-  const taskFields = mode !== "orchestra" || more;
+  const taskFields = used !== "orchestra" || more;
 
   return (
     <Panel className="tk-composer">
       <form onSubmit={(e) => void submit(e)} onKeyDown={onKey} onDragOver={attach.handlers.onDragOver} onDrop={attach.handlers.onDrop}>
         <label className="lbl" htmlFor={ids.text}>
-          {mode === "orchestra" ? t("composer.labelGoal") : t("composer.label")}
+          {used === "orchestra" ? t("composer.labelGoal") : t("composer.label")}
         </label>
         <textarea
           ref={area}
@@ -313,7 +345,7 @@ export function Composer({ projectId, projectName, assistantOpen, onAssistant, f
             setIntro(false);
           }}
           onPaste={attach.handlers.onPaste}
-          placeholder={mode === "orchestra" ? t("composer.orchestraPlaceholder") : mode === "solo" ? t("composer.soloPlaceholder") : t("composer.placeholder")}
+          placeholder={used === "orchestra" ? t("composer.orchestraPlaceholder") : used === "solo" ? t("composer.soloPlaceholder") : t("composer.placeholder")}
           rows={2}
         />
         <DraftAttachments draft={attach} />
@@ -350,7 +382,7 @@ export function Composer({ projectId, projectName, assistantOpen, onAssistant, f
                 key={m}
                 type="button"
                 data-mode={m}
-                aria-pressed={mode === m}
+                aria-pressed={used === m}
                 disabled={m === "orchestra" && canPlan === false}
                 title={m === "orchestra" && canPlan === false && noPlannerReason ? noPlannerReason : t(`composer.mode.${m}Hint`)}
                 onClick={() => pick(m)}
@@ -391,7 +423,7 @@ export function Composer({ projectId, projectName, assistantOpen, onAssistant, f
               ))}
             </select>
           </label>
-          {mode === "orchestra" && (
+          {used === "orchestra" && (
             <Button size="sm" variant="ghost" aria-expanded={more} aria-controls={ids.more} onClick={() => setMore((v) => !v)}>
               {more ? t("composer.lessOptions") : t("composer.moreOptions")}
             </Button>
@@ -418,7 +450,7 @@ export function Composer({ projectId, projectName, assistantOpen, onAssistant, f
                   ))}
                 </select>
               </label>
-              {mode === "crew" && (
+              {used === "crew" && (
                 <label className="chip tk-field" htmlFor={ids.bestOf} title={t("composer.bestOfTitle")}>
                   {t("composer.bestOf")}
                   <select id={ids.bestOf} value={bestOf} onChange={(e) => setBestOf(Number(e.target.value))}>
@@ -474,7 +506,7 @@ export function Composer({ projectId, projectName, assistantOpen, onAssistant, f
             </Button>
           </div>
         </div>
-        {mode === "orchestra" && oneTaskSource && (
+        {mode !== "crew" && oneTaskSource && (
           <p className="tk-composer-hint muted" role="note">
             {t("composer.oneTaskSource")}
           </p>
@@ -487,29 +519,11 @@ export function Composer({ projectId, projectName, assistantOpen, onAssistant, f
             </Button>
           </p>
         )}
-        {mode === "orchestra" && more && <p className="tk-composer-hint muted">{t("composer.moreNote")}</p>}
+        {used === "orchestra" && more && <p className="tk-composer-hint muted">{t("composer.moreNote")}</p>}
         {held && (
           <p className="tk-composer-hint st-wait" role="status">
             {t(`composer.held.${held.code}`, { cap: held.params?.cap ? t(`capKind.${String(held.params.cap)}`, { defaultValue: String(held.params.cap) }) : "", code: String(held.params?.code ?? "") })}
           </p>
-        )}
-        {intro && gp && planning && (
-          <GoalIntro
-            cost={planning.cost}
-            ceiling={planning.ceiling}
-            budgetUsd={gp.defaultBudgetUsd ?? INTRO_BUDGET_USD}
-            busy={busy}
-            onPlan={(b) => void run("orchestra", () => createGoal(b))}
-            onCrew={() => {
-              setIntro(false);
-              setPicked("crew");
-              void run("crew", proposeCrew);
-            }}
-            onCancel={() => {
-              setIntro(false);
-              area.current?.focus();
-            }}
-          />
         )}
         <div className="tk-composer-foot">
           <Label>{note}</Label>
@@ -524,6 +538,24 @@ export function Composer({ projectId, projectName, assistantOpen, onAssistant, f
         </div>
         <ErrorLine>{error}</ErrorLine>
       </form>
+      {intro && gp && planning && introReady && (
+        <GoalIntro
+          cost={planning.cost}
+          ceiling={planning.ceiling}
+          budgetUsd={introBudget(gp.defaultBudgetUsd, introCap)}
+          busy={busy}
+          onPlan={(b) => void run("orchestra", () => createGoal(b))}
+          onCrew={() => {
+            setIntro(false);
+            setPicked("crew");
+            void run("crew", proposeCrew);
+          }}
+          onCancel={() => {
+            setIntro(false);
+            area.current?.focus();
+          }}
+        />
+      )}
     </Panel>
   );
 }

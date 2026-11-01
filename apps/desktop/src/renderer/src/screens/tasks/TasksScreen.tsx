@@ -154,7 +154,7 @@ export function TasksScreen() {
       {view === "tasks" && (
         <>
           {/* One focus at a time (DESIGN.md principle 2): the composer folds while a goal or plan is open. */}
-          <Composer projectId={projectId} projectName={project?.name ?? ""} assistantOpen={assistant} onAssistant={() => toggleAssistant(projectId)} folded={goal !== null} />
+          <Composer key={projectId} projectId={projectId} projectName={project?.name ?? ""} projectPath={project?.path ?? null} assistantOpen={assistant} onAssistant={() => toggleAssistant(projectId)} folded={goal !== null} />
           {goal && planOpen && (
             <GoalPlanReview key={goal.id} goal={goal} offline={offline} onClose={() => openGoal(null)} onBack={goal.approvedRevision !== null ? () => setReviewing(null) : undefined} onCollapsed={onCollapsed} />
           )}

@@ -4,9 +4,12 @@ import { cost, goalDetail, goalTask, revision } from "./goalTestData.ts";
 import {
   acceptWithPrerequisites,
   approvalCheck,
+  approveKeyApplies,
   approveParams,
   diffLines,
   diffMark,
+  heldShares,
+  keptTasks,
   modeToRemember,
   openingMode,
   overlapLines,
@@ -66,11 +69,14 @@ describe("composer mode", () => {
     expect(openingMode(modeToRemember("solo") ?? "crew", true)).toBe("crew");
   });
 
-  it("sends ready-made analyses and imported issues to one Crew task, never to the planner", () => {
+  it("sends ready-made analyses and imported issues to one Crew task, never to the planner and never started by Solo", () => {
     expect(submitMode("orchestra", "preset")).toBe("crew");
     expect(submitMode("orchestra", "issue")).toBe("crew");
     expect(submitMode("orchestra", null)).toBe("orchestra");
-    expect(submitMode("solo", "issue")).toBe("solo");
+    // An issue's text comes from the web: it is proposed for you to read, not started on the same click.
+    expect(submitMode("solo", "issue")).toBe("crew");
+    expect(submitMode("solo", "preset")).toBe("crew");
+    expect(submitMode("solo", null)).toBe("solo");
     expect(submitMode("crew", "preset")).toBe("crew");
   });
 
@@ -183,14 +189,88 @@ describe("plan review", () => {
     expect(reportFeeds(tiles, new Set(["k1"]))).toEqual([]);
   });
 
-  it("shows a revise as added, changed and removed, with removed tasks under their key", () => {
+  it("shows a revise as added, changed and removed, naming removed tasks by their earlier title and never by key", () => {
     const tiles = plan();
-    const rev = revision({ diff: { added: ["k4"], changed: ["k3"], removed: ["old-docs"], kept: ["k1", "k2"] } });
-    expect(diffLines(rev, tiles)).toEqual({ added: ["04"], changed: ["03"], removed: ["old-docs"] });
+    const rev = revision({ revision: 2, diff: { added: ["k4"], changed: ["k3"], removed: ["old-docs"], kept: ["k1", "k2"] } });
+    // Before approval the earlier revision's tasks are not in the goal, so a removed one is only counted.
+    expect(diffLines(rev, tiles)).toEqual({ added: ["04"], changed: ["03"], removed: [], removedUnnamed: 1 });
+    // After an approval (a replan), the earlier task is there and names itself.
+    const earlier = [goalTask(6, { key: "old-docs", revision: 1, title: "Belgeler: eski kılavuz" }), goalTask(7, { key: "old-docs", revision: 3, title: "later" })];
+    expect(diffLines(rev, tiles, earlier)).toEqual({ added: ["04"], changed: ["03"], removed: ["Belgeler: eski kılavuz"], removedUnnamed: 0 });
     expect(diffMark(rev, "k3")).toBe("changed");
     expect(diffMark(rev, "k4")).toBe("added");
     expect(diffMark(rev, "k1")).toBeNull();
     expect(diffLines(revision({ diff: { added: [], changed: [], removed: [], kept: ["k1"] } }), tiles)).toBeNull();
+  });
+
+  it("a replan counts the shares kept tasks and the last review already hold, as goals.approve does", () => {
+    // Goal budget $3 split at the first approval: two kept tasks hold $1.40 and $1.20, the review $0.30.
+    const first = [
+      goalTask(1, { revision: 1, shareUsd: 1.4, status: "done" }),
+      goalTask(2, { revision: 1, shareUsd: 1.2, status: "running" }),
+      goalTask(3, { revision: 1, shareUsd: 0.4, status: "proposed", released: false }),
+    ];
+    const added = goalTask(4, { revision: 2, accepted: null, released: false, status: "proposed", shareUsd: null, estimate: cost(2) });
+    const rebuilt = goalTask(5, { key: "k3", revision: 2, accepted: null, released: false, status: "proposed", shareUsd: null, estimate: cost(0.3) });
+    const goal = goalDetail({
+      approvedRevision: 1,
+      budgetUsd: 3,
+      tasks: [...first, added, rebuilt, goalTask(9, { revision: 1, accepted: false, shareUsd: 0.9 }), goalTask(8, { revision: 1, shareUsd: 0.5, status: "cancelled" })],
+      revisions: [revision({ revision: 1 }), revision({ id: "r2", revision: 2, cause: "replan", state: "ready", approvedAt: null, diff: { added: ["k4"], changed: ["k3"], removed: [], kept: ["k1", "k2"] } })],
+    });
+    const tiles = planTiles(goal);
+    const kept = keptTasks(goal);
+    // k3 is rebuilt by the replan, k9 was skipped, k8 is cancelled: only 01 and 02 keep their shares.
+    expect(kept.map((t) => t.key)).toEqual(["k1", "k2"]);
+    const held = { estimate: cost(0.17), shareUsd: 0.3 };
+    expect(heldShares(kept, held)).toBe(2.9);
+    // The tiles alone fit in $3; with the held $2.90 the daemon refuses, so Approve says so first.
+    expect(approvalCheck(tiles, all(tiles), "3", {}, held, 2, LIMITS).ok).toBe(true);
+    expect(approvalCheck(tiles, all(tiles), "3", {}, held, 2, LIMITS, { kept })).toEqual({ ok: false, block: { code: "over_budget", totalUsd: 5.2, budgetUsd: 3 } });
+    // Raised to $6, the new tasks split what is left: $6 - $2.90 = $3.10 over $2.30 estimated.
+    const ok = approvalCheck(tiles, all(tiles), "6", {}, held, 2, LIMITS, { kept });
+    expect(ok.ok).toBe(true);
+    if (ok.ok) {
+      expect(ok.shares.k1).toBe(1.4);
+      expect(ok.shares.review).toBe(0.3);
+      expect(ok.shares.k4).toBeCloseTo(2.6956, 3);
+      expect(Object.values(ok.shares).reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(6);
+    }
+    // An Add task revision replaces nothing: every accepted live task of earlier revisions stays.
+    const add = { ...goal, revisions: [goal.revisions[0]!, { ...goal.revisions[1]!, cause: "add" as const, diff: null }] };
+    expect(keptTasks(add).map((t) => t.key)).toEqual(["k1", "k2", "k3"]);
+    // Before any approval nothing is kept.
+    expect(keptTasks({ ...goal, approvedRevision: null })).toEqual([]);
+  });
+
+  it("counts kept tasks against the goal's task limit, and a kept task waiting for a skipped rebuilt one", () => {
+    const tiles = plan();
+    const kept = [goalTask(7, { key: "k7", shareUsd: 0.2, dependsOn: [{ taskId: "t2", key: "k2", source: "plan" }] })];
+    expect(approvalCheck(tiles, all(tiles), "9", {}, review, 2, LIMITS, { kept, maxTasks: 4 })).toEqual({ ok: false, block: { code: "too_many", max: 4 } });
+    expect(approvalCheck(tiles, all(tiles), "9", {}, review, 2, LIMITS, { kept, maxTasks: 5 }).ok).toBe(true);
+    // 07 was approved earlier and waits for 02; skipping the rebuilt 02 would leave it waiting forever.
+    expect(approvalCheck(tiles, new Set(["k1", "k3"]), "9", {}, review, 2, LIMITS, { kept })).toMatchObject({ ok: false, block: { code: "skipped_dependency" } });
+  });
+
+  it("approves a plan of one task with an Unknown estimate on the goal budget alone, with no last review", () => {
+    const one = [goalTask(1, { estimate: cost(null, "unknown"), accepted: null, shareUsd: null })];
+    // As a goal task it would need a typed budget; as one task the goal budget is its budget.
+    expect(approvalCheck(one, all(one), "3", {}, review, 2, LIMITS)).toEqual({ ok: false, block: { code: "needs_budget", task: "01" } });
+    expect(approvalCheck(one, all(one), "3", {}, review, 2, LIMITS, { oneTask: true })).toEqual({ ok: true, shares: { k1: 3 } });
+    // A known estimate past the goal budget still says so before the click.
+    const dear = [goalTask(1, { estimate: cost(4.5), accepted: null })];
+    expect(approvalCheck(dear, all(dear), "3", {}, review, 2, LIMITS, { oneTask: true })).toEqual({ ok: false, block: { code: "over_budget", totalUsd: 4.5, budgetUsd: 3 } });
+    expect(approvalCheck(one, all(one), "", {}, null, 2, LIMITS, { oneTask: true })).toEqual({ ok: false, block: { code: "bad_budget" } });
+  });
+
+  it("never approves on Ctrl Enter from the task editor or the Revise note, while the editor is open, or while a goal call is pending", () => {
+    const at = (inside: string | null) => ({ closest: (sel: string) => (inside && sel.split(",").map((x) => x.trim()).includes(inside) ? {} : null) });
+    expect(approveKeyApplies(at(null), { editing: false, pending: false })).toBe(true);
+    expect(approveKeyApplies(null, { editing: false, pending: false })).toBe(true);
+    expect(approveKeyApplies(at(".gp-editor"), { editing: false, pending: false })).toBe(false);
+    expect(approveKeyApplies(at(".gp-revise"), { editing: false, pending: false })).toBe(false);
+    expect(approveKeyApplies(at(null), { editing: true, pending: false })).toBe(false);
+    expect(approveKeyApplies(at(null), { editing: false, pending: true })).toBe(false);
   });
 
   it("names the loop a new Waits for would close, as the Crew graph does", () => {

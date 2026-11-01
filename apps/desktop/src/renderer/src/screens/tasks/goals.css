@@ -74,6 +74,7 @@ input.gp-limit { color: var(--ink); }
 .gp-facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; color: var(--ink-2); }
 .gp-facts ul { margin: 0; padding-left: 18px; }
 .gp-pre { white-space: pre-wrap; }
+.gp-fold .gp-editcrew { margin-top: 4px; }
 
 .gp-review-line { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; padding: 8px 12px; border: 1px dashed var(--line-strong); }
 .gp-review-line .gp-tile-title { flex: 0 1 auto; color: var(--ink-2); font-weight: 400; }

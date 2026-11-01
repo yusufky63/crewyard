@@ -27,11 +27,13 @@ export const modeToRemember = (mode: ComposerMode): RememberedMode | null => (mo
 
 /**
  * The mode one submission really uses. Ready-made analyses and imported issues always run as one
- * Crew task (design §1.2): planning them would cost a planning run for one task anyway. The
- * control still shows what you picked; the note says why this one goes to Crew.
+ * Crew task (design §0, §1.2), whatever was picked: planning them would cost a planning run for one
+ * task, and an issue's text comes from the web, so it is proposed for you to read rather than
+ * started by Solo on the same click (§1.3). The control shows Crew while one is attached and goes
+ * back to your pick when it is removed.
  */
 export function submitMode(mode: ComposerMode, oneTaskSource: "preset" | "issue" | null): ComposerMode {
-  return mode === "orchestra" && oneTaskSource !== null ? "crew" : mode;
+  return oneTaskSource !== null ? "crew" : mode;
 }
 
 /** Solo's button: `Start` with its estimate, or `Propose` when the estimate is Unknown or a cap would hold the step. */
@@ -125,6 +127,44 @@ const unknown = (e: CostEstimate) => e.usd === null || e.provenance === "unknown
 /** The last review's line in a plan: present when any accepted task writes files. */
 export interface ReviewItem {
   estimate: CostEstimate;
+  /**
+   * The share an earlier approval already gave it. goals.approve counts that share as it is, not
+   * the estimate, so the check does too.
+   */
+  shareUsd?: number | null;
+}
+
+/**
+ * The tasks an earlier approval accepted that approving the latest revision keeps (design §4.10,
+ * goals.approve): accepted, not discarded or cancelled, and not replaced. A replan replaces the
+ * keys it rebuilt (a tile now holds them) and the keys it removed; an `Add task` revision replaces
+ * nothing. Without a diff, a key no tile holds counts as kept, the side that never under-counts.
+ * Empty before the first approval.
+ */
+export function keptTasks(goal: Pick<GoalDetail, "tasks" | "revisions" | "approvedRevision">): GoalTaskView[] {
+  if (goal.approvedRevision === null) return [];
+  const latest = latestRevision(goal);
+  if (!latest) return [];
+  const rebuilt = new Set(planTiles(goal).map((t) => t.key));
+  const removed = new Set(latest.diff?.removed ?? []);
+  const add = latest.cause === "add";
+  return goal.tasks
+    .filter((t) => t.revision !== latest.revision && t.accepted === true && !t.discarded && t.status !== "cancelled")
+    .filter((t) => add || (!rebuilt.has(t.key) && !removed.has(t.key)))
+    .sort((a, b) => a.number - b.number);
+}
+
+/** What an approval covers besides the latest revision's tiles. */
+export interface ApprovalScope {
+  /** Tasks earlier approvals accepted that stay (keptTasks): each holds its share of the goal budget. */
+  kept?: readonly Pick<GoalTaskView, "key" | "number" | "shareUsd" | "dependsOn" | "writes">[];
+  /**
+   * A plan of one task (before any approval): approving makes it an ordinary task whose budget is
+   * the goal budget, with no goal branch and no last review, so no typed budget is asked for.
+   */
+  oneTask?: boolean;
+  /** The goal's task limit: kept and accepted tasks together may not pass it. */
+  maxTasks?: number;
 }
 
 /**
@@ -170,12 +210,15 @@ export type ApproveBlock =
   | { code: "needs_budget"; task: string }
   | { code: "typed_over"; typedUsd: number; budgetUsd: number }
   | { code: "over_budget"; totalUsd: number; budgetUsd: number }
+  | { code: "too_many"; max: number }
   | { code: "at_once" };
 
 /**
  * Checks the approval the way goals.approve will (core splitBudget, skippedDependency), so the
  * button is disabled with its reason instead of failing after the click. On success, each accepted
- * task's share of the goal budget, which the folded tile shows.
+ * task's share of the goal budget, which the folded tile shows. For a replan or an added task,
+ * the tasks earlier approvals keep hold their shares and the last review its share, as the daemon
+ * counts them; for a plan of one task, the goal budget is that task's budget.
  */
 export function approvalCheck(
   tiles: readonly Pick<GoalTaskView, "key" | "number" | "estimate" | "writes" | "dependsOn">[],
@@ -185,26 +228,50 @@ export function approvalCheck(
   review: ReviewItem | null,
   atOnce: number,
   limits: { min: number; max: number },
+  scope: ApprovalScope = {},
 ): { ok: true; shares: Record<string, number> } | { ok: false; block: ApproveBlock } {
   const on = tiles.filter((t) => accepted.has(t.key));
   if (on.length === 0) return { ok: false, block: { code: "none_accepted" } };
+  const kept = scope.oneTask ? [] : (scope.kept ?? []);
   const num = (key: string) => {
-    const t = tiles.find((x) => x.key === key);
+    const t = tiles.find((x) => x.key === key) ?? kept.find((x) => x.key === key);
     return t ? goalNumber(t.number) : key;
   };
-  const skippedDep = skippedDependency(planNodes(tiles), accepted);
+  if (scope.maxTasks !== undefined && kept.length + on.length > scope.maxTasks) return { ok: false, block: { code: "too_many", max: scope.maxTasks } };
+  // Kept tasks count as accepted; an edge of theirs to a rebuilt key now points at the tile holding it.
+  const live = new Set([...tiles.map((t) => t.key), ...kept.map((t) => t.key)]);
+  const nodes: DagNode[] = [...planNodes(tiles), ...kept.map((t) => ({ id: t.key, dependsOn: t.dependsOn.map((d) => d.key).filter((k) => live.has(k) && k !== t.key) }))];
+  const skippedDep = skippedDependency(nodes, new Set([...accepted, ...kept.map((t) => t.key)]));
   if (skippedDep) return { ok: false, block: { code: "skipped_dependency", task: num(skippedDep.taskId), dependsOn: num(skippedDep.dependsOn) } };
   if (!Number.isInteger(atOnce) || atOnce < limits.min || atOnce > limits.max) return { ok: false, block: { code: "at_once" } };
   const budget = typedUsd(budgetRaw);
   if (budget === null) return { ok: false, block: { code: "bad_budget" } };
   const items: BudgetItem[] = [];
+  for (const t of kept) {
+    const share = t.shareUsd;
+    items.push(share !== null && share > 0 ? { id: t.key, estimate: { usd: share, provenance: "estimated" }, typedUsd: share } : { id: t.key, estimate: { usd: 0, provenance: "estimated" } });
+  }
   for (const t of on) {
+    if (scope.oneTask) {
+      // The one task's budget is the goal budget (goals.approve's one-task route), so an Unknown
+      // estimate needs nothing more; a known one past the budget still says so before the click.
+      items.push({ id: t.key, estimate: t.estimate, typedUsd: unknown(t.estimate) ? budget : null });
+      continue;
+    }
     const raw = typed[t.key];
     if (raw !== undefined && raw.trim() !== "" && typedUsd(raw) === null) return { ok: false, block: { code: "bad_task_budget", task: num(t.key) } };
     // Only an Unknown estimate takes a typed budget; a known one is split by its estimate.
     items.push({ id: t.key, estimate: t.estimate, typedUsd: unknown(t.estimate) ? typedUsd(raw) : null });
   }
-  if (review && on.some((t) => t.writes)) items.push({ id: REVIEW_KEY, estimate: review.estimate, typedUsd: unknown(review.estimate) ? typedUsd(typed[REVIEW_KEY]) : null });
+  const writes = on.some((t) => t.writes) || kept.some((t) => t.writes);
+  if (review && !scope.oneTask && writes) {
+    const held = review.shareUsd ?? null;
+    items.push(
+      held !== null && held > 0
+        ? { id: REVIEW_KEY, estimate: { usd: held, provenance: "estimated" }, typedUsd: held }
+        : { id: REVIEW_KEY, estimate: review.estimate, typedUsd: unknown(review.estimate) ? typedUsd(typed[REVIEW_KEY]) : null },
+    );
+  }
   const split = splitBudget(budget, items);
   if (split.ok) return { ok: true, shares: split.shares };
   switch (split.code) {
@@ -217,6 +284,25 @@ export function approvalCheck(
     case "bad_budget":
       return { ok: false, block: split.id === null ? { code: "bad_budget" } : { code: "bad_task_budget", task: split.id === REVIEW_KEY ? REVIEW_KEY : num(split.id) } };
   }
+}
+
+/** What the kept tasks and the last review already hold of the goal budget, said beside a replan's total. */
+export function heldShares(kept: readonly Pick<GoalTaskView, "shareUsd">[], review: ReviewItem | null): number {
+  const sum = kept.reduce((a, t) => a + Math.max(0, t.shareUsd ?? 0), 0) + Math.max(0, review?.shareUsd ?? 0);
+  return Math.round(sum * 1_000_000) / 1_000_000;
+}
+
+/** Where Ctrl Enter must not approve: the task editor (Ctrl Enter saves there) and the Revise note. */
+export const APPROVE_KEY_EXCLUDED = ".gp-editor, .gp-revise";
+
+/**
+ * Whether Ctrl Enter in the plan review approves (design §3.7). Never from inside the task editor
+ * or the Revise note, never while the editor is open with edits not saved, and never while a goal
+ * call is on its way: the approval covers what you saw, and an edit in flight changes it.
+ */
+export function approveKeyApplies(target: { closest?: (selector: string) => unknown } | null, state: { editing: boolean; pending: boolean }): boolean {
+  if (state.editing || state.pending) return false;
+  return !(target && typeof target.closest === "function" && target.closest(APPROVE_KEY_EXCLUDED));
 }
 
 /** The keys and typed budgets goals.approve takes; typed budgets only for Unknown estimates. */
@@ -302,15 +388,31 @@ export function reportFeeds(tiles: readonly Pick<GoalTaskView, "key" | "number" 
   return out;
 }
 
-/** The revise diff (design §3.2, §4.10) as plan numbers; removed tasks are gone from the tiles, so they keep their key. */
-export function diffLines(revision: Pick<GoalRevisionView, "diff"> | null, tiles: readonly Pick<GoalTaskView, "key" | "number">[]): { added: string[]; changed: string[]; removed: string[] } | null {
+/**
+ * The revise diff (design §3.2, §4.10) in the review's own terms: added and changed tasks by their
+ * plan number; removed tasks are gone from the tiles, so they are named by the title the earlier
+ * revision gave them. A removed key no earlier task holds is only counted, never shown raw.
+ */
+export function diffLines(
+  revision: Pick<GoalRevisionView, "diff" | "revision"> | null,
+  tiles: readonly Pick<GoalTaskView, "key" | "number">[],
+  tasks: readonly Pick<GoalTaskView, "key" | "title" | "revision">[] = [],
+): { added: string[]; changed: string[]; removed: string[]; removedUnnamed: number } | null {
   const d = revision?.diff;
-  if (!d || (d.added.length === 0 && d.changed.length === 0 && d.removed.length === 0)) return null;
+  if (!revision || !d || (d.added.length === 0 && d.changed.length === 0 && d.removed.length === 0)) return null;
   const name = (k: string) => {
     const t = tiles.find((x) => x.key === k);
-    return t ? goalNumber(t.number) : k;
+    return t ? goalNumber(t.number) : null;
   };
-  return { added: d.added.map(name), changed: d.changed.map(name), removed: d.removed.map(name) };
+  const removed: string[] = [];
+  let removedUnnamed = 0;
+  for (const k of d.removed) {
+    const before = tasks.filter((t) => t.key === k && t.revision < revision.revision).sort((x, y) => y.revision - x.revision)[0];
+    if (before) removed.push(before.title);
+    else removedUnnamed += 1;
+  }
+  const named = (keys: string[]) => keys.map(name).filter((x): x is string => x !== null);
+  return { added: named(d.added), changed: named(d.changed), removed, removedUnnamed };
 }
 
 /** The diff mark a tile carries after a revise. */

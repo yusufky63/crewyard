@@ -307,6 +307,7 @@
     "happens": "What happens",
     "happensItems": {
       "plan": "A planner reads the project and proposes tasks: {{cost}}, up to {{ceiling}}.",
+      "planNoCeiling": "A planner reads the project and proposes tasks: {{cost}}.",
       "approve": "You read the plan and approve it with one click, or change it first.",
       "order": "Tasks run in order, at most {{atOnce}} at once, each with its own crew and worktree.",
       "branch": "Finished work is merged into one goal branch in Crewyard's own worktree, then a last review reads all of it."
@@ -355,6 +356,10 @@
     "accepted": "{{accepted}} of {{total}} accepted",
     "ofBudget": "of goal budget",
     "diff": "Revised: added {{added}} · changed {{changed}} · removed {{removed}}",
+    "removedCount_one": "{{count}} task",
+    "removedCount_other": "{{count}} tasks",
+    "heldShares_one": "{{count}} task approved earlier holds",
+    "heldShares_other": "{{count}} tasks approved earlier hold",
     "yourNote": "Your note: {{note}}",
     "overlap": "{{task}} runs after {{after}}: both change {{paths}}",
     "noPaths": "{{task}} names no files it will change, so it runs after {{after}}",
@@ -396,11 +401,15 @@
     "lastReviewLater": "priced when you approve",
     "oneTask": "One task is enough",
     "oneTaskNote": "Approving makes it an ordinary task with this crew: no goal branch, and its own pull request.",
+    "oneUnknown": "Its cost is Unknown: the goal budget under Limits becomes this task's budget, and it asks you before spending past it.",
     "editCrew": "Edit crew",
     "limitsSummary": "Limits: goal budget",
     "noBudget": "no budget yet",
     "atOnceSummary": "{{count}} at once",
     "limitsHint": "Each accepted task gets a share of the goal budget by its estimate; a task past its share asks you first.",
+    "limitsHintOne": "The goal budget becomes this task's budget; past it, the task asks you first.",
+    "limitsHintRaise": "Raise the goal budget here, or skip a task, to approve.",
+    "editingBlock": "Save or cancel the edit to {{number}} first.",
     "revise": "Revise",
     "revisePlaceholder": "Note to the planner…",
     "reviseGo": "Revise · {{cost}}",
@@ -420,7 +429,8 @@
       "needs_budget": "Cost unknown for {{task}}: type a budget for it.",
       "typed_over": "Typed budgets pass the goal budget:",
       "over_budget": "{{total}} is over the goal budget",
-      "at_once": "At once must be from {{min}} to {{max}}."
+      "at_once": "At once must be from {{min}} to {{max}}.",
+      "too_many": "A goal holds at most {{max}} tasks, counting the ones approved earlier: skip some."
     }
   },
   "editor": {
