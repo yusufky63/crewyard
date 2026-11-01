@@ -142,6 +142,49 @@ describe("running crew", () => {
     expect(adapter.started.filter((s) => s.role === "tester")).toHaveLength(1);
   }, 60_000);
 
+  it("changes the AI of an approved step before it starts, and refuses once it has a run", async () => {
+    // The researcher takes a moment, so the tester is still waiting for it when its AI changes.
+    const { o, project, adapter } = await setup((role) => (role === "researcher" ? [running, { wait: 1_500 }, said] : [running, said]));
+    const proposed = await o.propose({ projectId: project.id, title: "Compare rate limiter libraries", kind: "research", size: "S" });
+    const two = await o.crew.edit(proposed.id, { kind: "add_step", role: "tester", after: ["researcher"] });
+    const [researcher, tester] = two.crew!.members;
+    await o.approve({ taskId: proposed.id });
+    // crew.edit keeps the approved crew as it is; changeProfile is the path for a step that waits.
+    const ranked = await o.crew.rankCandidates(proposed.id, "tester");
+    const other = ranked.find((c) => c.profileId !== tester!.chosen!.profileId)!;
+    expect(await rejects(o.crew.edit(proposed.id, { kind: "set_candidate", memberId: tester!.id, profileId: other.profileId }))).toBe("crew.approved");
+    const changed = await o.crew.changeProfile(proposed.id, tester!.id, other.profileId);
+    const after = changed.crew!.members.find((m) => m.id === tester!.id)!;
+    expect(after.chosen?.profileId).toBe(other.profileId);
+    expect(after.standby[0]?.profileId).toBe(tester!.chosen!.profileId);
+    expect(changed.crew!.approvedAt).not.toBeNull();
+    expect(after.pendingApproval).toBeUndefined();
+    expect(await rejects(o.crew.changeProfile(proposed.id, tester!.id, "no-such-profile"))).toBe("crew.unknown_candidate");
+
+    await waitFor(() => o.get(proposed.id).runs.some((r) => r.memberId === researcher!.id), 10_000);
+    expect(await rejects(o.crew.changeProfile(proposed.id, researcher!.id, other.profileId))).toBe("crew.started");
+    // The tester runs on the profile chosen while it waited.
+    await waitFor(() => o.get(proposed.id).runs.some((r) => r.memberId === tester!.id), 30_000);
+    expect(o.get(proposed.id).runs.find((r) => r.memberId === tester!.id)!.profileId).toBe(other.profileId);
+    expect(adapter.started.filter((s) => s.role === "tester")).toHaveLength(1);
+  }, 60_000);
+
+  it("refuses to change the AI of a skipped step or a stopped task", async () => {
+    const { o, project } = await setup((role) => (role === "researcher" ? [running, { wait: 1_500 }, said] : [running, said]));
+    const proposed = await o.propose({ projectId: project.id, title: "Compare rate limiter libraries", kind: "research", size: "S" });
+    const two = await o.crew.edit(proposed.id, { kind: "add_step", role: "tester", after: ["researcher"] });
+    const tester = two.crew!.members[1]!;
+    const other = (await o.crew.rankCandidates(proposed.id, "tester")).find((c) => c.profileId !== tester.chosen!.profileId)!;
+    // A proposal step changes the same way, and stays a proposal.
+    const draft = await o.crew.changeProfile(proposed.id, tester.id, other.profileId);
+    expect(draft.crew!.approvedAt).toBeNull();
+    await o.approve({ taskId: proposed.id });
+    await o.crew.skip(proposed.id, tester.id);
+    expect(await rejects(o.crew.changeProfile(proposed.id, tester.id, tester.chosen!.profileId))).toBe("crew.skipped");
+    await o.cancel(proposed.id);
+    expect(await rejects(o.crew.changeProfile(proposed.id, tester.id, tester.chosen!.profileId))).toBe("task.cancelled");
+  }, 30_000);
+
   it("pauses and resumes every open run of the task", async () => {
     const { o, project } = await setup(() => [running, { awaitAnswer: "never" }]);
     const proposed = await o.propose({ projectId: project.id, title: "Compare rate limiter libraries", kind: "research", size: "S" });
