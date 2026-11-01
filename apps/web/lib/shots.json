@@ -16,5 +16,11 @@
     "height": 1201,
     "dark": "/shots/limits-dark.webp",
     "light": "/shots/limits-light.webp"
+  },
+  "tasks": {
+    "width": 1920,
+    "height": 1201,
+    "dark": "/shots/tasks-dark.webp",
+    "light": "/shots/tasks-light.webp"
   }
 }

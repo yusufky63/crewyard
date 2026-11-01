@@ -7,7 +7,8 @@
 //   pnpm --filter @crewyard/web shots --skip-build (uses apps/desktop/out as it is)
 //
 // Options through the environment: SHOTS=tasks,crew picks shots; SHOT_SIZE (default 1440x900),
-// SHOT_SCALE (2), SHOT_WIDTH (output width, 1920), SHOT_QUALITY (0.86), SHOT_DELAY (ms, 6000).
+// SHOT_SCALE (2), SHOT_WIDTH (output width, 1920), SHOT_QUALITY (0.86), SHOT_DELAY (ms, 6000),
+// SHOT_PROJECT_ROOT (where the sample project is made; C:\code on Windows).
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -44,10 +45,15 @@ const shots = SHOTS.filter((s) => !only || only.has(s.name));
 
 const electron = createRequire(join(desktop, "package.json"))("electron");
 const temp = mkdtempSync(join(tmpdir(), "crewyard-site-shots-"));
+// The Tasks header prints the project's full path, and a temp folder names the user's account, so
+// the sample project lives in a fixed, neutral folder on the system drive instead.
+const projectRoot = env.SHOT_PROJECT_ROOT ?? (process.platform === "win32" ? "C:\\code" : join(tmpdir(), "code"));
+const project = join(projectRoot, "sample-project");
 let current = null;
 
 function cleanup() {
   rmSync(temp, { recursive: true, force: true });
+  rmSync(project, { recursive: true, force: true });
 }
 
 async function stopCurrent() {
@@ -99,8 +105,8 @@ async function main() {
 
   // The title bar shows the project folder's name, so the shots open a neutral, empty repository
   // rather than whatever checkout this runs in.
-  const project = join(temp, "sample-project");
-  mkdirSync(project);
+  rmSync(project, { recursive: true, force: true });
+  mkdirSync(project, { recursive: true });
   const init = await run("git", ["init", "-q"], { cwd: project, timeoutMs: 20_000, env });
   if (init.code !== 0) throw new Error(`git init failed: ${init.stderr}`);
 
