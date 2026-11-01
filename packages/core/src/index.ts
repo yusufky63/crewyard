@@ -40,3 +40,5 @@ export * from "./ipc/problems.ts";
 export * from "./presets.ts";
 export * from "./external.ts";
 export * from "./ipc/external.ts";
+export * from "./goals.ts";
+export * from "./ipc/goals.ts";

@@ -12,6 +12,11 @@ import type { TaskStatus } from "../state.ts";
 
 export type TaskKind = "code" | "research" | "review" | "docs";
 export type TaskSize = "S" | "M" | "L";
+/**
+ * How a task's crew is drafted: `crew` is the full plan for its kind (plan, implement, test,
+ * review); `solo` is one step of the kind's main role. The run-until-green loop still runs for code.
+ */
+export type TaskMode = "solo" | "crew";
 
 /**
  * What happens when a run hits a limit (PLAN.md §8.1). `wait_for_reset` resumes on the same
@@ -84,7 +89,24 @@ export type ReasonCode =
   | "loop.iteration_cap" // { max }
   | "loop.no_change" // the worktree is the same as at the last try
   | "loop.spend_cap" // { cap }
-  | "loop.no_resume"; // { runner }
+  | "loop.no_resume" // { runner }
+  // Orchestra goals (docs/adr/0019): why an accepted goal task has not started; `task` is its label ("01")
+  | "goal.waits_finish" // { task, taskId }
+  | "goal.waits_report" // { task, taskId }: a report you have not accepted yet
+  | "goal.waits_join" // { task, taskId }: finished, not merged into the goal branch yet
+  | "goal.waits_overlap" // { task, taskId }: both plan to change the same files
+  | "goal.prereq_failed" // { task, taskId }
+  | "goal.prereq_cancelled" // { task, taskId }
+  | "goal.prereq_skipped" // { task, taskId }
+  | "goal.paused" // you paused the goal
+  | "goal.paused_all" // Pause all goals is on
+  | "goal.halted" // the goal's stop rule halted it
+  | "goal.parallel_cap" // { running, max }: the goal already runs this many tasks at once
+  | "goal.conflict" // { paths }: merging it into the goal branch conflicts
+  | "goal.not_approved" // the plan revision holding it is not approved
+  | "goal.disabled" // goals.preview: Orchestra is turned off in Settings
+  | "goal.no_planner" // goals.preview: no profile here can plan read-only
+  | "goal.error"; // { code }: the goal's scheduling pass failed; a goal decision says why
 
 export type OrchestratorErrorCode =
   | "project.not_found"
@@ -92,6 +114,8 @@ export type OrchestratorErrorCode =
   | "task.not_proposed" // approve on a task that is already approved or cancelled
   | "task.best_of_kind" // a Best of N task's kind cannot change: its variants were proposed for it
   | "task.cancelled"
+  | "task.goal_managed" // the task belongs to an Orchestra goal: it starts with its plan, never through tasks.approve or tasks.edit
+  | "task.start_solo_only" // tasks.start was asked for another mode: a crew is proposed for review, never started in one call
   | "crew.member_not_found"
   | "crew.missing_profile" // { role } still has no profile
   | "crew.unknown_profile" // { profileId }
@@ -119,6 +143,7 @@ export type OrchestratorErrorCode =
   | "handoff.target_not_ready" // { profileId }: not signed in, no key, or no adapter
   | "handoff.over_cap" // { profileId, cap }: the target's key is past its daily or per-task cap
   | "handoff.over_budget" // { spentUsd, capUsd }: the task is past its own budget and you have not approved going on
+  | "handoff.over_project_daily" // { profileId, spentUsd, capUsd }: the target spends on a paid key and the project's daily cap is used up
   | "git.failed" // { command, detail }
   | "worktree.branch_elsewhere" // { branch, path }: the task's branch is checked out in another worktree
   | "worktree.locked" // { path }: registered, folder missing, and locked with `git worktree lock`
@@ -505,6 +530,26 @@ export interface TaskSummary {
   bestOf?: { n: number; phase: BestOfPhase } | null;
   /** Set on the hidden task of one Best of N variant: the visible task it belongs to. */
   variantOf?: { taskId: string; position: number; n: number } | null;
+  /** Set on a task that belongs to an Orchestra goal (docs/adr/0019); it counts under its goal. */
+  goal?: TaskGoalRef | null;
+}
+
+/**
+ * A goal task as the task list sees it. `waiting`: accepted, not released yet (its derived status
+ * reads `proposed`, but it is never offered `Review crew`). `hidden`: planning, integration,
+ * discarded and not-yet-approved plan tasks, which show only inside the goal.
+ */
+export interface TaskGoalRef {
+  goalId: string;
+  key: string;
+  /** 1-based place in the plan, shown as "01". */
+  number: number;
+  waiting: boolean;
+  hold: Reason | null;
+  joined: boolean;
+  hidden: boolean;
+  /** What the task is to the goal: a plan task, the hidden planning task, or the hidden integration task. */
+  role?: "task" | "planning" | "integration";
 }
 
 // ---------------------------------------------------------------- Best of N (feature scan A8)
@@ -699,13 +744,15 @@ export type RequestPayload =
     };
 
 /**
- * Which spend limit paused a run: the task's own budget, or the credential's daily or per-task cap
- * from the Limits screen. Amounts are Estimated unless the provider billed them.
+ * Which spend limit paused a run: the task's own budget, the credential's daily or per-task cap
+ * from the Limits screen, or the project's daily cap over every API key (`project_daily`, the
+ * setup wizard's `budget.dailyUsd`; docs/adr/0019). Amounts are Estimated unless the provider billed them.
  */
 export interface SpendCap {
-  kind: "task_budget" | "daily_cap" | "task_cap";
+  kind: "task_budget" | "daily_cap" | "task_cap" | "project_daily";
   spentUsd: number;
   capUsd: number;
+  /** The key a key cap belongs to; null for the task budget and the project daily cap. */
   credentialId: string | null;
   /** Held by other unfinished runs for their estimates; set only when some is. */
   reservedUsd?: number;
@@ -736,6 +783,7 @@ export type AccountSwitchRefusal =
   | "independence" // the model another role must stay independent of
   | "left_before" // this step already switched away from this account
   | "over_cap" // its key is at its daily or per-task cap
+  | "project_daily" // a paid key, and the project's daily cap over every key is used up
   | "over_budget" // the task budget is spent
   | "headroom_low"; // 20% or less left on a window
 
@@ -898,9 +946,24 @@ export interface TasksIpc {
       bestOf?: number;
       /** Ids from attachments.add; they move into the task's folder. */
       attachments?: string[];
+      /** `solo` drafts one step of the kind's main role; absent means `crew`. */
+      mode?: TaskMode;
     };
     result: TaskDetail;
   };
+  /**
+   * A dry run of `tasks.propose`: classification, the crew it would draft and its estimate.
+   * Writes nothing; the composer calls it while you type to show the price on the button.
+   */
+  "tasks.preview": { params: TaskPreviewParams; result: TaskPreview };
+  /**
+   * Solo's `Start`: proposes a one-step task and approves its crew in the same call. When the
+   * estimate is Unknown, a cap would hold the step, or the crew has a problem, nothing is approved
+   * and the proposal comes back with `held`, so spend nobody can price still needs your click.
+   * Only Solo starts this way: any other `mode` is refused with `task.start_solo_only`, and Best of
+   * N is not taken, because a crew is proposed so that you review it first.
+   */
+  "tasks.start": { params: Omit<TaskPreviewParams, "mode"> & { mode?: "solo"; baseBranch?: string; fallback?: FallbackMode; waitResetMinutes?: number; attachments?: string[] }; result: TaskStartResult };
   /**
    * Approves the crew, optionally with edits (remembered as preferences), and lets the scheduler
    * start ready steps under admission control. Fails with `crew.missing_profile` or
@@ -1007,6 +1070,44 @@ export interface TasksIpc {
   "schedules.runNow": { params: { id: string }; result: ScheduleRunView };
 }
 
+export interface TaskPreviewParams {
+  projectId: string;
+  title: string;
+  description?: string;
+  kind?: TaskKind;
+  size?: TaskSize;
+  budgetUsd?: number;
+  pins?: Partial<Record<RoleId, string>>;
+  exclude?: string[];
+  mode?: TaskMode;
+}
+
+export interface TaskPreview {
+  kind: TaskKind;
+  size: TaskSize;
+  mode: TaskMode;
+  classification: Reason[];
+  members: CrewMemberView[];
+  estimate: CostEstimate;
+  /**
+   * Set when `tasks.start` would propose instead of starting, so Solo's button reads `Propose`
+   * before the click. A hint only: `tasks.start` checks again against the stored proposal.
+   */
+  hold?: TaskStartHold | null;
+}
+
+/** Why `tasks.start` proposed instead of starting: `estimate_unknown`, `over_cap` { cap }, or `crew` { code } (a crew.* refusal). */
+export interface TaskStartHold {
+  code: "estimate_unknown" | "over_cap" | "crew";
+  params?: Record<string, string | number>;
+}
+
+export interface TaskStartResult {
+  task: TaskDetail;
+  started: boolean;
+  held: TaskStartHold | null;
+}
+
 /** Live topics pushed through ctx.emit; the renderer re-reads with tasks.get when it needs more. */
 export interface TasksTopics {
   "tasks.changed": { taskId: string; projectId: string; status: TaskStatus; cause: TaskChangeCause };
@@ -1050,4 +1151,6 @@ export type TaskChangeCause =
   // The crew was edited in the Crew graph: a proposal edit, a follow-up, a skip or its approval.
   | "crew_edited"
   // The title, description or kind of a task that had not started changed (docs/adr/0017).
-  | "edited";
+  | "edited"
+  // Its Orchestra goal released, held, merged or discarded it (docs/adr/0019).
+  | "goal";

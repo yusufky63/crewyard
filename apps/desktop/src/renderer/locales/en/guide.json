@@ -12,13 +12,52 @@
     "go": "New project"
   },
   "sections": {
+    "modes": "Three ways to run work",
     "flow": "The flow",
     "checklist": "Getting started",
     "features": "What else it does",
     "faq": "Questions"
   },
+  "modes": {
+    "lead": "The How to run control at the start of the Tasks composer picks one for each request. Orchestra is the default in every project with a profile that can plan read-only; without one the composer opens on Crew. It reopens on Orchestra or Crew, whichever you last used in that project, and never on Solo.",
+    "default": "Default",
+    "off": "Orchestra is off in Settings → Orchestra: the composer hides it, opens on Crew and takes no new goals. Goals you already approved keep running.",
+    "offBadge": "Off",
+    "offGo": "Open Settings → Orchestra",
+    "orchestra": {
+      "title": "Orchestra",
+      "body": "Write a goal. One read-only planning run splits it into tasks: at most 8, the order they run in, and the files each plans to change.",
+      "points": {
+        "a": "Plan goal shows the planning estimate before you click, and the note under it the ceiling. The first goal in a project first shows what Orchestra does and asks for the project's default goal budget.",
+        "b": "You read the plan, edit or skip tasks, and one Approve and start approves every task you kept. Tasks that plan to change the same files are put in order for you.",
+        "c": "Tasks start in that order, at most 2 at once per goal, each within its share of the goal budget. A research report that a code task builds on waits until you accept it.",
+        "d": "Finished work is merged into one goal branch in Crewyard's own worktree. A last review reads all of it, and you open the one pull request."
+      },
+      "go": "Write a goal"
+    },
+    "crew": {
+      "title": "Crew",
+      "body": "One task, worked by a crew: plan, implement, test and review, each role on the runner and model the proposal picks.",
+      "points": {
+        "a": "Submitting opens the crew proposal; nothing starts until you press Approve and start.",
+        "b": "Ready-made analyses and imported issues always run as one Crew task, with no planning run.",
+        "c": "Pick it when you already know the work is one change."
+      },
+      "go": "Write a Crew task"
+    },
+    "solo": {
+      "title": "Solo",
+      "body": "One agent in its own worktree, for a job too small for a crew.",
+      "points": {
+        "a": "Start is the approval: the composer shows the profile, model and estimate before you click.",
+        "b": "When the estimate is Unknown or would pass a cap, Start becomes Propose, so spend nobody can price still waits for your approval.",
+        "c": "Code still runs until the project's tests pass. Solo is picked for one request at a time and never remembered."
+      },
+      "go": "Write a task"
+    }
+  },
   "flow": {
-    "lead": "Every task takes the same path. Nothing in it starts, pushes or merges without your click.",
+    "lead": "Every task takes the same path, whether you wrote it in Crew or Solo or a goal's plan made it. Nothing in it starts, pushes or merges without your click.",
     "steps": {
       "project": {
         "title": "Add a project",
@@ -27,7 +66,7 @@
       },
       "task": {
         "title": "Describe a task",
-        "body": "Write what you want in the Tasks composer, with images or files if they help, or let the task assistant turn a conversation into drafts.",
+        "body": "Write what you want in the Tasks composer, with images or files if they help, or let the task assistant turn a conversation into drafts. In Orchestra you write a goal, and each task of its plan then takes the steps below.",
         "go": "Write a task"
       },
       "proposal": {
@@ -97,12 +136,12 @@
       },
       "firstTask": {
         "label": "A first task",
-        "hint": "Describe one in the Tasks composer. Submitting it only opens the crew proposal.",
+        "hint": "Describe one in the Tasks composer. In Orchestra, submitting starts only a read-only planning run whose cost is on the button; in Crew it opens the crew proposal.",
         "go": "Write a task"
       },
       "firstCrew": {
         "label": "A first approved crew",
-        "hint": "Look over a crew proposal and press Approve and start.",
+        "hint": "Look over a crew proposal or a goal's plan and press Approve and start.",
         "go": "Open Tasks",
         "goProposal": "Open the proposal"
       },
@@ -167,7 +206,7 @@
       },
       "points": {
         "a": "A window turns amber past 80% and red past 95%, with one notice each time.",
-        "b": "Spend caps are per key and per task; a run stops and asks at the cap."
+        "b": "Spend caps hold per key and per task. Each project also has a daily cap over every API key, set in setup and $10 without one; it counts task runs, while assistant chats count only against their key's own cap. A run stops and asks at a cap."
       },
       "go": "Open Limits"
     },
@@ -214,7 +253,19 @@
     },
     "nothingStarts": {
       "q": "Can anything start without me?",
-      "a": "No crew starts before you press Approve and start, and pushes, pull requests, merges and spend past a cap always wait for your click. The one exception is Autopilot, which you turn on per project: it may approve crews of tasks it created within your limits, and it still never pushes or merges."
+      "a": "No crew starts before you approve it. In Orchestra, Plan goal starts only a read-only planning run whose cost is on the button, and Approve and start on the plan approves its tasks, including the ones that start later in order. Solo's Start, which shows its estimate, is its approval. Pushes, pull requests, merges into your branches and spend past a cap always wait for your click. The one exception is Autopilot, which you turn on per project: it may approve crews of tasks it created within your limits, it leaves goals alone, and it never pushes or merges."
+    },
+    "whichMode": {
+      "q": "Which mode should I use?",
+      "a": "Orchestra for a goal that needs several changes, such as a feature with a server part, a client part and docs. Crew for one change you can describe in a few lines; when your goal reads like that, the composer says Looks like one small change and offers Use Crew, but never switches by itself. Solo for a small job one agent can do alone. A plan of one task becomes an ordinary task, with no goal branch."
+    },
+    "planningCost": {
+      "q": "What does planning a goal cost?",
+      "a": "One read-only run of the planner on the composer's Planner chip. Plan goal shows its estimate, and the note under it the ceiling: the planning run's own budget, three times the estimate (at least $0.25) and never above the project's per-task cap. Reaching it pauses the run and asks in the Inbox. Revise and Replan each cost one more planning run, priced on their button: at most 5 revisions before approval and 3 replans after it. A plan you never approve starts nothing else. Each plan starts its goal budget at the project's default goal budget, which you can change in Settings → Orchestra."
+    },
+    "goalBranch": {
+      "q": "Does Orchestra push or merge into my branches?",
+      "a": "No. Each finished task that changed files is merged into the goal's own branch, crewyard/goal/ and a short name, which is checked out only in a worktree Crewyard made for that goal. Nothing is pushed. A merge conflict holds the tasks that wait for that one and asks you. When the last review of all changes passes, the goal reads Ready for review and you open its pull request through the same gate as any task. Pause all goals, in Settings and the command palette, holds every goal at once."
     },
     "closePanel": {
       "q": "Does closing a panel stop an agent?",

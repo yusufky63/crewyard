@@ -48,7 +48,27 @@
     "limitPct": "{{window}}: %{{pct}} kullanıldı",
     "limitUnknown": "{{window}}: kullanım bilinmiyor",
     "test": "Deneme bildirimi",
-    "testBody": "Crewyard bildirimleri böyle görünür."
+    "testBody": "Crewyard bildirimleri böyle görünür.",
+    "goalNeedsYouTitle": "{{goal}}: sizi bekliyor",
+    "goalReason": {
+      "plan_ready": "Plan, incelemeniz için hazır.",
+      "plan_failed": "Planlama başarısız oldu. Yeniden deneyin ya da hedefi tek görev olarak çalıştırın.",
+      "halted": "Görevler başarısız olmaya devam etti. Sürdürün, yeniden planlayın ya da durdurun.",
+      "decision": "Hedefte sizi bekleyen bir karar var.",
+      "request": "Bir görev yanıtınızı bekliyor.",
+      "failed": "Bir görev başarısız oldu. Ona bağlı görevler sizi bekliyor.",
+      "report": "Okuyup onaylamanız gereken bir rapor var.",
+      "stuck": "Hiçbir görev başlayamıyor. Nasıl devam edileceğini seçin.",
+      "empty": "Onaylı görev kalmadı. Yeniden planlayın ya da durdurun."
+    },
+    "goalReadyTitle": "{{goal}}: pull request'e hazır",
+    "goalReadyBody": "Son inceleme hedef dalında geçti. Pull request'i siz açarsınız.",
+    "goalHaltedTitle": "{{goal}}: durdu",
+    "goalHaltedBody": "Görevler başarısız olmaya devam etti. Sürdürün, yeniden planlayın ya da durdurun.",
+    "goalFinishedTitle": "{{goal}}: bitti",
+    "goalMerged": "Pull request birleştirildi.",
+    "goalDone": "Tüm görevler tamamlandı.",
+    "goalTask": "{{goal}} · {{number}} {{task}}"
   },
   "button": {
     "approve": "Bir kez onayla",

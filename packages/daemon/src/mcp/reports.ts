@@ -43,6 +43,11 @@ export interface ReportHost {
   run(runId: string): { id: string; task_id: string; member_id: string; role: string; cwd: string; ended_at: string | null; native_session_id: string | null } | null;
   task(taskId: string): { id: string; project_id: string; title: string; cancelled_at: string | null } | null;
   propose(p: { projectId: string; title: string; description?: string }): Promise<TaskDetail>;
+  /**
+   * A follow-up from an Orchestra goal task (design §5.3): added to its goal as a revision that
+   * needs approval. Null when the task is not in a goal that takes tasks; it then becomes a draft.
+   */
+  goalFollowup?(fromTaskId: string, title: string, text: string): Promise<{ goalId: string; taskId?: string | null } | null>;
   message(runId: string, text: string, seen?: SessionSeen): Promise<unknown>;
 }
 
@@ -153,16 +158,26 @@ export class ReportService {
     return this.get(id);
   }
 
-  /** A follow-up becomes a draft task: classified and given a proposed crew, nothing started. */
-  async accept(id: string): Promise<{ report: CrewReportView; taskId: string }> {
+  /**
+   * A follow-up becomes a draft task: classified and given a proposed crew, nothing started. One
+   * from an Orchestra goal task becomes an added task of that goal instead, which waits for the
+   * goal's approval like any revision; it never becomes a task outside its goal.
+   */
+  async accept(id: string): Promise<{ report: CrewReportView; taskId: string; goalId: string | null }> {
     const r = this.row(id);
     if (r.type !== "followup") throw new Error("mcp.report_not_followup");
-    if (r.task_created) return { report: view(r), taskId: r.task_created };
+    if (r.task_created) return { report: view(r), taskId: r.task_created, goalId: this.goalOf(r.task_created) };
     if (r.closed_at) throw new Error("mcp.report_closed");
-    const detail = await this.opts.host.propose({ projectId: r.project_id, title: r.title ?? "", description: r.text || undefined });
-    this.db.prepare("update crew_reports set task_created = ? where id = ?").run(detail.id, id);
+    const added = (await this.opts.host.goalFollowup?.(r.task_id, r.title ?? "", r.text)) ?? null;
+    const taskId = added?.taskId ?? (await this.opts.host.propose({ projectId: r.project_id, title: r.title ?? "", description: r.text || undefined })).id;
+    this.db.prepare("update crew_reports set task_created = ? where id = ?").run(taskId, id);
     this.close(this.row(id), "accepted");
-    return { report: this.get(id), taskId: detail.id };
+    return { report: this.get(id), taskId, goalId: added?.goalId ?? null };
+  }
+
+  private goalOf(taskId: string): string | null {
+    const row = this.db.prepare("select goal_id from goal_tasks where task_id = ?").get(taskId) as { goal_id: string } | undefined;
+    return row?.goal_id ?? null;
   }
 
   /**

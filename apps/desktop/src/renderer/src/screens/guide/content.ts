@@ -1,7 +1,8 @@
 import type { LucideIcon } from "lucide-react";
-import { Bot, Eye, FolderOpen, GitBranch, GitPullRequest, Inbox, Keyboard, ListChecks, PanelBottom, Repeat, SquarePen, Gauge, FileText, Plug, ShieldCheck, Workflow, Users } from "lucide-react";
+import { Bot, Eye, FolderOpen, GitBranch, GitPullRequest, Inbox, Keyboard, ListChecks, PanelBottom, Repeat, SquarePen, Gauge, FileText, Plug, ShieldCheck, Target, User, Workflow, Users } from "lucide-react";
 import type { DrawerTab } from "../../prefs.ts";
 import type { SectionId } from "../settings/model.ts";
+import type { ComposerMode } from "../tasks/goalsModel.ts";
 
 // What the Guide teaches and where each part sends you. The words live in locales/<lang>/guide.json;
 // every fact there comes from PLAN.md, DESIGN.md, README.md or an ADR, never from a feature that
@@ -10,7 +11,8 @@ import type { SectionId } from "../settings/model.ts";
 /** Where a Guide button goes. Project screens need a project; the screen resolves that. */
 export type GuideAction =
   | { kind: "screen"; screen: "tasks" | "crew" | "inbox" | "github" | "limits" | "providers" }
-  | { kind: "newTask" }
+  /** The Tasks composer; `mode` opens it on that mode for one request, never remembered for Solo. */
+  | { kind: "newTask"; mode?: ComposerMode }
   | { kind: "start" }
   | { kind: "setup" }
   | { kind: "settings"; section: SectionId }
@@ -22,6 +24,35 @@ export interface FlowStep {
   icon: LucideIcon;
   action: GuideAction;
 }
+
+export interface Mode {
+  id: "orchestra" | "crew" | "solo";
+  icon: LucideIcon;
+  action: GuideAction;
+}
+
+/**
+ * The composer's three modes (docs/adr/0019), in the order its How to run control shows them.
+ * Orchestra comes first because it is the default; the Guide marks it so.
+ */
+export const MODES: Mode[] = [
+  { id: "orchestra", icon: Target, action: { kind: "newTask", mode: "orchestra" } },
+  { id: "crew", icon: Users, action: { kind: "newTask", mode: "crew" } },
+  { id: "solo", icon: User, action: { kind: "newTask", mode: "solo" } },
+];
+
+/** The mode the composer opens on when a profile can plan read-only (design §1.2). */
+export const DEFAULT_MODE: Mode["id"] = "orchestra";
+
+/**
+ * The mode the Guide marks as the default: Orchestra, or Crew while Settings → Orchestra has it
+ * off, because the composer then hides Orchestra and opens on Crew. An unread state keeps the
+ * shipped default, which is what a fresh install has.
+ */
+export const shownDefault = (orchestraOn: boolean | undefined): Mode["id"] => (orchestraOn === false ? "crew" : DEFAULT_MODE);
+
+/** Orchestra's tile sends you to turn it back on while it is off; every other tile keeps its action. */
+export const modeAction = (m: Mode, orchestraOn: boolean | undefined): GuideAction => (m.id === "orchestra" && orchestraOn === false ? { kind: "settings", section: "orchestra" } : m.action);
 
 /** project → task → crew proposal → approve → worktrees → Inbox → review → push, PR and merge. */
 export const FLOW: FlowStep[] = [
@@ -53,7 +84,7 @@ export const FEATURES: Feature[] = [
   { id: "keyboard", icon: Keyboard, action: { kind: "keys" } },
 ];
 
-export const FAQ = ["keys", "nothingStarts", "closePanel", "estimated", "subscriptions", "gemini", "external", "release"] as const;
+export const FAQ = ["keys", "nothingStarts", "whichMode", "planningCost", "goalBranch", "closePanel", "estimated", "subscriptions", "gemini", "external", "release"] as const;
 
 /** An action that only makes sense inside a project. */
 export const needsProject = (a: GuideAction): boolean => a.kind === "newTask" || a.kind === "panel" || (a.kind === "screen" && a.screen !== "providers");

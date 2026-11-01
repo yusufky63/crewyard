@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { expect, test } from "@playwright/test";
-import { daemon, launch, running, say, type Harness } from "./harness.ts";
+import { daemon, launch, running, say, type Harness, composerMode } from "./harness.ts";
 
 // The Guide (How it works): reachable from Start before any project exists and with G W, its
 // Getting started list reads real state, and its buttons go where they say. The rows asserted here
@@ -76,6 +76,7 @@ test("reads profiles and tasks from the daemon and follows its buttons", async (
   await expect(badge("A first task")).toHaveText("Not yet");
   await expect(badge("A first approved crew")).toHaveText("Not yet");
   await row("A first task").getByRole("button", { name: "Write a task" }).click();
+  await composerMode(page, "Crew");
   await page.getByLabel("New task").fill("Survey the logging setup\nList what each module logs.");
   await page.getByLabel("Kind").selectOption("research");
   await page.getByRole("button", { name: "Propose crew" }).click();

@@ -48,6 +48,20 @@ describe("listActivity", () => {
     expect(last.older).toBeNull();
   });
 
+  it("filters to one Orchestra goal's events by the goalId in their payload", () => {
+    const { store, a, b, add } = setup();
+    add(a, null, null, "goal.created", { goalId: "g1", title: "Geçiş anahtarları" });
+    add(a, null, null, "goal.created", { goalId: "g2", title: "other goal" });
+    add(a, "t1", null, "task.proposed", { goalId: "g1", planning: true });
+    add(a, null, null, "goal.paused", { goalId: "g1" });
+    add(b, null, null, "goal.created", { goalId: "g1", title: "another project" });
+    const page = listActivity(store.db, { projectId: a, kind: "goal.", goalId: "g1" });
+    expect(page.events.map((e) => e.kind)).toEqual(["goal.paused", "goal.created"]);
+    expect(page.events[1]!.preview).toBe("Geçiş anahtarları");
+    // A goal id is matched exactly, never as a pattern.
+    expect(listActivity(store.db, { projectId: a, goalId: "g%" }).events).toEqual([]);
+  });
+
   it("keeps a page stable while newer events arrive", () => {
     const { store, a, add } = setup();
     for (let i = 0; i < 4; i++) add(a, "t1", "r1", "run.tool.call", { title: `old ${i}` });

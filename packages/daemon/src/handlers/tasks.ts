@@ -11,6 +11,8 @@ export function createTasksHandlers(ctx: HandlerContext, overrides?: Partial<Orc
     "tasks.get": ({ taskId }) => o.get(taskId),
     "tasks.propose": (params) => o.propose(params),
     "tasks.approve": (params) => o.approve(params),
+    "tasks.preview": (params) => o.preview(params),
+    "tasks.start": (params) => o.startTask(params),
     "tasks.cancel": ({ taskId }) => o.cancel(taskId),
     "tasks.keepVariant": ({ taskId, variantId }) => o.keepVariant(taskId, variantId),
     "runs.pause": ({ runId, sessionId }) => o.pause(runId, { sessionId }),

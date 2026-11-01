@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { basename, join } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { daemon, hold, launch, running, say, type Harness } from "./harness.ts";
+import { daemon, hold, launch, running, say, type Harness, composerMode } from "./harness.ts";
 
 // The bottom panel (DESIGN.md §4): five tabs after the WAI-ARIA tabs pattern, a toggle at the right
 // end of its head that collapses it to that head strip and never closes it (owner, 2026-10-31), the
@@ -82,6 +82,7 @@ test("opens a project whose research run fails with a provider error", async () 
 
   h.setScripts({ researcher: [[running, { emit: { type: "run.ended", reason: "failed", detail: 'API Error: 402 {"error":{"message":"Insufficient Balance"}}' } }]] });
   const main = page.locator("main");
+  await composerMode(page, "Crew");
   await main.getByLabel("New task").fill(TASK);
   await main.getByLabel("Kind").selectOption("research");
   await main.getByRole("button", { name: "Propose crew" }).click();

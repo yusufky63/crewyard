@@ -16,6 +16,7 @@ import { ApprovalActions } from "./ApprovalActions.tsx";
 import { InboxSplit } from "./InboxSplit.tsx";
 import { ReportList, useReports } from "./Reports.tsx";
 import { RiskBadge } from "./RiskBadge.tsx";
+import { GoalList, useGoals, useGoalTaskLabel } from "./Goals.tsx";
 import { StallList, useStalls } from "./Stalls.tsx";
 import { SwitchList, useSwitches } from "./Switches.tsx";
 import { defaultTarget, emptyForm, formAnswer, formReady, handoffChoices, infoNotices, orderRequests, titleKey, type QuestionForm } from "./model.ts";
@@ -44,10 +45,11 @@ function useTitle() {
 /** "Role · Runner · alias · task": who asked, in one muted line. */
 function useAsker(task: TaskDetail | undefined, q: RequestView): string {
   const f = useFormat();
+  const title = useGoalTaskLabel(task);
   if (!task) return "";
   const run = task.runs.find((r) => r.id === q.runId);
   const who = run ? `${f.role(run.role)} · ${f.runner(run.runner)} · ${profileNames(task).get(run.profileId)?.alias ?? run.profileId}` : "";
-  return [who, task.title].filter(Boolean).join(" · ");
+  return [who, title].filter(Boolean).join(" · ");
 }
 
 function Item({ q, selected, onSelect }: { q: RequestView; selected: boolean; onSelect: () => void }) {
@@ -323,6 +325,8 @@ export function InboxScreen() {
   const stalls = useStalls(projectId ?? "");
   const reports = useReports(projectId ?? "");
   const switches = useSwitches(projectId ?? "");
+  // Goals that need you are listed below the requests (Goals.tsx) and count with them.
+  const goalsNeeding = useGoals(projectId ?? "").filter((g) => g.status === "needs_you").length;
   const errorText = useErrorText();
   const notices = useActivity((s) => s.notices);
   const [picked, setPicked] = useState<string | null>(null);
@@ -343,18 +347,20 @@ export function InboxScreen() {
         <div>
           <h1>{t("title.page")}</h1>
           {/* Switches are for your information too: nothing waits on you there. */}
-          <div className="lbl ib-context">{stalled.length > 0 ? t("contextStalls", { open: open.length, stalls: stalled.length, info: info.length + (switches.data?.length ?? 0) }) : t("context", { open: open.length, info: info.length + (switches.data?.length ?? 0) })}</div>
+          <div className="lbl ib-context">{stalled.length > 0 ? t("contextStalls", { open: open.length + goalsNeeding, stalls: stalled.length, info: info.length + (switches.data?.length ?? 0) }) : t("context", { open: open.length + goalsNeeding, info: info.length + (switches.data?.length ?? 0) })}</div>
         </div>
       </div>
       {requests.isError && <p className="muted">{t("errors.load")}</p>}
       <div className={selected ? "ib-grid split" : "ib-grid"} ref={grid}>
         <div className="ib-col" id="inbox-list">
           <Panel className="ib-list" role="listbox" aria-label={t("listLabel")}>
-            {open.length === 0 && requests.isSuccess && <p className="ib-empty muted">{t("empty")}</p>}
+            {open.length === 0 && requests.isSuccess && <p className="ib-empty muted">{t(goalsNeeding > 0 ? "emptyGoals" : "empty")}</p>}
             {open.map((q) => (
               <Item key={q.id} q={q} selected={selected?.id === q.id} onSelect={() => setPicked(q.id)} />
             ))}
           </Panel>
+          {/* Goal decisions wait for your answer, like the requests above: before the agents' reports. */}
+          <GoalList projectId={projectId} />
           <ReportList reports={reports.data ?? []} onError={(e) => setStallError(errorText(e))} />
           <StallList alerts={stalled} onOpenRequest={setPicked} onError={(e) => setStallError(errorText(e))} />
           <SwitchList switches={switches.data ?? []} onError={(e) => setStallError(errorText(e))} />

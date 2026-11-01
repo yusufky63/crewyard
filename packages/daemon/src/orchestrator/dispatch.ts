@@ -16,7 +16,25 @@ export interface DispatcherDeps {
   startGroup(task: TaskRow, m: MemberRow, group: GroupRow, project: ProjectRow, slots: number, candidates: Candidate[]): Promise<void>;
   budgetHold(task: TaskRow, m: MemberRow, candidate: Candidate | undefined): Reason | null;
   launch(spec: LaunchSpec): Promise<string>;
+  /**
+   * The goal scheduler's pass (docs/adr/0019), run first: it releases goal tasks, merges finished
+   * ones into their goal branch, and returns the goal tasks that must not start a new run (a paused
+   * goal) and the finished steps that run again (a goal's last review after new merges).
+   */
+  goalPass(): Promise<{ held: ReadonlySet<string>; rerun: ReadonlySet<string> }>;
+  /**
+   * Orchestra's queued corrective planner turns (goals/planner.ts), started here so they pass the
+   * same admission as every other step instead of taking a slot outside it.
+   */
+  goalTurns(admit: (task: TaskRow, m: MemberRow, profileId: string) => Promise<Reason | null>): Promise<void>;
+  /**
+   * GoalRunner.goalHeld, read fresh. The pass's `held` set is a snapshot taken before it awaited
+   * git; a Pause clicked meanwhile must still stop this pass from starting the goal's steps.
+   */
+  goalHeld(taskId: string): boolean;
 }
+
+const NO_GOAL_PASS = { held: new Set<string>(), rerun: new Set<string>() } as const;
 
 export class Dispatcher extends Part {
   private ticking = false;
@@ -48,7 +66,14 @@ export class Dispatcher extends Part {
 
   private async schedulePass(): Promise<void> {
     for (const [runId, cause] of [...this.pendingWake]) await this.deps.wakeRun(runId, cause);
+    // The goal pass keeps each goal inside its own try/catch; this one only guards against the
+    // pass itself failing, so a goal can never stop every other task from being scheduled.
+    const goals = await this.deps.goalPass().catch(() => NO_GOAL_PASS);
+    // Corrective planner turns come after the goal pass so they compete for admission with the
+    // goal tasks it just released, under the same caps.
+    await this.deps.goalTurns((task, m, profileId) => this.admitStep(task, m, profileId));
     for (const task of this.db.schedulable()) {
+      if (goals.held.has(task.id) || this.deps.goalHeld(task.id)) continue;
       const status = this.db.status(task);
       if (status === "failed" || status === "cancelled") continue;
       const crew = this.db.crew(task.id)!;
@@ -61,7 +86,7 @@ export class Dispatcher extends Part {
         if (m.pending_since || m.skipped_at) continue;
         const runs = this.db.runs(task.id);
         // A step runs once, and again only when a step it depends on finished again (the loops).
-        const again = runs.some((r) => r.member_id === m.id) ? this.rerunOf(m, members, runs) : null;
+        const again = runs.some((r) => r.member_id === m.id) ? (this.rerunOf(m, members, runs) ?? (goals.rerun.has(m.id) ? this.goalRerun(m, runs) : null)) : null;
         if (runs.some((r) => r.member_id === m.id) && !again) {
           this.blocked.delete(m.id);
           continue;
@@ -94,11 +119,22 @@ export class Dispatcher extends Part {
           continue;
         }
         this.blocked.delete(m.id);
+        // Admission awaited the directory; a goal paused in the meantime starts nothing.
+        if (this.deps.goalHeld(task.id)) break;
         // A re-run stays on the profile that last ran the step (a handoff may have moved it off the proposal).
         if (again) await this.deps.launch({ task, member: m, target: { profileId: again.profile_id, runner: again.runner, model: again.model }, resumedFrom: again.id });
         else await this.deps.launch({ task, member: m, target: chosen! });
       }
     }
+  }
+
+  /** Admission plus the spend other runs hold, for a step started outside the crew loop below. */
+  private async admitStep(task: TaskRow, m: MemberRow, profileId: string): Promise<Reason | null> {
+    const project = this.db.project(task.project_id);
+    const { config } = this.config(project);
+    const admitted = this.admission(task, m, profileId, config.rules.slots);
+    if (admitted) return admitted;
+    return this.deps.budgetHold(task, m, (await this.candidates(project)).find((c) => c.profile.id === profileId));
   }
 
   private admission(task: TaskRow, m: MemberRow, profileId: string, projectSlots: number): Reason | null {
@@ -117,6 +153,12 @@ export class Dispatcher extends Part {
       },
       { ...DEFAULT_LIMITS, ...this.opts.limits, projectSlots },
     );
+  }
+
+  /** The goal pass asked for this finished step to run again: its latest run, if nothing continued it. */
+  private goalRerun(m: MemberRow, runs: RunRow[]): RunRow | null {
+    const latest = runs.filter((r) => r.member_id === m.id).at(-1);
+    return latest && latest.end_reason === "completed" && !this.db.successor(latest, runs) ? latest : null;
   }
 
   /**

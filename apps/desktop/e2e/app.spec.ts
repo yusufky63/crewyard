@@ -1,7 +1,7 @@
 import { basename } from "node:path";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import type { FakeStep } from "@crewyard/adapter-fake";
-import { approval, daemon, hold, launch, limitReached, question, running, say, usage, type E2eProfile, type Harness } from "./harness.ts";
+import { approval, daemon, hold, launch, limitReached, question, running, say, usage, type E2eProfile, type Harness, composerMode } from "./harness.ts";
 
 // One app instance walks through the flows in order, the way a person would: open a project,
 // run tasks against scripted runners, answer the Inbox, then change settings and layout.
@@ -38,6 +38,7 @@ const runsOf = async (taskId: string) => (await daemon<{ runs: RunView[] }>(h.pa
 async function compose(text: string, opts: { onLimit?: string; budget?: string; kind?: string } = {}) {
   const { page } = h;
   await page.locator("#app-sidebar").getByRole("button", { name: "Tasks", exact: true }).click();
+  await composerMode(page, "Crew");
   await page.getByLabel("New task").fill(text);
   // Research tasks have one step, so a script for the researcher drives the whole task.
   await page.getByLabel("Kind").selectOption(opts.kind ?? "research");
@@ -71,7 +72,8 @@ test("Start: opens a project from a git repo with spaces in its path", async () 
   await expect(tile).toBeVisible();
   await tile.click();
   await expect(page.locator("#app-sidebar")).toBeVisible();
-  await expect(page.getByLabel("New task")).toBeVisible();
+  // The composer opens on Orchestra, the default wherever a profile can plan (docs/adr/0019).
+  await expect(page.getByLabel("New goal")).toBeVisible();
 });
 
 test("Tasks: composes a task, shows the crew proposal and approves it", async () => {
@@ -236,6 +238,7 @@ test("Best of: runs two implementers, compares them and keeps one, which the rev
   const work = [running, say("Implemented."), { wait: 200 }];
   h.setScripts({ implementer: [work, work], reviewer: [[running, say("Reviewed."), { wait: 100 }]] });
   await page.locator("#app-sidebar").getByRole("button", { name: "Tasks", exact: true }).click();
+  await composerMode(page, "Crew");
   await page.getByLabel("New task").fill("Add a token bucket to the limiter");
   await page.getByLabel("Kind").selectOption("code");
   await page.getByLabel("Best of").selectOption("2");
@@ -267,6 +270,7 @@ test("Files: lists what the agent named, walks the worktree by keyboard and prev
   const readme: FakeStep = { emit: { type: "tool.call", toolCallId: "t1", title: "Read README.md", kind: "read", input: { file_path: "README.md" } } };
   h.setScripts({ implementer: [[running, readme, say("Checked README.md and docs/none.md."), { wait: 100 }]], reviewer: [[running, say("Reviewed."), { wait: 100 }]] });
   await page.locator("#app-sidebar").getByRole("button", { name: "Tasks", exact: true }).click();
+  await composerMode(page, "Crew");
   await page.getByLabel("New task").fill("Document the limiter in the README");
   await page.getByLabel("Kind").selectOption("code");
   // The composer keeps Best of from the flow before; one implementer gives the task its own worktree.
@@ -481,6 +485,7 @@ test("Attachments: a pasted image goes with the task, a picked file with a queue
   // The settings flows leave Settings open, which hides the sidebar.
   await page.locator("main").getByRole("button", { name: "[ Back ]", exact: true }).click();
   await page.locator("#app-sidebar").getByRole("button", { name: "Tasks", exact: true }).click();
+  await composerMode(page, "Crew");
   const box = page.getByLabel("New task");
   await box.fill("Explain the error in the screenshot");
   // Ctrl V with only an image on the clipboard, as a screenshot tool leaves it.

@@ -331,7 +331,8 @@ function Body({ detail, target }: { detail: TaskDetail; target: InspectorTarget 
       )}
       {tab === "details" && (
         <>
-          {detail.kind === "code" && (detail.status === "review" || detail.status === "merged") && <TaskPullSection taskId={detail.id} className="ins-sec" />}
+          {/* A goal task's branch is merged into the goal branch, never pushed or pulled on its own; only the goal's last review opens the PR (docs/adr/0019). */}
+          {detail.kind === "code" && (detail.status === "review" || detail.status === "merged") && (!detail.goal || detail.goal.role === "integration") && <TaskPullSection taskId={detail.id} className="ins-sec" />}
           {/* Keyed by task: a filter, an open finding or an "added" note belongs to one report. */}
           <ReportSection key={`report:${detail.id}`} detail={detail} />
           {run?.hibernatedAt && !run.endedAt && (

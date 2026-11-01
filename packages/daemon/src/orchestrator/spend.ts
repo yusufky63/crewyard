@@ -1,6 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { LimitWindow, SpendCap } from "@crewyard/core";
-import { checkBudget, recordSpend } from "../providers/ledger.ts";
+import { checkBudget, recordSpend, startOfLocalDay } from "../providers/ledger.ts";
+import { effectiveProjectConfig } from "../setup/index.ts";
 import type { Candidate } from "./directory.ts";
 
 // The orchestrator's side of the spend ledger (PLAN.md §7.3, AGENTS.md "paid spend past a cap
@@ -142,8 +143,8 @@ export function settleReservation(db: DatabaseSync, runId: string, at: Date): vo
   ).run(at.toISOString(), runId, runId);
 }
 
-/** What unfinished runs still hold, by credential and/or task, leaving one run out. */
-export function reservedUsd(db: DatabaseSync, scope: { credentialId?: string | null; taskId?: string | null; excludeRunId?: string | null }): number {
+/** What unfinished runs still hold, by credential, task and/or project, leaving one run out. */
+export function reservedUsd(db: DatabaseSync, scope: { credentialId?: string | null; taskId?: string | null; projectId?: string | null; excludeRunId?: string | null }): number {
   const row = db
     .prepare(
       `select coalesce(sum(max(0, r.amount_usd - coalesce((select sum(s.cost_usd) from spend s where s.run_id = r.run_id), 0))), 0) as usd
@@ -151,17 +152,57 @@ export function reservedUsd(db: DatabaseSync, scope: { credentialId?: string | n
         where r.settled_at is null
           and (?1 is null or r.credential_id = ?1)
           and (?2 is null or r.task_id = ?2)
+          and (?4 is null or r.task_id in (select t.id from tasks t where t.project_id = ?4))
           and r.run_id <> coalesce(?3, '')`,
     )
-    .get(scope.credentialId ?? null, scope.taskId ?? null, scope.excludeRunId ?? null) as { usd: number };
+    .get(scope.credentialId ?? null, scope.taskId ?? null, scope.excludeRunId ?? null, scope.projectId ?? null) as { usd: number };
   return row.usd;
 }
 
-export const capWindow = (cap: SpendCap): LimitWindow => (cap.kind === "daily_cap" ? "budget-day" : "budget-task");
+// ---------------------------------------------------------------- project daily cap (docs/adr/0019 §5.1)
+// The setup wizard's "Daily cap, all API keys" (`budget.dailyUsd` in project.json): what every
+// paid key together may spend on this project's tasks in one local day. It counts the same ledger
+// rows the key caps do, joined to their task's project, so it covers only spend the ledger can
+// see: paid runs on a known key. Assistant chats spend on no task and stay outside it.
+
+/**
+ * The project's daily cap. It is the project file's `budget.dailyUsd`, and the wizard default ($10)
+ * when there is no file (a folder added by Open folder or Import never ran setup) or the file
+ * cannot be used: §5.1 makes this cap the backstop Orchestra spends under, so no project is ever
+ * without one, and a cap the user set is never dropped because its file broke.
+ */
+export function projectDailyCapUsd(project: { path: string; name: string }): number {
+  return effectiveProjectConfig(project.path, project.name).config.budget.dailyUsd;
+}
+
+/** Ledger spend on the project's tasks since local midnight, every key together. */
+export function projectSpentToday(db: DatabaseSync, projectId: string, now: Date): number {
+  const row = db
+    .prepare("select coalesce(sum(s.cost_usd), 0) as usd from spend s join tasks t on t.id = s.task_id where t.project_id = ? and s.at >= ?")
+    .get(projectId, startOfLocalDay(now)) as { usd: number };
+  return row.usd;
+}
+
+/**
+ * The project daily cap when committed spend passes it: today's ledger spend on the project plus
+ * what its other unfinished runs hold (feature scan F3), with `addUsd` on top. Null without a cap.
+ */
+export function projectDailyCap(db: DatabaseSync, projectId: string, capUsd: number | null, now: Date, opts: CapCheck = {}): SpendCap | null {
+  if (capUsd === null) return null;
+  const add = Math.max(0, opts.addUsd ?? 0);
+  const spent = projectSpentToday(db, projectId, now);
+  const held = reservedUsd(db, { projectId, excludeRunId: opts.excludeRunId ?? null });
+  return overCap(spent, held, add, capUsd) ? capOf("project_daily", r6(spent), capUsd, null, held, add) : null;
+}
+
+/** Caps counted over a local day: the key's own and the project's. */
+const DAILY: ReadonlySet<SpendCap["kind"]> = new Set(["daily_cap", "project_daily"]);
+
+export const capWindow = (cap: SpendCap): LimitWindow => (DAILY.has(cap.kind) ? "budget-day" : "budget-task");
 
 /** A daily cap resets at local midnight, which makes "wait for reset" possible for it. */
 export function capResetsAt(cap: SpendCap, now: Date): string | null {
-  if (cap.kind !== "daily_cap") return null;
+  if (!DAILY.has(cap.kind)) return null;
   const d = new Date(now);
   d.setHours(24, 0, 0, 0);
   return d.toISOString();

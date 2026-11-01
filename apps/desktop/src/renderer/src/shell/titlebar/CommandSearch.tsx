@@ -1,11 +1,12 @@
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Folder, FolderOpen, House, ListTodo, Plus, Search, SquarePen } from "lucide-react";
+import { CirclePause, CirclePlay, Folder, FolderOpen, House, ListTodo, Plus, Search, SquarePen } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { TaskStatus } from "@crewyard/core";
 import { useDaemon } from "../../ipc.ts";
 import { useNav } from "../../nav.ts";
 import { projectScreens } from "../../registry.ts";
+import { pauseAllCommand, pauseFromPalette, useGoalSwitches } from "../../screens/settings/OrchestraSection.tsx";
 import { openSetup } from "../../screens/setup/draft.ts";
 import { useWork } from "../../screens/tasks/data.ts";
 import { focusMain, goInProject, openFolder, openProjectById, openTask, startNewTask } from "./actions.ts";
@@ -37,6 +38,7 @@ function useEntries(): Entry[] {
   const target = projectId ?? projects[0]?.id ?? null;
   const targetName = projects.find((p) => p.id === target)?.name;
   const nameOf = new Map(projects.map((p) => [p.id, p.name]));
+  const goals = useGoalSwitches();
 
   const entries: Entry[] = [{ id: "screen:start", group: "screen", title: t("search.start"), icon: ico(House), run: closeProject }];
   // The Guide opens with or without a project, so it never opens the most recent project as a side
@@ -55,6 +57,11 @@ function useEntries(): Entry[] {
     { id: "action:new-project", group: "action", title: t("setup:newProject"), icon: ico(Plus), run: () => openSetup("local") },
     { id: "action:open-folder", group: "action", title: t("search.openFolder"), icon: ico(FolderOpen), run: () => openFolder(qc) },
   );
+  // Orchestra's kill switch (design §5.2), here as in Settings; lifting it is a click here too.
+  const pause = pauseAllCommand(goals.data);
+  if (pause) {
+    entries.push({ id: pause.id, group: "action", title: t(pause.titleKey), keywords: t("search.goalsKeywords"), icon: ico(pause.next ? CirclePause : CirclePlay), run: () => pauseFromPalette(goals.pauseAll, pause.next) });
+  }
   for (const p of projects) {
     entries.push({ id: `project:${p.id}`, group: "project", title: p.name, keywords: p.path, meta: p.path, recency: p.lastOpenedAt, icon: ico(Folder), run: () => openProjectById(qc, p.id) });
   }

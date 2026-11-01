@@ -2,6 +2,7 @@ import { basename } from "node:path";
 import type { DaemonStatus, IpcMessage, IpcMethods, IpcResponse } from "@crewyard/core";
 import { createCrewHandlers } from "./handlers/crew.ts";
 import { createGithubHandlers } from "./handlers/github.ts";
+import { createGoalsHandlers } from "./handlers/goals.ts";
 import { createMcpHandlers } from "./handlers/mcp.ts";
 import { createRolesHandlers } from "./handlers/roles.ts";
 import { createPreviewHandlers } from "./handlers/preview.ts";
@@ -50,6 +51,7 @@ export function createHandlers(ctx: HandlerContext): Handlers {
     },
     "projects.open": ({ projectId }) => store.markOpened(projectId),
     ...createTasksHandlers(ctx),
+    ...createGoalsHandlers(ctx),
     ...createProvidersHandlers(ctx),
     ...createGithubHandlers(ctx),
     ...createSetupHandlers(ctx),

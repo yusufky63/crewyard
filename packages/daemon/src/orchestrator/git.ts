@@ -206,6 +206,95 @@ export async function removeDetachedCheckout(repoPath: string, path: string, bin
 
 export const diffStat = async (cwd: string, baseSha: string, bin = "git") => (await git(cwd, ["diff", "--stat", baseSha, "HEAD"], bin)).trim();
 
+/**
+ * The oldest Git whose `merge-tree --write-tree` (with `--name-only` and `-z`) test-merges two
+ * branches without a worktree (Git 2.38 release notes). Below it, every merge into a goal branch
+ * is left to you (docs/adr/0019); the machine check names the same version.
+ */
+export const MIN_GIT_MERGE_TREE = "2.38.0";
+
+/** Dotted versions compared numerically; a suffix like `.windows.3` is ignored. */
+export function gitAtLeast(version: string | null, min: string = MIN_GIT_MERGE_TREE): boolean {
+  if (!version) return false;
+  const a = (version.match(/\d+(?:\.\d+)*/)?.[0] ?? "").split(".").map(Number);
+  const b = min.split(".").map(Number);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const x = a[i] ?? 0;
+    const y = b[i] ?? 0;
+    if (x !== y) return x > y;
+  }
+  return true;
+}
+
+/** `git --version` as "2.56.0", or null when git does not answer. */
+export async function gitVersion(bin = "git"): Promise<string | null> {
+  const res = await run(bin, ["--version"], { timeoutMs: 15_000, env: GIT_ENV });
+  return res.code === 0 ? (res.stdout.match(/(\d+\.\d+(?:\.\d+)?)/)?.[1] ?? null) : null;
+}
+
+export type MergeTreeResult = { clean: true; tree: string } | { clean: false; paths: string[] };
+
+/**
+ * `merge-tree --write-tree -z --name-only` output: the tree id, then the conflicted file names,
+ * each NUL-terminated, then an empty field before git's informational messages.
+ */
+export function parseMergeTree(out: string): { tree: string; paths: string[] } {
+  const fields = out.split("\0");
+  const tree = (fields[0] ?? "").trim();
+  const paths: string[] = [];
+  for (const f of fields.slice(1)) {
+    if (f === "") break;
+    if (!paths.includes(f)) paths.push(f);
+  }
+  return { tree, paths };
+}
+
+/**
+ * Test-merges `theirs` into `ours` with no worktree and no index. Through `run`, not `git()`:
+ * exit 1 is git's normal answer for a conflict, and `git()` throws on any non-zero exit.
+ */
+export async function mergeTreeCheck(repoPath: string, ours: string, theirs: string, bin = "git"): Promise<MergeTreeResult> {
+  for (const ref of [ours, theirs]) if (ref.startsWith("-")) throw new OrchestratorError("git.failed", { command: "merge-tree", detail: `bad ref ${ref}` });
+  const res = await run(bin, ["merge-tree", "--write-tree", "-z", "--name-only", ours, theirs], { cwd: repoPath, timeoutMs: 60_000, env: GIT_ENV });
+  const parsed = parseMergeTree(res.stdout);
+  // A real answer always starts with the tree it wrote; a ref git cannot read can also exit 1.
+  const answered = /^[0-9a-f]{40,64}$/.test(parsed.tree);
+  if (res.code === 0 && answered) return { clean: true, tree: parsed.tree };
+  if (res.code === 1 && answered) return { clean: false, paths: parsed.paths };
+  throw new OrchestratorError("git.failed", { command: "merge-tree", detail: (res.stderr || res.stdout).trim().slice(0, 400) });
+}
+
+/**
+ * `git merge --no-ff --no-edit <branch>` in a worktree Crewyard owns, under the repo's own
+ * identity and hooks. A merge git refuses (a hook, a conflict that appeared since the check) is
+ * aborted so the worktree is left as it was, and reported with git's words.
+ */
+export async function mergeNoFf(cwd: string, branch: string, bin = "git"): Promise<{ ok: true; sha: string } | { ok: false; detail: string }> {
+  if (branch.startsWith("-")) throw new OrchestratorError("git.failed", { command: "merge", detail: `bad branch ${branch}` });
+  const res = await run(bin, ["merge", "--no-ff", "--no-edit", branch], { cwd, timeoutMs: 120_000, env: GIT_ENV });
+  if (res.code === 0) return { ok: true, sha: await headSha(cwd, bin) };
+  await run(bin, ["merge", "--abort"], { cwd, timeoutMs: 60_000, env: GIT_ENV });
+  return { ok: false, detail: (res.stderr || res.stdout).trim().slice(0, 400) };
+}
+
+/** Whether `ancestor` is already in `of`'s history (a merge that landed before a restart). */
+export async function isAncestor(cwd: string, ancestor: string, of: string, bin = "git"): Promise<boolean> {
+  const res = await run(bin, ["merge-base", "--is-ancestor", ancestor, of], { cwd, timeoutMs: 60_000, env: GIT_ENV });
+  return res.code === 0;
+}
+
+/** The commit a branch points at, or null when it does not exist. */
+export async function branchSha(repoPath: string, branch: string, bin = "git"): Promise<string | null> {
+  const res = await run(bin, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}^{commit}`], { cwd: repoPath, timeoutMs: 60_000, env: GIT_ENV });
+  return res.code === 0 ? res.stdout.trim() : null;
+}
+
+/** `git log --oneline before..after`, at most `max` lines: the commits a merge added. */
+export async function commitsBetween(repoPath: string, before: string, after: string, max = 30, bin = "git"): Promise<string[]> {
+  const res = await run(bin, ["log", "--oneline", "--no-decorate", `--max-count=${max}`, `${before}..${after}`], { cwd: repoPath, timeoutMs: 60_000, env: GIT_ENV });
+  return res.code === 0 ? res.stdout.split("\n").map((l) => l.trim()).filter(Boolean) : [];
+}
+
 export const isClean = async (cwd: string, bin = "git") => (await git(cwd, ["status", "--porcelain"], bin)).trim().length === 0;
 
 /** Write to a temp file, then rename, retrying while antivirus or an editor holds the target. */

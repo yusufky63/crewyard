@@ -143,7 +143,9 @@ export function guideChecklist(input: GuideInput): Array<{ id: GuideRowId; state
     profile: profileState(input),
     project: input.projectOpen ? "done" : "todo",
     firstTask: taskState(input.tasks, () => true),
-    firstCrew: taskState(input.tasks, (t) => APPROVED.has(t.status)),
+    // A goal's hidden planning run and last review are approved by the daemon, not by you, so only
+    // a task you approved (a crew, a Solo start or a goal's released task) counts.
+    firstCrew: taskState(input.tasks, (t) => !t.goal?.hidden && APPROVED.has(t.status)),
     github: githubState(input.github),
   };
   return GUIDE_ROWS.map((id) => ({ id, state: states[id] }));

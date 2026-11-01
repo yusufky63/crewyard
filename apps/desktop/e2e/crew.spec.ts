@@ -1,6 +1,6 @@
 import { basename } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { daemon, launch, running, say, type Harness } from "./harness.ts";
+import { daemon, launch, running, say, type Harness, composerMode } from "./harness.ts";
 
 // Managing a crew in the Crew graph (PLAN.md §9 step 6) against scripted runners: a proposal is
 // edited step by step (add a step, change its AI, its standby chain and what it waits for, by the
@@ -36,6 +36,7 @@ const taskByTitle = async (page: Page, title: string) => {
 async function propose(page: Page, title: string, onLimit?: string) {
   await page.locator("#app-sidebar").getByRole("button", { name: "Tasks", exact: true }).click();
   const main = page.locator("main");
+  await composerMode(page, "Crew");
   await main.getByLabel("New task").fill(title);
   await main.getByLabel("Kind").selectOption("research");
   if (onLimit) await main.getByLabel("On limit").selectOption(onLimit);

@@ -1,6 +1,44 @@
 import { describe, expect, it } from "vitest";
-import { NO_RUN_CONTROLS, type CandidateView, type CrewMemberView, type LimitNoticePayload, type RequestView, type RunView, type TaskDetail } from "@crewyard/core";
-import { canChooseHandoffStop, handoffsOf, currentRun, diffTotals, elapsedMs, filterCounts, formatDuration, limitBanner, loopLook, matchesFilter, resolveTarget, runnersOf, splitTaskText, statusLine, stepState } from "./model.ts";
+import { NO_RUN_CONTROLS, type CandidateView, type CrewMemberView, type GoalSummary, type LimitNoticePayload, type RequestView, type RunView, type TaskDetail, type TaskGoalRef, type TaskSummary } from "@crewyard/core";
+import { approvalRequest, cost, decision, goalDetail, goalTask, revision } from "./goalTestData.ts";
+import {
+  awaitingApproval,
+  canChooseHandoffStop,
+  handoffsOf,
+  currentRun,
+  diffTotals,
+  elapsedMs,
+  filterCounts,
+  FILTERS,
+  formatDuration,
+  GOAL_FEED_PAGE,
+  goalBucket,
+  goalFolded,
+  goalMatchesFilter,
+  goalNeeds,
+  goalNumber,
+  goalRowStatus,
+  goalSpendPct,
+  goalStatusLine,
+  goalTaskLine,
+  holdTone,
+  listOrder,
+  haltKey,
+  limitBanner,
+  loopLook,
+  matchesFilter,
+  offersCrewProposal,
+  planCost,
+  reportsToAccept,
+  resolveTarget,
+  runnersOf,
+  splitTaskText,
+  statusLine,
+  utf8Bytes,
+  stepState,
+  taskBucket,
+  taskMatchesFilter,
+} from "./model.ts";
 
 const cand = (profileId: string, runner: CandidateView["runner"] = "codex"): CandidateView => ({
   profileId,
@@ -204,5 +242,229 @@ describe("limit banner", () => {
     // An account-wide notice (no run) still applies to the open run on that account.
     expect(limitBanner(task({ runs: live }), [notice({ runId: null })])).toMatchObject({ runId: "r2" });
     expect(limitBanner(task({ runs: live }), [])).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------- Orchestra goals (docs/adr/0019)
+
+const ref = (over: Partial<TaskGoalRef> = {}): TaskGoalRef => ({ goalId: "g1", key: "k3", number: 3, waiting: false, hold: null, joined: false, hidden: false, role: "task", ...over });
+const goalSummary = (status: GoalSummary["status"], over: Partial<GoalSummary> = {}): Pick<GoalSummary, "status" | "outcome" | "reason" | "done" | "total"> => ({ status, outcome: null, reason: null, done: 1, total: 4, ...over });
+
+describe("goal filters", () => {
+  it("never counts a waiting goal task under Needs you, and counts the goal once in its own filter", () => {
+    // A plan of eight accepted, unreleased tasks derives as `proposed`, which alone reads Needs you.
+    const waiting = Array.from({ length: 8 }, (_, i) => ({ status: "proposed" as const, goal: ref({ number: i + 1, waiting: true, hold: { code: "goal.waits_finish" as const, params: { task: "01" } } }) }));
+    const counts = filterCounts(waiting, [goalSummary("running")]);
+    expect(counts.needs_you).toBe(0);
+    expect(counts.running).toBe(1);
+    expect(counts.all).toBe(9);
+  });
+
+  it("never counts goal tasks on their own under Ready for review, Merged or Done; the goal counts there", () => {
+    const tasks = [
+      { status: "review" as const, goal: ref({ joined: true }) },
+      { status: "done" as const, goal: ref({ number: 1 }) },
+      { status: "failed" as const, goal: ref({ number: 2 }) },
+    ];
+    expect(filterCounts(tasks, [goalSummary("ready_for_review")])).toEqual({ all: 4, running: 0, needs_you: 0, review: 1, merged: 0, done: 0 });
+    expect(filterCounts([], [goalSummary("finished", { outcome: "merged" }), goalSummary("finished", { outcome: "done" })])).toMatchObject({ merged: 1, done: 1 });
+  });
+
+  it("still counts a goal task with an Inbox request under Needs you, next to its goal", () => {
+    const tasks = [{ status: "needs_input" as const, goal: ref() }, { status: "limited" as const, goal: ref({ number: 4 }) }];
+    expect(filterCounts(tasks, [goalSummary("needs_you", { reason: "request" })]).needs_you).toBe(3);
+    expect(taskMatchesFilter(tasks[0]!, "needs_you")).toBe(true);
+  });
+
+  it("hides planning, last review, discarded and unapproved goal tasks from every filter", () => {
+    const hidden = { status: "running" as const, goal: ref({ hidden: true, role: "planning" }) };
+    expect(taskBucket(hidden)).toBeNull();
+    for (const f of FILTERS) expect(taskMatchesFilter(hidden, f)).toBe(false);
+    expect(filterCounts([hidden]).all).toBe(0);
+  });
+
+  it("puts each goal status in its filter; paused, stopped and collapsed show only under All", () => {
+    expect(goalBucket({ status: "planning", outcome: null })).toBe("running");
+    expect(goalBucket({ status: "needs_you", outcome: null })).toBe("needs_you");
+    expect(goalBucket({ status: "ready_for_review", outcome: null })).toBe("review");
+    expect(goalBucket({ status: "paused", outcome: null })).toBe("other");
+    expect(goalBucket({ status: "stopped", outcome: null })).toBe("other");
+    expect(goalBucket({ status: "finished", outcome: "collapsed" })).toBe("other");
+    expect(goalMatchesFilter({ status: "paused", outcome: null }, "all")).toBe(true);
+    expect(goalMatchesFilter({ status: "paused", outcome: null }, "running")).toBe(false);
+  });
+
+  it("leaves tasks without a goal as they were", () => {
+    expect(taskBucket({ status: "proposed" })).toBe("needs_you");
+    expect(taskBucket({ status: "cancelled", goal: null })).toBe("other");
+  });
+
+  it("never offers a goal task for crew approval", () => {
+    const base = { projectId: "p", title: "x", kind: "code" as const, size: "M" as const, status: "proposed" as const, fallback: "ask" as const, budgetUsd: null, spend: { usd: 0, provenance: "estimated" as const }, createdAt: "", cancelledAt: null, openRequests: 0, activeRuns: 0, resumableRunIds: [] };
+    expect(awaitingApproval([{ ...base, id: "a" }, { ...base, id: "b", goal: ref({ waiting: true }) }]).map((x) => x.id)).toEqual(["a"]);
+  });
+});
+
+describe("list order", () => {
+  it("puts what needs you first, then what runs, then review, then the rest, newest first inside each, goals and tasks together", () => {
+    const g = (id: string, status: GoalSummary["status"], createdAt: string, outcome: GoalSummary["outcome"] = null) => ({ id, status, outcome, createdAt });
+    const t = (id: string, status: TaskSummary["status"], createdAt: string) => ({ id, status, goal: null, createdAt });
+    const rows = listOrder(
+      [g("g-done", "finished", "2026-10-31T12:00:00Z", "merged"), g("g-run", "running", "2026-10-31T09:00:00Z"), g("g-plan", "needs_you", "2026-10-31T08:00:00Z"), g("g-planning", "planning", "2026-10-31T11:00:00Z"), g("g-stopped", "stopped", "2026-10-31T13:00:00Z")],
+      [t("t-failed", "failed", "2026-10-31T10:00:00Z"), t("t-proposed", "proposed", "2026-10-31T07:00:00Z"), t("t-run", "running", "2026-10-31T10:30:00Z"), t("t-review", "review", "2026-10-31T06:00:00Z"), t("t-done", "done", "2026-10-31T14:00:00Z")],
+    );
+    expect(rows.map((r) => (r.kind === "goal" ? r.goal.id : r.task.id))).toEqual(["t-failed", "g-plan", "t-proposed", "g-planning", "t-run", "g-run", "t-review", "t-done", "g-stopped", "g-done"]);
+  });
+});
+
+describe("goal status labels", () => {
+  it("has seven states with their icon and color, and never shows Ready for review as merged", () => {
+    expect(goalStatusLine(goalSummary("planning"))).toMatchObject({ key: "planning", tone: "run", icon: "spinner" });
+    expect(goalStatusLine(goalSummary("needs_you", { reason: "stuck" }))).toMatchObject({ key: "needsYou", tone: "wait", icon: "question", reason: "stuck" });
+    expect(goalStatusLine(goalSummary("running", { done: 2, total: 4 }))).toMatchObject({ key: "running", tone: "run", done: 2, total: 4 });
+    expect(goalStatusLine(goalSummary("paused"))).toMatchObject({ key: "paused", tone: "muted", icon: "pause" });
+    expect(goalStatusLine(goalSummary("ready_for_review"))).toMatchObject({ key: "ready", tone: "ok", icon: "check" });
+    expect(goalStatusLine(goalSummary("finished", { outcome: "merged" }))).toMatchObject({ key: "merged", tone: "ink", icon: "pr" });
+    expect(goalStatusLine(goalSummary("finished", { outcome: "done" }))).toMatchObject({ key: "done", tone: "ok", icon: "check" });
+    expect(goalStatusLine(goalSummary("stopped"))).toMatchObject({ key: "stopped", tone: "muted", icon: "square" });
+    expect(goalStatusLine(goalSummary("ready_for_review")).key).not.toBe("merged");
+  });
+
+  it("folds finished and stopped goals only", () => {
+    expect(goalFolded({ status: "finished" })).toBe(true);
+    expect(goalFolded({ status: "stopped" })).toBe(true);
+    expect(goalFolded({ status: "running" })).toBe(false);
+  });
+
+  it("measures spend against the budget and says Unknown without a number", () => {
+    expect(goalSpendPct({ spend: cost(1.5, "reported"), budgetUsd: 3 })).toBe(50);
+    expect(goalSpendPct({ spend: cost(9, "reported"), budgetUsd: 3 })).toBe(100);
+    expect(goalSpendPct({ spend: cost(null, "unknown"), budgetUsd: 3 })).toBeNull();
+    expect(goalSpendPct({ spend: cost(1), budgetUsd: null })).toBeNull();
+  });
+
+  it("numbers goal tasks with two digits", () => {
+    expect(goalNumber(2)).toBe("02");
+    expect(goalNumber(12)).toBe("12");
+  });
+});
+
+describe("goal task lines", () => {
+  it("says why an unreleased task waits, and never Waiting for approval", () => {
+    const hold = { code: "goal.waits_report" as const, params: { task: "01", taskId: "t1" } };
+    expect(goalTaskLine(goalTask(3, { released: false, status: "proposed", hold }))).toMatchObject({ key: "hold", tone: "wait", hold });
+    expect(goalTaskLine(goalTask(3, { released: false, status: "proposed" }))).toMatchObject({ key: "waiting", tone: "ink" });
+    expect(goalTaskLine(goalTask(3, { released: false, status: "proposed" }), { paused: true })).toMatchObject({ key: "goalPaused", icon: "pause" });
+  });
+
+  it("keeps the warning color for holds only you can lift, and plain ink for orderings that clear by themselves", () => {
+    const line = (code: string) => goalTaskLine(goalTask(3, { released: false, status: "proposed", hold: { code, params: { task: "02", taskId: "t2" } } as never })).tone;
+    for (const code of ["goal.waits_report", "goal.prereq_failed", "goal.prereq_cancelled", "goal.conflict", "goal.halted", "goal.error"]) expect(line(code)).toBe("wait");
+    for (const code of ["goal.waits_finish", "goal.waits_overlap", "goal.waits_join", "goal.parallel_cap"]) expect(line(code)).toBe("ink");
+    expect(line("goal.paused")).toBe("muted");
+    expect(holdTone({ code: "goal.paused_all" })).toBe("muted");
+    expect(goalTaskLine(goalTask(2, { status: "queued" as never, released: true })).tone).toBe("ink");
+  });
+
+  it("reads In goal branch once merged, and a finished writer waits to be merged instead of Ready for review", () => {
+    expect(goalTaskLine(goalTask(2, { status: "review", joined: { sha: "abc", at: "x" } }))).toMatchObject({ key: "inGoalBranch", tone: "ok" });
+    expect(goalTaskLine(goalTask(2, { status: "review" }))).toMatchObject({ key: "awaitingJoin", tone: "ink" });
+  });
+
+  it("marks a finished report that writing tasks wait on until you accept it", () => {
+    const research = goalTask(1, { writes: false, status: "done" });
+    expect(goalTaskLine(research, { feedsWriter: true })).toMatchObject({ key: "reportWaits" });
+    expect(goalTaskLine(research)).toMatchObject({ key: "done" });
+    expect(goalTaskLine({ ...research, reportAcceptedAt: "x" }, { feedsWriter: true })).toMatchObject({ key: "reportAccepted" });
+  });
+
+  it("shows skipped, unapproved, failed, cancelled and request states", () => {
+    expect(goalTaskLine(goalTask(4, { accepted: false }))).toMatchObject({ key: "skipped", tone: "muted" });
+    expect(goalTaskLine(goalTask(4, { accepted: null, released: false }))).toMatchObject({ key: "notApproved" });
+    expect(goalTaskLine(goalTask(2, { status: "failed" }))).toMatchObject({ key: "failed", tone: "bad" });
+    expect(goalTaskLine(goalTask(2, { status: "cancelled" }))).toMatchObject({ key: "cancelled" });
+    expect(goalTaskLine(goalTask(2, { status: "needs_input" }), { pending: "approval" })).toMatchObject({ key: "needsApproval", icon: "terminal" });
+    expect(goalTaskLine(goalTask(2, { status: "needs_input" }))).toMatchObject({ key: "needsAnswer" });
+    expect(goalTaskLine(goalTask(2, { status: "limited" }))).toMatchObject({ key: "limited", tone: "bad" });
+  });
+
+  it("gives a goal task's own row its hold or goal-branch line, and nothing else", () => {
+    expect(goalRowStatus(ref({ waiting: true, hold: { code: "goal.waits_finish", params: { task: "02" } } }), "proposed")).toMatchObject({ key: "hold" });
+    expect(goalRowStatus(ref({ joined: true }), "review")).toMatchObject({ key: "inGoalBranch" });
+    expect(goalRowStatus(ref(), "running")).toBeNull();
+    expect(goalRowStatus(null, "proposed")).toBeNull();
+    expect(goalRowStatus(ref({ hidden: true, waiting: true }), "proposed")).toBeNull();
+  });
+});
+
+describe("goal needs you", () => {
+  it("lists a plan to review, open decisions, requests, reports, failed tasks, halt, stuck and empty, in that order", () => {
+    const g = goalDetail({
+      status: "needs_you",
+      reason: "stuck",
+      revisions: [revision(), revision({ id: "r2", revision: 2, cause: "replan", state: "ready", approvedAt: null })],
+      decisions: [decision({ id: "d1", kind: "conflict", taskId: "t2", actions: ["send_to_implementer", "merge_myself", "check_again", "leave_out"] }), decision({ id: "d0", answeredAt: "x", answer: "resume" })],
+      tasks: [goalTask(1, { writes: false, status: "done" }), goalTask(2, { status: "failed" }), goalTask(3, { status: "failed", dependsOn: [{ taskId: "t1", key: "k1", source: "plan" }] })],
+      halted: { reason: "failed_tasks", at: "x" },
+    });
+    const needs = goalNeeds(g, [approvalRequest("t3"), approvalRequest("other-task"), approvalRequest("t2", { id: "answered", answeredAt: "x" })]);
+    expect(needs.map((n) => n.kind)).toEqual(["plan", "decision", "request", "report", "failed", "halted", "stuck"]);
+    // 02's failure is already a decision; only 03's shows on its own.
+    expect(needs.find((n) => n.kind === "failed")).toEqual({ kind: "failed", taskId: "t3" });
+  });
+
+  it("does not repeat what an open decision says, and a stopped goal needs nothing", () => {
+    const g = goalDetail({ status: "needs_you", reason: "stuck", halted: { reason: "same_failure", at: "x" }, decisions: [decision(), decision({ id: "d2", kind: "stuck", actions: ["retry", "replan", "run_without", "stop"] })] });
+    expect(goalNeeds(g, []).map((n) => n.kind)).toEqual(["decision", "decision"]);
+    expect(goalNeeds({ ...g, status: "stopped" }, [approvalRequest("t2")])).toEqual([]);
+  });
+
+  it("still says a halt once its stop-rule decision is answered, as long as the goal stays halted", () => {
+    const g = goalDetail({ status: "needs_you", reason: "halted", halted: { reason: "same_failure", at: "x" }, decisions: [decision({ answeredAt: "x", answer: "replan" })] });
+    expect(goalNeeds(g, [])).toEqual([{ kind: "halted", reason: "same_failure" }]);
+  });
+
+  it("asks for a report only when a writing task waits for it, until you accept it", () => {
+    const tasks = [goalTask(1, { writes: false, status: "done" }), goalTask(2, { released: false, status: "proposed", dependsOn: [{ taskId: "t1", key: "k1", source: "plan" }] }), goalTask(4, { writes: false, status: "done" })];
+    expect(reportsToAccept(tasks)).toEqual(["t1"]);
+    expect(reportsToAccept([{ ...tasks[0]!, reportAcceptedAt: "x" }, tasks[1]!])).toEqual([]);
+    expect(reportsToAccept([tasks[0]!, { ...tasks[1]!, accepted: false }])).toEqual([]);
+  });
+});
+
+describe("goal tasks in the Tasks screen", () => {
+  it("never opens a crew proposal with Approve for a waiting goal task", () => {
+    const waiting: TaskGoalRef = { goalId: "g1", key: "k3", number: 3, waiting: true, hold: null, joined: false, hidden: false };
+    expect(offersCrewProposal({ status: "proposed", goal: null })).toBe(true);
+    expect(offersCrewProposal({ status: "proposed", goal: waiting })).toBe(false);
+    expect(offersCrewProposal({ status: "running", goal: null })).toBe(false);
+    expect(offersCrewProposal(undefined)).toBe(false);
+  });
+});
+
+describe("goal costs, caps and words", () => {
+  it("states a planning run's estimate with its ceiling, no API cost for $0, and Unknown never as a number", () => {
+    expect(planCost(cost(0.31), 0.93)).toEqual({ key: "estimateUpTo", usd: 0.31, ceiling: 0.93 });
+    expect(planCost(cost(0.31), null)).toEqual({ key: "estimate", usd: 0.31, ceiling: null });
+    expect(planCost(cost(0), 0.25)).toEqual({ key: "noApiCost", usd: 0, ceiling: null });
+    expect(planCost(cost(null, "unknown"), 0.75)).toEqual({ key: "unknownUpTo", usd: null, ceiling: 0.75 });
+    expect(planCost(cost(null, "unknown"), 0)).toEqual({ key: "unknown", usd: null, ceiling: null });
+  });
+
+  it("counts goal text caps in UTF-8 bytes, as the daemon does", () => {
+    expect(utf8Bytes("abc")).toBe(3);
+    // Sixty Turkish letters fit a 120-character field but are 120 bytes; one more is over.
+    expect(utf8Bytes("ş".repeat(60))).toBe(120);
+    expect(utf8Bytes("ş".repeat(61))).toBeGreaterThan(120);
+  });
+
+  it("reads a halt's stored rule code as words, with a line for codes it does not know", () => {
+    expect(haltKey("same_failure")).toBe("same_failure");
+    expect(haltKey("failed_tasks")).toBe("failed_tasks");
+    expect(haltKey("budget")).toBe("other");
+  });
+
+  it("pages the goal feed by 40", () => {
+    expect(GOAL_FEED_PAGE).toBe(40);
   });
 });

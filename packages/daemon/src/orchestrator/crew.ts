@@ -1,4 +1,4 @@
-import { estimateCost, peakFactor, type CandidateView, type CustomRoleStep, type CostEstimate, type Headroom, type Reason, type RoleId, type RunnerId, type TaskKind, type TaskSize } from "@crewyard/core";
+import { estimateCost, peakFactor, type CandidateView, type OrchestratorErrorCode, type CustomRoleStep, type CostEstimate, type Headroom, type Reason, type RoleId, type RunnerId, type TaskKind, type TaskMode, type TaskSize } from "@crewyard/core";
 import type { Candidate } from "./directory.ts";
 import { customPlanSteps, planFor, templateOf, TOKENS_BY_SIZE, TURN_OVERHEAD_TOKENS, type RoleRef, type RoleTemplate } from "./roles.ts";
 
@@ -183,10 +183,14 @@ export interface ProjectRoleSet {
   steps: CustomRoleStep[];
 }
 
-export function proposeCrew(kind: TaskKind, security: boolean, candidates: Candidate[], ctx: ScoringContext, roles?: ProjectRoleSet): { members: ProposedMember[]; estimate: CostEstimate } {
+/**
+ * `mode` is Solo or Crew (docs/adr/0019). Solo gets no custom steps from project.json: a Solo task
+ * is one agent by your choice, and a step added behind your back would be a second, unpriced one.
+ */
+export function proposeCrew(kind: TaskKind, security: boolean, candidates: Candidate[], ctx: ScoringContext, roles?: ProjectRoleSet, mode: TaskMode = "crew"): { members: ProposedMember[]; estimate: CostEstimate } {
   const chosenByRole = new Map<RoleId, CandidateView>();
-  const base = planFor(kind, ctx.size, security);
-  const plan = roles ? [...base, ...customPlanSteps(base, roles.steps, kind, ctx.size)] : base;
+  const base = planFor(kind, ctx.size, security, mode);
+  const plan = roles && mode === "crew" ? [...base, ...customPlanSteps(base, roles.steps, kind, ctx.size)] : base;
   const members = plan.map((step): ProposedMember => {
     const tpl = roles?.templates.get(step.role) ?? templateOf(step.role);
     const avoid = { models: new Set<string>(), providers: new Set<string>() };
@@ -235,3 +239,78 @@ export function sumEstimates(parts: CostEstimate[]): CostEstimate {
 
 /** True when two views would break the independence rule (same model). */
 export const sameModel = (a: CandidateView, b: CandidateView) => viewKey(a) === viewKey(b);
+
+// ---------------------------------------------------------------- crew checks before approval
+// Pure, so both TaskFlow.approve and the goal scheduler's release (docs/adr/0019) apply the same
+// rules without going through the approve facade, its emit and its scheduling pass. They write
+// nothing and return the first problem in member order, the order approve always refused in.
+
+/** A refusal as approve throws it: an OrchestratorErrorCode and its params. */
+export interface CrewProblem {
+  code: Extract<OrchestratorErrorCode, `crew.${string}`>;
+  params: Record<string, string | number>;
+}
+
+/** One crew member as the checks see it: its row id, role and the template it runs with. */
+export interface CrewCheckMember {
+  id: string;
+  role: RoleId;
+  template: RoleTemplate;
+}
+
+export interface CrewEdit {
+  memberId: string;
+  profileId: string;
+  model?: string;
+}
+
+/**
+ * Applies your profile picks to the chosen views. Refuses a member that is not in the crew, a
+ * read-only profile on a writing role, and a profile that is gone or cannot take the role.
+ */
+export function applyCrewEdits(input: { members: readonly CrewCheckMember[]; views: ReadonlyMap<string, CandidateView | null>; candidates: readonly Candidate[]; edits: readonly CrewEdit[]; scoring: ScoringContext }): { ok: true; views: Map<string, CandidateView | null> } | { ok: false; problem: CrewProblem } {
+  const views = new Map(input.views);
+  for (const edit of input.edits) {
+    const m = input.members.find((x) => x.id === edit.memberId);
+    if (!m) return { ok: false, problem: { code: "crew.member_not_found", params: { memberId: edit.memberId } } };
+    const c = input.candidates.find((x) => x.profile.id === edit.profileId);
+    if (c && readOnlyConflict(c, m.template)) return { ok: false, problem: { code: "crew.read_only_profile", params: { profileId: c.profile.id, role: m.role } } };
+    if (!c || !eligible(c, m.template, input.scoring)) return { ok: false, problem: { code: "crew.unknown_profile", params: { profileId: edit.profileId } } };
+    const v = scoreCandidate(c, m.template, input.scoring);
+    if (edit.model) v.model = edit.model;
+    views.set(m.id, v);
+  }
+  return { ok: true, views };
+}
+
+/**
+ * The rules every crew must pass at approval: each member has a profile, no read-only profile
+ * takes a writing role (checked for every member, since a profile may be marked read-only after
+ * the proposal), and the independence rule, against every Best of N variant too, since any of
+ * them may be the one you keep. `available`, when given, also refuses a chosen profile that is
+ * gone or no longer fits its role; approve leaves it out, as it always has, and the goal release
+ * passes it so a vanished profile becomes a decision instead of a run that cannot start.
+ */
+export function validateCrew(input: {
+  members: readonly CrewCheckMember[];
+  views: ReadonlyMap<string, CandidateView | null>;
+  candidates: readonly Candidate[];
+  group?: { memberId: string; candidates: readonly CandidateView[] } | null;
+  available?: (c: Candidate, tpl: RoleTemplate) => boolean;
+}): CrewProblem | null {
+  const { members, views, candidates, group } = input;
+  for (const m of members) {
+    const v = views.get(m.id);
+    if (!v) return { code: "crew.missing_profile", params: { role: m.role } };
+    const c = candidates.find((x) => x.profile.id === v.profileId);
+    if (c && readOnlyConflict(c, m.template)) return { code: "crew.read_only_profile", params: { profileId: c.profile.id, role: m.role } };
+    if (input.available && (!c || !input.available(c, m.template))) return { code: "crew.unknown_profile", params: { profileId: v.profileId } };
+    for (const other of m.template.independentOf) {
+      const o = members.find((x) => x.role === other);
+      const ov = o ? views.get(o.id) : null;
+      if (ov && sameModel(v, ov)) return { code: "crew.independence", params: { role: m.role } };
+      if (o && group?.memberId === o.id && group.candidates.some((g) => sameModel(v, g))) return { code: "crew.independence", params: { role: m.role } };
+    }
+  }
+  return null;
+}

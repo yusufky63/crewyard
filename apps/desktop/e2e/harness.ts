@@ -1,9 +1,9 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { _electron as electron, type ElectronApplication, type Page } from "@playwright/test";
+import { _electron as electron, expect, type ElectronApplication, type Page } from "@playwright/test";
 import type { FakeStep } from "@crewyard/adapter-fake";
 
 // Launches the built app (out/) the way screenshot mode does: a throwaway profile under %TEMP%,
@@ -24,6 +24,18 @@ export interface E2eProfile {
   model: { id: string; name: string; family: null; context: number; output: number; cost: { input: number; output: number; cacheRead: number }; reasoning: boolean; openWeights: boolean; released: null };
 }
 
+/**
+ * What a scripted run was started with, as packages/daemon/src/e2e logs it next to the script
+ * (`script.runs.jsonl`, one JSON line per run, in start order).
+ */
+export interface RunRecord {
+  key: string;
+  role: string | null;
+  resumed: boolean;
+  writes: "none" | "worktree" | "docs";
+  prompt: string;
+}
+
 export interface Harness {
   app: ElectronApplication;
   page: Page;
@@ -31,6 +43,8 @@ export interface Harness {
   /** A git repository whose path has spaces in it, as the Windows rules ask. */
   repo: string;
   setScripts(scripts: Scripts, profiles?: E2eProfile[]): void;
+  /** Every run the daemon started so far, oldest first, with its prompt. */
+  runs(): RunRecord[];
   close(): Promise<void>;
 }
 
@@ -97,6 +111,14 @@ export async function launch(opts: { env?: Record<string, string> } = {}): Promi
       root,
       repo,
       setScripts,
+      runs: () => {
+        const log = join(root, "script.runs.jsonl");
+        if (!existsSync(log)) return [];
+        return readFileSync(log, "utf8")
+          .split(/\r?\n/)
+          .filter((l) => l.trim())
+          .map((l) => JSON.parse(l) as RunRecord);
+      },
       async close() {
         const pid = opened.process().pid;
         await Promise.race([opened.close().catch(() => undefined), new Promise((r) => setTimeout(r, 10_000))]);
@@ -132,3 +154,18 @@ export const limitReached = (resetsAt: string): FakeStep => ({ emit: { type: "li
 export const usage = (tokensIn: number, tokensOut = 0): FakeStep => ({
   emit: { type: "usage.update", tokensIn, tokensOut, cacheRead: 0, cacheWrite: 0, reasoning: 0, contextUsed: null, contextSize: null, costUsd: null, costProvenance: "unknown" },
 });
+/** Writes a file in the run's worktree, as an agent editing it would; pinHead commits it when the step completes. */
+export const write = (path: string, text: string): FakeStep => ({ write: { path, text } });
+/** The structured result the run ends with, checked against the run's schema (a verdict, findings, a goal plan). */
+export const result = (value: unknown): FakeStep => ({ result: value });
+
+/**
+ * Picks how the composer runs the next submission. Orchestra is the default wherever a profile can
+ * plan, which the fake profiles can; flows that propose one task pick Crew first. The project then
+ * reopens on Crew, so picking it again is harmless.
+ */
+export async function composerMode(page: Page, mode: "Orchestra" | "Crew" | "Solo"): Promise<void> {
+  const button = page.locator("main .tk-composer").getByRole("group", { name: "How to run" }).getByRole("button", { name: mode, exact: true });
+  await button.click();
+  await expect(button).toHaveAttribute("aria-pressed", "true");
+}

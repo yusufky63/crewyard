@@ -109,6 +109,10 @@ Build our own app, small and Windows-first, using these projects as references, 
 
 A second, deeper pass over these repos, the four runners' docs and six newer projects is in [docs/research/2026-10-30-feature-scan.md](docs/research/2026-10-30-feature-scan.md): fixes for what we already built, ranked additions, Windows pitfalls, quota endpoint facts and corrections to this page.
 
+## Orchestration scan (2026-10-31)
+
+For Orchestra, the composer's default mode, about thirty tools were read on how they split a goal into tasks, review the plan, order dependent work, cap parallel runs and integrate the results: the ones whose sources were re-opened and cited are agent-orchestrator, paperclip, Orca, Gas Town and the Agent Manager in Kilo Code, Roo Code, Cline Kanban, Claude Code workflows and agent teams, Codex subagents, Kiro, GitHub Spec Kit, Magentic-UI, Microsoft Agent Framework, claude-task-master, beads, Vibe Kanban, Conductor, paseo, emdash, MetaGPT, AutoGen and crewAI. The comparison, the sources with stars, licences and the date each was opened, and what we take and avoid are in [ADR 0019](docs/adr/0019-orchestra-goals.md). In short: a model writes the plan once and you approve it; code, not a model, decides what runs next; dependencies are data and cycles are refused; small caps are enforced in code; overlapping files run one after the other; finished work lands on one goal branch you open a pull request from.
+
 ## nodeterm (2026-11-01)
 
 A canvas-based terminal manager for agent CLIs, under BUSL-1.1, so it is read for ideas only. The owner wants its ideas kept for when we need them. [docs/research/2026-11-01-nodeterm.md](docs/research/2026-11-01-nodeterm.md) has five, each with its source doc, what Crewyard has today and the size of the change:

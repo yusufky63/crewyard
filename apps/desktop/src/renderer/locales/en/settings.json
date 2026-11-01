@@ -29,6 +29,7 @@
     "external": "External access",
     "autopilot": "Autopilot",
     "fallback": "Fallback",
+    "orchestra": "Orchestra",
     "updates": "Updates",
     "roles": "Roles",
     "agentfiles": "Instructions and skills"
@@ -400,6 +401,7 @@
       "too_large": "Larger than {{limit}} bytes, so it was not read.",
       "too_many": "More than {{limit}} role files; the rest are ignored.",
       "bad_name": "The file name is not a role id: use lowercase letters, digits and dashes.",
+      "reserved": "Crewyard keeps this role name for the Orchestra planner, so the file is not used.",
       "front_matter": "No front matter: the file must start with a --- block.",
       "yaml": "The front matter is not valid YAML: {{detail}}",
       "not_mapping": "The front matter must be a set of keys.",

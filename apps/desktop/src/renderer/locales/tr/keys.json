@@ -20,7 +20,7 @@
     "drawer": "Paneli (asistan, terminal, olaylar, günlükler, sorunlar) genişlet ya da daralt; hiçbir şey durmaz",
     "help": "Bu listeyi göster",
     "close": "En üstteki katmanı kapat: menü, iletişim kutusu, odak içindeyken paneli daralt (terminalin içinde değilken; görev asistanının içindeyken Esc asistanı durdurur, sonra paneli daraltır), denetçi, sonra tam ekran",
-    "submit": "Oluşturucuyu gönder, seçili ekibi onayla, mesajı ya da yorumu gönder",
+    "submit": "Oluşturucuyu gösterdiği modda gönder, seçili ekibi ya da planı onayla, mesajı ya da yorumu gönder",
     "assistant": "Paneli görev asistanında genişlet ya da daralt; asistan çalışmaya devam eder",
     "assistant.send": "Mesajını görev asistanına gönderir (Shift Enter yeni satır ekler)",
     "assistant.prev": "Görev asistanıyla sohbette önceki mesaj; Tab ardından o mesajın işlemlerine gider",
@@ -53,6 +53,9 @@
     "panel.terminal": "Paneli terminalde genişlet ya da daralt",
     "panel.problems": "Paneli sorunlarda genişlet ya da daralt",
     "terminal.close": "Bir terminalin sekmesindeyken: kabuğunu kapat (çalışıyorsa önce sorar)",
-    "terminal.leave": "Terminalin içindeyken: odağı sekmesine geri taşı (Tab kabuğa gider)"
+    "terminal.leave": "Terminalin içindeyken: odağı sekmesine geri taşı (Tab kabuğa gider)",
+    "composer.mode": "Oluşturucunun Nasıl çalışsın seçiminde: odaktaki modu seçer (Orkestra, Ekip veya Solo); Tab aralarında gezinir",
+    "plan.toggle": "Plandaki bir görevde: görevi kabul eder ya da atlar (atlamak, onu bekleyen görevleri de atlar)",
+    "plan.edit": "Plandaki bir görevde: düzenleyicisini planın yanında açar; Esc kapatır ve odağı geri verir"
   }
 }

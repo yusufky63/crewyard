@@ -25,7 +25,10 @@
       "action": "Eylem",
       "project": "Proje",
       "task": "Görev"
-    }
+    },
+    "pauseGoals": "Tüm hedefleri duraklat",
+    "resumeGoals": "Tüm hedefleri sürdür",
+    "goalsKeywords": "Orkestra hedefler durdur acil"
   },
   "notifications": {
     "label": "Bildirimler",

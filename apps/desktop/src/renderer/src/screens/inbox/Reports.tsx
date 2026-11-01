@@ -7,6 +7,8 @@ import { Button, Panel } from "@crewyard/ui";
 import { useInspector } from "../../inspector.ts";
 import { useNav } from "../../nav.ts";
 import { act, useWork } from "../tasks/data.ts";
+import { useGoalNav } from "../tasks/goalNav.ts";
+import { useGoalTaskLabel } from "./Goals.tsx";
 import { profileNames } from "../tasks/model.ts";
 import { useFormat } from "../tasks/parts.tsx";
 
@@ -30,6 +32,10 @@ function ReportItem({ r, onError }: { r: CrewReportView; onError: (err: unknown)
   const inspect = useInspector((s) => s.open);
   const nav = useNav();
   const task = useWork("tasks.get", { taskId: r.taskId });
+  // A goal task's item is labelled with its goal ("Passkeys · 02 Server"), and its follow-up joins that goal.
+  const label = useGoalTaskLabel(task.data);
+  const inGoal = Boolean(task.data?.goal && !task.data.goal.hidden);
+  const openGoal = useGoalNav((s) => s.open);
   const run = task.data?.runs.find((x) => x.id === r.runId);
   const who = run && task.data ? `${f.role(run.role)} · ${f.runner(run.runner)} · ${profileNames(task.data).get(run.profileId)?.alias ?? run.profileId}` : t("report.someone");
   const [replying, setReplying] = useState(false);
@@ -50,7 +56,7 @@ function ReportItem({ r, onError }: { r: CrewReportView; onError: (err: unknown)
       <Icon size={16} strokeWidth={1.75} aria-hidden="true" className={r.type === "followup" ? "ib-muted" : "ib-warn"} />
       <span className="ib-text">
         <span className="t">{t(`report.${r.type}`, { who })}</span>
-        <span className="s">{task.data?.title}</span>
+        <span className="s">{label}</span>
         {r.title && <span className="ib-report-title">{r.title}</span>}
         {r.text && (
           <span className="ib-quote" aria-label={t("report.fromAgent")}>
@@ -99,12 +105,14 @@ function ReportItem({ r, onError }: { r: CrewReportView; onError: (err: unknown)
               onClick={() =>
                 go(async () => {
                   const res = await act("mcp.followups.accept", { reportId: r.id });
-                  nav.selectTask(res.taskId);
+                  // Added to its goal: the goal shows the one-task revision that waits for your approval.
+                  if (res.goalId) openGoal(res.goalId);
+                  else nav.selectTask(res.taskId);
                   nav.go("tasks");
                 })
               }
             >
-              {t("report.accept")}
+              {t(inGoal ? "report.acceptGoal" : "report.accept")}
             </Button>
           )}
           {run && !replying && (

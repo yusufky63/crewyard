@@ -76,6 +76,34 @@ export function zodOutputSchema(name: string, schema: z.ZodType): OutputSchema {
   };
 }
 
+/**
+ * The Orchestra planner's result (docs/adr/0019): a summary and at most 12 tasks, each with the
+ * keys it waits for and the paths it plans to change. Strict and simple like the shapes above; every
+ * bound (task count, byte caps, key pattern, earlier-only dependencies, path rules) lives in
+ * parseGoalPlan, which checks the result again and refuses rather than cuts.
+ */
+export const GoalPlanResult = z.strictObject({
+  summary: z.string(),
+  tasks: z.array(
+    z.strictObject({
+      key: z.string(),
+      title: z.string(),
+      kind: z.enum(["code", "research", "review", "docs"]),
+      mode: z.enum(["solo", "crew"]),
+      size: z.enum(["S", "M", "L"]),
+      description: z.string(),
+      acceptance: z.array(z.string()),
+      basis: z.string(),
+      dependsOn: z.array(z.string()),
+      paths: z.array(z.string()),
+      reason: z.string(),
+      priority: z.enum(["high", "medium", "low"]),
+    }),
+  ),
+});
+export type GoalPlanResult = z.infer<typeof GoalPlanResult>;
+
 export const REVIEW_VERDICT_OUTPUT = zodOutputSchema("review_verdict", ReviewVerdict);
 export const PLANNER_PLAN_OUTPUT = zodOutputSchema("planner_plan", PlannerPlan);
 export const RESEARCH_FINDINGS_OUTPUT = zodOutputSchema("research_findings", ResearchFindings);
+export const GOAL_PLAN_OUTPUT = zodOutputSchema("goal_plan", GoalPlanResult);

@@ -27,6 +27,7 @@
   "context": "{{open}} yanıt bekliyor · {{info}} bilgi notu",
   "listLabel": "İstekler",
   "empty": "Şu an sizi bekleyen bir şey yok.",
+  "emptyGoals": "Soru ya da onay yok. Aşağıdaki hedefler sizi bekliyor.",
   "forInfo": "Bilginize",
   "errors": {
     "load": "İstekler arka plan hizmetinden okunamadı."
@@ -43,9 +44,11 @@
     "cap_daily_cap": "{{usd}} günlük harcama sınırı doldu",
     "cap_task_cap": "{{usd}} görev başı harcama sınırı doldu",
     "cap_task_budget": "{{usd}} görev bütçesi doldu",
+    "cap_project_daily": "Projenin {{usd}} günlük harcama sınırı doldu",
     "capWould_daily_cap": "Bu adım {{usd}} günlük harcama sınırını aşacak",
     "capWould_task_cap": "Bu adım {{usd}} görev başı harcama sınırını aşacak",
     "capWould_task_budget": "Bu adım {{usd}} görev bütçesini aşacak",
+    "capWould_project_daily": "Bu adım projenin {{usd}} günlük harcama sınırını aşacak",
     "handoff_unpriced": "{{model}} için fiyat bilinmiyor",
     "handoff_limit": "{{window}} limiti doldu",
     "handoff_crashed": "Ajan beklenmedik şekilde durdu",
@@ -112,7 +115,8 @@
   "cap": {
     "daily_cap": "Bu API anahtarının günlük sınırı",
     "task_cap": "Bu API anahtarının görev başı sınırı",
-    "task_budget": "Bu görevin bütçesi"
+    "task_budget": "Bu görevin bütçesi",
+    "project_daily": "Bu projenin tüm API anahtarları için günlük sınırı"
   },
   "handoffDetail": {
     "no_target": "Ön kontrolü geçen yedek hesap yok: oturum açık, payı %20'nin üstünde ve bütçesi kalan bir hesap gerekiyor.",
@@ -164,7 +168,8 @@
     "accept": "Göreve dönüştür",
     "acceptNote": "Önerilen ekiple taslak bir görev oluşturur. Siz onaylamadan hiçbir şey başlamaz.",
     "openRun": "Çalıştırmayı aç",
-    "dismiss": "Kapat"
+    "dismiss": "Kapat",
+    "acceptGoal": "Hedefine ekle"
   },
   "switch": {
     "section": "Hesap geçişleri · {{count}}",

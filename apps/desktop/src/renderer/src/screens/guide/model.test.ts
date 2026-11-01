@@ -118,6 +118,19 @@ describe("tasks and GitHub", () => {
     expect(taskState(ok([task("cancelled")]), (t) => t.status === "review")).toBe("todo");
     expect(taskState(failed(), () => true)).toBe("unknown");
   });
+
+  it("does not count a goal's hidden planning run or last review as a crew you approved", () => {
+    const base = { profiles: ok([]), credentials: ok([]), keyChecks: ok([]), signIns: ok([]), tools: allTools(), projectOpen: true, github: pending<GithubAuth>() };
+    const ref = (role: "planning" | "integration" | "task", hidden: boolean) => ({ goalId: "g1", key: role, number: 1, waiting: false, hold: null, joined: false, hidden, role });
+    const planning = { ...task("done"), goal: ref("planning", true) } as TaskSummary;
+    const review = { ...task("running"), goal: ref("integration", true) } as TaskSummary;
+    let rows = guideChecklist({ ...base, tasks: ok([planning, review]) });
+    expect(rows.find((r) => r.id === "firstTask")?.state).toBe("done");
+    expect(rows.find((r) => r.id === "firstCrew")?.state).toBe("todo");
+    const released = { ...task("running"), goal: ref("task", false) } as TaskSummary;
+    rows = guideChecklist({ ...base, tasks: ok([planning, released]) });
+    expect(rows.find((r) => r.id === "firstCrew")?.state).toBe("done");
+  });
   it("reads GitHub through gh's own login", () => {
     const auth = (over: Partial<GithubAuth>): Read<GithubAuth> => ok({ signedIn: false, login: null, scopes: null, rate: [], problem: null, ...over });
     expect(githubState(auth({ signedIn: true, login: "me" }))).toBe("done");

@@ -12,13 +12,52 @@
     "go": "Yeni proje"
   },
   "sections": {
+    "modes": "İşi çalıştırmanın üç yolu",
     "flow": "Akış",
     "checklist": "Başlarken",
     "features": "Başka neler yapar",
     "faq": "Sorular"
   },
+  "modes": {
+    "lead": "Görevler ekranındaki yazma alanının başındaki Nasıl çalışsın seçimi her istek için birini belirler. Salt okunur plan yapabilen bir profili olan her projede varsayılan Orkestra'dır; böyle bir profil yoksa yazma alanı Ekip ile açılır. Sonraki açılışta o projede en son kullandığın Orkestra ya da Ekip seçili gelir; Solo hiçbir zaman hatırlanmaz.",
+    "default": "Varsayılan",
+    "off": "Orkestra, Ayarlar → Orkestra'da kapalı: yazma alanında görünmez, alan Ekip ile açılır ve yeni hedef alınmaz. Onayladığın hedefler çalışmayı sürdürür.",
+    "offBadge": "Kapalı",
+    "offGo": "Ayarlar → Orkestra'yı aç",
+    "orchestra": {
+      "title": "Orkestra",
+      "body": "Bir hedef yaz. Salt okunur tek bir planlama çalıştırması onu görevlere böler: en fazla 8 görev, hangi sırayla çalışacakları ve her birinin değiştirmeyi planladığı dosyalar.",
+      "points": {
+        "a": "Hedefi planla düğmesi tıklamadan önce planlama tahminini, altındaki not da üst sınırı gösterir. Bir projedeki ilk hedefte önce Orkestra'nın ne yaptığı anlatılır ve projenin varsayılan hedef bütçesi sorulur.",
+        "b": "Planı okur, görevleri düzenler ya da atlarsın; tek bir Onayla ve başlat, tuttuğun bütün görevleri onaylar. Aynı dosyaları değiştirmeyi planlayan görevler senin yerine sıraya konur.",
+        "c": "Görevler bu sırayla başlar; hedef başına aynı anda en fazla 2 görev çalışır ve her biri hedef bütçesindeki payının içinde kalır. Bir kod görevinin dayandığı araştırma raporu, sen kabul edene kadar bekler.",
+        "d": "Biten işler Crewyard'ın kendi worktree'sindeki tek bir hedef dalında birleştirilir. Son bir inceleme hepsini okur, tek pull request'i de sen açarsın."
+      },
+      "go": "Hedef yaz"
+    },
+    "crew": {
+      "title": "Ekip",
+      "body": "Tek görev, bir ekip çalışır: plan, uygulama, test ve inceleme; her rol, önerinin seçtiği çalıştırıcı ve modelde.",
+      "points": {
+        "a": "Gönderince ekip önerisi açılır; Onayla ve başlat'a basana kadar hiçbir şey başlamaz.",
+        "b": "Hazır analizler ve içe aktarılan issue'lar her zaman tek bir Ekip görevi olarak, planlama çalıştırması olmadan çalışır.",
+        "c": "İşin tek bir değişiklik olduğunu zaten biliyorsan bunu seç."
+      },
+      "go": "Ekip görevi yaz"
+    },
+    "solo": {
+      "title": "Solo",
+      "body": "Kendi worktree'sinde tek bir ajan; ekip kurmaya değmeyecek kadar küçük işler için.",
+      "points": {
+        "a": "Başlat onayın kendisidir: yazma alanı, tıklamadan önce profili, modeli ve tahmini gösterir.",
+        "b": "Tahmin Bilinmiyor olduğunda ya da bir sınırı aşacaksa Başlat, Öner'e döner; kimsenin fiyatlayamadığı harcama yine senin onayını bekler.",
+        "c": "Kod yine projenin testleri geçene kadar çalışır. Solo her istekte ayrıca seçilir, hiçbir zaman hatırlanmaz."
+      },
+      "go": "Görev yaz"
+    }
+  },
   "flow": {
-    "lead": "Her görev aynı yoldan geçer. Bu yolda hiçbir şey sen tıklamadan başlamaz, push edilmez, birleştirilmez.",
+    "lead": "Her görev, ister Ekip ya da Solo ile sen yaz ister bir hedefin planı oluştursun, aynı yoldan geçer. Bu yolda hiçbir şey sen tıklamadan başlamaz, push edilmez, birleştirilmez.",
     "steps": {
       "project": {
         "title": "Proje ekle",
@@ -27,7 +66,7 @@
       },
       "task": {
         "title": "Görevi anlat",
-        "body": "Ne istediğini Görevler ekranındaki yazma alanına yaz, işe yarıyorsa görsel ya da dosya ekle. İstersen görev asistanıyla konuş, o da konuşmayı görev taslaklarına çevirsin.",
+        "body": "Ne istediğini Görevler ekranındaki yazma alanına yaz, işe yarıyorsa görsel ya da dosya ekle. İstersen görev asistanıyla konuş, o da konuşmayı görev taslaklarına çevirsin. Orkestra'da bir hedef yazarsın; planındaki her görev de aşağıdaki adımlardan geçer.",
         "go": "Görev yaz"
       },
       "proposal": {
@@ -97,12 +136,12 @@
       },
       "firstTask": {
         "label": "İlk görev",
-        "hint": "Görevler ekranındaki yazma alanında bir görev anlat. Göndermek yalnızca ekip önerisini açar.",
+        "hint": "Görevler ekranındaki yazma alanında bir görev anlat. Orkestra'da göndermek, yalnızca maliyeti düğmede yazan salt okunur bir planlama çalıştırmasını başlatır; Ekip'te ekip önerisini açar.",
         "go": "Görev yaz"
       },
       "firstCrew": {
         "label": "İlk onaylanan ekip",
-        "hint": "Bir ekip önerisine göz at ve Onayla ve başlat'a bas.",
+        "hint": "Bir ekip önerisine ya da bir hedefin planına bak ve Onayla ve başlat'a bas.",
         "go": "Görevleri aç",
         "goProposal": "Öneriyi aç"
       },
@@ -167,7 +206,7 @@
       },
       "points": {
         "a": "Bir zaman penceresi %80'i geçince sarıya, %95'i geçince kırmızıya döner ve her seferinde bir kez bildirim gelir.",
-        "b": "Harcama sınırları anahtar ve görev başınadır; sınıra gelen çalıştırma durur ve sorar."
+        "b": "Harcama sınırları anahtar ve görev başınadır. Her projenin ayrıca tüm API anahtarlarını kapsayan bir günlük sınırı vardır: kurulumda girilir, kurulum yapılmadıysa 10 $'dır. Bu sınıra görev çalıştırmaları sayılır; asistan sohbetleri yalnızca kendi anahtarının sınırına sayılır. Sınıra gelen çalıştırma durur ve sorar."
       },
       "go": "Limitleri aç"
     },
@@ -214,7 +253,19 @@
     },
     "nothingStarts": {
       "q": "Ben bir şey yapmadan bir iş başlayabilir mi?",
-      "a": "Onayla ve başlat'a basmadan hiçbir ekip başlamaz; push, pull request, birleştirme ve sınırı aşan harcama her zaman senin tıklamanı bekler. Tek istisna proje başına senin açtığın Autopilot'tur: kendi oluşturduğu görevlerin ekiplerini senin sınırların içinde onaylayabilir, yine de asla push etmez ve birleştirmez."
+      "a": "Sen onaylamadan hiçbir ekip başlamaz. Orkestra'da Hedefi planla yalnızca maliyeti düğmede yazan salt okunur bir planlama çalıştırmasını başlatır; plandaki Onayla ve başlat da görevlerini, sırası gelince sonradan başlayacak olanlarla birlikte onaylar. Solo'da tahmini gösteren Başlat onayın kendisidir. Push, pull request, senin dallarına birleştirme ve bir sınırı aşan harcama her zaman senin tıklamanı bekler. Tek istisna proje başına açtığın Autopilot: kendi oluşturduğu görevlerin ekiplerini senin sınırların içinde onaylayabilir, hedeflere dokunmaz, hiçbir zaman push etmez ve birleştirmez."
+    },
+    "whichMode": {
+      "q": "Hangi modu kullanmalıyım?",
+      "a": "Birkaç değişiklik gerektiren bir hedef için Orkestra; örneğin sunucu tarafı, istemci tarafı ve dokümanı olan bir özellik. Birkaç satırda anlatabileceğin tek bir değişiklik için Ekip; hedefin böyle görünüyorsa yazma alanı Tek, küçük bir değişikliğe benziyor der ve Ekip ile çalıştır'ı önerir, ama kendiliğinden geçiş yapmaz. Tek bir ajanın tek başına yapabileceği küçük bir iş için Solo. Tek görevlik bir plan, hedef dalı olmayan sıradan bir göreve dönüşür."
+    },
+    "planningCost": {
+      "q": "Bir hedefi planlamak ne kadar tutar?",
+      "a": "Yazma alanındaki Planlayıcı çipinde görünen planlayıcının salt okunur tek bir çalıştırması. Hedefi planla düğmesi tahminini, altındaki not da üst sınırı gösterir: planlama çalıştırmasının kendi bütçesi, tahminin üç katı (en az 0,25 $) ve hiçbir zaman projenin görev başına sınırının üstünde değil. Bu sınıra gelince çalıştırma duraklar ve Gelen kutusunda sorar. Planı güncelle ve Yeniden planla, düğmelerinde fiyatı yazan birer planlama çalıştırması daha tutar: onaydan önce en fazla 5 güncelleme, onaydan sonra en fazla 3 yeniden planlama. Onaylamadığın bir plan başka hiçbir şey başlatmaz. Her planın hedef bütçesi, projenin Ayarlar → Orkestra'da değiştirebileceğin varsayılan hedef bütçesiyle başlar."
+    },
+    "goalBranch": {
+      "q": "Orkestra benim dallarıma push eder ya da birleştirir mi?",
+      "a": "Hayır. Dosya değiştiren her biten görev, hedefin kendi dalında (crewyard/goal/ ve kısa bir ad) birleştirilir; bu dal yalnızca Crewyard'ın o hedef için açtığı worktree'de checkout edilir. Hiçbir şey push edilmez. Bir birleştirme çakışması, o göreve bağlı görevleri bekletir ve sana sorar. Bütün değişikliklerin son incelemesi geçince hedef İncelemeye hazır olur, pull request'ini de her görevle aynı kapıdan geçerek sen açarsın. Ayarlar'daki ve komut paletindeki Tüm hedefleri duraklat, bütün hedefleri bir anda bekletir."
     },
     "closePanel": {
       "q": "Bir paneli kapatmak ajanı durdurur mu?",
