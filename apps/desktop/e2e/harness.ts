@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -24,6 +24,18 @@ export interface E2eProfile {
   model: { id: string; name: string; family: null; context: number; output: number; cost: { input: number; output: number; cacheRead: number }; reasoning: boolean; openWeights: boolean; released: null };
 }
 
+/**
+ * What a scripted run was started with, as packages/daemon/src/e2e logs it next to the script
+ * (`script.runs.jsonl`, one JSON line per run, in start order).
+ */
+export interface RunRecord {
+  key: string;
+  role: string | null;
+  resumed: boolean;
+  writes: "none" | "worktree" | "docs";
+  prompt: string;
+}
+
 export interface Harness {
   app: ElectronApplication;
   page: Page;
@@ -31,6 +43,8 @@ export interface Harness {
   /** A git repository whose path has spaces in it, as the Windows rules ask. */
   repo: string;
   setScripts(scripts: Scripts, profiles?: E2eProfile[]): void;
+  /** Every run the daemon started so far, oldest first, with its prompt. */
+  runs(): RunRecord[];
   close(): Promise<void>;
 }
 
@@ -97,6 +111,14 @@ export async function launch(opts: { env?: Record<string, string> } = {}): Promi
       root,
       repo,
       setScripts,
+      runs: () => {
+        const log = join(root, "script.runs.jsonl");
+        if (!existsSync(log)) return [];
+        return readFileSync(log, "utf8")
+          .split(/\r?\n/)
+          .filter((l) => l.trim())
+          .map((l) => JSON.parse(l) as RunRecord);
+      },
       async close() {
         const pid = opened.process().pid;
         await Promise.race([opened.close().catch(() => undefined), new Promise((r) => setTimeout(r, 10_000))]);

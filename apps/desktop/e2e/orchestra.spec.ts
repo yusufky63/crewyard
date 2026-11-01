@@ -10,8 +10,10 @@ import { composerMode, daemon, launch, result, running, say, write, type Harness
 // research report reaches the writing tasks only after you accept it, finished tasks are merged
 // into the goal branch in order, a conflicting merge asks you and its follow-up resolves it, and
 // the last review's pass opens the existing pull request gate, which stays yours. Also: Solo
-// starts on its own click, a ready-made analysis goes to Crew, and a plan of one task becomes an
-// ordinary task. Nothing is pushed or opened on GitHub: the test repo has no remote.
+// starts on its own click, a ready-made analysis goes to Crew, a plan of one task becomes an
+// ordinary task, and a plan the checks refuse twice fails with the parser's words. Nothing is
+// pushed or opened on GitHub: the test repo has no remote. What each agent was told is read from
+// the run log the scripted runners keep (harness `runs()`).
 
 test.describe.configure({ mode: "serial" });
 
@@ -71,9 +73,11 @@ const SUMMARY = "Use one WebAuthn library on both sides; büyük İ harfi works 
 const findings = (summary: string) => result({ summary, findings: [] });
 const pass = result({ verdict: "pass", summary: "Looks right.", comments: [] });
 
-// The planner's tokens, reported as a runner reports them, at the heuristic §4.4 estimates from
-// (80,000 in, 8,000 out). The cost it reports is checked against the button's estimate and ceiling.
-const PLANNER_TOKENS = { tokensIn: 80_000, tokensOut: 8_000 };
+// The planner's usage as a runner reports it. A scripted runner cannot measure a real planner, so
+// these are only what the fake says; the test reads back what the daemon recorded for the planning
+// run and checks the spend against the stated ceiling. Real counts against §4.4's 80k/8k heuristic
+// come from the live `goal` flow (packages/daemon/src/live/flows.live.ts).
+const PLANNER_TOKENS = { tokensIn: 61_500, tokensOut: 5_200 };
 const plannerUsage = (costUsd: number): FakeStep => ({
   emit: { type: "usage.update", ...PLANNER_TOKENS, cacheRead: 0, cacheWrite: 0, reasoning: 0, contextUsed: null, contextSize: null, costUsd, costProvenance: "reported" },
 });
@@ -94,14 +98,32 @@ interface GoalRead {
   id: string;
   status: string;
   reason: string | null;
+  budgetUsd: number | null;
+  suggestedBudgetUsd: number | null;
   branch: string | null;
   collapsedTaskId: string | null;
   integration: { taskId: string; reviewPassed: boolean } | null;
   tasks: GoalTask[];
   joins: Array<{ taskId: string; outcome: string; conflictPaths: string[]; afterSha: string | null }>;
   decisions: Array<{ id: string; kind: string; taskId: string | null; answeredAt: string | null }>;
-  revisions: Array<{ planningSpend: { usd: number | null; provenance: string } }>;
+  revisions: Array<{ state: string; error: string | null; planTaskId: string | null; planningSpend: { usd: number | null; provenance: string } }>;
 }
+interface RunRead {
+  role: string;
+  endReason: string | null;
+  tokensIn: number;
+  tokensOut: number;
+  cost: { usd: number | null; provenance: string };
+}
+const taskDetail = (page: Page, taskId: string) => daemon<{ id: string; title: string; status: string; goal: unknown; crew: { members: Array<{ role: string }> } | null; runs: RunRead[] }>(page, "tasks.get", { taskId });
+
+/** The prompts of the runs started for a script key, oldest first. */
+const promptsOf = (key: string) =>
+  h
+    .runs()
+    .filter((r) => r.key === key)
+    .map((r) => r.prompt);
+const WRITERS = [`docs@${TITLES.docs}`, `implementer@${TITLES.server}`, `implementer@${TITLES.client}`];
 
 const goals = (page: Page) => daemon<Array<{ id: string; title: string }>>(page, "goals.list", { projectId: projectId! });
 const goalByText = async (page: Page, text: string) => {
@@ -217,18 +239,31 @@ test("the first goal: explainer card, plan review with the overlap ordered, one 
   await expect(review.getByRole("button", { name: "Stop planning" })).toBeVisible();
   await expect(review.getByRole("checkbox", { name: "Skip 04" })).toBeVisible({ timeout: 20_000 });
   const goal = (await goalByText(page, GOAL))!;
-  // The planning spend from the tokens the runner reported carries its label and stays under the
-  // stated ceiling; the counts are recorded next to the estimate (design §4.4).
+  // One read-only planning run, given the goal quoted.
+  const planner = h.runs().filter((r) => r.role === "goal-planner");
+  expect(planner).toHaveLength(1);
+  expect(planner[0]!.writes).toBe("none");
+  expect(planner[0]!.prompt).toContain(GOAL);
+  // What the daemon recorded for the planning run, read back rather than echoed from the script:
+  // its tokens, and a spend with its label that stays under the ceiling the button stated (§4.4).
+  const planRun = (await taskDetail(page, goal.revisions[0]!.planTaskId!)).runs.find((r) => r.role === "goal-planner")!;
+  expect({ tokensIn: planRun.tokensIn, tokensOut: planRun.tokensOut }).toEqual(PLANNER_TOKENS);
   const spend = goal.revisions[0]!.planningSpend;
   expect(["reported", "estimated"]).toContain(spend.provenance);
   expect(spend.usd).toBeGreaterThan(0);
   expect(spend.usd).toBeLessThanOrEqual(ceiling);
-  test.info().annotations.push({ type: "planner tokens", description: `${PLANNER_TOKENS.tokensIn} in, ${PLANNER_TOKENS.tokensOut} out; planning spend $${spend.usd} ${spend.provenance}, button ~$${estimate} Estimated, ceiling $${ceiling}` });
+  test.info().annotations.push({
+    type: "planning run (scripted runner)",
+    description: `daemon recorded ${planRun.tokensIn} in, ${planRun.tokensOut} out, run cost ${planRun.cost.usd ?? "?"} ${planRun.cost.provenance}; goal planning spend $${spend.usd} ${spend.provenance}; button ~$${estimate} Estimated, ceiling $${ceiling}`,
+  });
+  // The first-goal card's budget is the project's default, and the review's prefill rests on it.
+  expect((await daemon<{ defaultBudgetUsd: number | null }>(page, "goals.preview", { projectId: projectId!, text: GOAL })).defaultBudgetUsd).toBe(5);
+  expect(goal.suggestedBudgetUsd).toBe(5);
 
   // Overlap ordered automatically, with the way out; the report line names the writing tasks it feeds.
   await expect(review.getByText("03 runs after 02: both change src/auth/session.ts")).toBeVisible();
   await expect(review.getByRole("button", { name: "Run side by side anyway" })).toBeVisible();
-  await expect(review.getByText(/^01's report feeds 02 and 03 and 04: you read and accept it before they start$/)).toBeVisible();
+  await expect(review.getByText(/^01's report feeds 02, 03,? and 04: you read and accept it before they start$/)).toBeVisible();
   const client = goal.tasks.find((t) => t.key === "client")!;
   expect(client.dependsOn).toEqual(expect.arrayContaining([{ key: "server", source: "overlap", taskId: expect.any(String) }]));
   // Every cost on the review carries its provenance (planning, four tiles, the last review); nothing has started.
@@ -238,11 +273,22 @@ test("the first goal: explainer card, plan review with the overlap ordered, one 
   await expect(review.getByText("Nothing starts until you approve. You open the pull request.")).toBeVisible();
   expect(goal.tasks.every((t) => !t.released)).toBe(true);
 
+  // The keyboard path (design §3.7): Space on a tile skips it and accepts it again; Ctrl Enter approves.
   const approve = review.getByRole("button", { name: /^Approve and start 4 tasks · ~?\$\d+\.\d+ Estimated$/ });
   await expect(approve).toBeEnabled();
-  await approve.click();
+  const docsTile = review.locator('.gp-tile[data-plan-key="docs"]');
+  await docsTile.focus();
+  await page.keyboard.press("Space");
+  await expect(review.getByRole("checkbox", { name: "Accept 04" })).not.toBeChecked();
+  await expect(review.getByRole("button", { name: /^Approve and start 3 tasks · / })).toBeVisible();
+  await page.keyboard.press("Space");
+  await expect(review.getByRole("checkbox", { name: "Skip 04" })).toBeChecked();
+  await expect(approve).toBeEnabled();
+  await page.keyboard.press("Control+Enter");
   await expect(goalView(page)).toBeVisible({ timeout: 20_000 });
   await expect.poll(async () => (await goalByText(page, GOAL))!.tasks.find((t) => t.key === "research")!.released).toBe(true);
+  // Approved at the budget the review prefilled from the card's default.
+  expect((await goalByText(page, GOAL))!.budgetUsd).toBe(5);
 });
 
 test("a research report reaches the writing tasks only after you accept it", async () => {
@@ -250,17 +296,27 @@ test("a research report reaches the writing tasks only after you accept it", asy
   const view = goalView(page);
   const accept = view.getByRole("button", { name: "Accept report" });
   await expect(accept).toBeVisible({ timeout: 20_000 });
-  await expect(view.getByText(/^Read 01 Compare WebAuthn libraries's report, then accept it/)).toBeVisible();
+  await expect(view.getByText(/^Read the report of 01 Compare WebAuthn libraries, then accept it/)).toBeVisible();
   const before = (await goalByText(page, GOAL))!;
   expect(before.status).toBe("needs_you");
   expect(before.reason).toBe("report");
-  // Waiting for your reading: no writing task was released.
+  // Waiting for your reading: no writing task was released, and no writing agent was started.
   expect(before.tasks.filter((t) => t.key !== "research").map((t) => t.released)).toEqual([false, false, false]);
+  expect(h.runs().filter((r) => WRITERS.includes(r.key))).toEqual([]);
+  // The researcher read the goal too; its report is what you accept.
+  expect(promptsOf(`researcher@${TITLES.research}`)[0]).toContain(GOAL);
   await accept.click();
   await expect.poll(async () => (await goalByText(page, GOAL))!.tasks.filter((t) => t.released).map((t) => t.key).sort(), { timeout: 20_000 }).toEqual(["docs", "research", "server"]);
   // The client waits for the server: same files.
   const waiting = (await goalByText(page, GOAL))!.tasks.find((t) => t.key === "client")!;
   expect(waiting.released).toBe(false);
+  // The accepted report's summary, Turkish casing intact, and the goal quoted reach the writing agents (§4.11).
+  await expect.poll(() => [WRITERS[0]!, WRITERS[1]!].map((k) => promptsOf(k).length), { timeout: 20_000 }).toEqual([1, 1]);
+  for (const key of [WRITERS[0]!, WRITERS[1]!]) {
+    const prompt = promptsOf(key)[0]!;
+    expect(prompt).toContain(SUMMARY);
+    expect(prompt).toContain(GOAL);
+  }
 });
 
 test("tasks merge into the goal branch in order, and a conflicting merge asks you", async () => {
@@ -281,8 +337,12 @@ test("tasks merge into the goal branch in order, and a conflicting merge asks yo
   expect(git(repo, "show", `${goal.branch}:docs/passkeys guide.md`)).toContain("Sign in with a passkey");
   expect(goal.tasks.find((t) => t.key === "client")!.released).toBe(false);
 
+  // The three ways design §4.9 offers, each naming the task it acts on.
+  await expect(view.getByRole("button", { name: "I will merge it myself", exact: true })).toBeEnabled();
+  await expect(view.getByRole("button", { name: "Check again", exact: true })).toBeEnabled();
+  await expect(view.getByRole("button", { name: "Leave 02 out of the goal", exact: true })).toBeEnabled();
   // Your answer: one more run of the server's implementer in its own session; Review runs again.
-  await view.getByRole("button", { name: "Send to the implementer" }).click();
+  await view.getByRole("button", { name: "Send to 02's implementer", exact: true }).click();
   await expect.poll(async () => (await goalByText(page, GOAL))!.tasks.find((t) => t.key === "server")!.joined, { timeout: 40_000 }).not.toBeNull();
   const server = await daemon<{ runs: Array<{ role: string; endReason: string | null }> }>(page, "tasks.get", { taskId: id("server") });
   expect(server.runs.filter((r) => r.role === "implementer")).toHaveLength(2);
@@ -312,6 +372,34 @@ test("the last review passes on the goal branch and opens the pull request gate,
   expect(integration.loop.verdicts.at(-1)).toMatchObject({ verdict: "pass", headSha: head });
   expect(git(repo, "log", "--format=%s", "main").trim()).toBe("init");
   expect(git(repo, "remote").trim()).toBe("");
+  // The client started only after the server joined. It builds on the accepted report and reads the
+  // goal quoted; the server is only an overlap ordering, not a prerequisite, so it is not listed as
+  // a result the client builds on (§4.11).
+  const clientPrompt = promptsOf(`implementer@${TITLES.client}`)[0]!;
+  expect(clientPrompt).toContain(SUMMARY);
+  expect(clientPrompt).toContain(GOAL);
+  expect(clientPrompt).toContain("Its place in the plan: task 03 of 4; it waits for 01.");
+
+  // The goal view lists the merge order with each merge commit (design §3.3).
+  const merges = view.locator(".gv-merges");
+  await merges.locator("summary", { hasText: "Merge order" }).click();
+  await expect(merges.locator("li")).toHaveText([
+    new RegExp(`^04 ${TITLES.docs} · [0-9a-f]{7}$`),
+    new RegExp(`^02 ${TITLES.server} · [0-9a-f]{7}$`),
+    new RegExp(`^03 ${TITLES.client} · [0-9a-f]{7}$`),
+  ]);
+  // The task list (design §3.4): the goal is one group row with its four tasks under it; the
+  // planning and integration tasks never show, and the joined tasks never count on their own
+  // under Ready for review, where the goal counts once.
+  const list = page.locator(".tk-list");
+  const row = list.locator(".gl-row", { hasText: GOAL });
+  await expect(row.locator(".gl-tasks .tk-row")).toHaveCount(4);
+  for (const title of Object.values(TITLES).slice(0, 4)) await expect(row.locator(".gl-tasks").getByText(title, { exact: true })).toBeVisible();
+  const planTitle = (await taskDetail(page, goal.revisions[0]!.planTaskId!)).title;
+  const reviewTitle = (await taskDetail(page, goal.integration!.taskId)).title;
+  await expect(list.getByText(planTitle, { exact: true })).toHaveCount(0);
+  await expect(list.getByText(reviewTitle, { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("tab", { name: /^Ready for review/ }).locator(".num")).toHaveText("1");
 
   await expect(view.getByText("The last review passed on the goal branch. You open the pull request.")).toBeVisible();
   await view.getByRole("button", { name: "Open pull request" }).click();
@@ -358,4 +446,45 @@ test("a plan of one task becomes an ordinary task, with no goal branch", async (
   // Its own worktree branch, the ordinary per-task flow; no goal branch was made for it.
   const branches = git(repo, "branch", "--list", "crewyard/goal/*").split("\n").filter((l) => l.trim());
   expect(branches).toHaveLength(1);
+});
+
+// Fifteen tasks: the strict output schema takes it (it has no bounds), parseGoalPlan refuses it.
+const TOO_MANY = { summary: "Split very finely.", tasks: Array.from({ length: 15 }, (_, i) => task({ key: `t${i + 1}`, title: `Parça ${i + 1}: küçük adım`, kind: "code", mode: "solo", paths: [`src/parça ${i + 1}.ts`], basis: "çok parçaya böl" })) };
+const TOO_MANY_GOAL = "Ayarlar sayfasını çok parçaya böl";
+
+test("a plan the checks refuse twice fails with the parser's words, and Run as one task proposes a crew", async () => {
+  const { page } = h;
+  h.setScripts({
+    // The first run and the corrective turn both return fifteen tasks; whichever key the corrective
+    // turn resumes under, it gets the same plan.
+    "goal-planner": [[running, say("read src"), plannerUsage(0.02), result(TOO_MANY)]],
+    "resume@Your plan was refused": [[running, plannerUsage(0.01), result(TOO_MANY)]],
+  });
+  await composerMode(page, "Orchestra");
+  await page.getByLabel("New goal").fill(TOO_MANY_GOAL);
+  await composer(page).getByRole("button", { name: /^Plan goal · ~\$\d+\.\d+ Estimated$/ }).click();
+  const review = await planReview(page);
+  await expect(review.getByText("Planning failed")).toBeVisible({ timeout: 20_000 });
+  await expect(review.getByText("the plan has 15 tasks; the limit is 8")).toBeVisible();
+  // Exactly one corrective turn, carrying the parser's words; no third planning run on its own.
+  const corrective = h.runs().filter((r) => r.prompt.includes("Your plan was refused"));
+  expect(corrective).toHaveLength(1);
+  expect(corrective[0]!.prompt).toContain("the plan has 15 tasks; the limit is 8");
+  expect(corrective[0]!.writes).toBe("none");
+  const failed = (await goalByText(page, TOO_MANY_GOAL))!;
+  expect(failed.revisions.at(-1)).toMatchObject({ state: "failed", error: "the plan has 15 tasks; the limit is 8" });
+  expect(failed.tasks).toEqual([]);
+  // Retrying is one more paid run, so its button states the cost; nothing retries by itself.
+  await expect(review.getByRole("button", { name: /^Retry planning · ~\$\d+\.\d+ Estimated/ })).toBeEnabled();
+  expect(h.runs().filter((r) => (r.role === "goal-planner" && r.prompt.includes(TOO_MANY_GOAL)) || r.prompt.includes("Your plan was refused"))).toHaveLength(2);
+
+  await review.getByRole("button", { name: "Run as one task" }).click();
+  await expect.poll(async () => (await goalByText(page, TOO_MANY_GOAL))?.collapsedTaskId ?? null, { timeout: 20_000 }).not.toBeNull();
+  const one = await taskDetail(page, (await goalByText(page, TOO_MANY_GOAL))!.collapsedTaskId!);
+  // One ordinary Crew task, proposed for you to approve: nothing started.
+  expect(one.status).toBe("proposed");
+  expect(one.goal ?? null).toBeNull();
+  expect(one.crew!.members.length).toBeGreaterThan(0);
+  expect(one.runs).toEqual([]);
+  await expect(page.getByRole("region", { name: /Suggested crew for/ })).toBeVisible();
 });
