@@ -252,7 +252,5 @@ export const TOKENS_BY_SIZE: Record<TaskSize, { tokensIn: number; tokensOut: num
  */
 export const TURN_OVERHEAD_TOKENS: Partial<Record<RunnerId, number>> = { codex: 14_800 };
 
-const DOC_PATH = /(^|[\\/])(docs?|documentation)([\\/]|$)|\.(md|mdx|txt|rst)$|(^|[\\/])(README|CHANGELOG|LICENSE|NOTICE)[^\\/]*$/i;
-
-/** True when every path is documentation, the only thing the Docs role may write. */
-export const onlyDocPaths = (paths: string[]) => paths.length > 0 && paths.every((p) => DOC_PATH.test(p));
+/** True when every path is documentation, the only thing the Docs role may write; the rule lives in core. */
+export { onlyDocPaths } from "@crewyard/core";

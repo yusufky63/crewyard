@@ -77,6 +77,33 @@ describe("FakeAdapter", () => {
       expect(existsSync(join(cwd, "..", "outside.txt"))).toBe(false);
       expect(existsSync(join(cwd, "..", "abs.txt"))).toBe(false);
     });
+
+    // Read-only roles run in the project's own checkout (no worktree), so this is what keeps a
+    // scripted planner, reviewer or researcher from writing there, as a real runner's engine refuses.
+    it("refuses every write in a read-only run, such as the goal planner's", async () => {
+      const cwd = folder();
+      const adapter = new FakeAdapter([{ write: { path: "src/plan notları.ts", text: "x" } }, { result: { summary: "Plan", tasks: [] } }]);
+      const run = await adapter.start({ ...req, cwd, prompt: "Role: Goal planner", outputSchema: GOAL_PLAN_OUTPUT, policy: { writes: "none", allowCommands: [], network: "denied" } });
+      await expect((async () => {
+        for await (const _ of adapter.events(run)) void _;
+      })()).rejects.toThrow(/refused by the run's policy \(read-only\)/);
+      expect(existsSync(join(cwd, "src"))).toBe(false);
+    });
+
+    it("lets a docs run write documentation only", async () => {
+      const cwd = folder();
+      const docs = { ...req, cwd, policy: { writes: "docs" as const, allowCommands: [], network: "ask" as const } };
+      const ok = new FakeAdapter([{ write: { path: "CHANGELOG.md", text: "- Passkey\n" } }, { write: { path: "docs/giriş kılavuzu.md", text: "# Giriş\n" } }]);
+      for await (const _ of ok.events(await ok.start(docs))) void _;
+      expect(readFileSync(join(cwd, "CHANGELOG.md"), "utf8")).toBe("- Passkey\n");
+      expect(readFileSync(join(cwd, "docs", "giriş kılavuzu.md"), "utf8")).toBe("# Giriş\n");
+      const bad = new FakeAdapter([{ write: { path: "src/a.ts", text: "x" } }]);
+      const run = await bad.start(docs);
+      await expect((async () => {
+        for await (const _ of bad.events(run)) void _;
+      })()).rejects.toThrow(/refused by the run's policy \(docs only\)/);
+      expect(existsSync(join(cwd, "src"))).toBe(false);
+    });
   });
 
   describe("result steps", () => {

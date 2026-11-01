@@ -176,6 +176,14 @@ export interface RolePolicy {
   network: "ask" | "allowed" | "denied";
 }
 
+const DOC_PATH = /(^|[\\/])(docs?|documentation)([\\/]|$)|\.(md|mdx|txt|rst)$|(^|[\\/])(README|CHANGELOG|LICENSE|NOTICE)[^\\/]*$/i;
+
+/**
+ * True when every path is documentation, the only thing a `writes: "docs"` role may write. Lives
+ * here so the daemon's approval layer and the scripted runner refuse exactly the same paths.
+ */
+export const onlyDocPaths = (paths: string[]) => paths.length > 0 && paths.every((p) => DOC_PATH.test(p));
+
 export interface StartRequest {
   profile: Profile;
   cwd: string;
