@@ -53,6 +53,8 @@ export interface GoalViewDeps {
   hold(task: TaskRow): Reason | null;
   /** `Pause all goals`. */
   pausedAll(): boolean;
+  /** GoalRunner.reviewEstimate: the last review's estimate before it exists (a dry run that writes nothing). */
+  reviewEstimate(goalId: string): Promise<CostEstimate>;
 }
 
 /** Longest error or decision text the view passes on; the full text stays in the store and the events. */
@@ -215,7 +217,25 @@ export class GoalViews extends Part {
       integration: goal.integration_task_id ? this.integrationView(goal, goal.integration_task_id) : null,
       stuck: state.stuck,
       suggestedBudgetUsd: latest && latestState === "ready" ? this.suggestedBudget(goal, latest, tasks) : null,
+      reviewEstimate: null,
     };
+  }
+
+  /**
+   * The goal view with the last review priced before approval (design §3.2 Totals, §4.12): what
+   * every goals handler answers. goals.approve adds that review's estimate to the split, so the
+   * plan review must show it, count it in the total and the prefilled budget, and offer a typed
+   * budget when it is Unknown. A plan of one task becomes an ordinary task with no last review.
+   */
+  async detailPriced(goalId: string): Promise<GoalDetail> {
+    const d = this.detail(goalId);
+    const latest = d.revisions.at(-1);
+    if (d.integration || !latest || latest.state !== "ready") return d;
+    const shown = d.tasks.filter((t) => t.revision === latest.revision && !t.discarded && t.accepted !== false);
+    if ((d.approvedRevision === null && shown.length === 1) || !shown.some((t) => t.writes)) return d;
+    const estimate = await this.deps.reviewEstimate(goalId).catch(() => UNKNOWN);
+    const goal = this.goal(goalId);
+    return { ...d, reviewEstimate: estimate, suggestedBudgetUsd: this.suggestedBudget(goal, this.plans(goalId).at(-1)!, d.tasks, estimate) };
   }
 
   private revisionView(goal: GoalRow, p: GoalPlanRow): GoalRevisionView {
@@ -377,8 +397,9 @@ export class GoalViews extends Part {
   }
 
   /** The plan review's prefill: max(project default, the known total of the plan's tasks rounded up x 1.5). */
-  private suggestedBudget(goal: GoalRow, latest: GoalPlanRow, tasks: GoalTaskView[]): number {
-    const known = tasks.filter((t) => t.revision === latest.revision && t.accepted !== false && !t.discarded).reduce((a, t) => a + Math.max(0, t.estimate.provenance === "unknown" ? 0 : (t.estimate.usd ?? 0)), 0);
+  private suggestedBudget(goal: GoalRow, latest: GoalPlanRow, tasks: GoalTaskView[], review: CostEstimate | null = null): number {
+    const knownOf = (e: CostEstimate) => Math.max(0, e.provenance === "unknown" ? 0 : (e.usd ?? 0));
+    const known = tasks.filter((t) => t.revision === latest.revision && t.accepted !== false && !t.discarded).reduce((a, t) => a + knownOf(t.estimate), 0) + (review ? knownOf(review) : 0);
     const def = this.setting(GOAL_SETTINGS.goalBudget(goal.project_id));
     return defaultGoalBudget(known, typeof def === "number" && def > 0 ? def : null);
   }

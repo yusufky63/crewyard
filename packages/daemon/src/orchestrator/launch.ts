@@ -38,6 +38,11 @@ export interface LauncherDeps {
   goalBase(task: TaskRow): string | null;
   /** What a goal task is told besides its role prompt (design §4.11); empty outside a goal. */
   goalPrompt(task: TaskRow): Promise<string>;
+  /**
+   * GoalRunner.goalHold: why the task's goal starts no new run now (paused, Pause all goals, stopped),
+   * or null. Checked on every launch, so no path (a retry, a follow-up, a handoff) gets around it.
+   */
+  goalHold(taskId: string): "goal.paused" | "goal.paused_all" | "goal.stopped" | null;
 }
 
 export class Launcher extends Part {
@@ -52,6 +57,9 @@ export class Launcher extends Part {
    * counts it at once; a failure to start ends it as failed with a code.
    */
   async launch(spec: LaunchSpec): Promise<string> {
+    // The last line of design §5.2: whatever asked for this run, a paused goal's task never starts one.
+    const hold = this.deps.goalHold(spec.task.id);
+    if (hold) throw new OrchestratorError(hold);
     const runId = this.insertRun(spec);
     await this.boot(runId, spec);
     return runId;

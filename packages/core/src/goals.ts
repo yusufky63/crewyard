@@ -127,6 +127,12 @@ export type GoalPlanRefusal = "too_many_tasks" | "invalid";
 export type GoalPlanParse = { ok: true; value: GoalPlan } | { ok: false; error: string; code: GoalPlanRefusal; count?: number; limit?: number };
 
 export const GOAL_TASK_KEY = /^[a-z0-9-]{1,16}$/;
+/**
+ * Keys a plan task may not take: the goal's own last review and planning task go by these in the
+ * task list and in `goals.approve`'s typed budgets, so a plan task under one of them would share
+ * the last review's budget and its audit entry.
+ */
+export const GOAL_RESERVED_KEYS: ReadonlySet<string> = new Set(["review", "plan"]);
 
 const PLAN_KEYS = new Set(["summary", "tasks"]);
 const TASK_KEYS = new Set(["key", "title", "kind", "mode", "size", "description", "acceptance", "basis", "dependsOn", "paths", "reason", "priority"]);
@@ -278,6 +284,7 @@ export function parseGoalTask(value: unknown, earlier: ReadonlySet<string>, at =
   if (ex) return { ok: false, error: ex };
   if (typeof t.key !== "string" || !GOAL_TASK_KEY.test(t.key)) return { ok: false, error: `${at}.key must be 1 to 16 lowercase letters, digits or dashes` };
   const key = t.key;
+  if (GOAL_RESERVED_KEYS.has(key)) return { ok: false, error: `${at}.key "${key}" is reserved for the goal's own tasks; pick another` };
   if (earlier.has(key)) return { ok: false, error: `${at}.key "${key}" is used twice` };
   // A field you left out of your own task reads as its default; the planner must send every field.
   const or = (v: unknown, fallback: unknown): unknown => (user && v === undefined ? fallback : v);

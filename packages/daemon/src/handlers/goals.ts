@@ -32,7 +32,8 @@ function taskId(v: unknown): string {
 
 export function createGoalsHandlers(ctx: HandlerContext, overrides?: Partial<OrchestratorOptions>): HandlerMap<GoalsIpc> {
   const o = orchestratorFor(ctx, overrides);
-  const detail = (id: string): GoalDetail => o.goalViews.detail(id);
+  // Every answer prices the last review before approval, so a cached goal never loses that line.
+  const detail = (id: string): Promise<GoalDetail> => o.goalViews.detailPriced(id);
   // Optional numbers stay out when absent, so "not given" never reads as a value.
   const opt = <K extends string>(key: K, v: unknown): Partial<Record<K, number>> => (v === undefined ? {} : ({ [key]: v } as Record<K, number>));
 
@@ -57,8 +58,12 @@ export function createGoalsHandlers(ctx: HandlerContext, overrides?: Partial<Orc
       await o.reviseGoal(goalId(id), revision, note);
       return detail(id);
     },
-    "goals.replan": async ({ goalId: id, note }) => {
+    "goals.replan": async ({ goalId: id, note, decisionId }) => {
+      if (decisionId !== undefined && (typeof decisionId !== "string" || !decisionId)) throw new GoalError("goal.decision_not_found");
+      // A decision's Replan is checked first, so a decision that cannot take it never costs a planning run.
+      if (decisionId) o.goals.answerable(goalId(id), decisionId, "replan");
       await o.replanGoal(goalId(id), note);
+      if (decisionId) await o.goals.decide(goalId(id), decisionId, "replan");
       return detail(id);
     },
     "goals.addTask": async ({ goalId: id, draft, dependsOn }) => {

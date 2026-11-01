@@ -27,6 +27,11 @@ export interface DispatcherDeps {
    * same admission as every other step instead of taking a slot outside it.
    */
   goalTurns(admit: (task: TaskRow, m: MemberRow, profileId: string) => Promise<Reason | null>): Promise<void>;
+  /**
+   * GoalRunner.goalHeld, read fresh. The pass's `held` set is a snapshot taken before it awaited
+   * git; a Pause clicked meanwhile must still stop this pass from starting the goal's steps.
+   */
+  goalHeld(taskId: string): boolean;
 }
 
 const NO_GOAL_PASS = { held: new Set<string>(), rerun: new Set<string>() } as const;
@@ -68,7 +73,7 @@ export class Dispatcher extends Part {
     // goal tasks it just released, under the same caps.
     await this.deps.goalTurns((task, m, profileId) => this.admitStep(task, m, profileId));
     for (const task of this.db.schedulable()) {
-      if (goals.held.has(task.id)) continue;
+      if (goals.held.has(task.id) || this.deps.goalHeld(task.id)) continue;
       const status = this.db.status(task);
       if (status === "failed" || status === "cancelled") continue;
       const crew = this.db.crew(task.id)!;
@@ -114,6 +119,8 @@ export class Dispatcher extends Part {
           continue;
         }
         this.blocked.delete(m.id);
+        // Admission awaited the directory; a goal paused in the meantime starts nothing.
+        if (this.deps.goalHeld(task.id)) break;
         // A re-run stays on the profile that last ran the step (a handoff may have moved it off the proposal).
         if (again) await this.deps.launch({ task, member: m, target: { profileId: again.profile_id, runner: again.runner, model: again.model }, resumedFrom: again.id });
         else await this.deps.launch({ task, member: m, target: chosen! });

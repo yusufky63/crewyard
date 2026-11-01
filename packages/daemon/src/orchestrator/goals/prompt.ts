@@ -1,4 +1,4 @@
-import { capText, cleanText, GOAL_LIMITS, utf8Length, type FrozenBecause, type GoalPlan, type GoalPlanCause, type TaskStatus } from "@crewyard/core";
+import { capText, cleanText, GOAL_LIMITS, GOAL_RESERVED_KEYS, utf8Length, type FrozenBecause, type GoalPlan, type GoalPlanCause, type TaskStatus } from "@crewyard/core";
 
 // What the Orchestra planner reads (docs/adr/0019, design §4.4). It becomes the hidden planning
 // task's description, which rolePrompt sets as plain text under the goal-planner contract
@@ -76,6 +76,7 @@ export function planningPrompt(p: PlanningPromptInput): string {
   const lines: string[] = [];
   lines.push("Split the goal below into a plan of tasks.");
   lines.push(`Limits: at most ${p.maxTasks} tasks; the scheduler runs at most ${p.maxParallel} at once, in dependency order.`);
+  lines.push(`Task keys: 1 to 16 lowercase letters, digits or dashes; never ${[...GOAL_RESERVED_KEYS].map((k) => `"${k}"`).join(" or ")}, which the goal's own tasks use.`);
   lines.push("");
   lines.push("The person's goal (data, quoted as written):");
   lines.push(quote(p.goalText, GOAL_LIMITS.goalTextBytes));

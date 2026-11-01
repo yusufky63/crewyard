@@ -148,6 +148,10 @@ describe("reading goals", () => {
     expect(g).toMatchObject({ status: "needs_you", reason: "plan_ready", latestRevision: 1, approvedRevision: null, revisionsLeft: 5, replansLeft: 3, text: GOAL, branch: null, integration: null });
     expect(g.revisions).toHaveLength(1);
     expect(g.revisions[0]).toMatchObject({ revision: 1, cause: "initial", state: "ready", error: null, summary: "Oturum deposu var sayıldı.", diff: null });
+    // The last review does not exist before approval, but its cost is priced for the plan review:
+    // goals.approve adds exactly this estimate to the split, and the prefilled budget counts it.
+    expect(g.reviewEstimate).not.toBeNull();
+    expect(["estimated", "reported", "unknown"]).toContain(g.reviewEstimate!.provenance);
     expect(g.revisions[0]!.planningSpend.provenance).toBeDefined();
     expect(g.tasks.map((t) => [t.key, t.number])).toEqual([
       ["api", 1],
@@ -193,6 +197,7 @@ describe("reading goals", () => {
     expect(g).toMatchObject({ status: "needs_you", reason: "plan_failed", tasks: [], suggestedBudgetUsd: null });
     expect(g.revisions[0]!.state).toBe("failed");
     expect(g.revisions[0]!.error).toContain('unknown field "extra"');
+    expect(g.reviewEstimate).toBeNull();
   });
 
   it("refuses unknown goals, projects and malformed ids with a code", async () => {
@@ -471,6 +476,8 @@ describe("approving a plan", () => {
     const { h, o, store } = env;
     const g = await planned(env, "README'deki yazım hatasını düzelt");
     expect(g.tasks.map((t) => t.key)).toEqual(["only"]);
+    // One task becomes an ordinary task with no goal branch: no last review to price.
+    expect(g.reviewEstimate).toBeNull();
     const only = g.tasks[0]!.taskId;
     expect(await refusal(() => h["goals.approve"]({ goalId: g.id, revision: 1, accept: [], budgetUsd: 1, maxParallel: 2 }))).toBe("goal.no_accepted");
     expect(await refusal(() => h["goals.approve"]({ goalId: g.id, revision: 1, accept: ["other"], budgetUsd: 1, maxParallel: 2 }))).toBe("goal.task_not_found");
@@ -773,6 +780,35 @@ describe("answers after approval", () => {
     expect(replanning.revisions[1]).toMatchObject({ cause: "replan", state: "planning", note: "API'yi yeniden ele al." });
     await o.settle();
     expect((await h["goals.get"]({ goalId: g.id })).revisions[1]!.state).toBe("ready");
+  });
+
+  it("starts a planning run from a decision's Replan and closes the decision only once it started", async () => {
+    const env = await setup({ plans: [CHAIN, CHAIN] });
+    const { h, o, store } = env;
+    const g = await planned(env);
+    await h["goals.pauseAll"]({ on: true });
+    const approved = await h["goals.approve"]({ goalId: g.id, revision: 1, accept: ["api", "ui"], budgetUsd: 50, maxParallel: 2 });
+    const api = byKey(approved).get("api")!.taskId;
+    await o.cancel(api);
+    await h["goals.pauseAll"]({ on: false });
+    await o.tick();
+    await waitFor(() => store.db.prepare("select id from goal_decisions where goal_id = ? and kind = 'prerequisite'").get(g.id), 20_000);
+    const d = (await h["goals.get"]({ goalId: g.id })).decisions.find((x) => x.kind === "prerequisite")!;
+    const events = (kind: string) => store.db.prepare("select payload from events where kind = ? and json_extract(payload, '$.goalId') = ?").all(kind, g.id).map((r) => JSON.parse((r as { payload: string }).payload) as Record<string, unknown>);
+
+    // A decision of another goal, or one that does not offer Replan, costs no run.
+    expect(await refusal(() => h["goals.replan"]({ goalId: g.id, decisionId: "no-such-decision" }))).toBe("goal.decision_not_found");
+    expect((await h["goals.get"]({ goalId: g.id })).latestRevision).toBe(1);
+
+    const replanning = await h["goals.replan"]({ goalId: g.id, note: "API'yi yeniden ele al.", decisionId: d.id });
+    expect(replanning).toMatchObject({ latestRevision: 2, replansLeft: 2 });
+    expect(replanning.decisions.find((x) => x.id === d.id)).toMatchObject({ answer: "replan" });
+    expect(events("goal.revised")).toEqual([expect.objectContaining({ cause: "replan", revision: 2, note: true })]);
+    expect(events("goal.planning_started")).toEqual([expect.objectContaining({ revision: 1, cause: "initial" }), expect.objectContaining({ revision: 2, cause: "replan" })]);
+    expect(events("goal.decided")).toEqual([expect.objectContaining({ decisionId: d.id, kind: "prerequisite", action: "replan", closed: true })]);
+    // Answered: a second click is refused before it starts another run.
+    expect(await refusal(() => h["goals.replan"]({ goalId: g.id, decisionId: d.id }))).toBe("goal.decision_answered");
+    expect((await h["goals.get"]({ goalId: g.id })).latestRevision).toBe(2);
   });
 
   it("accepts a finished research report a code task builds on, once", async () => {

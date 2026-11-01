@@ -225,6 +225,12 @@ export interface GoalDetail extends GoalSummary {
   stuck: { taskId: string; waitsFor: string; why: GoalUnmet } | null;
   /** The plan review's prefilled goal budget: max(project default, known total rounded up x 1.5). */
   suggestedBudgetUsd: number | null;
+  /**
+   * Before the goal has its last review: that review's estimate, which goals.approve adds to the
+   * budget split, so the plan total and the Approve button price it before the click (design §3.2).
+   * Null once `integration` exists, for a plan with no writing task, and for a plan of one task.
+   */
+  reviewEstimate: CostEstimate | null;
 }
 
 /** What `Plan goal` will cost and whether it can run, before any click (writes nothing). */
@@ -294,8 +300,12 @@ export interface GoalsIpc {
   };
   /** A new planning run with your note; edited tasks are frozen. Before approval, at most 5. */
   "goals.revise": { params: { goalId: string; revision: number; note: string }; result: GoalDetail };
-  /** A new planning run after approval; done, running, released and joined tasks are frozen. At most 3. */
-  "goals.replan": { params: { goalId: string; note?: string }; result: GoalDetail };
+  /**
+   * A new planning run after approval; done, running, released and joined tasks are frozen. At most 3.
+   * With `decisionId`, the run answers that open decision's `Replan`: the decision is checked before
+   * the run starts and closed once it has.
+   */
+  "goals.replan": { params: { goalId: string; note?: string; decisionId?: string }; result: GoalDetail };
   /** A one-task revision you write, with no planner call; approved like a plan. `dependsOn` are task ids. */
   "goals.addTask": { params: { goalId: string; draft: GoalTaskDraft; dependsOn: string[] }; result: GoalDetail };
   /** Edits a tile of an unapproved revision; the task is then kept on Revise. */

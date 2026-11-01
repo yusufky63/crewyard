@@ -18,9 +18,25 @@ export interface FallbackDeps {
   insertRequest(taskId: string, runId: string | null, nativeId: string | null, risk: RequestRow["risk"], payload: RequestPayload): string;
   launch(spec: LaunchSpec): Promise<string>;
   proceed(runId: string, text: string): Promise<void>;
+  /**
+   * GoalRunner.goalHeld: whether the task's Orchestra goal is paused, stopped or under Pause all
+   * goals, read fresh. A timer armed before the click must not start a run after it (design §5.2).
+   */
+  goalHeld(taskId: string): boolean;
+}
+
+interface HeldRetry {
+  attempt: number;
+  delayMs: number;
+  failure: Failure;
 }
 
 export class Fallback extends Part {
+  /** Same-profile retries whose timer fired while their goal was paused; they start on Resume. */
+  private readonly heldRetries = new Map<string, HeldRetry>();
+  /** Wait-for-reset resumes whose window reset while their goal was paused. */
+  private readonly heldResets = new Set<string>();
+
   constructor(ctx: OrchestratorContext, private readonly deps: FallbackDeps) {
     super(ctx);
   }
@@ -109,6 +125,14 @@ export class Fallback extends Part {
     const task = this.db.task(run.task_id);
     // A stop, retry, resume, handoff or cancel in the meantime cleared resume_at.
     if (run.resume_at === null || task.cancelled_at || this.superseded(run)) return;
+    // A paused goal starts no new run: the retry keeps waiting (resume_at stays) until Resume.
+    if (this.deps.goalHeld(task.id)) {
+      if (!this.heldRetries.has(runId)) this.audit(task.id, runId, "run.retry_held", { attempt, reason: "goal_paused" });
+      this.heldRetries.set(runId, { attempt, delayMs, failure });
+      this.emitTask(task.id, "retried");
+      return;
+    }
+    this.heldRetries.delete(runId);
     this.db.exec("update runs set resume_at = null where id = ?", runId);
     const adapter = this.adapters.get(run.runner);
     const native = Boolean(adapter?.capabilities.resume && run.native_session_id);
@@ -133,6 +157,8 @@ export class Fallback extends Part {
   /** Drops a pending same-profile retry; whatever you chose instead takes over the step. */
   cancelAutoRetry(runId: string): void {
     this.clearTimer(runId);
+    this.heldRetries.delete(runId);
+    this.heldResets.delete(runId);
     this.db.exec("update runs set resume_at = null where id = ? and ended_at is not null", runId);
   }
 
@@ -174,6 +200,13 @@ export class Fallback extends Part {
   private async resumeAfterReset(runId: string): Promise<void> {
     const run = this.db.run(runId);
     if (run.ended_at) return;
+    // The window reset while the goal was paused: the run stays paused until Resume.
+    if (this.deps.goalHeld(run.task_id)) {
+      if (!this.heldResets.has(runId)) this.audit(run.task_id, runId, "run.resume_held", { reason: "goal_paused" });
+      this.heldResets.add(runId);
+      return;
+    }
+    this.heldResets.delete(runId);
     this.db.exec("update runs set limit_reached = 0, paused_at = null, resume_at = null where id = ?", runId);
     try {
       await this.deps.proceed(runId, "Your usage window has reset. Continue the task where you stopped.");
@@ -182,6 +215,27 @@ export class Fallback extends Part {
     } catch (err) {
       this.db.exec("update runs set paused_at = ? where id = ?", this.iso(), runId);
       await this.offerHandoff(this.db.run(runId), this.db.task(run.task_id), "manual", { trigger: "limit", window: null, resetsAt: null }, errorCode(err));
+    }
+  }
+
+  /**
+   * Resume goal or lifting Pause all goals: the retries and resumes that came due while the goal was
+   * paused go ahead now, unless something else took the step over in the meantime.
+   */
+  async releaseHeld(): Promise<void> {
+    for (const [runId, held] of [...this.heldRetries]) {
+      const run = this.db.run(runId);
+      if (this.deps.goalHeld(run.task_id)) continue;
+      // Dropped first: autoRetry adds it back if it must still wait, and skips it if you took over.
+      this.heldRetries.delete(runId);
+      await this.autoRetry(runId, held.attempt, held.delayMs, held.failure);
+    }
+    for (const runId of [...this.heldResets]) {
+      const run = this.db.run(runId);
+      if (this.deps.goalHeld(run.task_id)) continue;
+      this.heldResets.delete(runId);
+      // A resume, handoff or stop in the meantime cleared resume_at; that choice stands.
+      if (run.resume_at !== null) await this.resumeAfterReset(runId);
     }
   }
 

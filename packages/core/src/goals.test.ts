@@ -205,6 +205,9 @@ describe("parseGoalTask (Add task and tile edits)", () => {
     expect(parseGoalTask(task("server"), others)).toMatchObject({ ok: false, error: 'task.key "server" is used twice' });
     expect(parseGoalTask(task("docs", { paths: ["C:/x"] }), others)).toMatchObject({ ok: false });
     expect(parseGoalTask({ ...task("docs"), run: "now" }, others)).toMatchObject({ ok: false, error: 'task has an unknown field "run"' });
+    // The last review and the planning task go by these keys in typed budgets and the task list.
+    expect(parseGoalTask(task("review", { kind: "review" }), others)).toMatchObject({ ok: false, error: `task.key "review" is reserved for the goal's own tasks; pick another` });
+    expect(parseGoalTask(task("plan"), others)).toMatchObject({ ok: false, error: expect.stringContaining("reserved") });
   });
 
   // A GoalTaskDraft as `Add task` sends it, with the key the daemon assigns.

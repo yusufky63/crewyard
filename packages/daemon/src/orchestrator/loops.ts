@@ -370,9 +370,14 @@ export interface LoopRunnerDeps {
   launch(spec: LaunchSpec): Promise<string>;
   /** Whether an Orchestra goal manages the task (TaskFlow.goalManaged): its docs work is merged by commit. */
   goalManaged(taskId: string): boolean;
+  /** GoalRunner.goalHeld: the task's goal is paused, stopped or under Pause all goals, read fresh. */
+  goalHeld(taskId: string): boolean;
 }
 
 export class LoopRunner extends Part {
+  /** Review-loop relaunches that came due while their goal was paused, by task: they start on Resume. */
+  private readonly heldRelaunches = new Map<string, LaunchSpec>();
+
   constructor(ctx: OrchestratorContext, private readonly deps: LoopRunnerDeps) {
     super(ctx);
   }
@@ -514,7 +519,7 @@ export class LoopRunner extends Part {
     const cap = this.deps.capFor(task.id, null, await this.candidateFor(last));
     if (cap) return stop("stop_spend_cap", { code: "loop.spend_cap", params: { cap: cap.kind } });
     this.decide(writer.id, task.id, run.id, "review_changes", { code: "loop.review_changes", params: { comments: verdict.comments.length, sha } }, attempts + 1, max);
-    await this.deps.launch({
+    const spec: LaunchSpec = {
       task,
       member: writer,
       target: { profileId: last.profile_id, runner: last.runner, model: last.model },
@@ -522,7 +527,30 @@ export class LoopRunner extends Part {
       prompt: reviewChangesMessage({ verdict, attempt: attempts + 1, max }),
       resumeRef: { runner: last.runner, sessionId: last.native_session_id },
       resumedFrom: last.id,
-    });
+    };
+    // A paused goal starts no new run (design §5.2): the comments wait for Resume.
+    if (this.deps.goalHeld(task.id)) {
+      this.heldRelaunches.set(task.id, spec);
+      this.audit(task.id, run.id, "loop.relaunch_held", { reason: "goal_paused" });
+      return;
+    }
+    await this.deps.launch(spec);
+  }
+
+  /**
+   * Resume goal or lifting Pause all goals: the review-loop relaunches held meanwhile start now, if
+   * the step they continue is still the latest one (a retry or a cancel in between takes over).
+   */
+  async releaseHeld(): Promise<void> {
+    for (const [taskId, spec] of [...this.heldRelaunches]) {
+      if (this.deps.goalHeld(taskId)) continue;
+      this.heldRelaunches.delete(taskId);
+      const task = this.db.task(taskId);
+      const runs = this.db.runs(taskId);
+      const last = runs.filter((r) => r.member_id === spec.member.id).at(-1);
+      if (task.cancelled_at || !last || last.id !== spec.resumedFrom || this.db.successor(last, runs)) continue;
+      await this.deps.launch({ ...spec, task });
+    }
   }
 
   /**

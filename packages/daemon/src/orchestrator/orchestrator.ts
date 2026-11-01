@@ -154,6 +154,7 @@ export class Orchestrator {
       launch: (spec) => this.launcher.launch(spec),
       goalPass: () => this.goals.pass(),
       goalTurns: (admit) => this.goalPlanner.correctiveTurns(admit),
+      goalHeld: (taskId) => this.goals.goalHeld(taskId),
     });
     this.launcher = new Launcher(ctx, {
       reviewCheckout: (runId, task, wt) => this.loopRunner.reviewCheckout(runId, task, wt),
@@ -170,6 +171,7 @@ export class Orchestrator {
       pump: (runId, live) => this.lifecycle.pump(runId, live),
       goalBase: (task) => this.goals.goalBase(task),
       goalPrompt: (task) => this.goals.goalPrompt(task),
+      goalHold: (taskId) => this.goals.goalHold(taskId),
     });
     this.lifecycle = new RunLifecycle(ctx, {
       confirmHandoff: (targetRunId) => this.handoffs.confirmHandoff(targetRunId),
@@ -229,6 +231,7 @@ export class Orchestrator {
       insertRequest: (taskId, runId, nativeId, risk, payload) => this.inbox.insertRequest(taskId, runId, nativeId, risk, payload),
       launch: (spec) => this.launcher.launch(spec),
       proceed: (runId, text) => this.launcher.proceed(runId, text),
+      goalHeld: (taskId) => this.goals.goalHeld(taskId),
     });
     this.handoffs = new Handoffs(ctx, {
       cancelAutoRetry: (runId) => this.fallback.cancelAutoRetry(runId),
@@ -251,6 +254,7 @@ export class Orchestrator {
       capFor: (taskId, runId, candidate) => this.budget.capFor(taskId, runId, candidate),
       launch: (spec) => this.launcher.launch(spec),
       goalManaged: (taskId) => this.taskFlow.goalManaged(taskId),
+      goalHeld: (taskId) => this.goals.goalHeld(taskId),
     });
     this.hibernator = new Hibernator(ctx, {
       continueRun: (runId, text) => this.launcher.continueRun(runId, text),
@@ -299,6 +303,10 @@ export class Orchestrator {
       followUp: (runId, text) => this.messages.followUp(runId, text),
       replacements: (goalId, revision) => this.goalPlanner.replacements(goalId, revision),
       applyReplacements: (goalId, revision) => this.goalPlanner.applyReplacements(goalId, revision),
+      releaseHeld: async () => {
+        await this.fallback.releaseHeld();
+        await this.loopRunner.releaseHeld();
+      },
       tick: () => this.dispatcher.tick(),
     });
     // What goals.list and goals.get read, and your edits to an unapproved plan (docs/adr/0019).
@@ -308,6 +316,7 @@ export class Orchestrator {
       integration: (goalId) => this.goals.integrationState(goalId),
       hold: (task) => this.goals.goalRef(task)?.hold ?? null,
       pausedAll: () => this.goals.pausedAllState(),
+      reviewEstimate: (goalId) => this.goals.reviewEstimate(goalId),
     });
     this.goalEdits = new GoalEditor(ctx, {
       edit: (taskId, patch, how) => this.taskFlow.edit(taskId, patch, how),

@@ -304,6 +304,11 @@ export interface GoalRunnerDeps {
    * `goal.plan_moved` when a replaced task started meanwhile, which rolls the approval back.
    */
   applyReplacements(goalId: string, revision: number): string[];
+  /**
+   * Fallback.releaseHeld and LoopRunner.releaseHeld: the retries, resumes and review-loop relaunches
+   * that came due while a goal was paused start on Resume or when Pause all goals is lifted.
+   */
+  releaseHeld(): Promise<void>;
   tick(): Promise<void>;
 }
 
@@ -441,6 +446,23 @@ export class GoalRunner extends Part {
       tasks: this.facts(goal.id),
       integration: this.integrationFacts(goal),
     });
+  }
+
+  /**
+   * Why a goal-owned task (a plan task, the last review or a planning run) may start no new run now,
+   * read from fresh rows: its goal is stopped, paused, or Pause all goals is on. Null for any other
+   * task, and for the ordinary task a one-task plan became. Launches that do not go through the
+   * pass (a scheduled retry, a reset, the review loop, a follow-up) check this at the moment they start.
+   */
+  goalHold(taskId: string): "goal.paused" | "goal.paused_all" | "goal.stopped" | null {
+    const gt = this.rows.goalTask(taskId);
+    const goal = gt ? this.rows.goal(gt.goal_id) : (this.rows.goalOfIntegration(taskId) ?? this.rows.goalOfPlanning(taskId));
+    if (!goal || goal.collapsed_task_id) return null;
+    return this.goalHoldOf(goal);
+  }
+
+  goalHeld(taskId: string): boolean {
+    return this.goalHold(taskId) !== null;
   }
 
   private pausedAll(): PausedAll {
@@ -792,7 +814,7 @@ export class GoalRunner extends Part {
     const approved = await this.approveCrew(goal, task, () => {
       const row = this.rows.goalTask(task.id);
       const g = this.rows.goal(goal.id);
-      return row !== null && row.accepted === 1 && row.released_at === null && row.discarded_at === null && !g.paused_at && !g.stopped_at && !g.halted_at;
+      return row !== null && row.accepted === 1 && row.released_at === null && row.discarded_at === null && !g.paused_at && !g.stopped_at && !g.halted_at && !this.pausedAll().on;
     });
     if (!approved) return false;
     this.rows.run("update goal_tasks set released_at = ? where task_id = ? and released_at is null", this.iso(), task.id);
@@ -845,7 +867,11 @@ export class GoalRunner extends Part {
     const crew = this.db.crew(integration.id);
     if (!crew) return;
     if (!crew.approved_at) {
-      const ok = await this.approveCrew(goal, integration, () => !this.rows.goal(goal.id).stopped_at);
+      // The same pause check as a task release: a Pause clicked while this pass awaited git holds it.
+      const ok = await this.approveCrew(goal, integration, () => {
+        const g = this.rows.goal(goal.id);
+        return !g.stopped_at && !g.paused_at && !this.pausedAll().on;
+      });
       if (ok) {
         this.audit(integration.id, null, "task.approved", { by: "goal", goalId: goal.id, revision: this.rows.goal(goal.id).approved_revision });
         this.events.append(goal.project_id, goal.id, "goal.task_released", { taskId: integration.id, key: "review" });
@@ -1119,6 +1145,11 @@ export class GoalRunner extends Part {
   }
 
   /** The last review as a task draft: one read-only reviewer step, its input the goal text. */
+  /** The last review's estimate before the goal has one: the same dry run goals.approve prices it with. */
+  async reviewEstimate(goalId: string): Promise<CostEstimate> {
+    return (await this.deps.preview(this.integrationDraft(this.rows.goal(goalId)))).estimate;
+  }
+
   private integrationDraft(goal: GoalRow): TaskPreviewParams {
     return { projectId: goal.project_id, title: `Review all changes: ${goal.title}`, description: goal.text, kind: "review", size: "M", mode: "solo" };
   }
@@ -1228,6 +1259,7 @@ export class GoalRunner extends Part {
     this.rows.run("update goals set paused_at = null where id = ?", goal.id);
     this.events.append(goal.project_id, goal.id, "goal.resumed", {});
     if (!this.pausedAll().on) for (const r of this.pausableRuns(goal).filter((x) => x.ended_at === null && x.paused_at !== null && x.paused_at >= goal.paused_at!)) await this.deps.resumeRun(r.id).catch(() => undefined);
+    await this.deps.releaseHeld().catch(() => undefined);
     this.announce(goal.id, "resumed", true);
     await this.deps.tick();
   }
@@ -1246,6 +1278,7 @@ export class GoalRunner extends Part {
       this.events.append(goal.project_id, goal.id, "goal.paused_all", { on });
       this.announce(goal.id, on ? "paused" : "resumed", true);
     }
+    if (!on) await this.deps.releaseHeld().catch(() => undefined);
     await this.deps.tick();
     return { pausedAll: on };
   }
@@ -1323,13 +1356,12 @@ export class GoalRunner extends Part {
    */
   async decide(goalId: string, decisionId: string, action: GoalDecisionAction): Promise<void> {
     const goal = this.rows.goal(goalId);
-    const d = this.rows.decision(decisionId);
-    if (!d || d.goal_id !== goal.id) throw new GoalError("goal.decision_not_found");
-    if (d.answered_at) throw new GoalError("goal.decision_answered");
-    const payload = json<GoalDecisionPayload>(d.payload, {});
-    // A decision may offer fewer answers than its kind (a merge with no conflicted file to resolve).
-    const offered = payload.actions?.filter((a) => GOAL_DECISION_ACTIONS[d.kind].includes(a)) ?? GOAL_DECISION_ACTIONS[d.kind];
-    if (!offered.includes(action)) throw new GoalError("goal.action", { action, kind: d.kind });
+    const { d, payload } = this.answerable(goalId, decisionId, action);
+    // Both answers start a paid run of a goal task at once; a paused goal starts none (design §5.2).
+    if (action === "send_to_implementer" || action === "retry") {
+      const hold = this.goalHoldOf(goal);
+      if (hold) throw new GoalError(hold);
+    }
     let close = true;
     switch (action) {
       case "send_to_implementer":
@@ -1372,6 +1404,22 @@ export class GoalRunner extends Part {
     if (action === "check_again" && d.task_id) await this.checkMergeNow(this.rows.goal(goal.id), d.task_id);
     this.announce(goal.id, "decided", true);
     await this.deps.tick();
+  }
+
+  /**
+   * Refuses unless the decision is this goal's, still open, and offers `action`. goals.replan calls
+   * it before a decision's planning run starts, so a refused answer never costs a run.
+   */
+  answerable(goalId: string, decisionId: string, action: GoalDecisionAction): { d: GoalDecisionRow; payload: GoalDecisionPayload } {
+    const goal = this.rows.goal(goalId);
+    const d = this.rows.decision(decisionId);
+    if (!d || d.goal_id !== goal.id) throw new GoalError("goal.decision_not_found");
+    if (d.answered_at) throw new GoalError("goal.decision_answered");
+    const payload = json<GoalDecisionPayload>(d.payload, {});
+    // A decision may offer fewer answers than its kind (a merge with no conflicted file to resolve).
+    const offered = payload.actions?.filter((a) => GOAL_DECISION_ACTIONS[d.kind].includes(a)) ?? GOAL_DECISION_ACTIONS[d.kind];
+    if (!offered.includes(action)) throw new GoalError("goal.action", { action, kind: d.kind });
+    return { d, payload };
   }
 
   /** `Check again` on a conflicted merge: closes its open conflict and tries the merge now. */
@@ -1440,13 +1488,32 @@ export class GoalRunner extends Part {
     }
   }
 
-  /** `Retry` on a stuck goal: your click retries each failed goal task's failed step. */
+  /**
+   * `Retry` on a stuck goal: your click retries each failed goal task's failed step. When not one
+   * retry starts, the first refusal is thrown, so the decision stays open and you see why.
+   */
   private async retryFailed(goal: GoalRow): Promise<void> {
+    let started = 0;
+    let refused: unknown = null;
     for (const f of this.facts(goal.id).filter((x) => isLive(x) && x.status === "failed")) {
       const runs = this.db.runs(f.id);
       const failed = runs.filter((r) => r.end_reason === "failed" && !this.db.successor(r, runs));
-      for (const r of failed) await this.deps.retryRun(r.id).catch(() => undefined);
+      for (const r of failed) {
+        try {
+          await this.deps.retryRun(r.id);
+          started++;
+        } catch (err) {
+          refused ??= err;
+        }
+      }
     }
+    if (started === 0 && refused) throw refused;
+  }
+
+  private goalHoldOf(goal: GoalRow): "goal.paused" | "goal.paused_all" | "goal.stopped" | null {
+    if (goal.stopped_at) return "goal.stopped";
+    if (goal.paused_at) return "goal.paused";
+    return this.pausedAll().on ? "goal.paused_all" : null;
   }
 }
 

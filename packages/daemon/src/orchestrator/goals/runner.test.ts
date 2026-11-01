@@ -357,6 +357,161 @@ describe("pause", () => {
   });
 });
 
+describe("pause covers every way a goal task's run starts", () => {
+  it("holds a same-profile retry armed before Pause goal, and starts it only on Resume", async () => {
+    let tries = 0;
+    const pick: Picker = (role) => (role === "researcher" && ++tries === 1 ? [running, fail("503 overloaded_error: try later")] : [running, say(`${role} bitti`)]);
+    const { o, store, project, adapter } = await setup({ pick });
+    const { goalId, ids } = await seedGoal(o, store, project.id, [{ key: "r", title: "[R] Araştır", kind: "research" }]);
+    await approve(o, goalId, ["r"]);
+    await waitFor(() => rows(store, "select 1 from runs where task_id = ? and end_reason = 'failed' and resume_at is not null", ids.r!).length === 1, 20_000);
+    await o.goals.pause(goalId);
+    expect(o.goals.state(goalId).status).toBe("paused");
+    // Longer than the first backoff (at most 2 s): the timer fires, and the paused goal starts nothing.
+    await new Promise((r) => setTimeout(r, 2_600));
+    await o.settle();
+    expect(adapter.started).toHaveLength(1);
+    expect(rows(store, "select 1 from events where kind = 'run.retry_held'")).toHaveLength(1);
+    // The run still shows when it retries; nothing dropped the retry.
+    expect(row<{ r: string | null }>(store, "select resume_at as r from runs where task_id = ?", ids.r!).r).not.toBeNull();
+
+    await o.goals.resume(goalId);
+    await waitFor(() => o.get(ids.r!).status === "done", 20_000);
+    expect(adapter.started).toHaveLength(2);
+    expect(rows(store, "select 1 from events where kind = 'goal.resumed'")).toHaveLength(1);
+  });
+
+  it("holds a retry under Pause all goals too, and starts it when you lift the switch", async () => {
+    let tries = 0;
+    const pick: Picker = (role) => (role === "researcher" && ++tries === 1 ? [running, fail("503 overloaded_error: try later")] : [running, say(`${role} bitti`)]);
+    const { o, store, project, adapter } = await setup({ pick });
+    const { goalId, ids } = await seedGoal(o, store, project.id, [{ key: "r", title: "[R] Araştır", kind: "research" }]);
+    await approve(o, goalId, ["r"]);
+    await waitFor(() => rows(store, "select 1 from runs where task_id = ? and end_reason = 'failed' and resume_at is not null", ids.r!).length === 1, 20_000);
+    await o.goals.pauseAll(true);
+    await new Promise((r) => setTimeout(r, 2_600));
+    await o.settle();
+    expect(adapter.started).toHaveLength(1);
+    await o.goals.pauseAll(false);
+    await waitFor(() => o.get(ids.r!).status === "done", 20_000);
+  });
+
+  it("starts no goal task a pass releases after a Pause clicked while that pass awaited the directory", async () => {
+    let gate: Promise<void> | null = null;
+    let release: () => void = () => undefined;
+    let storeRef: Store | null = null;
+    let taskRef = "";
+    const { o, store, project, adapter } = await setup({
+      pick: writer({ "[A]": { file: "a dosyası.txt", text: "A\n" } }),
+      // The first directory read after the task joined the goal branch is the last review's release.
+      beforeCandidates: () => {
+        if (gate || !storeRef || !taskRef || joinedSha(storeRef, taskRef) === null) return undefined;
+        gate = new Promise<void>((r) => (release = r));
+        return gate;
+      },
+    });
+    storeRef = store;
+    const { goalId, ids } = await seedGoal(o, store, project.id, [{ key: "a", title: "[A] Sunucu", kind: "code" }]);
+    taskRef = ids.a!;
+    await approve(o, goalId, ["a"]);
+    // A truthy check, not the promise itself: waitFor would wait for the gate to open.
+    await waitFor(() => gate !== null, 40_000);
+    await o.goals.pause(goalId);
+    expect(goalRow(store, goalId).paused_at).not.toBeNull();
+    release();
+    await new Promise((r) => setTimeout(r, 1_500));
+    await o.settle();
+    expect(adapter.started.map((s) => s.role)).toEqual(["implementer"]);
+
+    await o.goals.resume(goalId);
+    await waitFor(() => adapter.started.some((s) => s.role === "reviewer"), 40_000);
+  });
+
+  it("refuses Retry and Send it back while the goal is paused or every goal is paused", async () => {
+    const pick: Picker = (role, req) => (titleOf(req).includes("[A]") ? [running, fail("HTTP 400: invalid tool schema")] : [running, say(`${role} bitti`)]);
+    const { o, store, project, adapter } = await setup({ pick });
+    const { goalId, ids } = await seedGoal(o, store, project.id, [
+      { key: "a", title: "[A] Araştır", kind: "research" },
+      { key: "b", title: "[B] Sonra", kind: "research", deps: ["a"] },
+    ]);
+    await approve(o, goalId, ["a", "b"]);
+    await waitFor(() => o.get(ids.a!).status === "failed", 20_000);
+    const stuck = randomUUID();
+    q(store, "insert into goal_decisions (id, goal_id, kind, task_id, payload, created_at) values (?, ?, 'stuck', null, ?, ?)", stuck, goalId, JSON.stringify({ waiting: [ids.b], detail: `failed:${ids.a}` }), new Date().toISOString());
+    const conflict = randomUUID();
+    q(store, "insert into goal_decisions (id, goal_id, kind, task_id, payload, created_at) values (?, ?, 'conflict', ?, ?, ?)", conflict, goalId, ids.a!, JSON.stringify({ paths: ["README.md"] }), new Date().toISOString());
+
+    await o.goals.pause(goalId);
+    expect(await goalRefusal(o.goals.decide(goalId, stuck, "retry"))).toMatchObject({ code: "goal.paused" });
+    expect(await goalRefusal(o.goals.decide(goalId, conflict, "send_to_implementer"))).toMatchObject({ code: "goal.paused" });
+    await o.goals.resume(goalId);
+    await o.goals.pauseAll(true);
+    expect(await goalRefusal(o.goals.decide(goalId, stuck, "retry"))).toMatchObject({ code: "goal.paused_all" });
+    expect(await goalRefusal(o.goals.decide(goalId, conflict, "send_to_implementer"))).toMatchObject({ code: "goal.paused_all" });
+    // Neither answer was taken, and no run started.
+    expect(decisions(store, goalId).filter((d) => d.answered_at !== null)).toEqual([]);
+    expect(adapter.started).toHaveLength(1);
+    // A run's own Retry on a paused goal's task is refused at launch, whatever asked for it.
+    const failed = o.get(ids.a!).runs[0]!;
+    await expect(o.retry(failed.id)).rejects.toThrow("goal.paused_all");
+    expect(adapter.started).toHaveLength(1);
+    await o.goals.pauseAll(false);
+  });
+});
+
+describe("answers to a stuck goal", () => {
+  it("retries the failed task on Retry, and keeps the decision open when no retry could start", async () => {
+    let tries = 0;
+    const pick: Picker = (role, req) => (titleOf(req).includes("[A]") && ++tries === 1 ? [running, fail("HTTP 400: invalid tool schema")] : [running, say(`${role} bitti`)]);
+    const { o, store, project } = await setup({ pick });
+    const { goalId, ids } = await seedGoal(o, store, project.id, [
+      { key: "a", title: "[A] Araştır", kind: "research" },
+      { key: "b", title: "[B] Sonra", kind: "research", deps: ["a"] },
+    ]);
+    await approve(o, goalId, ["a", "b"]);
+    await waitFor(() => o.get(ids.a!).status === "failed", 20_000);
+    const stuck = randomUUID();
+    q(store, "insert into goal_decisions (id, goal_id, kind, task_id, payload, created_at) values (?, ?, 'stuck', null, ?, ?)", stuck, goalId, JSON.stringify({ waiting: [ids.b], detail: `failed:${ids.a}` }), new Date().toISOString());
+    await o.goals.decide(goalId, stuck, "retry");
+    await waitFor(() => o.get(ids.b!).status === "done", 20_000);
+    expect(decisions(store, goalId).find((d) => d.id === stuck)!.answer).toBe("retry");
+    const decided = rows<{ payload: string }>(store, "select payload from events where kind = 'goal.decided'").map((e) => JSON.parse(e.payload));
+    expect(decided).toEqual([expect.objectContaining({ decisionId: stuck, kind: "stuck", action: "retry", closed: true })]);
+
+    // A retry that is refused keeps the decision open and tells you why.
+    const again = randomUUID();
+    q(store, "insert into goal_decisions (id, goal_id, kind, task_id, payload, created_at) values (?, ?, 'stuck', null, ?, ?)", again, goalId, JSON.stringify({}), new Date().toISOString());
+    const runner = o.goals as unknown as { deps: { retryRun: (id: string) => Promise<unknown> } };
+    const original = runner.deps.retryRun;
+    runner.deps.retryRun = () => Promise.reject(new Error("run.not_failed"));
+    q(store, "update runs set end_reason = 'failed' where task_id = ? and role = 'researcher'", ids.a!);
+    try {
+      await expect(o.goals.decide(goalId, again, "retry")).rejects.toThrow("run.not_failed");
+      expect(decisions(store, goalId).find((d) => d.id === again)!.answered_at).toBeNull();
+    } finally {
+      runner.deps.retryRun = original;
+    }
+  });
+
+  it("runs the waiting tasks without the failed one on Run without it", async () => {
+    const pick: Picker = (role, req) => (titleOf(req).includes("[A]") ? [running, fail("HTTP 400: invalid tool schema")] : [running, say(`${role} bitti`)]);
+    const { o, store, project } = await setup({ pick });
+    const { goalId, ids } = await seedGoal(o, store, project.id, [
+      { key: "a", title: "[A] Araştır", kind: "research" },
+      { key: "b", title: "[B] Sonra", kind: "research", deps: ["a"] },
+    ]);
+    await approve(o, goalId, ["a", "b"]);
+    await waitFor(() => o.get(ids.a!).status === "failed", 20_000);
+    await o.tick();
+    expect(released(store, ids.b!)).toBe(false);
+    const stuck = randomUUID();
+    q(store, "insert into goal_decisions (id, goal_id, kind, task_id, payload, created_at) values (?, ?, 'stuck', null, ?, ?)", stuck, goalId, JSON.stringify({ waiting: [ids.b], detail: `failed:${ids.a}` }), new Date().toISOString());
+    await o.goals.decide(goalId, stuck, "run_without");
+    await waitFor(() => o.get(ids.b!).status === "done", 20_000);
+    expect(rows(store, "select 1 from goal_task_deps where task_id = ?", ids.b!)).toEqual([]);
+  });
+});
+
 describe("the goal budget", () => {
   const priced = CANDIDATES();
   const withMystery = (): Candidate[] => [...priced, candidate("mystery", "local", null)];
