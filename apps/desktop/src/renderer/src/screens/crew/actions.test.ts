@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RunView } from "@crewyard/core";
-import { actionsFor, handoffCandidates, supersededRuns, type ActionContext } from "./actions.ts";
+import { actionsFor, failedRuns, handoffCandidates, supersededRuns, type ActionContext } from "./actions.ts";
 import { crewFixture } from "./fixture.ts";
 import { buildGraph, type GraphNodeModel } from "./model.ts";
 
@@ -22,10 +22,11 @@ describe("node menu rules", () => {
     expect(flat(withRun({ state: "paused" }), withTargets)).toEqual([OPEN, ["message", "resume", "retry:working", "change_ai"], ["copy_run_id"], ["stop"]]);
   });
 
-  it("says why actions are disabled before a step starts", () => {
+  it("says why actions are disabled before a step starts, and lets its AI change", () => {
     expect(flat(nodes["m:m-review"]!)).toEqual([
       OPEN,
-      ["message:not_started", "pause:not_started", "retry:not_started", "change_ai:not_started"],
+      // Change AI before the run picks another profile (crew.changeProfile); nothing is handed off.
+      ["message:not_started", "pause:not_started", "retry:not_started", "change_ai"],
       ["skip"],
       ["copy_run_id:no_run"],
       ["stop:not_started"],
@@ -61,10 +62,23 @@ describe("node menu rules", () => {
     expect(flat(running, { ...ctx, handoffTargets: (memberId, profileId) => (memberId === "m-impl" && profileId === running.run!.profileId ? 1 : 0) })[1]).toContain("change_ai");
   });
 
-  it("keeps the task and standby menus to what they can do", () => {
-    expect(flat(nodes.task!)).toEqual([["open"], ["pause_all:nothing_live", "resume_all:nothing_paused"]]);
-    expect(flat(nodes.task!, { ...ctx, bulk: { live: 2, paused: 0 } })[1]).toEqual(["pause_all", "resume_all:nothing_paused"]);
-    expect(flat(nodes["s:m-impl"]!)).toEqual([["open"]]);
+  it("gives the task node the task's own actions, each with why it is off", () => {
+    expect(flat(nodes.task!)).toEqual([
+      ["open_details", "open_changes"],
+      ["retry_failed_steps:none_failed"],
+      ["follow_up_task:nothing_finished", "pause_all:nothing_live", "resume_all:nothing_paused"],
+      ["cancel_task"],
+    ]);
+    const running = { ...ctx, bulk: { live: 2, paused: 0 }, failedSteps: 1, finishedSteps: 1, hasChanges: true };
+    expect(flat(nodes.task!, running)).toEqual([["open_details", "open_changes"], ["retry_failed_steps"], ["follow_up_task", "pause_all", "resume_all:nothing_paused"], ["cancel_task"]]);
+    expect(flat(nodes.task!, { ...ctx, hasChanges: false })[0]).toEqual(["open_details", "open_changes:no_worktree"]);
+    expect(actionsFor(nodes.task!, ctx).at(-1)![0]).toMatchObject({ id: "cancel_task", danger: true });
+  });
+
+  it("keeps a finished or stopped task from being cancelled again, and says why", () => {
+    expect(flat(nodes.task!, { ...ctx, taskFinished: true }).at(-1)).toEqual(["cancel_task:task_finished"]);
+    const stopped = flat(nodes.task!, { ...ctx, taskCancelled: true, failedSteps: 1, finishedSteps: 1 });
+    expect(stopped.slice(1)).toEqual([["retry_failed_steps:task_cancelled"], ["follow_up_task:task_cancelled", "pause_all:task_cancelled", "resume_all:task_cancelled"], ["cancel_task:task_cancelled"]]);
   });
 
   it("disables run actions once the task is stopped", () => {
@@ -80,7 +94,9 @@ describe("managing the crew from the menu", () => {
 
   it("offers editing, not run actions, while the crew is a proposal", () => {
     expect(flat(proposal["m:m-impl"]!, p)).toEqual([["open"], ["edit", "add_after", "remove_step"]]);
-    expect(flat(proposal.task!, p)).toEqual([["open"], ["add_step"]]);
+    expect(flat(proposal.task!, p)).toEqual([["open_details"], ["approve_crew", "change_ai_all", "add_step"], ["cancel_task"]]);
+    // Approve is off for the same problem the crew bar names.
+    expect(flat(proposal.task!, { ...p, crewProblem: true })[1]).toEqual(["approve_crew:crew_problem", "change_ai_all", "add_step"]);
     expect(flat(proposal["m:m-impl"]!, { ...p, crewSize: 1 })[1]).toContain("remove_step:last_step");
     expect(actionsFor(proposal["m:m-impl"]!, p)[1]!.find((a) => a.id === "remove_step")!.danger).toBe(true);
   });
@@ -96,10 +112,30 @@ describe("managing the crew from the menu", () => {
     expect(flat(nodes["m:m-review"]!, { ...ctx, taskCancelled: true })[2]).toEqual(["skip:task_cancelled"]);
   });
 
-  it("offers a follow-up after a finished step only", () => {
-    expect(flat(nodes["m:m-plan"]!).flat()).toContain("follow_up");
+  it("offers a follow-up, and a run again on another AI, after a finished step only", () => {
+    expect(flat(nodes["m:m-plan"]!)[2]).toEqual(["follow_up", "rerun_other"]);
     expect(flat(withRun({ state: "running" })).flat()).not.toContain("follow_up");
-    expect(flat(nodes["m:m-review"]!).flat()).not.toContain("follow_up");
+    expect(flat(withRun({ state: "running" })).flat()).not.toContain("rerun_other");
+    expect(flat(nodes["m:m-review"]!).flat()).not.toContain("rerun_other");
+    expect(flat(nodes["m:m-plan"]!, { ...ctx, taskCancelled: true })[2]).toEqual(["follow_up:task_cancelled", "rerun_other:task_cancelled"]);
+    expect(flat(nodes["m:m-plan"]!, { ...ctx, superseded: new Set(["r-plan"]) })[2]).toEqual(["follow_up:superseded", "rerun_other:superseded"]);
+  });
+
+  it("changes the AI of a step before its run, but not of a skipped one", () => {
+    expect(flat(manage["m:m-review"]!)[1]).toContain("change_ai:skipped");
+    expect(flat(nodes["m:m-review"]!, { ...ctx, taskCancelled: true })[1]).toContain("change_ai:task_cancelled");
+  });
+
+  it("acts on the run that took over, and treats the run it replaced as continued", () => {
+    const handoff = Object.fromEntries(buildGraph(crewFixture("handoff")).nodes.map((n) => [n.id, n]));
+    const c = { ...withTargets, superseded: supersededRuns(crewFixture("handoff")) };
+    expect(flat(handoff["h:m-impl"]!, c)[1]).toEqual(["message", "pause", "retry:working", "change_ai"]);
+    expect(flat(handoff["m:m-impl"]!, c)[1]).toEqual(expect.arrayContaining(["retry:superseded", "change_ai:superseded"]));
+  });
+
+  it("counts each step's failed newest run for Retry failed steps", () => {
+    expect(failedRuns(crewFixture("manage")).map((r) => r.id)).toEqual(["r-test"]);
+    expect(failedRuns(crewFixture())).toEqual([]);
   });
 
   it("offers Hand off now and Wait for reset on a limit, with why they are off", () => {

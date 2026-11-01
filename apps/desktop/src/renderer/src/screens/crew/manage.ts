@@ -3,6 +3,7 @@ import {
   dependencyRefusal,
   dependentsOf,
   MAX_STANDBY,
+  nextStepId,
   type CandidateView,
   type CrewEditRefusal,
   type CrewMemberView,
@@ -113,6 +114,65 @@ export function skipDependents(task: TaskDetail, memberId: string): CrewMemberVi
   const members = task.crew?.members ?? [];
   const m = members.find((x) => x.id === memberId);
   return m ? dependentsOf(members, m.step) : [];
+}
+
+/** A profile a pick dialog offers, with the step it would share a model with (then it is off). */
+export interface ProfileChoice {
+  candidate: CandidateView;
+  conflict: string | null;
+}
+
+const distinct = (list: readonly CandidateView[]): CandidateView[] => {
+  const seen = new Set<string>();
+  return list.filter((c) => {
+    if (seen.has(c.profileId)) return false;
+    seen.add(c.profileId);
+    return true;
+  });
+};
+
+/** Other profiles for a step that has not started, checked as crew.changeProfile checks them. */
+export function changeChoices(members: readonly CrewMemberView[], member: CrewMemberView, ranked: readonly CandidateView[], rules: EditEnv["rules"]): ProfileChoice[] {
+  return distinct(ranked)
+    .filter((c) => c.profileId !== member.chosen?.profileId)
+    .map((c) => ({ candidate: c, conflict: candidateConflict(members, member, c, rules) }));
+}
+
+/**
+ * Profiles a finished step can run again on, as a follow-up after it (Run again with another AI).
+ * The profile that ran it is left out; the check is the one set_candidate makes on the new step.
+ */
+export function rerunChoices(members: readonly CrewMemberView[], member: CrewMemberView, ranked: readonly CandidateView[], rules: EditEnv["rules"], ranProfileId: string): ProfileChoice[] {
+  const draft: CrewMemberView = { ...member, id: "draft-follow-up", step: nextStepId(members, member.role), dependsOn: [member.step], chosen: null, standby: [], reasons: [], edited: true, pendingApproval: true };
+  delete draft.skippedAt;
+  return distinct(ranked)
+    .filter((c) => c.profileId !== ranProfileId)
+    .map((c) => ({ candidate: c, conflict: candidateConflict(members, draft, c, rules) }));
+}
+
+/** A profile for the proposal's Change AI for every step, and the steps it is scored for. */
+export interface EveryStepChoice {
+  candidate: CandidateView;
+  /** Member ids, in crew order, whose role scores this profile. */
+  fits: string[];
+}
+
+/** Every profile scored for at least one step of the proposal, the ones that fit most steps first. */
+export function everyStepChoices(members: readonly CrewMemberView[], ranked: (role: string) => readonly CandidateView[] | undefined): EveryStepChoice[] {
+  const out = new Map<string, EveryStepChoice>();
+  for (const m of members) {
+    for (const c of distinct(ranked(m.role) ?? [])) {
+      const entry = out.get(c.profileId) ?? out.set(c.profileId, { candidate: c, fits: [] }).get(c.profileId)!;
+      entry.fits.push(m.id);
+    }
+  }
+  // Stable: equal counts keep the order the first role ranked them in.
+  return [...out.values()].sort((a, b) => b.fits.length - a.fits.length);
+}
+
+/** The steps Change AI for every step edits: those that fit the profile and are not on it already. */
+export function everyStepPlan(members: readonly CrewMemberView[], choice: EveryStepChoice): string[] {
+  return members.filter((m) => choice.fits.includes(m.id) && m.chosen?.profileId !== choice.candidate.profileId).map((m) => m.id);
 }
 
 /** Follow-up steps of an approved crew that still wait for their own approval. */

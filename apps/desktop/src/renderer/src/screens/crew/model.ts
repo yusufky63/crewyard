@@ -1,8 +1,11 @@
 import type { CandidateView, CrewMemberView, FallbackMode, Provenance, Reason, RoleId, RunnerId, RunView, TaskDetail, TaskLoopView, TaskStatus } from "@crewyard/core";
 
-// Turns a TaskDetail into the graph the Crew screen draws: one task node, one node per crew
-// member and one dashed node for the first standby candidate of each member. Everything the user
-// reads is a code plus params; the components translate them.
+// Turns a TaskDetail into the graph the Crew screen draws: one task node and one node per crew
+// member. A member's standby chain is a badge on its tile, not a node of its own; the owner,
+// 2026-11-01: "fallback kartlarını crew graph da büyük göstermeye hatta card olarak göstermeye
+// gerek var mı" (is there any need to show fallback cards big, or even as cards?). Only a handoff
+// that happened draws a second tile, for the run that took over, joined by the fallback edge.
+// Everything the user reads is a code plus params; the components translate them.
 
 export const NODE_W = 180;
 export const NODE_H = 100;
@@ -10,12 +13,14 @@ export const NODE_H = 100;
 export const NODE_H_LOOP = 120;
 export const SNAP = 12;
 const COL = 228; // node width + 48, a multiple of SNAP
-const ROW = 168; // node height + 68, a multiple of SNAP
+// Node height + 92, a multiple of SNAP: room under a 120 px loop tile for its standby badge and
+// above the next tile for a two-line limit annotation.
+const ROW = 192;
 const PAD = 24;
 
-export type NodeKind = "task" | "member" | "standby";
+export type NodeKind = "task" | "member";
 
-/** Status shown on a member or standby node; task nodes use the task's TaskStatus. */
+/** Status shown on a member node or a standby row of the list; task nodes use the task's TaskStatus. */
 export type MemberStatus =
   | "proposed"
   | "queued"
@@ -40,7 +45,8 @@ export type Fact =
   | { code: "after"; steps: string }
   | { code: "estimate"; usd: number | null; provenance: Provenance }
   | { code: "no_candidate" }
-  | { code: "standby_for"; step: string; more: number }
+  /** A standby row of the list view: its place in the step's chain. */
+  | { code: "standby_order"; step: string; place: number }
   | { code: "branch"; base: string; branch: string }
   | { code: "kind"; kind: TaskDetail["kind"]; size: TaskDetail["size"] }
   | { code: "queued_messages"; count: number }
@@ -55,10 +61,18 @@ export type NodeLoop =
   | { code: "attempts"; attempt: number; max: number; tone: "wait" | "ok" | "bad"; last: Reason | null }
   | { code: "verdict"; verdict: "pass" | "changes"; sha: string | null; stale: boolean };
 
+/** One profile of a step's standby chain, as its tile's badge and popover show it. */
+export interface StandbyEntry {
+  profileId: string;
+  runner: RunnerId;
+  model: string | null;
+  alias: string;
+}
+
 export interface GraphNodeModel {
   id: string;
   kind: NodeKind;
-  /** Two-digit step number of the member ("02"); also used on its standby node. */
+  /** Two-digit step number of the member ("02"); also on the tile of the run that took it over. */
   step: string | null;
   role: RoleId | null;
   /** The role file's title, for a custom role. */
@@ -76,6 +90,10 @@ export interface GraphNodeModel {
   loop: NodeLoop | null;
   /** A step added to an approved crew that waits for its own approval. */
   pending: boolean;
+  /** Who takes over next, in order; empty when nobody stands by, and on the task node. */
+  standby: StandbyEntry[];
+  /** The tile of the run a handoff moved the step to; the member's own tile keeps the run it replaced. */
+  takeover: boolean;
 }
 
 export type EdgeKind = "reports" | "depends" | "fallback";
@@ -99,7 +117,8 @@ export interface GraphModel {
 
 export const TASK_NODE = "task";
 export const memberNodeId = (memberId: string) => `m:${memberId}`;
-export const standbyNodeId = (memberId: string) => `s:${memberId}`;
+/** The tile of the run that took a step over after a handoff. */
+export const takeoverNodeId = (memberId: string) => `h:${memberId}`;
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
@@ -203,6 +222,8 @@ export function buildGraph(task: TaskDetail): GraphModel {
       limit: null,
       loop: null,
       pending: false,
+      standby: [],
+      takeover: false,
     },
   ];
   const edges: GraphEdgeModel[] = [];
@@ -212,10 +233,23 @@ export function buildGraph(task: TaskDetail): GraphModel {
   const stepOf = new Map(members.map((m, i) => [m.step, pad2(i + 1)]));
   const finished = new Set(members.filter((m) => latestRun(task.runs, m.id)?.endReason === "completed").map((m) => m.step));
 
+  // A run's account name, from any step's candidates: a handoff may pick an account outside the chain.
+  const aliases = new Map(members.flatMap((m) => [m.chosen, ...m.standby]).flatMap((c) => (c ? [[c.profileId, c.alias] as const] : [])));
+  // Where a step's result comes from: the run that took it over, once a handoff happened.
+  const takeovers = new Map(members.flatMap((m) => {
+    const t = takeoverOf(task, m.id);
+    return t ? [[m.id, t] as const] : [];
+  }));
+  const outOf = (memberId: string) => (takeovers.has(memberId) ? takeoverNodeId(memberId) : memberNodeId(memberId));
+  const limitOf = (run: RunView | null) => (run && (run.limitReached || run.state === "rate_limited") && run.state !== "ended" ? { resumeAt: run.resumeAt } : null);
+
   members.forEach((m, i) => {
-    const run = latestRun(task.runs, m.id);
+    const took = takeovers.get(m.id) ?? null;
+    // After a handoff the member's tile keeps the run it replaced; the new tile below carries on.
+    const run = took ? took.from : latestRun(task.runs, m.id);
     const chosen: CandidateView | null = m.chosen;
-    const status = memberStatus(run, approved, cancelled, m);
+    const used = new Set(took ? [took.from.profileId, took.to.profileId] : []);
+    const standby = m.standby.filter((c) => !used.has(c.profileId)).map((c) => ({ profileId: c.profileId, runner: c.runner, model: c.model, alias: c.alias }));
     nodes.push({
       id: memberNodeId(m.id),
       kind: "member",
@@ -225,48 +259,84 @@ export function buildGraph(task: TaskDetail): GraphModel {
       memberId: m.id,
       runner: run?.runner ?? chosen?.runner ?? null,
       model: run ? run.model : (chosen?.model ?? null),
-      account: chosen?.alias ?? null,
+      account: run ? (aliases.get(run.profileId) ?? null) : (chosen?.alias ?? null),
       run,
-      status,
+      status: memberStatus(run, approved, cancelled, m),
       taskStatus: null,
       fact: memberFact(m, run, stepOf, finished),
-      limit: run && (run.limitReached || run.state === "rate_limited") && run.state !== "ended" ? { resumeAt: run.resumeAt } : null,
-      loop: memberLoop(task.loop, m.id),
+      limit: limitOf(run),
+      loop: took ? null : memberLoop(task.loop, m.id),
       pending: !!m.pendingApproval,
+      // The chain moves to the tile that carries on; the replaced run has nobody left to hand to.
+      standby: took ? [] : standby,
+      takeover: false,
     });
     const deps = m.dependsOn.filter((d) => byStep.has(d));
     if (deps.length === 0) edges.push({ id: `e:${TASK_NODE}>${memberNodeId(m.id)}`, from: TASK_NODE, to: memberNodeId(m.id), kind: "reports" });
     deps.forEach((d, k) => {
-      const from = memberNodeId(byStep.get(d)!.id);
+      const from = outOf(byStep.get(d)!.id);
       // The first dependency is the step this one builds on; the rest only gate its start.
       edges.push({ id: `e:${from}>${memberNodeId(m.id)}`, from, to: memberNodeId(m.id), kind: k === 0 ? "reports" : "depends", dep: { memberId: m.id, dependsOn: d } });
     });
 
-    const next = m.standby[0];
-    if (next) {
+    if (took) {
+      const to = took.to;
       nodes.push({
-        id: standbyNodeId(m.id),
-        kind: "standby",
+        id: takeoverNodeId(m.id),
+        kind: "member",
         step: pad2(i + 1),
         role: m.role,
         roleTitle: m.roleTitle ?? null,
         memberId: m.id,
-        runner: next.runner,
-        model: next.model,
-        account: next.alias,
-        run: null,
-        status: "standby",
+        runner: to.runner,
+        model: to.model,
+        account: aliases.get(to.profileId) ?? null,
+        run: to,
+        status: memberStatus(to, approved, cancelled, m),
         taskStatus: null,
-        fact: { code: "standby_for", step: pad2(i + 1), more: m.standby.length - 1 },
-        limit: null,
-        loop: null,
+        fact: memberFact(m, to, stepOf, finished),
+        limit: limitOf(to),
+        loop: memberLoop(task.loop, m.id),
         pending: false,
+        standby,
+        takeover: true,
       });
-      edges.push({ id: `e:${memberNodeId(m.id)}>${standbyNodeId(m.id)}`, from: memberNodeId(m.id), to: standbyNodeId(m.id), kind: "fallback" });
+      edges.push({ id: `e:${memberNodeId(m.id)}>${takeoverNodeId(m.id)}`, from: memberNodeId(m.id), to: takeoverNodeId(m.id), kind: "fallback" });
     }
   });
 
   return { nodes, edges, fallback: task.fallback, proposal: !!crew && !approved && !cancelled };
+}
+
+/**
+ * The handoff that moved a step to another AI: the run it replaced and the step's newest run,
+ * which continues the one that took over (a resume after the handoff keeps the takeover). A
+ * handoff back to the same profile (a native resume) is not a takeover.
+ */
+export function takeoverOf(task: Pick<TaskDetail, "runs" | "handoffs">, memberId: string): { from: RunView; to: RunView } | null {
+  const latest = latestRun(task.runs, memberId);
+  const byId = new Map(task.runs.map((r) => [r.id, r]));
+  let r: RunView | undefined = latest ?? undefined;
+  // The resume chain is short; the bound only guards against a damaged one that loops.
+  for (let hops = 0; r && hops < 64; hops++) {
+    const into = r.id;
+    const h = (task.handoffs ?? []).find((x) => x.toRunId === into);
+    const from = h ? byId.get(h.fromRunId) : undefined;
+    if (from && latest && from.profileId !== r.profileId) return { from, to: latest };
+    r = r.resumedFrom ? byId.get(r.resumedFrom) : undefined;
+  }
+  return null;
+}
+
+/** A row of the list view: a graph node, or one standby profile of the step above it. */
+export type ListRow = { kind: "node"; node: GraphNodeModel } | { kind: "standby"; node: GraphNodeModel; entry: StandbyEntry; place: number; fact: Fact };
+
+/** The graph as the list view reads it: every node, each followed by its whole standby chain. */
+export function listRows(model: GraphModel): ListRow[] {
+  return model.nodes.flatMap((node): ListRow[] => [
+    { kind: "node", node },
+    ...node.standby.map((entry, i) => ({ kind: "standby" as const, node, entry, place: i + 1, fact: { code: "standby_order" as const, step: node.step ?? "", place: i + 1 } })),
+  ]);
 }
 
 export interface Point {
@@ -275,12 +345,15 @@ export interface Point {
 }
 
 /**
- * Columns by dependency depth (task first), each member followed by its standby, columns centred
- * on the tallest one. Every coordinate is on the 12 px grid.
+ * Columns by dependency depth (task first), each member followed by the tile of the run that took
+ * it over, if a handoff happened; columns centred on the tallest one. Every coordinate is on the
+ * 12 px grid.
  */
 export function defaultLayout(model: GraphModel): Record<string, Point> {
   const incoming = new Map<string, string[]>();
-  for (const e of model.edges) if (e.kind !== "fallback") incoming.set(e.to, [...(incoming.get(e.to) ?? []), e.from]);
+  // A takeover tile sits in its member's column, so what waits for it is placed by the member.
+  const placedBy = (id: string) => (id.startsWith("h:") ? memberNodeId(id.slice(2)) : id);
+  for (const e of model.edges) if (e.kind !== "fallback") incoming.set(e.to, [...(incoming.get(e.to) ?? []), placedBy(e.from)]);
   const depth = new Map<string, number>([[TASK_NODE, 0]]);
   const depthOf = (id: string, seen: Set<string>): number => {
     const known = depth.get(id);
@@ -295,10 +368,10 @@ export function defaultLayout(model: GraphModel): Record<string, Point> {
 
   const columns: string[][] = [];
   for (const n of model.nodes) {
-    if (n.kind === "standby") continue;
+    if (n.takeover) continue;
     const d = n.kind === "task" ? 0 : depthOf(n.id, new Set());
     (columns[d] ??= []).push(n.id);
-    if (n.kind === "member" && n.memberId && model.nodes.some((s) => s.id === standbyNodeId(n.memberId!))) columns[d].push(standbyNodeId(n.memberId));
+    if (n.memberId && model.nodes.some((s) => s.id === takeoverNodeId(n.memberId!))) columns[d].push(takeoverNodeId(n.memberId));
   }
   const tallest = Math.max(1, ...columns.map((c) => c?.length ?? 0));
   const out: Record<string, Point> = {};

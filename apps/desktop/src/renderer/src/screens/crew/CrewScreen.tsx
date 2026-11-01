@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { ReactFlowProvider } from "@xyflow/react";
 import {
   ArrowLeftRight,
+  Ban,
+  Check,
   Copy,
   FileDiff,
+  FileText,
   FolderTree,
   Hourglass,
   List,
@@ -18,6 +21,7 @@ import {
   Pencil,
   Play,
   Plus,
+  Repeat,
   RotateCw,
   SkipForward,
   Square,
@@ -31,16 +35,17 @@ import { useInspector } from "../../inspector.ts";
 import { call, useDaemon } from "../../ipc.ts";
 import { useNav } from "../../nav.ts";
 import { screens } from "../../registry.ts";
-import { actionsFor, handoffCandidates, supersededRuns, type ActionId, type HandoffAsk } from "./actions.ts";
+import { actionsFor, failedRuns, handoffCandidates, supersededRuns, type ActionId, type HandoffAsk } from "./actions.ts";
 import { CrewBar } from "./CrewBar.tsx";
-import { bulkCounts, checkEnv, handoffAsks, pendingSteps, rulesFromRoles, skipDependents } from "./manage.ts";
+import { bulkCounts, changeChoices, checkEnv, everyStepChoices, everyStepPlan, handoffAsks, pendingSteps, progress, rerunChoices, rulesFromRoles, skipDependents } from "./manage.ts";
 import { StepPanel, stepIndex } from "./StepPanel.tsx";
 import { CrewCanvas } from "./CrewCanvas.tsx";
 import { useNodeTitle } from "./CrewNode.tsx";
-import { AddStepDialog, ChangeAiDialog, MessageDialog, SkipDialog, StopDialog } from "./Dialogs.tsx";
+import { AddStepDialog, CancelTaskDialog, ChangeAiDialog, MessageDialog, PickProfileDialog, SkipDialog, StopDialog, type PickRow } from "./Dialogs.tsx";
+import { StandbyPopover } from "./StandbyPopover.tsx";
 import { crewFixture, fixtureCandidates, fixtureRoles, type CrewFixture } from "./fixture.ts";
 import { MemberStatusLabel, runnerName, TaskStatusLabel, useFormatters } from "./labels.tsx";
-import { buildGraph, defaultLayout, memberNodeId, mergeLayout, type GraphNodeModel, type Point } from "./model.ts";
+import { buildGraph, defaultLayout, listRows, memberNodeId, mergeLayout, type GraphNodeModel, type Point } from "./model.ts";
 import "@xyflow/react/dist/base.css";
 import "./crew.css";
 import { matches } from "../../keys.ts";
@@ -63,37 +68,48 @@ const SHOT = {
   panel: query.get("crewPanel"),
   /** `skip:<memberId>` or `add` opens that dialog. */
   dialog: query.get("crewDialog"),
+  /** A node id whose standby popover opens. */
+  standby: query.get("crewStandby"),
 };
-const FIXTURES: readonly CrewFixture[] = ["default", "loop", "proposal", "manage"];
+const FIXTURES: readonly CrewFixture[] = ["default", "loop", "proposal", "manage", "handoff"];
 
 const ICONS: Record<ActionId, LucideIcon> = {
   open: PanelRight,
+  open_details: FileText,
   open_changes: FileDiff,
   open_files: FolderTree,
   message: MessageSquare,
   pause: Pause,
   resume: Play,
   retry: RotateCw,
+  retry_failed_steps: RotateCw,
   change_ai: ArrowLeftRight,
   handoff_now: ArrowLeftRight,
   wait_reset: Hourglass,
   edit: Pencil,
+  approve_crew: Check,
+  change_ai_all: ArrowLeftRight,
   add_step: Plus,
   add_after: ListPlus,
   remove_step: Trash2,
   skip: SkipForward,
   follow_up: ListPlus,
+  follow_up_task: ListPlus,
+  rerun_other: Repeat,
   pause_all: Pause,
   resume_all: Play,
   copy_run_id: Copy,
   stop: Square,
+  cancel_task: Ban,
 };
 
-/** State colours for menu actions that have one (owner, 2026-10-31): going again in ok, holding back in warn. Stop and Remove are already danger. */
+/** State colours for menu actions that have one (owner, 2026-10-31): going again in ok, holding back in warn. Stop, Remove and Cancel task are already danger. */
 const ACTION_TONE: Partial<Record<ActionId, "ok" | "warn">> = {
   resume: "ok",
   resume_all: "ok",
   retry: "ok",
+  retry_failed_steps: "ok",
+  approve_crew: "ok",
   pause: "warn",
   pause_all: "warn",
   skip: "warn",
@@ -173,8 +189,11 @@ function TaskPicker({ projectId }: { projectId: string }) {
 }
 
 type Dialog =
-  | { kind: "stop" | "message" | "change_ai" | "skip" | "handoff_now"; nodeId: string }
-  | { kind: "add_step"; after: string | null; followUp: boolean; target: string | null }
+  // pick_ai: Change AI before the step's run (crew.changeProfile); change_ai is the handoff of a run.
+  | { kind: "stop" | "message" | "change_ai" | "pick_ai" | "rerun_other" | "skip" | "handoff_now"; nodeId: string }
+  // anyFinished: a follow-up from the task node, after whichever finished step you pick.
+  | { kind: "add_step"; after: string | null; followUp: boolean; target: string | null; anyFinished?: boolean }
+  | { kind: "change_ai_all" | "cancel_task" }
   | null;
 type Menu = { nodeId: string; x: number; y: number } | null;
 
@@ -200,6 +219,7 @@ function CrewView({ task, fixture }: { task: TaskDetail; fixture: boolean }) {
   const [list, setList] = useState(SHOT.list);
   const [fitKey, setFitKey] = useState(0);
   const [notice, setNotice] = useState<{ text: string; bad: boolean } | null>(null);
+  const [standbyPop, setStandbyPop] = useState<{ nodeId: string; anchor: { left: number; top: number; bottom: number } } | null>(null);
 
   const positions = useMemo(() => {
     const merged = mergeLayout(defaults, saved.data?.positions ?? {});
@@ -245,11 +265,20 @@ function CrewView({ task, fixture }: { task: TaskDetail; fixture: boolean }) {
 
   const onMenu = useCallback((nodeId: string, x: number, y: number) => setMenu({ nodeId, x, y }), []);
   const closeMenu = useCallback(() => setMenu(null), []);
+  const onStandby = useCallback((nodeId: string, anchor: { left: number; top: number; bottom: number }) => setStandbyPop({ nodeId, anchor }), []);
+  const closeStandby = useCallback(() => setStandbyPop(null), []);
 
-  // Screenshot mode can ask for the menu of one node to be open.
+  // Screenshot mode can ask for the menu or the standby popover of one node to be open.
   useEffect(() => {
-    if (!SHOT.menu) return;
+    if (!SHOT.menu && !SHOT.standby) return;
     const id = setTimeout(() => {
+      if (SHOT.standby) {
+        const badge = document.querySelector<HTMLElement>(`[data-standby="${CSS.escape(SHOT.standby)}"]`);
+        badge?.focus();
+        const b = badge?.getBoundingClientRect();
+        if (b) setStandbyPop({ nodeId: SHOT.standby, anchor: { left: b.left, top: b.top, bottom: b.bottom } });
+        return;
+      }
       const el = document.querySelector<HTMLElement>(`[data-node="${CSS.escape(SHOT.menu!)}"]`);
       if (!el) return;
       el.focus();
@@ -265,7 +294,7 @@ function CrewView({ task, fixture }: { task: TaskDetail; fixture: boolean }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
-      if (menu || dialog || el?.closest("input, textarea, select, [contenteditable], dialog")) return;
+      if (menu || dialog || standbyPop || el?.closest("input, textarea, select, [contenteditable], dialog")) return;
       if (matches(e, "graph.full") && !list) {
         e.preventDefault();
         setFull((f) => !f);
@@ -275,7 +304,7 @@ function CrewView({ task, fixture }: { task: TaskDetail; fixture: boolean }) {
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [menu, dialog, full, list]);
+  }, [menu, dialog, standbyPop, full, list]);
 
   const refresh = () => void qc.invalidateQueries({ queryKey: ["tasks.get", { taskId: task.id }] });
   const runCall = async (fn: () => Promise<unknown>, ok: string) => {
@@ -371,6 +400,8 @@ function CrewView({ task, fixture }: { task: TaskDetail; fixture: boolean }) {
     return t("edge.remove", { from: a ? title(a, task.title) : fromId, to: b ? title(b, task.title) : toId });
   };
 
+  const proposalProblem = model.proposal ? problemText(null) : null;
+  const finishedSteps = useMemo(() => progress(task).finished, [task]);
   const ctx = useMemo(
     () => ({
       resumable: new Set(task.resumableRunIds),
@@ -381,9 +412,80 @@ function CrewView({ task, fixture }: { task: TaskDetail; fixture: boolean }) {
       crewSize: members.length,
       handoffAsk: (runId: string) => asks.get(runId) ?? null,
       bulk,
+      failedSteps: failedRuns(task).length,
+      finishedSteps: finishedSteps.size,
+      hasChanges: !!task.worktree,
+      taskFinished: task.status === "review" || task.status === "merged" || task.status === "done",
+      crewProblem: proposalProblem !== null,
     }),
-    [task, model.proposal, members.length, asks, bulk],
+    [task, model.proposal, members.length, asks, bulk, finishedSteps, proposalProblem],
   );
+
+  // ---- the profile pickers (Change AI before a run, for every step, Run again with another AI)
+  const pickMember = dialog && "nodeId" in dialog && (dialog.kind === "pick_ai" || dialog.kind === "rerun_other") ? (members.find((m) => m.id === byId.get(dialog.nodeId)?.memberId) ?? null) : null;
+  const pickRoles = useMemo(
+    () => (dialog?.kind === "change_ai_all" ? [...new Set(members.map((m) => m.role))] : pickMember ? [pickMember.role] : []),
+    [dialog?.kind, members, pickMember],
+  );
+  const rankedQs = useQueries({
+    queries: pickRoles.map((role) => ({ queryKey: ["crew.candidates", { taskId: task.id, role }], queryFn: () => call("crew.candidates", { taskId: task.id, role }), enabled: !fixture })),
+  });
+  const rankedFor = (role: string) => (fixture ? fixtureCandidates(role) : rankedQs[pickRoles.indexOf(role)]?.data);
+  const pickState: "loading" | "error" | "ready" = fixture ? "ready" : rankedQs.some((q) => q.isError) ? "error" : rankedQs.every((q) => q.data) ? "ready" : "loading";
+  const conflictWhy = (step: string | null) => (step ? t("panel.conflict", { step: stepIndex(members, step) }) : null);
+
+  const changeProfile = (memberId: string, profileId: string, target: string) =>
+    crewCall(() => call("crew.changeProfile", { taskId: task.id, memberId, profileId }), () => t("done.changeProfile", { target }));
+
+  // A follow-up of the same role after the finished step, then its profile: two edits of a step
+  // that waits for approval, so nothing runs before Approve new steps.
+  const rerun = async (m: CrewMemberView, profileId: string, target: string) => {
+    if (fixture) return;
+    setBusy(true);
+    try {
+      let detail = await call("crew.edit", { taskId: task.id, edit: { kind: "add_step", role: m.role, after: [m.step] } });
+      const added = detail.crew?.members.at(-1);
+      if (added && added.chosen?.profileId !== profileId) detail = await call("crew.edit", { taskId: task.id, edit: { kind: "set_candidate", memberId: added.id, profileId } });
+      qc.setQueryData(["tasks.get", { taskId: task.id }], detail);
+      setNotice({ text: t("done.rerun", { target }), bad: false });
+    } catch (err) {
+      setNotice({ text: failText(err), bad: true });
+    } finally {
+      setBusy(false);
+      refresh();
+    }
+  };
+
+  // One crew.edit per step, in crew order; a step the rules refuse (independence) keeps its AI.
+  const changeAll = async (profileId: string) => {
+    if (fixture) return;
+    const choice = everyStepChoices(members, rankedFor).find((c) => c.candidate.profileId === profileId);
+    if (!choice) return;
+    setBusy(true);
+    let changed = 0;
+    let kept = 0;
+    try {
+      for (const memberId of everyStepPlan(members, choice)) {
+        try {
+          qc.setQueryData(["tasks.get", { taskId: task.id }], await call("crew.edit", { taskId: task.id, edit: { kind: "set_candidate", memberId, profileId } }));
+          changed++;
+        } catch {
+          kept++;
+        }
+      }
+      setNotice({ text: kept > 0 ? t("done.changeAllKept", { count: changed, kept }) : t("done.changeAll", { count: changed }), bad: false });
+    } finally {
+      setBusy(false);
+      refresh();
+    }
+  };
+
+  const retryFailed = () => {
+    const runs = failedRuns(task);
+    return runCall(async () => {
+      for (const r of runs) await call("runs.retry", { runId: r.id });
+    }, t("done.retryFailed", { count: runs.length }));
+  };
 
   const menuNode = menu ? byId.get(menu.nodeId) : undefined;
   const menuItems: ContextMenuEntry[] = menuNode
@@ -393,10 +495,10 @@ function CrewView({ task, fixture }: { task: TaskDetail; fixture: boolean }) {
           const Icon = ICONS[a.id];
           return {
             id: a.id,
-            label: t(a.id === "retry" && menuNode.run?.endReason === "failed" ? "menu.retry_failed" : `menu.${a.id}`),
+            label: t(a.id === "retry" && menuNode.run?.endReason === "failed" ? "menu.retry_failed" : a.id === "change_ai" && !menuNode.run ? "menu.change_ai_before" : `menu.${a.id}`),
             icon: <Icon size={14} strokeWidth={1.75} />,
             tone: a.danger ? ("danger" as const) : ACTION_TONE[a.id],
-            disabledReason: a.disabled ? t(`menu.why.${a.disabled}`) : null,
+            disabledReason: a.disabled ? t(`menu.why.${a.disabled}`, { problem: proposalProblem ?? "" }) : null,
           };
         }),
       ])
@@ -408,6 +510,21 @@ function CrewView({ task, fixture }: { task: TaskDetail; fixture: boolean }) {
       case "open":
         setSelected(n.id);
         return openInspector(n);
+      case "open_details":
+        setSelected(n.id);
+        return inspector.open({ taskId: task.id, tab: "details" });
+      case "retry_failed_steps":
+        return void retryFailed();
+      case "approve_crew":
+        return void approve();
+      case "change_ai_all":
+        return setDialog({ kind: "change_ai_all" });
+      case "cancel_task":
+        return setDialog({ kind: "cancel_task" });
+      case "follow_up_task":
+        return setDialog({ kind: "add_step", after: null, followUp: true, target: null, anyFinished: true });
+      case "rerun_other":
+        return setDialog({ kind: "rerun_other", nodeId: n.id });
       case "open_changes":
       case "open_files":
         setSelected(n.id);
@@ -444,9 +561,11 @@ function CrewView({ task, fixture }: { task: TaskDetail; fixture: boolean }) {
         return void pauseAll();
       case "resume_all":
         return void resumeAll();
+      case "change_ai":
+        // Before its run the step only gets another profile; once it runs, Change AI is a handoff.
+        return setDialog({ kind: run ? "change_ai" : "pick_ai", nodeId: n.id });
       case "message":
       case "stop":
-      case "change_ai":
         return setDialog({ kind: id, nodeId: n.id });
       case "retry":
         if (run) void runCall(() => call("runs.retry", { runId: run.id }), t("done.retry", { target: title(n, task.title) }));
@@ -570,8 +689,25 @@ function CrewView({ task, fixture }: { task: TaskDetail; fixture: boolean }) {
               </tr>
             </thead>
             <tbody>
-              {model.nodes.map((n) => (
-                <tr key={n.id} className={n.kind === "standby" ? "standby" : undefined}>
+              {listRows(model).map((row) => {
+                // The graph shows the chain as a badge; the list keeps every standby profile as a row.
+                if (row.kind === "standby") {
+                  const n = row.node;
+                  return (
+                    <tr key={`${n.id}:${row.entry.profileId}`} className="standby">
+                      <td>{t("node.standbyHead", { step: n.step, place: row.place, role: fmt.role(n.role ?? "", n.roleTitle) })}</td>
+                      <td>{runnerName(t, row.entry.runner)}</td>
+                      <td>
+                        <MemberStatusLabel status="standby" />
+                      </td>
+                      <td className="mono">{[row.entry.model ?? t("node.defaultModel"), row.entry.alias].join(" · ")}</td>
+                      <td className="mono muted">{fmt.fact(row.fact)}</td>
+                    </tr>
+                  );
+                }
+                const n = row.node;
+                return (
+                <tr key={n.id}>
                   <td>
                     <button
                       type="button"
@@ -600,7 +736,8 @@ function CrewView({ task, fixture }: { task: TaskDetail; fixture: boolean }) {
                   <td className="mono">{n.kind === "task" ? "" : [n.model ?? t("node.defaultModel"), n.account ?? t("node.noAccount")].join(" · ")}</td>
                   <td className="mono muted">{n.loop ? fmt.loopLine(fmt.loop(n.loop)) || fmt.fact(n.fact) : fmt.fact(n.fact)}</td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -624,6 +761,8 @@ function CrewView({ task, fixture }: { task: TaskDetail; fixture: boolean }) {
               onConnect={onConnect}
               onRemoveDependency={(dep) => void edit({ kind: "remove_dependency", ...dep })}
               removeLabel={removeLabel}
+              onStandby={onStandby}
+              standbyOpen={standbyPop?.nodeId ?? null}
             />
           </ReactFlowProvider>
           {panel}
@@ -674,11 +813,14 @@ function CrewView({ task, fixture }: { task: TaskDetail; fixture: boolean }) {
       )}
       {dialog?.kind === "add_step" && (
         <AddStepDialog
-          title={dialog.followUp && dialog.target ? t("addStep.followTitle", { target: dialog.target }) : t("addStep.title")}
+          title={dialog.followUp && dialog.target ? t("addStep.followTitle", { target: dialog.target }) : dialog.anyFinished ? t("addStep.followAnyTitle") : t("addStep.title")}
           roles={roleOptions}
-          steps={members.filter((m) => !dialog.followUp || m.step === dialog.after).map((m) => ({ step: m.step, label: stepLabel(m) }))}
+          steps={members
+            .filter((m) => (dialog.anyFinished ? finishedSteps.has(m.step) : !dialog.followUp || m.step === dialog.after))
+            .map((m) => ({ step: m.step, label: stepLabel(m) }))}
           after={dialog.after}
-          fixedAfter={dialog.followUp}
+          fixedAfter={dialog.followUp && !dialog.anyFinished}
+          requireAfter={dialog.anyFinished}
           note={dialog.followUp ? t("addStep.followNote") : t("addStep.proposalNote")}
           onClose={() => setDialog(null)}
           onConfirm={async (role, after) => {
@@ -688,6 +830,76 @@ function CrewView({ task, fixture }: { task: TaskDetail; fixture: boolean }) {
           }}
         />
       )}
+      {dialog?.kind === "pick_ai" && dialogNode && pickMember && (
+        <PickProfileDialog
+          title={t("pickAi.title", { target: title(dialogNode, task.title) })}
+          label={t("pickAi.label")}
+          body={t("pickAi.body")}
+          confirm={t("pickAi.confirm")}
+          state={pickState}
+          rows={changeChoices(members, pickMember, rankedFor(pickMember.role) ?? [], rules).map((c): PickRow => ({ candidate: c.candidate, why: conflictWhy(c.conflict) }))}
+          runnerLabel={(r) => runnerName(t, r)}
+          onClose={() => setDialog(null)}
+          onConfirm={(profileId) => changeProfile(pickMember.id, profileId, title(dialogNode, task.title)).then(() => setDialog(null))}
+        />
+      )}
+      {dialog?.kind === "rerun_other" && dialogNode?.run && pickMember && (
+        <PickProfileDialog
+          title={t("rerun.title", { target: title(dialogNode, task.title) })}
+          label={t("rerun.label")}
+          body={t("rerun.body")}
+          confirm={t("rerun.confirm")}
+          state={pickState}
+          rows={rerunChoices(members, pickMember, rankedFor(pickMember.role) ?? [], rules, dialogNode.run.profileId).map((c): PickRow => ({ candidate: c.candidate, why: conflictWhy(c.conflict) }))}
+          runnerLabel={(r) => runnerName(t, r)}
+          onClose={() => setDialog(null)}
+          onConfirm={(profileId) => rerun(pickMember, profileId, title(dialogNode, task.title)).then(() => setDialog(null))}
+        />
+      )}
+      {dialog?.kind === "change_ai_all" && (
+        <PickProfileDialog
+          title={t("changeAll.title")}
+          label={t("changeAll.label")}
+          body={t("changeAll.body")}
+          confirm={t("changeAll.confirm")}
+          state={pickState}
+          rows={everyStepChoices(members, rankedFor).map((c): PickRow => {
+            const plan = everyStepPlan(members, c);
+            return { candidate: c.candidate, note: t("changeAll.fits", { count: c.fits.length, total: members.length }), why: plan.length === 0 ? t("changeAll.already") : null };
+          })}
+          runnerLabel={(r) => runnerName(t, r)}
+          onClose={() => setDialog(null)}
+          onConfirm={(profileId) => changeAll(profileId).then(() => setDialog(null))}
+        />
+      )}
+      {dialog?.kind === "cancel_task" && (
+        <CancelTaskDialog
+          title={task.title}
+          running={bulk.live + bulk.paused}
+          onClose={() => setDialog(null)}
+          onConfirm={() => runCall(() => call("tasks.cancel", { taskId: task.id }), t("done.cancelTask")).then(() => setDialog(null))}
+        />
+      )}
+      {standbyPop &&
+        (() => {
+          const n = byId.get(standbyPop.nodeId);
+          const m = n?.memberId ? members.find((x) => x.id === n.memberId) : undefined;
+          if (!n || !m || n.standby.length === 0) return null;
+          // set_standby is refused once the step has a run, so the popover only shows the order then.
+          const locked = task.cancelledAt ? t("menu.why.task_cancelled") : n.run ? t("standby.locked") : null;
+          return (
+            <StandbyPopover
+              anchor={standbyPop.anchor}
+              target={stepLabel(m)}
+              entries={n.standby}
+              mode={t(`standby.mode.${model.fallback}`)}
+              locked={locked}
+              busy={busy}
+              onClose={closeStandby}
+              onReorder={(profileIds) => void edit({ kind: "set_standby", memberId: m.id, profileIds })}
+            />
+          );
+        })()}
       {dialog?.kind === "skip" && dialogNode?.memberId && (
         <SkipDialog
           target={title(dialogNode, task.title)}

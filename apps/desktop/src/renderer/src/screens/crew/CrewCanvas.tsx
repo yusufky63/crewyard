@@ -41,11 +41,15 @@ export interface CanvasProps {
   onRemoveDependency?(dep: { memberId: string; dependsOn: string }): void;
   /** Accessible name of an edge's remove button. */
   removeLabel?(fromNodeId: string, toNodeId: string): string;
+  /** A tile's standby badge was pressed. */
+  onStandby(id: string, anchor: { left: number; top: number; bottom: number }): void;
+  /** The node whose standby popover is open. */
+  standbyOpen: string | null;
 }
 
 const NO_EDIT: ReadonlySet<string> = new Set();
 
-export function CrewCanvas({ model, taskTitle, positions, selected, full, onMove, onSelect, onMenu, onToggleFull, fitKey, editable = NO_EDIT, onConnect, onRemoveDependency, removeLabel }: CanvasProps) {
+export function CrewCanvas({ model, taskTitle, positions, selected, full, onMove, onSelect, onMenu, onToggleFull, fitKey, editable = NO_EDIT, onConnect, onRemoveDependency, removeLabel, onStandby, standbyOpen }: CanvasProps) {
   const { t } = useTranslation("crew");
   const flow = useReactFlow();
   const title = useNodeTitle();
@@ -85,9 +89,20 @@ export function CrewCanvas({ model, taskTitle, positions, selected, full, onMove
         width: NODE_W,
         height: nodeHeight(n),
         selectable: false,
-        data: { model: n, title: title(n, taskTitle), taskTitle, selected: n.id === selected, onPath: path.nodes.has(n.id), onKey, connectable: n.kind === "member" && editable.size > 0, editable: editable.has(n.id) },
+        data: {
+          model: n,
+          title: title(n, taskTitle),
+          taskTitle,
+          selected: n.id === selected,
+          onPath: path.nodes.has(n.id),
+          onKey,
+          connectable: n.kind === "member" && !n.takeover && editable.size > 0,
+          editable: editable.has(n.id),
+          onStandby,
+          standbyOpen: standbyOpen === n.id,
+        },
       })),
-    [model, positions, selected, path, onKey, title, taskTitle, editable],
+    [model, positions, selected, path, onKey, title, taskTitle, editable, onStandby, standbyOpen],
   );
 
   const fallbackLabel = t(`edge.fallback.${model.fallback}`);
@@ -149,7 +164,7 @@ export function CrewCanvas({ model, taskTitle, positions, selected, full, onMove
   useEffect(() => {
     const onDocKey = (e: globalThis.KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
-      if (el?.closest("input, textarea, select, [contenteditable], dialog, [role=menu]")) return;
+      if (el?.closest("input, textarea, select, [contenteditable], dialog, [role=menu], [role=dialog]")) return;
       if (matches(e, "graph.zoomIn")) void flow.zoomIn();
       else if (matches(e, "graph.zoomOut")) void flow.zoomOut();
     };
@@ -216,11 +231,16 @@ export function CrewCanvas({ model, taskTitle, positions, selected, full, onMove
           </svg>
           {t("legend.depends")}
         </div>
+        {/* The fallback edge shows only once a handoff happened; until then a step's standby is the badge on its tile. */}
         <div>
           <svg viewBox="0 0 34 6">
             <path d="M0 3H34" className="crew-edge crew-edge-fallback" />
           </svg>
           {t("legend.fallback")}
+        </div>
+        <div>
+          <span className="crew-legend-badge" />
+          {t("legend.standby")}
         </div>
       </div>
       <div className="crew-zoom" role="toolbar" aria-label={t("zoom.label")}>

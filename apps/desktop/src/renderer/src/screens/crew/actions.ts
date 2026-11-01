@@ -1,5 +1,5 @@
-import type { CandidateView, TaskDetail } from "@crewyard/core";
-import type { GraphNodeModel } from "./model.ts";
+import type { CandidateView, RunView, TaskDetail } from "@crewyard/core";
+import { latestRun, type GraphNodeModel } from "./model.ts";
 
 // Which actions a node's context menu offers, and why some are disabled. Each rule is one entry
 // in ACTION_RULES; a new action (for example one that needs a new IPC method) is one more entry
@@ -7,25 +7,32 @@ import type { GraphNodeModel } from "./model.ts";
 
 export type ActionId =
   | "open"
+  | "open_details"
   | "open_changes"
   | "open_files"
   | "message"
   | "pause"
   | "resume"
   | "retry"
+  | "retry_failed_steps"
   | "change_ai"
   | "handoff_now"
   | "wait_reset"
   | "edit"
+  | "approve_crew"
+  | "change_ai_all"
   | "add_step"
   | "add_after"
   | "remove_step"
   | "skip"
   | "follow_up"
+  | "follow_up_task"
+  | "rerun_other"
   | "pause_all"
   | "resume_all"
   | "copy_run_id"
-  | "stop";
+  | "stop"
+  | "cancel_task";
 
 /** Codes for why an action is disabled; translated as `menu.why.<code>`. */
 export type DisabledCode =
@@ -43,7 +50,12 @@ export type DisabledCode =
   | "last_step"
   | "skipped"
   | "nothing_live"
-  | "nothing_paused";
+  | "nothing_paused"
+  | "none_failed"
+  | "nothing_finished"
+  | "task_finished"
+  | "crew_problem"
+  | "no_worktree";
 
 /** The open handoff question of a run (a limit in Ask or Manual mode), as the Inbox has it. */
 export interface HandoffAsk {
@@ -69,6 +81,16 @@ export interface ActionContext {
   handoffAsk?: (runId: string) => HandoffAsk | null;
   /** Live and paused runs of the task, for Pause all and Resume all. */
   bulk?: { live: number; paused: number };
+  /** Steps whose newest run failed, for the task's Retry failed steps. */
+  failedSteps?: number;
+  /** Steps whose newest run completed: a follow-up goes after one of them. */
+  finishedSteps?: number;
+  /** The task has a worktree, so its Changes tab has something to show. */
+  hasChanges?: boolean;
+  /** Ready for review, merged or done: nothing is left to cancel. */
+  taskFinished?: boolean;
+  /** The proposal has a problem that keeps it from being approved (the crew bar names it). */
+  crewProblem?: boolean;
 }
 
 interface ActionRule {
@@ -104,11 +126,22 @@ const askRule = (inner: (ask: HandoffAsk) => DisabledCode | null) =>
   });
 
 const isStep = (node: GraphNodeModel) => node.kind === "member";
+const isTask = (node: GraphNodeModel) => node.kind === "task";
+
+/** A task-node rule for a running (approved) crew: the task's own state comes first. */
+const taskRule = (inner: (ctx: ActionContext) => DisabledCode | null) => (node: GraphNodeModel, ctx: ActionContext) =>
+  !isTask(node) || ctx.proposal ? undefined : ctx.taskCancelled ? "task_cancelled" : inner(ctx);
 
 export const ACTION_RULES: ActionRule[] = [
-  { id: "open", group: 0, check: () => null },
+  { id: "open", group: 0, check: (node) => (isTask(node) ? undefined : null) },
+  // The task node opens the task as a whole, on Details, rather than the last tab shown.
+  { id: "open_details", group: 0, check: (node) => (isTask(node) ? null : undefined) },
   // The inspector's tabs, one step closer than opening it and switching.
-  { id: "open_changes", group: 0, check: (node, ctx) => (isStep(node) && !ctx.proposal ? null : undefined) },
+  {
+    id: "open_changes",
+    group: 0,
+    check: (node, ctx) => (ctx.proposal ? undefined : isStep(node) ? null : ctx.hasChanges === false ? "no_worktree" : null),
+  },
   { id: "open_files", group: 0, check: (node, ctx) => (isStep(node) && !ctx.proposal ? null : undefined) },
   {
     id: "message",
@@ -143,24 +176,36 @@ export const ACTION_RULES: ActionRule[] = [
       return run.endedAt !== null || run.limitReached || run.resumeAt !== null ? null : "working";
     }),
   },
+  // Every failed step at once, each through the same runs.retry as its own Retry step.
+  { id: "retry_failed_steps", group: 1, check: taskRule((ctx) => ((ctx.failedSteps ?? 0) > 0 ? null : "none_failed")) },
   {
-    // "Change AI": a manual handoff to another of the member's candidates.
+    // "Change AI": a manual handoff to another of the member's candidates once the step runs;
+    // before its run, another profile for the step (crew.changeProfile), which starts nothing.
     id: "change_ai",
     group: 1,
-    check: (node, ctx) =>
-      runRule((run) => {
+    check: (node, ctx) => {
+      if (isStep(node) && !node.run && !ctx.proposal && !node.pending) {
+        if (ctx.taskCancelled) return "task_cancelled";
+        return node.status === "skipped" ? "skipped" : null;
+      }
+      return runRule((run) => {
         if (run.endReason === "completed") return "completed";
         if (ctx.superseded?.has(run.id)) return "superseded";
         if (ctx.taskCancelled) return "task_cancelled";
         if (run.state === "handing_off") return "handing_off";
         return node.memberId && (ctx.handoffTargets?.(node.memberId, run.profileId) ?? 0) > 0 ? null : "no_target";
-      })(node, ctx),
+      })(node, ctx);
+    },
   },
   // Hand off now and Wait for reset answer the same Inbox question the limit opened.
   { id: "handoff_now", group: 1, check: askRule((ask) => (ask.candidates.length > 0 || ask.proposed ? null : "no_target")) },
   { id: "wait_reset", group: 1, check: askRule((ask) => (ask.resetsAt ? null : "no_reset")) },
   // Editing: every change is its own explicit action, never a side effect of moving a node.
   { id: "edit", group: 2, check: (node, ctx) => (isStep(node) && (ctx.proposal || node.pending) ? null : undefined) },
+  // The crew bar's Approve and start, from the task node; off for the same problem the bar names.
+  { id: "approve_crew", group: 2, check: (node, ctx) => (isTask(node) && ctx.proposal ? (ctx.crewProblem ? "crew_problem" : null) : undefined) },
+  // One profile for every step it is scored for, each through crew.edit; the proposal still waits.
+  { id: "change_ai_all", group: 2, check: (node, ctx) => (isTask(node) && ctx.proposal ? null : undefined) },
   { id: "add_step", group: 2, check: (node, ctx) => (node.kind === "task" && ctx.proposal ? null : undefined) },
   { id: "add_after", group: 2, check: (node, ctx) => (isStep(node) && ctx.proposal ? null : undefined) },
   {
@@ -179,17 +224,13 @@ export const ACTION_RULES: ActionRule[] = [
       return ctx.taskCancelled ? "task_cancelled" : null;
     },
   },
-  {
-    id: "follow_up",
-    group: 2,
-    check: ranRule((run, ctx) => {
-      if (run.endReason !== "completed") return undefined;
-      if (ctx.superseded?.has(run.id)) return "superseded";
-      return ctx.taskCancelled ? "task_cancelled" : null;
-    }),
-  },
-  { id: "pause_all", group: 2, check: (node, ctx) => (node.kind !== "task" || ctx.proposal ? undefined : ctx.taskCancelled ? "task_cancelled" : (ctx.bulk?.live ?? 0) > 0 ? null : "nothing_live") },
-  { id: "resume_all", group: 2, check: (node, ctx) => (node.kind !== "task" || ctx.proposal ? undefined : ctx.taskCancelled ? "task_cancelled" : (ctx.bulk?.paused ?? 0) > 0 ? null : "nothing_paused") },
+  { id: "follow_up", group: 2, check: ranRule(finishedRule) },
+  // The same follow-up, pinned to another profile: it waits for Approve new steps like any new step.
+  { id: "rerun_other", group: 2, check: ranRule(finishedRule) },
+  // From the task node the follow-up picks which finished step it goes after.
+  { id: "follow_up_task", group: 2, check: taskRule((ctx) => ((ctx.finishedSteps ?? 0) > 0 ? null : "nothing_finished")) },
+  { id: "pause_all", group: 2, check: taskRule((ctx) => ((ctx.bulk?.live ?? 0) > 0 ? null : "nothing_live")) },
+  { id: "resume_all", group: 2, check: taskRule((ctx) => ((ctx.bulk?.paused ?? 0) > 0 ? null : "nothing_paused")) },
   {
     id: "copy_run_id",
     group: 3,
@@ -201,7 +242,28 @@ export const ACTION_RULES: ActionRule[] = [
     danger: true,
     check: runRule((run) => (run.state === "ended" ? "ended" : null)),
   },
+  {
+    // tasks.cancel with its confirm, as the task row has it; a proposal is cancelled the same way.
+    id: "cancel_task",
+    group: 4,
+    danger: true,
+    check: (node, ctx) => (!isTask(node) ? undefined : ctx.taskCancelled ? "task_cancelled" : ctx.taskFinished ? "task_finished" : null),
+  },
 ];
+
+function finishedRule(run: NonNullable<GraphNodeModel["run"]>, ctx: ActionContext): DisabledCode | null | undefined {
+  if (run.endReason !== "completed") return undefined;
+  if (ctx.superseded?.has(run.id)) return "superseded";
+  return ctx.taskCancelled ? "task_cancelled" : null;
+}
+
+/** Each step's newest run when it failed: what Retry failed steps retries, one runs.retry each. */
+export function failedRuns(task: TaskDetail): RunView[] {
+  return (task.crew?.members ?? []).flatMap((m) => {
+    const run = latestRun(task.runs, m.id);
+    return run?.endReason === "failed" ? [run] : [];
+  });
+}
 
 function resumeCheck(run: NonNullable<GraphNodeModel["run"]>, ctx: ActionContext): DisabledCode | null | undefined {
   if (run.state === "paused") return ctx.taskCancelled ? "task_cancelled" : null;
