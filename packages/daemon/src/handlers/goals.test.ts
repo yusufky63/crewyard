@@ -820,6 +820,7 @@ describe("the goals area in the daemon", () => {
       "goals.decide",
       "goals.checkMerge",
       "goals.pauseAll",
+      "goals.setEnabled",
       "goals.setProjectDefaults",
     ];
     expect(Object.keys(h).sort()).toEqual([...methods].sort());
