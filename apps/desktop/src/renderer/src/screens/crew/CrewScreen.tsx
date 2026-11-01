@@ -219,7 +219,8 @@ function CrewView({ task, fixture }: { task: TaskDetail; fixture: boolean }) {
   const [list, setList] = useState(SHOT.list);
   const [fitKey, setFitKey] = useState(0);
   const [notice, setNotice] = useState<{ text: string; bad: boolean } | null>(null);
-  const [standbyPop, setStandbyPop] = useState<{ nodeId: string; anchor: { left: number; top: number; bottom: number } } | null>(null);
+  // Placed under its badge, so it belongs to the frame it opened in: full screen or the list view hides it.
+  const [standbyPop, setStandbyPop] = useState<{ nodeId: string; anchor: { left: number; top: number; bottom: number }; full: boolean } | null>(null);
 
   const positions = useMemo(() => {
     const merged = mergeLayout(defaults, saved.data?.positions ?? {});
@@ -265,7 +266,8 @@ function CrewView({ task, fixture }: { task: TaskDetail; fixture: boolean }) {
 
   const onMenu = useCallback((nodeId: string, x: number, y: number) => setMenu({ nodeId, x, y }), []);
   const closeMenu = useCallback(() => setMenu(null), []);
-  const onStandby = useCallback((nodeId: string, anchor: { left: number; top: number; bottom: number }) => setStandbyPop({ nodeId, anchor }), []);
+  const onStandby = useCallback((nodeId: string, anchor: { left: number; top: number; bottom: number }) => setStandbyPop({ nodeId, anchor, full }), [full]);
+  const shownPop = standbyPop && standbyPop.full === full && !list ? standbyPop : null;
   const closeStandby = useCallback(() => setStandbyPop(null), []);
 
   // Screenshot mode can ask for the menu or the standby popover of one node to be open.
@@ -276,7 +278,7 @@ function CrewView({ task, fixture }: { task: TaskDetail; fixture: boolean }) {
         const badge = document.querySelector<HTMLElement>(`[data-standby="${CSS.escape(SHOT.standby)}"]`);
         badge?.focus();
         const b = badge?.getBoundingClientRect();
-        if (b) setStandbyPop({ nodeId: SHOT.standby, anchor: { left: b.left, top: b.top, bottom: b.bottom } });
+        if (b) setStandbyPop({ nodeId: SHOT.standby, anchor: { left: b.left, top: b.top, bottom: b.bottom }, full: SHOT.full });
         return;
       }
       const el = document.querySelector<HTMLElement>(`[data-node="${CSS.escape(SHOT.menu!)}"]`);
@@ -294,7 +296,7 @@ function CrewView({ task, fixture }: { task: TaskDetail; fixture: boolean }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
-      if (menu || dialog || standbyPop || el?.closest("input, textarea, select, [contenteditable], dialog")) return;
+      if (menu || dialog || shownPop || el?.closest("input, textarea, select, [contenteditable], dialog")) return;
       if (matches(e, "graph.full") && !list) {
         e.preventDefault();
         setFull((f) => !f);
@@ -304,7 +306,7 @@ function CrewView({ task, fixture }: { task: TaskDetail; fixture: boolean }) {
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [menu, dialog, standbyPop, full, list]);
+  }, [menu, dialog, shownPop, full, list]);
 
   const refresh = () => void qc.invalidateQueries({ queryKey: ["tasks.get", { taskId: task.id }] });
   const runCall = async (fn: () => Promise<unknown>, ok: string) => {
@@ -762,7 +764,7 @@ function CrewView({ task, fixture }: { task: TaskDetail; fixture: boolean }) {
               onRemoveDependency={(dep) => void edit({ kind: "remove_dependency", ...dep })}
               removeLabel={removeLabel}
               onStandby={onStandby}
-              standbyOpen={standbyPop?.nodeId ?? null}
+              standbyOpen={shownPop?.nodeId ?? null}
             />
           </ReactFlowProvider>
           {panel}
@@ -880,16 +882,16 @@ function CrewView({ task, fixture }: { task: TaskDetail; fixture: boolean }) {
           onConfirm={() => runCall(() => call("tasks.cancel", { taskId: task.id }), t("done.cancelTask")).then(() => setDialog(null))}
         />
       )}
-      {standbyPop &&
+      {shownPop &&
         (() => {
-          const n = byId.get(standbyPop.nodeId);
+          const n = byId.get(shownPop.nodeId);
           const m = n?.memberId ? members.find((x) => x.id === n.memberId) : undefined;
           if (!n || !m || n.standby.length === 0) return null;
           // set_standby is refused once the step has a run, so the popover only shows the order then.
           const locked = task.cancelledAt ? t("menu.why.task_cancelled") : n.run ? t("standby.locked") : null;
           return (
             <StandbyPopover
-              anchor={standbyPop.anchor}
+              anchor={shownPop.anchor}
               target={stepLabel(m)}
               entries={n.standby}
               mode={t(`standby.mode.${model.fallback}`)}
