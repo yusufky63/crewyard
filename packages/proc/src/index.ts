@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
+import { statSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, posix } from "node:path";
+import { posix, win32 } from "node:path";
 import spawn from "cross-spawn";
 import type { ChildProcess, SpawnOptions } from "node:child_process";
 import { findOnPosixPath, isExecutableFile, isWindows, killTreePosix, posixSearchDirs, systemEnvVars, type Platform } from "./platform.ts";
@@ -87,13 +88,11 @@ export function pickWindowsHit(hits: readonly string[]): string | null {
   return hits.filter((p) => SPAWNABLE.test(p)).sort((a, b) => winRank(a) - winRank(b))[0] ?? null;
 }
 
-// By full path: cross-spawn's own lookup of a bare "where.exe" would search the current folder first.
-const WHERE = join(process.env.SystemRoot ?? "C:\\Windows", "System32", "where.exe");
-
 /**
- * Finds an executable on PATH. On Windows `$PATH:` keeps where.exe from also searching the current
- * folder, so a git.exe planted in a repo is never picked up. Linux and macOS search PATH and the
- * runners' own install folders in-process (findOnPosixPath), with the same current-folder rule.
+ * Finds an executable on PATH, never in the current folder, so a git.exe planted in a repo is never
+ * picked up. Every platform searches in-process: Windows used to ask where.exe, but under load that
+ * child could miss its 5-second limit and every installed CLI then read as not found until the
+ * next check (owner, 2026-11-01: all four agents showed "bulunamadı" while each was on PATH).
  */
 export async function which(name: string, opts: { env?: NodeJS.ProcessEnv } = {}): Promise<string | null> {
   if (!isWin) return findOnPosixPath(name, { pathValue: (opts.env ?? process.env).PATH });
@@ -115,11 +114,49 @@ export async function whichAll(name: string, opts: { env?: NodeJS.ProcessEnv } =
   });
 }
 
-/** where.exe's hits in PATH order (Windows). */
+/** where.exe's hits in PATH order (Windows), found in-process: see windowsPathHits. */
 async function pathHits(name: string, env?: NodeJS.ProcessEnv): Promise<string[]> {
-  const res = await run(WHERE, [`$PATH:${name}`], { timeoutMs: 5_000, env });
-  if (res.code !== 0) return [];
-  return res.stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const vars = env ?? process.env;
+  return windowsPathHits(name, envValue(vars, "PATH"), envValue(vars, "PATHEXT"));
+}
+
+/** A variable from an env object, by any casing: Windows spells it Path, a copied object keeps that. */
+function envValue(env: NodeJS.ProcessEnv, name: string): string | undefined {
+  if (env[name] !== undefined) return env[name];
+  const key = Object.keys(env).find((k) => k.toUpperCase() === name);
+  return key === undefined ? undefined : env[key];
+}
+
+const isFile = (p: string) => {
+  try {
+    return statSync(p).isFile();
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * What `where.exe $PATH:<name>` lists, without starting it: each PATH folder in order, the name as
+ * given and then with each PATHEXT extension, files only, no repeats. The current folder is never
+ * searched, and a name with a folder in it is refused.
+ */
+export function windowsPathHits(name: string, pathValue: string | undefined, pathext: string | undefined, exists: (p: string) => boolean = isFile): string[] {
+  if (!name || /[\\/:]/.test(name) || !pathValue) return [];
+  const exts = (pathext || ".COM;.EXE;.BAT;.CMD").split(";").map((e) => e.trim()).filter((e) => e.startsWith("."));
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of pathValue.split(";")) {
+    const dir = raw.trim().replace(/^"(.*)"$/, "$1");
+    if (!dir || !win32.isAbsolute(dir)) continue;
+    for (const candidate of [name, ...exts.map((e) => name + e.toLowerCase())]) {
+      const full = win32.join(dir, candidate);
+      const key = full.toLowerCase();
+      if (seen.has(key) || !exists(full)) continue;
+      seen.add(key);
+      out.push(full);
+    }
+  }
+  return out;
 }
 
 /** Every executable of that name on the POSIX search path, never the current folder (as findOnPosixPath). */

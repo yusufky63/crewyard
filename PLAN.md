@@ -621,7 +621,7 @@ Windows comes first and behaves exactly as above. Every Windows-only call has a 
 | Windows | Linux and macOS |
 |---|---|
 | `taskkill /T /F` | process group per child (`detached`), SIGTERM to the group and its descendants, SIGKILL after 2 s |
-| `where.exe $PATH:`, `.exe` beats `.cmd` | in-process PATH search without the current folder, then each runner's install folders (`~/.local/bin`, `~/.opencode/bin`, Homebrew), because Dock and launcher starts get a short PATH |
+| in-process PATH search in where.exe's order (each folder, the bare name then PATHEXT), never the current folder; `.exe` beats `.cmd`. It used to start `where.exe $PATH:`, whose 5-second limit could turn every installed CLI into "not found" under load (2026-11-01) | in-process PATH search without the current folder, then each runner's install folders (`~/.local/bin`, `~/.opencode/bin`, Homebrew), because Dock and launcher starts get a short PATH |
 | Windows system variables, compared without case | `HOME`, `PATH`, `TMPDIR`, `SHELL`, `LANG`, the D-Bus and display variables, exact case |
 | DPAPI from the daemon (ADR 0002) | Electron `safeStorage` (Keychain, Secret Service or KWallet), called by the main process for the daemon; Chromium's `basic_text` fallback is refused |
 | named pipe, PowerShell relay | Unix socket 0600 in a private 0700 folder, Perl relay |

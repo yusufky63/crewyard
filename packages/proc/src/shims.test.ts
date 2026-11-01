@@ -2,7 +2,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { exitCodeWithin, LineSplitter, pickWindowsHit, ProbeCache, run, shimArgsProblem, start, which } from "./index.ts";
+import { exitCodeWithin, LineSplitter, pickWindowsHit, ProbeCache, run, shimArgsProblem, start, which, windowsPathHits } from "./index.ts";
 
 const win = process.platform === "win32";
 const root = mkdtempSync(join(tmpdir(), "crewyard proc "));
@@ -24,7 +24,22 @@ describe("which on Windows", () => {
     expect(pickWindowsHit(["C:\\npm\\codex", "C:\\npm\\codex.ps1"])).toBeNull();
   });
 
-  it.runIf(win)("resolves through where.exe in PATH order, never the extensionless npm script", async () => {
+  it("lists PATH hits as where.exe would, in-process: folder order, bare name then PATHEXT, no current folder", () => {
+    const npm = String.raw`C:\Users\me\AppData\Roaming\npm`;
+    const spaced = String.raw`C:\Program Files\x y`;
+    const files = new Set([`${npm}\\codex`, `${npm}\\codex.cmd`, `${spaced}\\codex.exe`].map((f) => f.toLowerCase()));
+    const exists = (p: string) => files.has(p.toLowerCase());
+    // Folder order, an empty entry, a relative entry (never searched), a quoted folder, and the
+    // first folder again with a trailing backslash (no repeats).
+    const path = [npm, "", String.raw`relative\bin`, `"${spaced}"`, `${npm}\\`].join(";");
+    expect(windowsPathHits("codex", path, ".COM;.EXE;.BAT;.CMD", exists)).toEqual([`${npm}\\codex`, `${npm}\\codex.cmd`, `${spaced}\\codex.exe`]);
+    // A name with a folder or drive in it, or no PATH at all, finds nothing.
+    expect(windowsPathHits(String.raw`..\codex`, path, undefined, exists)).toEqual([]);
+    expect(windowsPathHits("C:codex", path, undefined, exists)).toEqual([]);
+    expect(windowsPathHits("codex", undefined, undefined, exists)).toEqual([]);
+  });
+
+  it.runIf(win)("resolves in PATH order without starting a child, never the extensionless npm script", async () => {
     const shims = shimDir("npm global", "fake-agent", "console.log('shim')");
     writeFileSync(join(shims, "fake-agent"), "#!/bin/sh\nexit 1\n");
     const env = { ...process.env, PATH: shims };
@@ -36,6 +51,9 @@ describe("which on Windows", () => {
     // The shim comes first on PATH, the real binary still wins.
     expect(await which("fake-agent", { env: { ...process.env, PATH: [shims, native].join(delimiter) } })).toBe(join(native, "fake-agent.exe"));
     expect(await which("fake-agent", { env: { ...process.env, PATH: join(root, "nothing here") } })).toBeNull();
+    // An env copied from process.env spells it Path on Windows; that works the same.
+    const { PATH: _p, Path: _q, ...rest } = process.env;
+    expect(await which("fake-agent", { env: { ...rest, Path: shims } })).toBe(join(shims, "fake-agent.cmd"));
   });
 });
 
