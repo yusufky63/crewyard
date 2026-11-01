@@ -121,7 +121,9 @@
       "cancel_task": "bu görevi iptal etti",
       "complete_task": "bu analizi tamamlandı olarak işaretledi",
       "read_task": "bu görevi okudu",
-      "list_tasks": "görevleri listeledi"
+      "list_tasks": "görevleri listeledi",
+      "create_goal": "bir hedef planladı",
+      "approve_goal_plan": "bir hedefin planını sınırları içinde onayladı"
     }
   }
 }

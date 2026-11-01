@@ -6,6 +6,7 @@ import { defaultGoalBudget, GOAL_LIMITS, GOAL_PRIORITIES, GOAL_TASK_KINDS, GOAL_
 import { Button, Label, Panel } from "@crewyard/ui";
 import { matches } from "../../keys.ts";
 import { ProvBadge } from "../providers/shared.tsx";
+import { useGoalBudgetHints } from "./assistant/goalDraft.ts";
 import { useComposerFill } from "./composerPrefs.ts";
 import { act, useWork } from "./data.ts";
 import { GoalStatusLabel, useGoalFormat } from "./GoalRow.tsx";
@@ -685,7 +686,9 @@ function ReadyState({
   const kept = keptTasks(goal);
   const held = heldShares(kept, review);
   const totals = planTotals(tiles, accepted, typed, review && !(review.shareUsd && review.shareUsd > 0) ? review : null);
-  const prefill = goal.budgetUsd ?? goal.suggestedBudgetUsd ?? defaultGoalBudget(totals.knownUsd, null);
+  // A budget the assistant suggested with its goal draft (docs/adr/0022) prefills it; you still approve it here.
+  const hint = useGoalBudgetHints((s) => s.hints[goal.id] ?? null);
+  const prefill = goal.budgetUsd ?? hint ?? goal.suggestedBudgetUsd ?? defaultGoalBudget(totals.knownUsd, null);
   const [budget, setBudget] = useState(() => String(prefill));
   const [atOnce, setAtOnce] = useState(goal.maxParallel);
   const check = approvalCheck(tiles, accepted, budget, typed, review, atOnce, { min: GOAL_LIMITS.maxParallelMin, max: GOAL_LIMITS.maxParallelMax }, { kept, oneTask: one, maxTasks: goal.maxTasks });

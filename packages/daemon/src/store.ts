@@ -1078,6 +1078,42 @@ export const MIGRATIONS: Migration[] = [
    );
    create index if not exists goal_decisions_open on goal_decisions(goal_id, answered_at);`,
   },
+  // The assistant and goals (docs/adr/0022): goals the assistant drafted for the composer, and the
+  // goals Autopilot created with the quote of your message they rest on, the planning ceiling it
+  // committed and what its one approval committed.
+  {
+    id: "assistant-goals",
+    sql: `create table if not exists assistant_goal_drafts (
+     id text primary key,
+     conversation_id text not null references assistant_conversations(id),
+     project_id text not null,
+     text text not null,
+     planner_profile_id text,
+     planner_alias text,
+     budget_usd real,
+     status text not null default 'open' check (status in ('open', 'planned', 'discarded')),
+     goal_id text,
+     created_at text not null
+   );
+   create index if not exists assistant_goal_drafts_conversation on assistant_goal_drafts(conversation_id, created_at);
+   create table if not exists autopilot_goals (
+     goal_id text primary key references goals(id),
+     project_id text not null references projects(id),
+     conversation_id text,
+     basis_message_id text,
+     basis text not null,
+     sources text not null,
+     reason text not null,
+     planning_ceiling_usd real not null,
+     created_at text not null,
+     approved_at text,
+     approved_revision integer,
+     approved_budget_usd real,
+     approved_tasks integer,
+     notified text
+   );
+   create index if not exists autopilot_goals_project on autopilot_goals(project_id, created_at);`,
+  },
 ];
 
 /** What the positional scheme applied: a database at `user_version` N has the first N of these. */

@@ -9,6 +9,7 @@ import { takeAssistantFocus } from "../../shell/activity/panel.ts";
 import { AutopilotStrip } from "./Autopilot.tsx";
 import { Conversation } from "./assistant/Conversation.tsx";
 import { DraftCard } from "./assistant/DraftCard.tsx";
+import { GoalDraftCard } from "./assistant/GoalDraftCard.tsx";
 import { useAssistantError } from "./assistant/errors.ts";
 import { InfoTip } from "./assistant/InfoTip.tsx";
 import { byteMeter, excerpt, liveState, quoted } from "./assistant/model.ts";
@@ -64,6 +65,8 @@ export function AssistantPanel({ projectId, onClose, docked = false }: { project
   const profileId = live && v?.profileId ? v.profileId : pickProfile(v, options, chosen);
   const lines = v?.lines ?? [];
   const drafts = (v?.drafts ?? []).filter((d) => d.status !== "discarded");
+  // Newest first: the open goal draft is the one the composer holds (docs/adr/0022).
+  const goalDrafts = (v?.goalDrafts ?? []).filter((d) => d.status !== "discarded").reverse();
   const lastLine = lines.at(-1);
   const turn = liveState(v, busy);
   const working = v?.state === "working" || v?.state === "starting";
@@ -299,9 +302,12 @@ export function AssistantPanel({ projectId, onClose, docked = false }: { project
           />
           <div className="as-drafts-head">
             <Label>{t("drafts.title")}</Label>
-            <span className="badge num">{drafts.length}</span>
+            <span className="badge num">{drafts.length + goalDrafts.length}</span>
           </div>
-          {drafts.length === 0 && <p className="muted as-drafts-empty">{t("drafts.empty")}</p>}
+          {drafts.length + goalDrafts.length === 0 && <p className="muted as-drafts-empty">{t("drafts.empty")}</p>}
+          {goalDrafts.map((d) => (
+            <GoalDraftCard key={d.id} draft={d} projectId={projectId} />
+          ))}
           {drafts.map((d, i) => (
             <DraftCard key={d.id} draft={d} index={i + 1} />
           ))}

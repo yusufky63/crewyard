@@ -43,7 +43,7 @@ export const ASSISTANT_KEY = "assistant:";
 export const ASSISTANT_TOOLS: ToolSet = {
   tools: [...ASSISTANT_TOOL_DEFS, ...ASSISTANT_EXTRA_TOOL_DEFS, ...AUTOPILOT_TOOL_DEFS],
   instructions:
-    "Use propose_task once for each task you suggest. It only shows the person a draft; nothing starts unless they add it and approve its crew. The read tools (list_tasks, read_task, read_report, read_crew, list_drafts, read_inbox, read_events, read_usage, list_profiles, read_project, git_overview, list_problems, list_agent_files) and edit_draft and discard_draft for your own open drafts always work. create_task, edit_task, approve_crew, queue_message, retry_step, cancel_task and complete_task work only while the person has Autopilot on for this project; a refusal says why.",
+    "Use propose_task once for each task you suggest, and draft_goal for work that needs several tasks (it puts an Orchestra goal into the composer). Both only show the person a draft; nothing starts unless they add it or press Plan goal. The read tools (list_tasks, read_task, read_report, read_crew, list_drafts, read_inbox, read_events, read_usage, list_profiles, read_project, git_overview, list_problems, list_agent_files), draft_goal, and edit_draft and discard_draft for your own open drafts always work. create_task, edit_task, approve_crew, queue_message, retry_step, cancel_task, complete_task, create_goal and approve_goal_plan work only while the person has Autopilot on for this project; a refusal says why.",
 };
 
 export type AssistantToolCall = (conversationId: string, tool: string, args: unknown) => Promise<ToolOutcome>;

@@ -198,7 +198,10 @@
     "project_not_found": "The project is gone.",
     "assistant_preset_unknown": "That ready-made task does not exist.",
     "assistant_too_many_drafts": "This conversation already has 20 drafts. Add or discard some first.",
-    "other": "Something went wrong: {{message}}"
+    "other": "Something went wrong: {{message}}",
+    "assistant_goal_draft_not_found": "That goal draft no longer exists.",
+    "assistant_goal_draft_planned": "That goal draft is planned already; the goal is in Tasks.",
+    "assistant_goal_not_found": "That goal is gone."
   },
   "toolLine": {
     "withSubject": "{{title}}: {{subject}}",
@@ -219,7 +222,8 @@
       "list_problems": "Listed problems",
       "list_agent_files": "Listed instruction files and skills",
       "edit_draft": "Edited draft",
-      "discard_draft": "Discarded draft"
+      "discard_draft": "Discarded draft",
+      "draft_goal": "Drafted a goal"
     },
     "refused": {
       "list_tasks": "Could not list tasks",
@@ -236,7 +240,8 @@
       "list_problems": "Could not list problems",
       "list_agent_files": "Could not list instruction files and skills",
       "edit_draft": "Could not edit draft",
-      "discard_draft": "Could not discard draft"
+      "discard_draft": "Could not discard draft",
+      "draft_goal": "Could not draft a goal"
     },
     "status": {
       "proposed": "waiting for approval",
@@ -290,5 +295,17 @@
     "drafts": "Make drafts from this",
     "draftsTitle": "Sends a message asking the assistant to turn this reply into task drafts. It costs like any message.",
     "draftsMessage": "Turn your reply that starts with \"{{excerpt}}\" into task drafts: call propose_task once for each task in it, with a kind, acceptance criteria and a size."
+  },
+  "goalDraft": {
+    "badge": "Goal",
+    "from": "Drafted by the assistant",
+    "label": "Orchestra goal",
+    "planner": "Planner: {{alias}}",
+    "budget": "Suggested goal budget: {{budget}}",
+    "note": "Nothing is planned until you press Plan goal in the composer, which shows the planning cost first.",
+    "open": "Open in composer",
+    "plannedBadge": "Planned",
+    "planned": "You planned this goal. Its plan waits for your approval in Tasks.",
+    "openGoal": "Open goal"
   }
 }

@@ -1,4 +1,4 @@
-import type { AgentAdapter, GoalPreview, GoalTaskDraft, HandoffStop, RequestAnswer, RequestView, RunnerId, RunView, SessionSeen, TaskDetail, TaskKind, TaskSummary, TasksIpc, TasksTopics } from "@crewyard/core";
+import type { AgentAdapter, GoalPreview, GoalsTopics, GoalTaskDraft, HandoffStop, RequestAnswer, RequestView, RunnerId, RunView, SessionSeen, TaskDetail, TaskKind, TaskSummary, TasksIpc, TasksTopics } from "@crewyard/core";
 import type { McpHook } from "../mcp/service.ts";
 import { Bootstrapper } from "../worktrees/bootstrap.ts";
 import { AccountSwitcher, type AccountSwitches } from "./account-switch.ts";
@@ -13,7 +13,7 @@ import { Dispatcher } from "./dispatch.ts";
 import { OrchestratorError } from "./errors.ts";
 import { Fallback } from "./fallback.ts";
 import { GoalEditor } from "./goals/edits.ts";
-import { GoalPlanner, type GoalPlanStart, type GoalReplacements } from "./goals/planner.ts";
+import { GoalPlanner, type GoalCreateParams, type GoalPlanStart, type GoalReplacements } from "./goals/planner.ts";
 import { GoalRunner, type GoalApproveParams } from "./goals/runner.ts";
 import { GoalViews } from "./goals/view.ts";
 import { Handoffs } from "./handoffs.ts";
@@ -92,7 +92,25 @@ export class Orchestrator {
   private stallTimer: NodeJS.Timeout | null = null;
   private interval: NodeJS.Timeout | null = null;
 
-  constructor(opts: OrchestratorOptions) {
+  /** Listeners for goal changes inside the daemon (Autopilot's goals, docs/adr/0022). */
+  private readonly goalWatchers = new Set<(p: GoalsTopics["goals.changed"]) => void>();
+
+  constructor(given: OrchestratorOptions) {
+    // Every part sends `goals.changed` through this emit; the daemon's listeners hear it here too.
+    const opts: OrchestratorOptions = {
+      ...given,
+      emit: (topic, payload) => {
+        given.emit(topic, payload);
+        if (topic !== "goals.changed") return;
+        for (const w of this.goalWatchers) {
+          try {
+            w(payload as GoalsTopics["goals.changed"]);
+          } catch {
+            // A watcher must never break the change that told it.
+          }
+        }
+      },
+    };
     this.opts = opts;
     const ctx = new OrchestratorContext(opts);
     this.ctx = ctx;
@@ -397,6 +415,12 @@ export class Orchestrator {
     return () => this.ctx.taskWatchers.delete(listener);
   }
 
+  /** Hears every goal change inside the daemon (Autopilot's goals, docs/adr/0022); returns the unsubscribe. */
+  watchGoals(listener: (p: GoalsTopics["goals.changed"]) => void): () => void {
+    this.goalWatchers.add(listener);
+    return () => this.goalWatchers.delete(listener);
+  }
+
   /** Called by the MCP work (handlers/mcp.ts) once its service exists. */
   setMcp(hook: McpHook): void {
     this.ctx.mcp = hook;
@@ -571,7 +595,7 @@ export class Orchestrator {
   }
 
   /** `Plan goal`: the goal and its one read-only planning run, approved by this click. */
-  createGoal(p: { projectId: string; text: string; plannerProfileId?: string; baseBranch?: string; attachments?: string[]; defaultBudgetUsd?: number }): Promise<GoalPlanStart> {
+  createGoal(p: GoalCreateParams): Promise<GoalPlanStart> {
     return this.goalPlanner.create(p);
   }
 

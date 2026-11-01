@@ -3,7 +3,9 @@ import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
 import { AUTOPILOT_BOUNDS, type AutopilotLimits, type AutopilotLogEntry } from "@crewyard/core";
 import { Button, Label, ProvenanceBadge } from "@crewyard/ui";
+import { useNav } from "../../nav.ts";
 import { openTask } from "./assistant/openTask.ts";
+import { useGoalNav } from "./goalNav.ts";
 import { act, useWork } from "./data.ts";
 
 // DESIGN.md `Autopilot` (docs/adr/0017): the strip under the task assistant's header. Off by
@@ -15,7 +17,7 @@ import { act, useWork } from "./data.ts";
 const SHOT = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("autopilot") : null;
 
 const LIMIT_KEYS: Array<keyof AutopilotLimits> = ["perTaskUsd", "perDayUsd", "tasksPerHour", "concurrent"];
-const MAY = ["create", "edit", "approve", "message", "retry", "cancel", "complete"] as const;
+const MAY = ["create", "edit", "approve", "message", "retry", "cancel", "complete", "goals"] as const;
 const YOURS = ["push", "spend", "inbox", "delete", "signin", "limits"] as const;
 
 function useAutopilotError(): (err: unknown) => string {
@@ -216,6 +218,14 @@ function LimitsForm({ limits, submit, cancel, onSubmit, onCancel, tone }: { limi
   );
 }
 
+/** A goal Autopilot created or approved (docs/adr/0022), opened in the Tasks slot as a goal row does. */
+function openGoal(goalId: string, projectId: string): void {
+  const nav = useNav.getState();
+  if (nav.projectId !== projectId) nav.openProject(projectId);
+  nav.go("tasks");
+  useGoalNav.getState().open(goalId);
+}
+
 function LogLine({ e, projectId }: { e: AutopilotLogEntry; projectId: string }) {
   const { t, i18n } = useTranslation("autopilot");
   const time = new Intl.DateTimeFormat(i18n.language, { hour: "2-digit", minute: "2-digit" }).format(new Date(e.at));
@@ -227,6 +237,11 @@ function LogLine({ e, projectId }: { e: AutopilotLogEntry; projectId: string }) 
         {e.outcome === "refused" && <span className="badge badge-bad ap-refused-badge">{t("log.refused", { code: t(`refusal.${e.code ?? "failed"}`, { defaultValue: e.code ?? "" }) })}</span>}
         {e.taskId && e.taskTitle && (
           <button type="button" className="ap-link as-typed" onClick={() => openTask(e.taskId!, projectId)}>
+            {e.taskTitle}
+          </button>
+        )}
+        {!e.taskId && e.goalId && e.taskTitle && (
+          <button type="button" className="ap-link as-typed" onClick={() => openGoal(e.goalId!, projectId)}>
             {e.taskTitle}
           </button>
         )}

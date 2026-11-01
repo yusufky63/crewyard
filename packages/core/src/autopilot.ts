@@ -11,7 +11,9 @@ import { cleanText } from "./mcp.ts";
 
 // list_tasks and read_task were Autopilot tools; they are the assistant's read tools now
 // (docs/adr/0018), available with Autopilot off, so they are not gated here.
-export const AUTOPILOT_TOOLS = ["create_task", "edit_task", "approve_crew", "queue_message", "retry_step", "cancel_task", "complete_task"] as const;
+// create_goal and approve_goal_plan (docs/adr/0022) are Orchestra's two clicks, Plan goal and
+// Approve and start, for goals Autopilot creates itself, under the same limits as its tasks.
+export const AUTOPILOT_TOOLS = ["create_task", "edit_task", "approve_crew", "queue_message", "retry_step", "cancel_task", "complete_task", "create_goal", "approve_goal_plan"] as const;
 export type AutopilotTool = (typeof AUTOPILOT_TOOLS)[number];
 
 export const isAutopilotTool = (name: string): name is AutopilotTool => (AUTOPILOT_TOOLS as readonly string[]).includes(name);
@@ -52,6 +54,15 @@ export const AUTOPILOT_CAPS = {
   log: 100,
   /** Two failed steps with the same failure inside this window halt Autopilot in the project. */
   failureWindowMs: 24 * 60 * 60_000,
+  /**
+   * A goal's text, the cap goals.create applies to yours (GOAL_LIMITS.goalTextBytes; goals.ts imports
+   * this module, so the number is repeated here and a test keeps the two equal).
+   */
+  goalTextBytes: 8_000,
+  plannerAliasBytes: 64,
+  /** Goal tasks at once, the bounds goals.approve takes (GOAL_LIMITS.maxParallelMin and Max). */
+  maxParallelMin: 1,
+  maxParallelMax: 4,
 } as const;
 
 type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -91,7 +102,9 @@ export type AutopilotCall =
   | { tool: "queue_message"; taskId: string; text: string; reason: string }
   | { tool: "retry_step"; taskId: string; reason: string }
   | { tool: "cancel_task"; taskId: string; reason: string }
-  | { tool: "complete_task"; taskId: string; reason: string };
+  | { tool: "complete_task"; taskId: string; reason: string }
+  | { tool: "create_goal"; text: string; planner: string | null; basis: string; sources: AutopilotSource[]; reason: string }
+  | { tool: "approve_goal_plan"; goalId: string; revision: number | null; maxParallel: number | null; reason: string };
 
 const rec = (v: unknown): Record<string, unknown> | null => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null);
 
@@ -150,6 +163,43 @@ export function parseAutopilotCall(tool: string, args: unknown): Parsed<Autopilo
     const r = reason(a);
     if (!r.ok) return r;
     return { ok: true, value: { tool, draft: draft.value, basis: basis.value, sources: src.value, reason: r.value } };
+  }
+  if (tool === "create_goal") {
+    // The goal text is checked as goals.create checks yours: cleaned, refused past the cap, never cut.
+    const text = str(a.text, "text", AUTOPILOT_CAPS.goalTextBytes, true);
+    if (!text.ok) return text;
+    let planner: string | null = null;
+    if (a.planner !== undefined && a.planner !== null && a.planner !== "") {
+      const p = str(a.planner, "planner", AUTOPILOT_CAPS.plannerAliasBytes, true);
+      if (!p.ok) return p;
+      planner = p.value.replace(/\s+/g, " ").trim();
+    }
+    const basis = str(a.basis, "basis", AUTOPILOT_CAPS.basisBytes, true);
+    if (!basis.ok) return basis;
+    if (basis.value.trim().length < AUTOPILOT_CAPS.basisMinChars) return { ok: false, error: `basis must quote at least ${AUTOPILOT_CAPS.basisMinChars} characters of the person's message` };
+    const src = sources(a.sources);
+    if (!src.ok) return src;
+    const r = reason(a);
+    if (!r.ok) return r;
+    return { ok: true, value: { tool, text: text.value, planner, basis: basis.value, sources: src.value, reason: r.value } };
+  }
+  if (tool === "approve_goal_plan") {
+    if (typeof a.goal_id !== "string" || !TASK_ID.test(a.goal_id)) return { ok: false, error: "goal_id must be a goal id from create_goal" };
+    let revision: number | null = null;
+    if (a.revision !== undefined && a.revision !== null) {
+      if (typeof a.revision !== "number" || !Number.isInteger(a.revision) || a.revision < 1) return { ok: false, error: "revision must be a whole number from 1" };
+      revision = a.revision;
+    }
+    let maxParallel: number | null = null;
+    if (a.max_parallel !== undefined && a.max_parallel !== null) {
+      const n = a.max_parallel;
+      if (typeof n !== "number" || !Number.isInteger(n) || n < AUTOPILOT_CAPS.maxParallelMin || n > AUTOPILOT_CAPS.maxParallelMax)
+        return { ok: false, error: `max_parallel must be a whole number from ${AUTOPILOT_CAPS.maxParallelMin} to ${AUTOPILOT_CAPS.maxParallelMax}` };
+      maxParallel = n;
+    }
+    const r = reason(a);
+    if (!r.ok) return r;
+    return { ok: true, value: { tool, goalId: a.goal_id, revision, maxParallel, reason: r.value } };
   }
   const id = taskId(a);
   if (!id.ok) return id;
@@ -228,7 +278,13 @@ export type AutopilotRefusal =
   | "code_task"
   | "report_not_read"
   | "not_allowed"
-  | "failed";
+  | "failed"
+  /** Settings → Orchestra is off: no new goals, for Autopilot as for you. */
+  | "orchestra_off"
+  /** No profile here can plan (ready, read-only enforcement, structured output), or the one named cannot. */
+  | "no_planner"
+  /** The goal's plan is still being written, failed, or has no tasks to approve. */
+  | "plan_not_ready";
 
 /**
  * Whether a crew estimate fits the limits. Only a known estimate fits (an Unknown price could be
@@ -241,6 +297,62 @@ export function budgetFits(estimate: CostEstimate, limits: Pick<AutopilotLimits,
   if (r6(estimate.usd) > r6(limits.perTaskUsd)) return "over_task_limit";
   if (r6(committedTodayUsd + estimate.usd) > r6(limits.perDayUsd)) return "over_day_limit";
   return null;
+}
+
+const r6 = (x: number) => Math.round(x * 1_000_000) / 1_000_000;
+const known = (e: CostEstimate): e is CostEstimate & { usd: number } => e.usd !== null && e.provenance !== "unknown";
+
+/**
+ * Whether create_goal's planning run fits (docs/adr/0022). Planning costs money before any plan
+ * exists, so its ceiling (the planning run's own budget, which the composer states before your
+ * click) must be known and fit in what is left of the day limit, as if it were spent in full.
+ */
+export function planningFits(planning: { estimate: CostEstimate; ceilingUsd: number | null }, limits: Pick<AutopilotLimits, "perDayUsd">, committedTodayUsd: number): AutopilotRefusal | null {
+  if (!known(planning.estimate) || planning.ceilingUsd === null) return "estimate_unknown";
+  if (r6(committedTodayUsd + planning.ceilingUsd) > r6(limits.perDayUsd)) return "over_day_limit";
+  return null;
+}
+
+export interface GoalPlanFitInput {
+  /** The accepted tasks of the revision, with their crews' estimates. */
+  tasks: ReadonlyArray<{ key: string; estimate: CostEstimate }>;
+  /** The last review of all changes, priced before approval; null when the plan writes nothing or is one task. */
+  review: CostEstimate | null;
+}
+
+export type GoalPlanFit = { ok: true; budgetUsd: number; maxParallel: number } | { ok: false; code: AutopilotRefusal; key: string | null };
+
+/**
+ * Whether approve_goal_plan's plan fits the limits, and the goal budget and At once it approves
+ * with (docs/adr/0022). Every estimate must be known, each task (and the last review) under the
+ * per-task limit, the whole goal under what is left of the day limit, and the goal counts as one
+ * start per task against the hourly cap. The goal budget is the known total rounded up to the
+ * cent, so every task's share stays at its estimate and the existing share caps hold the rest.
+ * At once defaults to the smaller of the goal default (2) and the concurrency limit, and with the
+ * tasks already active must not pass it.
+ */
+export function goalPlanFits(
+  plan: GoalPlanFitInput,
+  limits: AutopilotLimits,
+  used: { committedTodayUsd: number; startedLastHour: number; active: number },
+  maxParallel: number | null,
+  defaultParallel = 2,
+): GoalPlanFit {
+  if (plan.tasks.length === 0) return { ok: false, code: "plan_not_ready", key: null };
+  const items = [...plan.tasks, ...(plan.review ? [{ key: "review", estimate: plan.review }] : [])];
+  for (const it of items) if (!known(it.estimate)) return { ok: false, code: "estimate_unknown", key: it.key };
+  for (const it of items) if (r6(it.estimate.usd!) > r6(limits.perTaskUsd)) return { ok: false, code: "over_task_limit", key: it.key };
+  const total = r6(items.reduce((s, it) => s + Math.max(0, it.estimate.usd!), 0));
+  const budgetUsd = Math.max(0.01, Math.ceil(total * 100 - 1e-6) / 100);
+  if (r6(used.committedTodayUsd + budgetUsd) > r6(limits.perDayUsd)) return { ok: false, code: "over_day_limit", key: null };
+  // Rounding the budget up to the cent scales each share by budget / total; the largest must still fit.
+  const ratio = total > 0 ? budgetUsd / total : 0;
+  for (const it of items) if (r6(it.estimate.usd! * ratio) > r6(limits.perTaskUsd)) return { ok: false, code: "over_task_limit", key: it.key };
+  if (used.startedLastHour + plan.tasks.length > limits.tasksPerHour) return { ok: false, code: "rate_started", key: null };
+  if (maxParallel !== null && maxParallel > limits.concurrent) return { ok: false, code: "concurrent", key: null };
+  const parallel = maxParallel ?? Math.max(1, Math.min(defaultParallel, limits.concurrent));
+  if (used.active + Math.min(parallel, plan.tasks.length) > limits.concurrent) return { ok: false, code: "concurrent", key: null };
+  return { ok: true, budgetUsd, maxParallel: parallel };
 }
 
 /** A failure reduced to what repeats: ids, numbers, paths and quoting are dropped. */
@@ -355,6 +467,47 @@ export const AUTOPILOT_TOOL_DEFS = [
     title: "Mark a finished analysis done",
     description: "Marks a finished research, review or docs task you created as done, after you read its report with read_task. Never a code task: its pull request waits for the person.",
     inputSchema: { type: "object", properties: { task_id: taskIdProp, reason: reasonProp }, required: ["task_id", "reason"], additionalProperties: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: "create_goal",
+    title: "Plan an Orchestra goal",
+    description:
+      "Creates an Orchestra goal and starts its one read-only planning run, which costs money: refused unless its estimate is known and its ceiling fits what is left of the per-day limit. The plan comes back as tasks for approve_goal_plan; nothing else starts. basis must quote, word for word, part of what the person wrote in this conversation that asks for this work. planner is a profile alias from list_profiles (optional).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        text: { type: "string", maxLength: AUTOPILOT_CAPS.goalTextBytes, description: "The goal: what should be true when it is done." },
+        planner: { type: "string", maxLength: AUTOPILOT_CAPS.plannerAliasBytes },
+        basis: { type: "string", maxLength: AUTOPILOT_CAPS.basisBytes },
+        sources: {
+          type: "array",
+          maxItems: AUTOPILOT_CAPS.sources,
+          items: { type: "object", properties: { kind: { type: "string", enum: [...AUTOPILOT_SOURCE_KINDS] }, ref: { type: "string", maxLength: AUTOPILOT_CAPS.sourceRefBytes } }, required: ["kind", "ref"], additionalProperties: false },
+        },
+        reason: reasonProp,
+      },
+      required: ["text", "basis", "reason"],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  },
+  {
+    name: "approve_goal_plan",
+    title: "Approve a goal's plan within budget",
+    description:
+      "Approves the ready plan of a goal you created, once, before it was ever approved: its tasks then start in plan order as the goal scheduler releases them. Refused unless every estimate is known, each task is under the per-task limit, the whole goal fits what is left of the per-day limit, its tasks fit the hourly start limit, and max_parallel (optional) is within the concurrent limit. Replans, merges into your branches, pushes and pull requests stay with the person.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        goal_id: { type: "string", description: "The goal id from create_goal." },
+        revision: { type: "integer", minimum: 1, description: "The plan revision you read; refused when a newer one exists." },
+        max_parallel: { type: "integer", minimum: AUTOPILOT_CAPS.maxParallelMin, maximum: AUTOPILOT_CAPS.maxParallelMax },
+        reason: reasonProp,
+      },
+      required: ["goal_id", "reason"],
+      additionalProperties: false,
+    },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
 ] as const;

@@ -1,11 +1,13 @@
-import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useEffectEvent, useId, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Folder, GitBranch, SquareTerminal } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { GOAL_LIMITS, TASK_PRESETS, type CandidateView, type FallbackMode, type GoalPreview, type IssueDetail, type RoleId, type TaskKind, type TaskStartHold } from "@crewyard/core";
 import { Button, Label, Panel } from "@crewyard/ui";
 import { useNav } from "../../nav.ts";
 import { AttachButton, DraftAttachments, useAttachmentDraft, useDiscardOnUnmount } from "./Attachments.tsx";
-import { useComposerFill, useComposerPick, useComposerPrefs } from "./composerPrefs.ts";
+import { fillFrom, pendingGoalDraft, useGoalBudgetHints, useShownGoalDrafts } from "./assistant/goalDraft.ts";
+import { useComposerFill, useComposerPick, useComposerPrefs, type ComposerFill, type ComposerFillFrom } from "./composerPrefs.ts";
 import { act, useErrorText, useWork } from "./data.ts";
 import { FIXTURE } from "./fixture.ts";
 import { fixtureComposer } from "./goalFixture.ts";
@@ -98,7 +100,10 @@ export function Composer({
   const rememberMode = useComposerPrefs((s) => s.rememberMode);
   const soloWho = useComposerPrefs((s) => s.soloWho[projectId] ?? null);
   const rememberSoloWho = useComposerPrefs((s) => s.rememberSoloWho);
-  const [text, setText] = useState(SHOT?.text ?? "");
+  // A fill handed over before this composer mounted (a goal draft's `Open in composer` on another
+  // screen) is read into its first state here and taken from the store once it mounts.
+  const [initialFill] = useState(() => (SHOT ? null : useComposerFill.getState().peek(projectId)));
+  const [text, setText] = useState(SHOT?.text ?? initialFill?.text ?? "");
   const [branch, setBranch] = useState("");
   const [kind, setKind] = useState<TaskKind | "auto">("auto");
   const [fallback, setFallback] = useState<FallbackMode | "default">("default");
@@ -110,16 +115,21 @@ export function Composer({
   const [picking, setPicking] = useState(false);
   const [issue, setIssue] = useState<{ number: number; url: string; title: string } | null>(null);
   const [preset, setPreset] = useState(false);
-  const [picked, setPicked] = useState<ComposerMode | null>(() => SHOT?.mode ?? useComposerPick.getState().mode);
-  const [planner, setPlanner] = useState<string | null>(null);
+  const [picked, setPicked] = useState<ComposerMode | null>(() => SHOT?.mode ?? (initialFill ? "orchestra" : useComposerPick.getState().mode));
+  const [planner, setPlanner] = useState<string | null>(initialFill?.from?.plannerProfileId ?? null);
   const [intro, setIntro] = useState(SHOT?.intro ?? false);
   const [more, setMore] = useState(false);
-  const [open, setOpen] = useState(() => useComposerPick.getState().mode !== null);
+  const [open, setOpen] = useState(() => initialFill !== null || useComposerPick.getState().mode !== null);
+  const [from, setFrom] = useState<ComposerFillFrom | null>(initialFill?.from ?? null);
+  /** Bumped by every fill; the box takes focus after the render that shows the text. */
+  const [focusN, setFocusN] = useState(initialFill ? 1 : 0);
   const area = useRef<HTMLTextAreaElement>(null);
   const attach = useAttachmentDraft();
   useDiscardOnUnmount(attach);
   const ids = { text: useId(), branch: useId(), kind: useId(), fallback: useId(), budget: useId(), bestOf: useId(), preset: useId(), planner: useId(), who: useId(), more: useId() };
   const ta = useTranslation("assistant").t;
+  const setBudgetHint = useGoalBudgetHints((s) => s.set);
+  const fmt = useFormat();
 
   // A Guide mode tile picks its mode for this request; Orchestra while it cannot plan still reads
   // as Crew below, and Solo goes back to the kept mode after the submission, as a click on it does.
@@ -135,17 +145,49 @@ export function Composer({
     });
   }, []);
 
-  // `Edit goal` in the plan review hands the goal's own words back here.
-  const fill = useComposerFill();
-  const fillSeen = useRef(fill.n);
-  useEffect(() => {
-    if (fill.n === fillSeen.current) return;
-    fillSeen.current = fill.n;
-    setText(fill.text);
+  // `Edit goal` in the plan review hands the goal's own words back here, and a goal draft's
+  // `Open in composer` the assistant's goal (docs/adr/0022), in Orchestra mode with its planner.
+  const applyFill = (f: ComposerFill) => {
+    setText(f.text);
+    setFrom(f.from);
+    if (f.from?.plannerProfileId) setPlanner(f.from.plannerProfileId);
     setPicked("orchestra");
+    setIntro(false);
     setOpen(true);
-    setTimeout(() => area.current?.focus(), 0);
-  }, [fill.n, fill.text]);
+    setFocusN((n) => n + 1);
+  };
+  const onFill = useEffectEvent(applyFill);
+  useEffect(() => {
+    if (initialFill) useComposerFill.getState().take(projectId);
+    return useComposerFill.subscribe((s, prev) => {
+      if (s.n === prev.n) return;
+      const f = useComposerFill.getState().take(projectId);
+      if (f) onFill(f);
+    });
+  }, [projectId, initialFill]);
+  useEffect(() => {
+    if (focusN > 0) area.current?.focus();
+  }, [focusN]);
+
+  // A goal the assistant drafts lands here by itself only while the box is empty, once per draft:
+  // nothing you typed is replaced without your click (the card's `Open in composer`).
+  const assistant = useWork("assistant.get", { projectId }, { staleTime: 5_000 });
+  const qc = useQueryClient();
+  useEffect(() => {
+    return window.crewyard.on("assistant.changed", (p) => {
+      if ((p as { projectId?: string }).projectId === projectId) void qc.invalidateQueries({ queryKey: ["assistant.get", { projectId }] });
+    });
+  }, [projectId, qc]);
+  const shownDrafts = useShownGoalDrafts((s) => s.ids);
+  const arriving = pendingGoalDraft(assistant.data, shownDrafts);
+  const [arrived, setArrived] = useState<string | null>(null);
+  if (arriving && arriving.id !== arrived && !SHOT) {
+    setArrived(arriving.id);
+    if (!text.trim()) applyFill({ text: arriving.text, from: fillFrom(projectId, arriving) });
+  }
+  useEffect(() => {
+    if (arriving) useShownGoalDrafts.getState().mark(arriving.id);
+  }, [arriving]);
 
   const { title, description } = splitTaskText(text);
   const debounced = useDebounced(text, PREVIEW_DEBOUNCE_MS);
@@ -193,6 +235,7 @@ export function Composer({
   const after = (submitted: ComposerMode) => {
     attach.clear();
     setText("");
+    setFrom(null);
     setIssue(null);
     setPreset(false);
     setIntro(false);
@@ -249,6 +292,12 @@ export function Composer({
       ...(attach.ids.length > 0 ? { attachments: attach.ids } : {}),
       ...(defaultBudgetUsd !== undefined ? { defaultBudgetUsd } : {}),
     });
+    // Planned from the assistant's goal draft: its card links to this goal, and the budget it
+    // suggested is what the plan review prefills. The link is bookkeeping; a failure leaves the goal as it is.
+    if (from) {
+      if (from.budgetUsd) setBudgetHint(goal.id, from.budgetUsd);
+      await act("assistant.goalDraftPlanned", { draftId: from.draftId, goalId: goal.id }).catch(() => undefined);
+    }
     openGoal(goal.id);
   };
 
@@ -355,13 +404,25 @@ export function Composer({
           value={text}
           onChange={(e) => {
             setText(e.target.value);
-            if (!e.target.value.trim()) setPreset(false);
+            if (!e.target.value.trim()) {
+              setPreset(false);
+              // An emptied box is no longer the assistant's goal.
+              setFrom(null);
+            }
             setIntro(false);
           }}
           onPaste={attach.handlers.onPaste}
           placeholder={used === "orchestra" ? t("composer.orchestraPlaceholder") : used === "solo" ? t("composer.soloPlaceholder") : t("composer.placeholder")}
           rows={2}
         />
+        {from && text.trim() && (
+          <p className="tk-composer-hint tk-from-assistant" role="note">
+            <span className="badge badge-info">{t("composer.fromAssistant.badge")}</span>
+            <span>{t("composer.fromAssistant.note")}</span>
+            {from.plannerAlias && <span className="muted">{t("composer.fromAssistant.planner", { alias: from.plannerAlias })}</span>}
+            {from.budgetUsd ? <span className="muted">{t("composer.fromAssistant.budget", { budget: fmt.usd(from.budgetUsd) })}</span> : null}
+          </p>
+        )}
         <DraftAttachments draft={attach} />
         {picking && (
           <IssuePicker

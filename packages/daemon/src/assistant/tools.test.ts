@@ -275,6 +275,66 @@ describe("own drafts", () => {
     expect({ title: d.title, description: d.description, kind: d.kind, size: d.size, acceptance: d.acceptance }).toEqual({ title: "Assistant draft", description: "keep me", kind: "code", size: "M", acceptance: ["It works"] });
   });
 
+  // draft_goal (docs/adr/0022): a goal for the composer; nothing is planned until the person's click.
+  it("drafts a goal for the composer, replaces its open one, and plans nothing", async () => {
+    const s = await setup(assistantScript);
+    const { call, conversationId } = await live(s);
+    const first = await call("draft_goal", { text: "İki adımlı giriş ekle\nve belgeleri güncelle", planner: "STRONG", budget_usd: 3 });
+    expect(first).toMatchObject({ ok: true, status: "open", planner: "strong", suggested_budget_usd: 3, planning_estimate: { label: "Estimated" } });
+    expect(s.a.get(s.project.id).goalDrafts).toEqual([
+      expect.objectContaining({ id: first.draft_id, conversationId, text: "İki adımlı giriş ekle\nve belgeleri güncelle", plannerProfileId: "strong", plannerAlias: "strong", budgetUsd: 3, status: "open", goalId: null }),
+    ]);
+    const line = s.a.get(s.project.id).lines.find((l) => l.call?.tool === "draft_goal");
+    expect(line?.call).toEqual({ tool: "draft_goal", outcome: "done", subject: "İki adımlı giriş ekle" });
+
+    // A second goal draft replaces the open one: the composer never has two to choose from.
+    const second = await call("draft_goal", { text: "Add two-step sign-in" });
+    expect(second).toMatchObject({ ok: true, planner: expect.any(String) });
+    expect(s.a.get(s.project.id).goalDrafts.map((d) => [d.text, d.status, d.plannerProfileId])).toEqual([
+      ["İki adımlı giriş ekle\nve belgeleri güncelle", "discarded", "strong"],
+      ["Add two-step sign-in", "open", null],
+    ]);
+    expect(await call("draft_goal", { text: "Goal", planner: "nobody" })).toMatchObject({ isError: true, refused: "invalid", detail: expect.stringContaining("strong") });
+
+    // discard_draft takes a goal draft too; Plan goal links the card to its goal.
+    expect(await call("discard_draft", { draft_id: second.draft_id })).toMatchObject({ ok: true, status: "discarded" });
+    expect(await call("discard_draft", { draft_id: second.draft_id })).toMatchObject({ isError: true, refused: "wrong_status" });
+    const third = await call("draft_goal", { text: "Add two-step sign-in, again" });
+    const now = new Date().toISOString();
+    s.store.db.prepare("insert into goals (id, project_id, text, title, created_at) values ('g-mine', ?, 'Add two-step sign-in, again', 'Add two-step sign-in, again', ?)").run(s.project.id, now);
+    const other = s.store.addProject(tempDir("crewyard other-"), "other");
+    s.store.db.prepare("insert into goals (id, project_id, text, title, created_at) values ('g-theirs', ?, 'x', 'x', ?)").run(other.id, now);
+    expect(() => s.a.goalDraftPlanned(String(third.draft_id), "g-theirs")).toThrow("assistant.goal_not_found");
+    expect(s.a.goalDraftPlanned(String(third.draft_id), "g-mine")).toMatchObject({ status: "planned", goalId: "g-mine" });
+    expect(() => s.a.discardGoalDraft(String(third.draft_id))).toThrow("assistant.goal_draft_planned");
+    expect(await call("discard_draft", { draft_id: third.draft_id })).toMatchObject({ isError: true, refused: "wrong_status" });
+
+    // Drafting planned nothing: no goal or task was created by the tool.
+    expect(s.store.db.prepare("select count(*) as n from goals where project_id = ?").get(s.project.id)).toEqual({ n: 1 });
+    expect(s.o.list(s.project.id)).toEqual([]);
+
+    // A new conversation discards the open goal draft and keeps the planned one.
+    await call("draft_goal", { text: "One more goal" });
+    await s.a.clear(s.project.id);
+    expect(s.store.db.prepare("select status from assistant_goal_drafts where conversation_id = ? order by created_at, rowid").all(conversationId).map((r) => (r as { status: string }).status)).toEqual(["discarded", "discarded", "planned", "discarded"]);
+  });
+
+  it("refuses a goal draft while Orchestra is off or no profile can plan, and another conversation's goal draft", async () => {
+    const s = await setup(assistantScript);
+    const { call } = await live(s);
+    s.store.db.prepare("insert into settings (key, value) values ('orchestra.enabled', 'false') on conflict(key) do update set value = excluded.value").run();
+    expect(await call("draft_goal", { text: "Add two-step sign-in" })).toMatchObject({ isError: true, refused: "wrong_status", detail: expect.stringContaining("Orchestra is turned off") });
+    s.store.db.prepare("update settings set value = 'true' where key = 'orchestra.enabled'").run();
+    const old = randomUUID();
+    const at = new Date().toISOString();
+    s.store.db.prepare("insert into assistant_conversations (id, project_id, created_at, cleared_at) values (?, ?, ?, ?)").run(old, s.project.id, at, at);
+    s.store.db.prepare("insert into assistant_goal_drafts (id, conversation_id, project_id, text, created_at) values ('gd-old', ?, ?, 'Old goal', ?)").run(old, s.project.id, at);
+    expect(await call("discard_draft", { draft_id: "gd-old" })).toMatchObject({ isError: true, refused: "not_yours" });
+
+    const t = new AssistantTools({ store: s.store, host: { ...({} as AssistantToolsHost), goalPreview: async () => ({ canPlan: false, reason: { code: "goal.no_planner" }, planner: null, candidates: [], estimate: { usd: null, provenance: "unknown" }, billing: null, ceilingUsd: null, smallHint: false, introDue: true, defaultBudgetUsd: null }) } });
+    expect(JSON.parse((await t.call({ projectId: s.project.id, conversationId: "c" }, "draft_goal", { text: "Goal" })).outcome.text)).toMatchObject({ refused: "wrong_status", detail: expect.stringContaining("No profile here can plan") });
+  });
+
   it("never changes a ready-made task the person picked into the same conversation", async () => {
     const s = await setup(assistantScript);
     const { call, conversationId } = await live(s);
@@ -302,6 +362,9 @@ describe("refusals, caps and the rate limit", () => {
     roles: () => ({ projectId: "p", globalDir: "", repoDir: null, roles: [], problems: [] }),
     agentFiles: () => ({ scan: { scannedAt: "", home: "", projectPath: null, items: [], roots: [], skipped: [] }, shares: [], bridge: { projectId: "p", enabled: false, chosen: [], files: [] } }),
     config: () => {
+      throw new Error("not used");
+    },
+    goalPreview: async () => {
       throw new Error("not used");
     },
     ...over,

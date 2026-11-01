@@ -159,7 +159,7 @@
       "title": "Görev asistanı ve hazır analizler",
       "body": "Alt paneldeki salt okunur sohbet; anlattığını görev taslaklarına çevirir.",
       "points": {
-        "a": "Dosya düzenlemez, çalıştırma başlatmaz. Taslak olarak ekle'ye basınca ekibi yine senin onayını bekleyen bir görev oluşur.",
+        "a": "Dosya düzenlemez, çalıştırma başlatmaz. Taslak olarak ekle'ye basınca ekibi yine senin onayını bekleyen bir görev oluşur. Birkaç görev gerektiren işler için yazı kutusuna bir Orkestra hedefi taslağı koyar; Hedefi planla'ya basmak yine sana kalır.",
         "b": "Altı hazır analiz (inceleme, iyileştirmeler, hatalar, güvenlik, bağımlılıklar ve lisanslar, test boşlukları) model çağırmayan yerel şablonlardır; projeye göre en fazla üçü öne çıkarılır.",
         "c": "Harcaması profil anahtarının günlük sınırından düşer ve Tahmini olarak gösterilir. Durdur ve kapat'a basınca ya da bir süre boşta kalınca durur."
       },
@@ -169,7 +169,7 @@
       "title": "Autopilot",
       "body": "Görev asistanının isteğe bağlı modu; proje başına açılır ve başlangıçta kapalıdır.",
       "points": {
-        "a": "Onay kartını kabul edince görev oluşturabilir, başlamamış görevleri düzenleyebilir, Tahmini maliyet sınırına sığan ekipleri onaylayabilir, başarısız bir adımı bir kez yeniden deneyebilir ve kendi görevlerini iptal edebilir.",
+        "a": "Onay kartını kabul edince görev oluşturabilir, başlamamış görevleri düzenleyebilir, Tahmini maliyet sınırına sığan ekipleri onaylayabilir, başarısız bir adımı bir kez yeniden deneyebilir ve kendi görevlerini iptal edebilir. Planlama tavanı günün sınırına sığıyorsa bir Orkestra hedefi de planlayabilir; her tahmin biliniyor ve sınırlara sığıyorsa o hedefin ilk planını onaylayabilir.",
         "b": "Sınırları sen belirlersin: görev başına, günlük, saatte başlatılan görev ve aynı anda çalışan görev (varsayılan 1,00 $, 5,00 $, 4 ve 2). Onları yalnızca senin tıklaman değiştirir.",
         "c": "Push edemez, pull request açamaz, birleştiremez, silemez, bir sınırı aşacak harcama yapamaz, Gelen kutusunu yanıtlayamaz, oturum açamaz. Autopilot'u durdur her şeyi bir anda reddeder ama çalışan ajanları durdurmaz."
       },
@@ -253,7 +253,7 @@
     },
     "nothingStarts": {
       "q": "Ben bir şey yapmadan bir iş başlayabilir mi?",
-      "a": "Sen onaylamadan hiçbir ekip başlamaz. Orkestra'da Hedefi planla yalnızca maliyeti düğmede yazan salt okunur bir planlama çalıştırmasını başlatır; plandaki Onayla ve başlat da görevlerini, sırası gelince sonradan başlayacak olanlarla birlikte onaylar. Solo'da tahmini gösteren Başlat onayın kendisidir. Push, pull request, senin dallarına birleştirme ve bir sınırı aşan harcama her zaman senin tıklamanı bekler. Tek istisna proje başına açtığın Autopilot: kendi oluşturduğu görevlerin ekiplerini senin sınırların içinde onaylayabilir, hedeflere dokunmaz, hiçbir zaman push etmez ve birleştirmez."
+      "a": "Sen onaylamadan hiçbir ekip başlamaz. Orkestra'da Hedefi planla yalnızca maliyeti düğmede yazan salt okunur bir planlama çalıştırmasını başlatır; plandaki Onayla ve başlat da görevlerini, sırası gelince sonradan başlayacak olanlarla birlikte onaylar. Solo'da tahmini gösteren Başlat onayın kendisidir. Push, pull request, senin dallarına birleştirme ve bir sınırı aşan harcama her zaman senin tıklamanı bekler. Tek istisna proje başına açtığın Autopilot: senin sınırların içinde kendi oluşturduğu görevlerin ekiplerini onaylayabilir, hedef planlayıp ilk planını onaylayabilir; yeniden planlama, push ve birleştirme sende kalır. Autopilot kapalıyken asistan yalnızca taslak hazırlar: görevleri taslak kartı olarak, hedefleri yazı kutusuna."
     },
     "whichMode": {
       "q": "Hangi modu kullanmalıyım?",

@@ -121,7 +121,9 @@
       "cancel_task": "cancelled this task",
       "complete_task": "marked this analysis done",
       "read_task": "read this task",
-      "list_tasks": "listed the tasks"
+      "list_tasks": "listed the tasks",
+      "create_goal": "planned a goal",
+      "approve_goal_plan": "approved a goal's plan within its limits"
     }
   }
 }

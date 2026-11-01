@@ -1,5 +1,6 @@
 import { ASSISTANT_KINDS, ASSISTANT_LIMITS, ASSISTANT_SIZES, parseTaskDraft, type TaskDraftInput } from "./assistant.ts";
 import { utf8Length } from "./event-caps.ts";
+import { GOAL_LIMITS, goalTitle, parseGoalLimits, parseGoalText } from "./goals.ts";
 import { cleanText, REPORT_SERVER } from "./mcp.ts";
 import type { TaskStatus } from "./state.ts";
 
@@ -26,7 +27,12 @@ export const ASSISTANT_READ_TOOLS = [
   "list_agent_files",
 ] as const;
 
-export const ASSISTANT_DRAFT_TOOLS = ["edit_draft", "discard_draft"] as const;
+/**
+ * Tools that change only this conversation's own drafts. draft_goal puts a goal into the Tasks
+ * composer in Orchestra mode; planning it stays the person's `Plan goal` click, which shows the
+ * planning estimate first (docs/adr/0022).
+ */
+export const ASSISTANT_DRAFT_TOOLS = ["edit_draft", "discard_draft", "draft_goal"] as const;
 
 export const ASSISTANT_EXTRA_TOOLS = [...ASSISTANT_READ_TOOLS, ...ASSISTANT_DRAFT_TOOLS] as const;
 export type AssistantExtraTool = (typeof ASSISTANT_EXTRA_TOOLS)[number];
@@ -61,6 +67,10 @@ export const ASSISTANT_TOOL_CAPS = {
   /** Inbox text (a question, a command) and agent-file previews. */
   inboxTextBytes: 500,
   previewBytes: 300,
+  /** Goal drafts per conversation; a new one replaces the open one, so this only stops a loop. */
+  goalDraftsPerConversation: 10,
+  /** The planner alias a goal draft names; aliases are short. */
+  plannerAliasBytes: 64,
 } as const;
 
 // Every task status, as a record so a new status fails to compile until it is listed here too.
@@ -218,7 +228,8 @@ export type AssistantToolCall =
   | { tool: "list_problems" }
   | { tool: "list_agent_files" }
   | { tool: "edit_draft"; draftId: string; patch: Partial<TaskDraftInput> }
-  | { tool: "discard_draft"; draftId: string; reason: string };
+  | { tool: "discard_draft"; draftId: string; reason: string }
+  | { tool: "draft_goal"; text: string; planner: string | null; budgetUsd: number | null };
 
 type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -263,6 +274,7 @@ const ARG_KEYS: Record<AssistantExtraTool, readonly string[]> = {
   list_agent_files: [],
   edit_draft: ["draft_id", "title", "description", "kind", "size", "acceptance_criteria"],
   discard_draft: ["draft_id", "reason"],
+  draft_goal: ["text", "planner", "budget_usd"],
 };
 
 /**
@@ -374,8 +386,37 @@ export function parseAssistantToolCall(tool: string, args: unknown): Parsed<Assi
       if (utf8Length(reason) > ASSISTANT_TOOL_CAPS.reasonBytes) return { ok: false, error: `reason is ${utf8Length(reason)} bytes; the limit is ${ASSISTANT_TOOL_CAPS.reasonBytes}` };
       return { ok: true, value: { tool, draftId: d.value!, reason } };
     }
+    case "draft_goal":
+      return parseGoalDraft(a);
   }
 }
+
+/**
+ * draft_goal's arguments. The goal text is agent-written: cleaned (control and bidi characters
+ * removed) and refused past the cap goals.create applies to your own goal, never cut. The planner
+ * is a profile alias as list_profiles shows it; the daemon matches it against the planners that can
+ * plan here. A budget is only a suggestion the plan review prefills, checked like a goal budget.
+ */
+function parseGoalDraft(a: Record<string, unknown>): Parsed<Extract<AssistantToolCall, { tool: "draft_goal" }>> {
+  const text = parseGoalText(a.text);
+  if (!text.ok) return { ok: false, error: text.error.replace(/^goal\b/, "text") };
+  let planner: string | null = null;
+  if (a.planner !== undefined && a.planner !== null && a.planner !== "") {
+    const alias = typeof a.planner === "string" ? cleanText(a.planner).replace(/\s+/g, " ").trim() : "";
+    if (!alias || utf8Length(alias) > ASSISTANT_TOOL_CAPS.plannerAliasBytes) return { ok: false, error: "planner must be a profile alias from list_profiles" };
+    planner = alias;
+  }
+  let budgetUsd: number | null = null;
+  if (a.budget_usd !== undefined && a.budget_usd !== null) {
+    const b = parseGoalLimits({ budgetUsd: a.budget_usd });
+    if (!b.ok || b.value.budgetUsd === undefined) return { ok: false, error: `budget_usd must be more than 0 and at most ${GOAL_LIMITS.budgetMaxUsd}` };
+    budgetUsd = b.value.budgetUsd;
+  }
+  return { ok: true, value: { tool: "draft_goal", text: text.value, planner, budgetUsd } };
+}
+
+/** A goal draft's tool line subject: the goal's first line, as the goal list titles it. */
+export const goalDraftSubject = (text: string): string => goalTitle(text);
 
 // ---------------------------------------------------------------- definitions listed to the agent
 
@@ -512,7 +553,7 @@ export const ASSISTANT_EXTRA_TOOL_DEFS = [
   {
     name: "discard_draft",
     title: "Discard one of your open drafts",
-    description: "Discards a draft you proposed in this conversation that the person has not added yet, for example when you replaced it with a better one. Drafts the person picked from ready-made tasks or a report stay theirs.",
+    description: "Discards a draft you proposed in this conversation, a task draft or a goal draft, that the person has not added or planned yet, for example when you replaced it with a better one. Drafts the person picked from ready-made tasks or a report stay theirs.",
     inputSchema: {
       type: "object",
       properties: { draft_id: { type: "string", description: "A draft id from list_drafts." }, reason: { type: "string", maxLength: ASSISTANT_TOOL_CAPS.reasonBytes } },
@@ -520,5 +561,22 @@ export const ASSISTANT_EXTRA_TOOL_DEFS = [
       additionalProperties: false,
     },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
+  {
+    name: "draft_goal",
+    title: "Draft an Orchestra goal for the person",
+    description:
+      "Puts a goal into the Tasks composer in Orchestra mode, for work that needs several tasks. Nothing is planned or spent: the person reads it, may change it, and presses Plan goal, which shows the planning estimate before the read-only planning run. planner is a profile alias from list_profiles (optional); budget_usd is a goal budget to suggest (optional). A new draft_goal replaces your open goal draft. For a single task, use propose_task.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        text: { type: "string", maxLength: GOAL_LIMITS.goalTextBytes, description: "The goal in the person's terms: what should be true when it is done." },
+        planner: { type: "string", maxLength: ASSISTANT_TOOL_CAPS.plannerAliasBytes, description: "A profile alias from list_profiles that can plan." },
+        budget_usd: { type: "number", exclusiveMinimum: 0, maximum: GOAL_LIMITS.budgetMaxUsd },
+      },
+      required: ["text"],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   },
 ] as const;
