@@ -12,8 +12,10 @@ import type { ProfileDirectory } from "./directory.ts";
 import { Dispatcher } from "./dispatch.ts";
 import { OrchestratorError } from "./errors.ts";
 import { Fallback } from "./fallback.ts";
+import { GoalEditor } from "./goals/edits.ts";
 import { GoalPlanner, type GoalPlanStart, type GoalReplacements } from "./goals/planner.ts";
 import { GoalRunner, type GoalApproveParams } from "./goals/runner.ts";
+import { GoalViews } from "./goals/view.ts";
 import { Handoffs } from "./handoffs.ts";
 import { Hibernator, type HibernationStore } from "./hibernation.ts";
 import { Inbox } from "./inbox.ts";
@@ -62,6 +64,10 @@ export class Orchestrator {
   readonly crew: CrewManager;
   /** Orchestra's goal scheduler: approval, release, merging, the last review, decisions (goals/runner.ts). */
   readonly goals: GoalRunner;
+  /** The goal list and goal view, built from the store on every read (goals/view.ts). */
+  readonly goalViews: GoalViews;
+  /** Your edits to an unapproved plan, goals.approve's routing and the project's default goal budget (goals/edits.ts). */
+  readonly goalEdits: GoalEditor;
 
   /** Kept on the facade too: github/flow.test.ts reads `opts.store` through a cast. */
   private readonly opts: OrchestratorOptions;
@@ -295,6 +301,22 @@ export class Orchestrator {
       applyReplacements: (goalId, revision) => this.goalPlanner.applyReplacements(goalId, revision),
       tick: () => this.dispatcher.tick(),
     });
+    // What goals.list and goals.get read, and your edits to an unapproved plan (docs/adr/0019).
+    this.goalViews = new GoalViews(ctx, {
+      planState: (p) => this.goalPlanner.planState(p),
+      facts: (goalId) => this.goals.facts(goalId),
+      integration: (goalId) => this.goals.integrationState(goalId),
+      hold: (task) => this.goals.goalRef(task)?.hold ?? null,
+      pausedAll: () => this.goals.pausedAllState(),
+    });
+    this.goalEdits = new GoalEditor(ctx, {
+      edit: (taskId, patch, how) => this.taskFlow.edit(taskId, patch, how),
+      planState: (p) => this.goalPlanner.planState(p),
+      status: (goalId) => this.goalViews.state(goalId).status,
+      approvalRoute: (goalId, revision) => this.goalViews.approvalRoute(goalId, revision),
+      approveGoal: (p) => this.goals.approve(p),
+      approveOneTask: (goalId, revision) => this.goalPlanner.approveOneTask(goalId, revision),
+    });
     this.db.taskExtras = (t) => ({ ...this.bestOfRunner.taskExtras(t), goal: this.goals.goalRef(t) });
     this.db.integrationDone = (taskId) => this.goals.integrationDone(taskId);
     this.db.taskLoop = (t) => this.loopRunner.loopView(t);
@@ -440,6 +462,15 @@ export class Orchestrator {
   /** `Approve and start`: idempotent per revision (docs/adr/0019). */
   approveGoal(p: GoalApproveParams): Promise<void> {
     return this.goals.approve(p);
+  }
+
+  /**
+   * goals.approve: a plan of one task before the first approval becomes an ordinary task, approved
+   * in the same click (design §1.2); every other plan goes to the goal scheduler. Both are
+   * idempotent per revision, so a second click creates nothing twice.
+   */
+  approveGoalPlan(p: GoalApproveParams): Promise<void> {
+    return this.goalEdits.approve(p);
   }
 
   // ---------------------------------------------------------------- runs (run-actions.ts, handoffs.ts)

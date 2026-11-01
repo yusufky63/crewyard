@@ -398,6 +398,11 @@ export class GoalRunner extends Part {
     return { status: this.db.status(task), reviewPassed: verdict?.verdict === "pass" };
   }
 
+  /** The last review's facts as the goal view shows them (goals/view.ts); null for a goal with no branch. */
+  integrationState(goalId: string): { status: TaskStatus; reviewPassed: boolean } | null {
+    return this.integrationFacts(this.rows.goal(goalId));
+  }
+
   /** The goal's derived status (core deriveGoalStatus), from its stored facts only. */
   state(goalId: string): GoalState {
     const goal = this.rows.goal(goalId);

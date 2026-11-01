@@ -1,7 +1,8 @@
 import { basename } from "node:path";
-import type { DaemonStatus, GoalsIpc, IpcMessage, IpcMethods, IpcResponse } from "@crewyard/core";
+import type { DaemonStatus, IpcMessage, IpcMethods, IpcResponse } from "@crewyard/core";
 import { createCrewHandlers } from "./handlers/crew.ts";
 import { createGithubHandlers } from "./handlers/github.ts";
+import { createGoalsHandlers } from "./handlers/goals.ts";
 import { createMcpHandlers } from "./handlers/mcp.ts";
 import { createRolesHandlers } from "./handlers/roles.ts";
 import { createPreviewHandlers } from "./handlers/preview.ts";
@@ -21,14 +22,7 @@ import { assertFolder, scanForRepos } from "./projects.ts";
 import { readProjectConfig } from "./setup/config.ts";
 import { defaultWorktreeRoot } from "./setup/detect.ts";
 
-/**
- * Methods whose contract is in core but whose daemon side lands with a later Orchestra work item
- * (docs/adr/0019): `goals.*` with the goal handlers. Until then a call answers "Unknown method",
- * never a made-up result. Each item removes its names here when it adds the handlers.
- */
-export type PendingMethods = keyof GoalsIpc;
-
-export type Handlers = HandlerMap<Omit<IpcMethods, PendingMethods>>;
+export type Handlers = HandlerMap<IpcMethods>;
 
 // Base handlers live here; every area brings its own from ./handlers/<area>.ts.
 export function createHandlers(ctx: HandlerContext): Handlers {
@@ -56,6 +50,7 @@ export function createHandlers(ctx: HandlerContext): Handlers {
     },
     "projects.open": ({ projectId }) => store.markOpened(projectId),
     ...createTasksHandlers(ctx),
+    ...createGoalsHandlers(ctx),
     ...createProvidersHandlers(ctx),
     ...createGithubHandlers(ctx),
     ...createSetupHandlers(ctx),
