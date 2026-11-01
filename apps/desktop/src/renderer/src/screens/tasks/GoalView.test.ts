@@ -247,10 +247,27 @@ describe("GoalView", () => {
     const goal = goalDetail({ status: "needs_you", reason: "report", tasks: base.tasks.map((x) => (x.taskId === "t1" ? { ...x, reportAcceptedAt: null } : x.taskId === "t2" ? { ...x, released: false, status: "proposed" as const, hold: { code: "goal.waits_report" as const, params: { task: "01", taskId: "t1" } } } : x)) });
     const html = view(goal);
     const t = text(html);
-    expect(t).toContain("Read 01 Compare WebAuthn libraries's report, then accept it");
+    expect(t).toContain("Read the report of 01 Compare WebAuthn libraries, then accept it");
     expect(enabled(html, "Accept report")).toBe(true);
     expect(t).toContain("Waits for you to accept 01's report");
     expect(t).toContain("Done · report waits for you");
+  });
+
+  it("a conflicted merge offers its three ways, the buttons naming the task they act on (design §4.9)", async () => {
+    const goal = goalDetail({ status: "needs_you", reason: "decision", decisions: [decision({ id: "c1", kind: "conflict", taskId: "t2", payload: { paths: ["CHANGELOG.md", "docs/giriş kılavuzu.md"] }, actions: ["send_to_implementer", "merge_myself", "check_again", "leave_out"] })] });
+    const html = view(goal);
+    expect(text(html)).toContain("Conflicted files: CHANGELOG.md, docs/giriş kılavuzu.md");
+    expect(enabled(html, "Send to 02's implementer", true)).toBe(true);
+    expect(enabled(html, "I will merge it myself", true)).toBe(true);
+    expect(enabled(html, "Check again", true)).toBe(true);
+    expect(enabled(html, "Leave 02 out of the goal", true)).toBe(true);
+    // A decision with no task keeps the plain label.
+    const plain = view(goalDetail({ decisions: [decision({ id: "p1", kind: "profile_gone", taskId: null, payload: { profileId: "gone" }, actions: ["replan", "leave_out", "stop"] })] }));
+    expect(button(plain, "Leave it out", true)).not.toBeNull();
+    await i18n.changeLanguage("tr");
+    const tr = view(goal);
+    expect(button(tr, "02 görevini uygulayıcısına geri gönder", true)).not.toBeNull();
+    expect(button(tr, "02 görevini hedefin dışında bırak", true)).not.toBeNull();
   });
 
   it("reads naturally in Turkish", async () => {

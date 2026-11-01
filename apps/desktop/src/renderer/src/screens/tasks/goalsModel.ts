@@ -375,6 +375,19 @@ function sharedPath(a: readonly string[], b: readonly string[]): string | null {
 }
 
 /**
+ * Task numbers as a sentence lists them in the UI language: "02, 03 and 04", "02, 03 ve 04".
+ * Joining with a translated " and " gave "02 and 03 and 04".
+ */
+export function joinList(items: readonly string[], lang: string): string {
+  try {
+    return new Intl.ListFormat(lang, { type: "conjunction" }).format(items);
+  } catch {
+    // An unknown language tag: English order is still readable.
+    return new Intl.ListFormat("en", { type: "conjunction" }).format(items);
+  }
+}
+
+/**
  * "01's report feeds 02 and 03: you read and accept it before they start" (design §3.2, §4.6):
  * every accepted task that writes nothing, with the accepted writing tasks that build on it.
  */

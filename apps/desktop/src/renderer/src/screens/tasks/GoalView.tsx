@@ -136,6 +136,9 @@ function useDecisionText(goal: Pick<GoalDetail, "tasks" | "integration" | "stuck
   };
 }
 
+/** Answers whose label names the decision's task. */
+const TASK_ANSWERS: ReadonlySet<GoalDecisionAction> = new Set(["send_to_implementer", "leave_out"]);
+
 const DECISION_ICON = { conflict: GitMerge, prerequisite: CircleX, stop_rule: CircleAlert, stuck: CircleAlert, changes: ListChecks, report: FileText, profile_gone: CircleAlert } as const;
 
 /** A Replan button: its planning cost on the button, disabled until that cost is known. */
@@ -165,6 +168,10 @@ export function GoalDecisionRow({ goal, decision, apply, replanCost, locked = fa
   const stopButton = useRef<HTMLElement | null>(null);
   const Icon = DECISION_ICON[decision.kind];
   const answer = (action: GoalDecisionAction) => apply(() => act("goals.decide", { goalId: goal.id, decisionId: decision.id, action }));
+  // "Send to 02's implementer", "Leave 02 out of the goal" (design §4.9): the button names the task
+  // it acts on; without a task the plain label stands.
+  const subject = goal.tasks.find((y) => y.taskId === decision.taskId);
+  const label = (a: GoalDecisionAction) => (subject && TASK_ANSWERS.has(a) ? t(`answerTask.${a}`, { number: goalNumber(subject.number) }) : t(`answer.${a}`));
   const closeStop = () => {
     setStopping(false);
     stopButton.current?.focus();
@@ -199,7 +206,7 @@ export function GoalDecisionRow({ goal, decision, apply, replanCost, locked = fa
               <ReplanButton key={a} cost={replanCost} locked={locked} onClick={() => void answer(a)} />
             ) : (
               <Button key={a} size="sm" tone={DECISION_TONE[a]} disabled={locked} onClick={() => void answer(a)}>
-                {t(`answer.${a}`)}
+                {label(a)}
               </Button>
             ),
           )}

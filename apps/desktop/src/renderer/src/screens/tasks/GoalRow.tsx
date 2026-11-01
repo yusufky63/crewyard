@@ -6,6 +6,7 @@ import type { CostEstimate, GoalSummary, Reason, RequestView, TaskGoalRef, TaskM
 import { TickMeter } from "@crewyard/ui";
 import { ProvBadge } from "../providers/shared.tsx";
 import { useWork } from "./data.ts";
+import { joinList } from "./goalsModel.ts";
 import { useActivity } from "./live.ts";
 import { codeKey, currentRun, formatDuration, goalFolded, goalNumber, goalSpendPct, goalStatusLine, profileNames, type GoalIcon, type GoalLine, type GoalTaskLine } from "./model.ts";
 import { STATUS_ICONS, useFormat, useNow } from "./parts.tsx";
@@ -29,14 +30,16 @@ export function useGoalsChanged(): void {
 
 /** Formatting for goal labels: hold reasons, costs with their provenance, modes. */
 export function useGoalFormat() {
-  const { t } = useTranslation("goals");
+  const { t, i18n } = useTranslation("goals");
   const f = useFormat();
+  /** Task numbers as a list in the UI language ("02, 03 and 04"). */
+  const list = (items: readonly string[]) => joinList(items, i18n.language);
   /** A goal hold reason (`goal.*`): `task` is already the task's number ("01"). */
   const hold = (r: Reason) => t(`hold.${codeKey(r.code)}`, { ...(r.params ?? {}), defaultValue: t("hold.other") });
   const mode = (m: TaskMode, steps: number) => (m === "solo" ? t("mode.solo") : t("mode.crew", { count: steps }));
   /** "$1.12", or null when the number is unknown (the caller shows the Unknown badge alone). */
   const usd = (c: Pick<CostEstimate, "usd">) => (c.usd === null ? null : f.usd(c.usd));
-  return { t, f, hold, mode, usd };
+  return { t, f, hold, mode, usd, list };
 }
 
 const GOAL_ICONS: Record<Exclude<GoalIcon, "spinner">, typeof Check> = { question: CircleHelp, pause: Pause, check: Check, pr: GitPullRequest, square: Square };

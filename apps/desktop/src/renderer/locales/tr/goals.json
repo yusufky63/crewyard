@@ -103,7 +103,7 @@
     "planReady": "İncelenecek bir plan hazır",
     "planFailed": "Planlama başarısız oldu",
     "taskFailed": "{{number}} {{title}} başarısız oldu",
-    "reportWaits": "{{number}} {{title}} raporunu okuyup onaylayın: yazan görevler bunun üzerine kurulacak",
+    "reportWaits": "{{number}} {{title}} görevinin raporunu okuyup onaylayın: yazan görevler bunun üzerine kurulacak",
     "empty": "Onaylı görev kalmadı. Yeniden planlayın, görev ekleyin ya da hedefi durdurun.",
     "readyForPr": "Son inceleme hedef dalında geçti. Pull request'i siz açarsınız."
   },
@@ -178,7 +178,7 @@
     "stuck": "Takıldı: {{task}}, {{waitsFor}} görevini bekliyor; o görev {{why}}",
     "stuckPlain": "Takıldı: hiçbir görev başlayamıyor",
     "changes": "Son inceleme değişiklik istiyor",
-    "report": "{{task}} raporunu okuyup onaylayın; ona dayanan görevler ancak o zaman başlar",
+    "report": "{{task}} görevinin raporunu okuyup onaylayın; ona dayanan görevler ancak o zaman başlar",
     "profile_gone": "Planın kullandığı bir profil artık yok: {{profile}}",
     "detail": "Ayrıntı: {{detail}}"
   },
@@ -202,6 +202,10 @@
     "retry": "Yeniden dene",
     "stop": "Hedefi durdur",
     "accept_report": "Raporu onayla"
+  },
+  "answerTask": {
+    "send_to_implementer": "{{number}} görevini uygulayıcısına geri gönder",
+    "leave_out": "{{number}} görevini hedefin dışında bırak"
   },
   "inbox": {
     "section_one": "Hedefler · {{count}}",
@@ -369,7 +373,6 @@
     "sideBySide": "Yine de yan yana çalıştır",
     "feeds_one": "{{from}} görevinin raporu {{to}} görevine girdi olur: o başlamadan önce raporu okuyup onaylarsınız",
     "feeds_other": "{{from}} görevinin raporu {{to}} görevlerine girdi olur: onlar başlamadan önce raporu okuyup onaylarsınız",
-    "and": " ve ",
     "alsoSkipped_one": "{{tasks}} görevi de atlandı: {{task}} görevini bekliyor",
     "alsoSkipped_other": "{{tasks}} görevleri de atlandı: {{task}} görevini bekliyorlar",
     "undo": "Geri al",

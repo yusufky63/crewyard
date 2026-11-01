@@ -103,7 +103,7 @@
     "planReady": "A plan is ready to review",
     "planFailed": "Planning failed",
     "taskFailed": "{{number}} {{title}} failed",
-    "reportWaits": "Read {{number}} {{title}}'s report, then accept it: writing tasks build on it",
+    "reportWaits": "Read the report of {{number}} {{title}}, then accept it: writing tasks build on it",
     "empty": "No accepted task is left. Replan, add a task or stop the goal.",
     "readyForPr": "The last review passed on the goal branch. You open the pull request."
   },
@@ -178,7 +178,7 @@
     "stuck": "Stuck: {{task}} waits for {{waitsFor}}, which {{why}}",
     "stuckPlain": "Stuck: no task can start",
     "changes": "The last review asks for changes",
-    "report": "Read {{task}}'s report and accept it before the tasks that build on it start",
+    "report": "Read the report of {{task}} and accept it before the tasks that build on it start",
     "profile_gone": "A profile the plan uses is gone: {{profile}}",
     "detail": "Details: {{detail}}"
   },
@@ -202,6 +202,10 @@
     "retry": "Retry",
     "stop": "Stop goal",
     "accept_report": "Accept report"
+  },
+  "answerTask": {
+    "send_to_implementer": "Send to {{number}}'s implementer",
+    "leave_out": "Leave {{number}} out of the goal"
   },
   "inbox": {
     "section_one": "Goals · {{count}}",
@@ -369,7 +373,6 @@
     "sideBySide": "Run side by side anyway",
     "feeds_one": "{{from}}'s report feeds {{to}}: you read and accept it before it starts",
     "feeds_other": "{{from}}'s report feeds {{to}}: you read and accept it before they start",
-    "and": " and ",
     "alsoSkipped_one": "{{tasks}} also skipped: it waits for {{task}}",
     "alsoSkipped_other": "{{tasks}} also skipped: they wait for {{task}}",
     "undo": "Undo",

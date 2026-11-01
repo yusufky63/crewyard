@@ -793,12 +793,12 @@ function ReadyState({
           ))}
           {feeds.map((f) => (
             <p key={f.from} className="gp-info tk-small" role="note">
-              {g.t("review.feeds", { from: f.from, to: f.to.join(g.t("review.and")), count: f.to.length })}
+              {g.t("review.feeds", { from: f.from, to: g.list(f.to), count: f.to.length })}
             </p>
           ))}
           {lastSkip && lastSkip.keys.length > 1 && (
             <p className="gp-info tk-small" role="status">
-              <span>{g.t("review.alsoSkipped", { tasks: lastSkip.keys.slice(1).map(num).join(", "), task: num(lastSkip.keys[0]!), count: lastSkip.keys.length - 1 })}</span>
+              <span>{g.t("review.alsoSkipped", { tasks: g.list(lastSkip.keys.slice(1).map(num)), task: num(lastSkip.keys[0]!), count: lastSkip.keys.length - 1 })}</span>
               <Button
                 size="sm"
                 variant="ghost"

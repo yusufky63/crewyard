@@ -17,6 +17,7 @@ import {
   planTiles,
   planTotals,
   reportFeeds,
+  joinList,
   showsPlanReview,
   skipWithDependents,
   soloAction,
@@ -187,6 +188,14 @@ describe("plan review", () => {
     const tiles = plan();
     expect(reportFeeds(tiles, all(tiles))).toEqual([{ from: "01", to: ["02", "03"] }]);
     expect(reportFeeds(tiles, new Set(["k1"]))).toEqual([]);
+  });
+
+  it("lists task numbers as a sentence does in each language, never as a chain of ands", () => {
+    expect(joinList(["02"], "en")).toBe("02");
+    expect(joinList(["02", "03"], "en")).toBe("02 and 03");
+    expect(joinList(["02", "03", "04"], "en")).toBe("02, 03, and 04");
+    expect(joinList(["02", "03", "04"], "tr")).toBe("02, 03 ve 04");
+    expect(joinList(["02", "03"], "not a tag")).toBe("02 and 03");
   });
 
   it("shows a revise as added, changed and removed, naming removed tasks by their earlier title and never by key", () => {
