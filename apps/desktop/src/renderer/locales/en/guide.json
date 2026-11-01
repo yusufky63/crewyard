@@ -235,8 +235,8 @@
       "body": "In the Crew graph every change is its own action; moving a node only changes the layout.",
       "points": {
         "a": "While it is a proposal: add or remove a step, change its role, profile or model, draw a depends-on edge and order the standbys.",
-        "b": "While it runs: retry a failed step, skip one that has not started, pause or resume all, and add a follow-up step that waits for your approval.",
-        "c": "Right-click a node, or press Shift F10, for every action, with the reason when one is off."
+        "b": "While it runs: retry failed steps, skip a step that has not started or change its AI, pause or resume all, and add a follow-up step, or run a finished one again on another AI, that waits for your approval.",
+        "c": "Right-click a step or the task, or press Shift F10, for every action, with the reason when one is off. A step's standbys are the badge on its tile."
       },
       "go": "Open Crew graph"
     },
