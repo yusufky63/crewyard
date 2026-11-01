@@ -30,6 +30,7 @@ export type GoalErrorCode =
   | "goal.not_found"
   | "goal.task_not_found" // { key } or { taskId }: not a task of this goal
   | "goal.text" // { error }: the goal text is empty or too long
+  | "goal.bad_attachments" // { error }: the attachments are not a list of ids
   | "goal.no_planner" // no profile can plan read-only with structured output here
   | "goal.planner_unknown" // { profileId }: not a scored planner candidate
   | "goal.stopped" // the goal is stopped; nothing more changes
@@ -57,11 +58,13 @@ export type GoalErrorCode =
   | "goal.not_report" // the task writes something, or nothing writing waits for it
   | "goal.report_not_done" // the task has not finished; there is no report to accept yet
   | "goal.paused" // the goal is paused; resume it first
+  | "goal.paused_all" // Pause all goals is on; lift it first
   | "goal.not_paused"
   | "goal.no_integration" // the goal has no branch (no writing task)
   | "goal.collapse_after_approval" // Run as one task is only before approval
   | "goal.not_one_task" // the revision does not hold exactly one task, so it cannot become an ordinary task
-  | "goal.plan_moved"; // { keys }: tasks this revision replaces started after it was planned; replan again
+  | "goal.plan_moved" // { keys }: tasks this revision replaces started after it was planned; replan again
+  | "goal.plan_changed"; // { keys }: tasks of this revision changed while it was being approved; check and approve again
 
 /** One plan task as the goal shows it: the plan's fields, its task, its share and why it waits. */
 export interface GoalTaskView {

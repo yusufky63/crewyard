@@ -325,7 +325,7 @@ export class TaskFlow extends Part {
    * A goal task is refused: what it does was accepted with its plan revision, so its edits go
    * through the goal (`goals.editTask`), whose own code passes `byGoal` (docs/adr/0019).
    */
-  async edit(taskId: string, patch: { title?: string; description?: string; kind?: TaskKind; budgetUsd?: number }, how: { byGoal?: boolean } = {}): Promise<TaskDetail> {
+  async edit(taskId: string, patch: { title?: string; description?: string; kind?: TaskKind; budgetUsd?: number; size?: TaskSize }, how: { byGoal?: boolean; mode?: TaskMode; inTx?: () => void } = {}): Promise<TaskDetail> {
     const byGoal = how.byGoal === true;
     const task = this.db.task(taskId);
     const crew = this.db.crew(task.id);
@@ -337,24 +337,33 @@ export class TaskFlow extends Part {
     if (rekind && this.bestOf.group(task.id)) throw new OrchestratorError("task.best_of_kind");
     const budgetUsd = patch.budgetUsd !== undefined && (task.budget_usd === null || patch.budgetUsd < task.budget_usd) ? patch.budgetUsd : task.budget_usd;
     const project = this.db.project(task.project_id);
-    const mode = rekind ? this.draftedMode(task.id, byGoal) : null;
-    const draft = rekind ? await this.draftCrew(project, title, description, { kind: patch.kind, size: task.size }, budgetUsd, mode ?? "crew") : null;
+    // A goal's tile edit (goals.editTask) may also change the size or the planned mode; either one
+    // drafts a different crew, so the crew the plan review shows is drafted again, as for a new kind.
+    const size = byGoal && patch.size !== undefined ? patch.size : task.size;
+    const drafted = rekind || byGoal ? this.draftedMode(task.id, byGoal) : null;
+    const redraft = rekind || (byGoal && (size !== task.size || (how.mode !== undefined && how.mode !== drafted)));
+    const mode = redraft ? (byGoal && how.mode ? how.mode : drafted) : null;
+    const draft = redraft ? await this.draftCrew(project, title, description, { kind: patch.kind ?? task.kind, size }, budgetUsd, mode ?? "crew") : null;
     this.db.tx(() => {
       // Drafting awaited the directory: what was checked above may have changed meanwhile.
       this.assertProposal(task.id, crew.id, byGoal);
       this.db.exec("update tasks set title = ?, description = ?, budget_usd = ? where id = ?", title, description, budgetUsd, task.id);
-      if (!draft) return;
-      const members = this.db.members(crew.id).map((m) => m.id);
-      for (const id of members) {
-        this.db.exec("delete from crew_member_roles where member_id = ?", id);
-        this.db.exec("delete from crew_member_flags where member_id = ?", id);
+      if (draft) {
+        const members = this.db.members(crew.id).map((m) => m.id);
+        for (const id of members) {
+          this.db.exec("delete from crew_member_roles where member_id = ?", id);
+          this.db.exec("delete from crew_member_flags where member_id = ?", id);
+        }
+        this.db.exec("delete from crew_members where crew_id = ?", crew.id);
+        this.db.exec("delete from crews where id = ?", crew.id);
+        this.db.exec("update tasks set kind = ?, size = ?, classification = ? where id = ?", draft.cls.kind, draft.cls.size, JSON.stringify(draft.cls.reasons), task.id);
+        this.writeCrew(task.id, draft, this.iso());
       }
-      this.db.exec("delete from crew_members where crew_id = ?", crew.id);
-      this.db.exec("delete from crews where id = ?", crew.id);
-      this.db.exec("update tasks set kind = ?, size = ?, classification = ? where id = ?", draft.cls.kind, draft.cls.size, JSON.stringify(draft.cls.reasons), task.id);
-      this.writeCrew(task.id, draft, this.iso());
+      // The goal's own records of the edit land in the same transaction, so a plan approved
+      // meanwhile refuses the whole edit instead of keeping half of it.
+      how.inTx?.();
     });
-    this.audit(task.id, null, "task.edited", { title: patch.title !== undefined, description: patch.description !== undefined, kind: rekind ? patch.kind : null, ...(mode ? { mode } : {}), ...(budgetUsd !== task.budget_usd ? { budgetUsd } : {}) });
+    this.audit(task.id, null, "task.edited", { title: patch.title !== undefined, description: patch.description !== undefined, kind: rekind ? patch.kind : null, ...(size !== task.size ? { size } : {}), ...(mode ? { mode } : {}), ...(budgetUsd !== task.budget_usd ? { budgetUsd } : {}) });
     this.emitTask(task.id, "edited");
     return this.get(task.id);
   }
