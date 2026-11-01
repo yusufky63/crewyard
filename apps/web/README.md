@@ -77,6 +77,8 @@ At 286412f the Tasks screen's sample data stops its renderer (the report line re
 
 Nothing in the repository deploys by itself, and no workflow pushes to Vercel.
 
+The production site is the Vercel project `crewyard` (https://crewyard-two.vercel.app), first deployed on 2026-11-01 with Root Directory `apps/web` and Node 24. It is deployed from the repository root with the Vercel CLI (`vercel deploy --prod`, CLI 65 or later, from a checkout linked with `vercel link --project crewyard`). The root `.vercelignore` keeps worktrees, installs, build output and design images out of the upload, which Vercel caps at 15,000 files. The project is not connected to Git, so a push to `main` does not deploy; a new release still appears on the site within the hour, because the pages read GitHub.
+
 ### Environment variables
 
 | Name | Needed | What |

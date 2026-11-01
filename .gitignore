@@ -29,3 +29,5 @@ blob-report/
 
 # nodeterm canvas state when the project is opened in it
 .nodeterm/
+
+.vercel

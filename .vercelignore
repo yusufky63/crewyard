@@ -1,0 +1,11 @@
+# What the website build never needs: worktrees, installs, build output and design images. Every
+# workspace package stays, so pnpm's frozen install sees the whole workspace (apps/web/README.md).
+.claude
+.nodeterm
+**/node_modules
+**/out
+**/dist
+**/.next
+**/.vercel
+design/screens
+docs/research
