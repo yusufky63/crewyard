@@ -26,3 +26,6 @@ blob-report/
 *.pfx
 *.p12
 *.pem
+
+# nodeterm canvas state when the project is opened in it
+.nodeterm/
